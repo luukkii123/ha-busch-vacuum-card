@@ -57,7 +57,8 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
     constructor(tag = 'div') {
       this.tagName = String(tag).toUpperCase(); this.childNodes = []; this.parentNode = null;
       this.listeners = {}; this.attributes = {}; this.dataset = {}; this.className = ''; this.title = ''; this.id = '';
-      this._text = ''; this._tabIndex = -1; this.scrollTop = 0; this.clientHeight = 80;
+      // Wie im Browser: Bedienelemente sind ohne tabindex fokussierbar.
+      this._text = ''; this._tabIndex = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(this.tagName) ? 0 : -1; this.scrollTop = 0; this.clientHeight = 80;
       const style = {}; style.setProperty = (k, v) => { style[k] = String(v); }; style.getPropertyValue = (k) => style[k] || ''; style.removeProperty = (k) => { delete style[k]; };
       this.style = style; this.classList = new ClassList(this);
     }
@@ -121,10 +122,12 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
     createElementNS(_ns, tag) { return new Element(tag); },
     addEventListener(t, fn) { (docListeners[t] ||= []).push(fn); },
     removeEventListener(t, fn) { docListeners[t] = (docListeners[t] || []).filter((f) => f !== fn); },
+    dispatchEvent(e) { for (const fn of [...(docListeners[e.type] || [])]) fn(e); return true; },
     querySelector() { return null; },
   };
   const fenster = { customCards: [], listeners: {}, addEventListener(t, fn) { (this.listeners[t] ||= []).push(fn); }, removeEventListener(t, fn) { this.listeners[t] = (this.listeners[t] || []).filter((f) => f !== fn); } };
-  const verlauf = { laenge: 1, pushState() { this.laenge++; }, back() {}, go() {} };
+  // Verlauf zählt nur mit; popstate lösen Tests selbst über window.listeners aus.
+  const verlauf = { laenge: 1, aufrufe: [], pushState() { this.laenge++; this.aufrufe.push('push'); }, back() { this.aufrufe.push('back'); }, go(n) { this.aufrufe.push('go ' + n); } };
   const kontext = {
     // console.error/warn der Karte landen in `fehler`, damit Tests „ohne Fehler“ prüfen können.
     console: { info() {}, warn(...a) { fehler.push(a); }, error(...a) { fehler.push(a); }, log() {} },
@@ -138,7 +141,9 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
   kontext.globalThis = kontext;
   vm.createContext(kontext);
   vm.runInContext(fs.readFileSync(KARTE, 'utf8'), kontext, { filename: 'busch-vacuum-card.js' });
-  return { uhr, kontext, document, body, registry, fehler, neuesEreignis };
+  /** Zurück-Geste: popstate an alle Fenster-Listener. */
+  const zurueck = () => { for (const fn of [...(fenster.listeners.popstate || [])]) fn({}); };
+  return { uhr, kontext, document, body, registry, fehler, neuesEreignis, verlauf, zurueck };
 }
 
 // ---- hass ---------------------------------------------------------------

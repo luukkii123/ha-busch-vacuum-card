@@ -218,6 +218,8 @@ const CARD_VERSION = '0.1.0';
 
 const CARD_TAG = 'busch-vacuum-card';
 const EDITOR_TAG = 'busch-vacuum-card-editor';
+const DIALOG_TAG = 'busch-vacuum-dialog';
+const DIALOG_HISTORY_KEY = 'buschVacuumDialog';
 
 const domainOf = (entityId) => String(entityId || '').split('.')[0];
 
@@ -280,7 +282,20 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             infoPausiert: 'Reinigung unterbrochen: lädt und setzt danach fort.',
             warnungLoeschen: 'Warnung löschen',
             ausblenden: 'Ausblenden',
-            fortschritt: 'Fortschritt {wert} %'
+            fortschritt: 'Fortschritt {wert} %',
+            menu: 'Menü',
+            schliessen: 'Schließen',
+            zurueck: 'Zurück',
+            entryLocate: 'Orten',
+            entryHistory: 'Reinigungsverlauf',
+            entryCruising: 'Cruising-Verlauf',
+            entryConsumables: 'Zubehör',
+            entrySequence: 'Reinigungsreihenfolge',
+            entryRemote: 'Fernsteuerung',
+            entryMaps: 'Kartenverwaltung',
+            entrySettings: 'Geräteeinstellungen',
+            zubehoerNiedrig: '{n} unter 30 %',
+            platzhalter: 'Diese Ansicht kommt mit einem späteren Ausbau der Karte (Modul „{modul}“).'
         }
     },
     en: {
@@ -332,7 +347,20 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             infoPausiert: 'Cleaning interrupted: charging, then it resumes.',
             warnungLoeschen: 'Clear warning',
             ausblenden: 'Dismiss',
-            fortschritt: 'Progress {wert} %'
+            fortschritt: 'Progress {wert} %',
+            menu: 'Menu',
+            schliessen: 'Close',
+            zurueck: 'Back',
+            entryLocate: 'Locate',
+            entryHistory: 'Cleaning history',
+            entryCruising: 'Cruising history',
+            entryConsumables: 'Accessories',
+            entrySequence: 'Cleaning sequence',
+            entryRemote: 'Remote control',
+            entryMaps: 'Map management',
+            entrySettings: 'Device settings',
+            zubehoerNiedrig: '{n} below 30 %',
+            platzhalter: 'This view comes with a later update of the card (module “{modul}”).'
         }
     }
 };
@@ -462,6 +490,14 @@ class VacuumModel {
         return this.related.device[key] || null;
     }
 
+    /** Consumables left in percent by attribute (`main_brush_left` …), without the `_time_left` ones. */
+    consumables() {
+        const attributes = (this.state && this.state.attributes) || {};
+        return Object.fromEntries(Object.entries(attributes)
+            .filter(([name, value]) => /_left$/.test(name) && !/_time_left$|^drying_left$/.test(name) && Number.isFinite(Number(value)))
+            .map(([name, value]) => [name, Number(value)]));
+    }
+
     /** A value of the vacuum itself — also for settings whose entity is disabled. */
     attr(name) {
         return this.state ? this.state.attributes[name] : undefined;
@@ -479,6 +515,9 @@ class VacuumModel {
             case 'history': return !!this.entity('sensor.cleaning_history');
             // CORE-10: the button is what v2.0.3 offers; the documented service only if present.
             case 'clear_warning': return !!this.entity('button.clear_warning') || this.can('dreame_vacuum.vacuum_clear_warning');
+            case 'consumables': return Object.keys(this.consumables()).length > 0;
+            case 'remote': return this.can('dreame_vacuum.vacuum_remote_control_move_step');
+            case 'settings': return this.can('dreame_vacuum.vacuum_set_property');
             default:
                 if (VACUUM_FEATURES[name]) return (this.features & VACUUM_FEATURES[name]) !== 0;
                 return this.caps.has(name);
@@ -640,6 +679,23 @@ function progressOf(hass, model) {
     return raw === undefined || raw === null || raw === '' || !Number.isFinite(value) ? null : Math.min(100, Math.max(0, value));
 }
 
+/**
+ * Main menu (CORE-05) in the reference's order: can() name, and the module
+ * that fills the entry's view. Locate acts at once.
+ */
+const MENU = [
+    { name: 'locate', text: 'entryLocate', icon: 'mdi:map-marker-radius-outline', needs: 'locate' },
+    { name: 'history', text: 'entryHistory', icon: 'mdi:history', needs: 'history', module: 'history' },
+    { name: 'cruising_history', text: 'entryCruising', icon: 'mdi:map-marker-path', needs: 'cruising', module: 'history' },
+    { name: 'consumables', text: 'entryConsumables', icon: 'mdi:wrench-clock', needs: 'consumables', module: 'device-settings' },
+    { name: 'cleaning_sequence', text: 'entrySequence', icon: 'mdi:sort-numeric-ascending', needs: 'cleangenius', module: 'clean-settings' },
+    { name: 'remote', text: 'entryRemote', icon: 'mdi:gamepad-round-outline', needs: 'remote', module: 'remote' },
+    { name: 'maps', text: 'entryMaps', icon: 'mdi:layers-outline', needs: 'multi_floor_map', module: 'map-editor' },
+    { name: 'settings', text: 'entrySettings', icon: 'mdi:cog-outline', needs: 'settings', module: 'device-settings' }
+];
+
+const menuFor = (model) => MENU.filter((entry) => model.can(entry.needs));
+
 /** The entities a render reads; Home Assistant replaces a state object on every change. */
 function watchSnapshot(hass, ids) {
     return { language: BuschUI.language(hass, { legacy: true }), ids, objects: ids.map((id) => hass.states[id]) };
@@ -676,10 +732,23 @@ ha-card {
     font-size: var(--ha-font-size-s, 14px);
     overflow-wrap: anywhere;
 }
+.top {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--ha-space-2, 8px);
+    min-width: 0;
+}
 .head {
     display: flex;
     flex-direction: column;
+    flex: 1;
     min-width: 0;
+}
+.menu-button {
+    flex: none;
+}
+.menu-button[hidden] {
+    display: none;
 }
 .title {
     margin: 0;
@@ -896,6 +965,329 @@ ha-card {
 }
 `;
 
+const DIALOG_STYLES = BuschUI.cardStyles + `
+:host {
+    position: fixed;
+    inset: 0;
+    /* Above Leaflet's panes (400) and controls (1000): the dialog shares the page's stacking context. */
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* The sheet's height comes from this fixed box, which follows the visible viewport. */
+    box-sizing: border-box;
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+        max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+}
+.scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    animation: fade 0.3s ease-out;
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise { from { transform: translateY(32px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes grow { from { transform: scale(0.94); opacity: 0; } to { transform: none; opacity: 1; } }
+.sheet {
+    position: relative;
+    width: min(560px, 100%);
+    max-height: 100%;
+    overscroll-behavior: contain;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    color: var(--primary-text-color, #212121);
+    border-radius: 16px;
+    padding: 16px;
+    box-sizing: border-box;
+    animation: grow 0.3s ease-out;
+}
+/* Phones: full screen (hacs/docs/ui-regeln.md, no floating dialog below 450 x 500 px). */
+@media (max-width: 449.98px), (max-height: 499.98px) {
+    :host {
+        padding: env(safe-area-inset-top) env(safe-area-inset-right)
+            env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .sheet { width: 100%; height: 100%; border-radius: 0; animation-name: rise; }
+    .head { border-radius: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .scrim, .sheet { animation: none; }
+}
+.head {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-2, 8px);
+    /* Stays on top while the sheet scrolls, edge to edge over the sheet's padding. */
+    position: sticky;
+    top: -16px;
+    z-index: 2;
+    margin: -16px -16px 12px;
+    padding: 16px;
+    border-radius: 16px 16px 0 0;
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+}
+.head h1 {
+    flex: 1;
+    margin: 0;
+    font-size: var(--ha-font-size-xl, 20px);
+    font-weight: var(--ha-font-weight-medium, 500);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.head .busch-ui-action {
+    flex: none;
+}
+.menu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-1, 4px);
+}
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-3, 12px);
+    width: 100%;
+    text-align: start;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.menu-item ha-icon {
+    order: -1;
+    flex: none;
+}
+.badge {
+    margin-inline-start: auto;
+    flex: none;
+    padding: 0 var(--ha-space-2, 8px);
+    border-radius: 999px;
+    background: var(--warning-color, #ffa600);
+    color: var(--text-primary-color, #ffffff);
+    font-size: var(--ha-font-size-s, 12px);
+}
+.placeholder {
+    margin: 0;
+    color: var(--secondary-text-color, #727272);
+    overflow-wrap: anywhere;
+}
+`;
+
+/**
+ * The card's one dialog element (CORE-12), after BuschLightDialog of
+ * Lightcards 0.11.0: full screen below 450 x 500 px, centred above; sticky
+ * head; page scroll locked; Escape and the back gesture through history
+ * entries of its own; focus trapped inside and handed back on close.
+ *
+ * Views stack: `show({ title, kind, watch, render })` opens one on top, back
+ * returns to the one below. Only a transient `menu` closes from outside;
+ * views and editors never do (R04).
+ */
+class BuschVacuumDialog extends HTMLElement {
+    constructor() {
+        super();
+        this.attachShadow({ mode: 'open' });
+        this._hass = null;
+        this._views = [];
+        this._sheet = null;
+        this._depth = 0; // history entries pushed by this dialog; back consumes them
+        this._closing = false;
+        this._closed = false;
+        this._returnFocus = null;
+        this._seen = null;
+        this._onKey = (event) => {
+            if (event.key === 'Tab') {
+                const controls = this._focusable();
+                const index = controls.indexOf(this.shadowRoot.activeElement);
+                if (!controls.length) { event.preventDefault(); this._sheet.focus(); return; }
+                if (event.shiftKey && index <= 0) {
+                    event.preventDefault(); controls[controls.length - 1].focus();
+                } else if (!event.shiftKey && (index < 0 || index === controls.length - 1)) {
+                    event.preventDefault(); controls[0].focus();
+                }
+                return;
+            }
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            this._goBack();
+        };
+        this._onFocus = (event) => {
+            if (this.isConnected && !event.composedPath().includes(this)) this._focusFirst();
+        };
+        this._onPop = () => {
+            if (this._closing) {
+                this._closing = false;
+                this._dismiss();
+                return;
+            }
+            if (this._views.length > 1) {
+                this._depth = Math.max(0, this._depth - 1);
+                this._views.pop();
+                this._render();
+                return;
+            }
+            this._depth = 0;
+            this._dismiss();
+        };
+    }
+
+    set hass(hass) {
+        const unchanged = snapshotUnchanged(this._seen, hass);
+        this._hass = hass;
+        if (!unchanged) this._render();
+    }
+
+    get hass() {
+        return this._hass;
+    }
+
+    /** Opens a view on top of the current one, with a history entry of its own once open. */
+    show(view) {
+        this._views.push(view);
+        if (this.isConnected) this._push();
+        this._render();
+        this._focusFirst();
+    }
+
+    connectedCallback() {
+        let active = document.activeElement;
+        while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement;
+        this._returnFocus = active;
+        document.addEventListener('keydown', this._onKey);
+        document.addEventListener('focusin', this._onFocus, true);
+        window.addEventListener('popstate', this._onPop);
+        // The dashboard behind must not scroll along with the sheet.
+        const page = document.documentElement.style;
+        this._pageOverflow = page.overflow;
+        page.overflow = 'hidden';
+        // The phone's back gesture is a history navigation: without an entry of
+        // its own it would leave the dashboard instead of closing the dialog.
+        this._push();
+        this._focusFirst();
+    }
+
+    disconnectedCallback() {
+        document.removeEventListener('keydown', this._onKey);
+        document.removeEventListener('focusin', this._onFocus, true);
+        window.removeEventListener('popstate', this._onPop);
+        document.documentElement.style.overflow = this._pageOverflow || '';
+        if (this._returnFocus && this._returnFocus.isConnected) this._returnFocus.focus();
+    }
+
+    _push() {
+        try {
+            history.pushState({ [DIALOG_HISTORY_KEY]: this._depth + 1 }, '', location.href);
+            this._depth += 1;
+        } catch (e) {
+            // Private modes can refuse this; Escape and the close button still work.
+        }
+    }
+
+    /** Escape and the back arrow: one view back, out only from the first. */
+    _goBack() {
+        if (this._views.length > 1) {
+            if (this._depth > 1) {
+                history.back(); // popstate returns to the view below
+                return;
+            }
+            this._views.pop();
+            this._render();
+            return;
+        }
+        this.close();
+    }
+
+    close() {
+        if (this._depth > 0) {
+            const steps = this._depth;
+            this._depth = 0;
+            this._closing = true;
+            history.go(-steps);
+            // Insurance: if popstate never arrives, the dialog must not stay open.
+            setTimeout(() => { if (this.isConnected) this._dismiss(); }, 300);
+            return;
+        }
+        this._dismiss();
+    }
+
+    _dismiss() {
+        if (this._closed) return;
+        this._closed = true;
+        this.dispatchEvent(new CustomEvent('dialog-closed'));
+        this.remove();
+    }
+
+    _build() {
+        const root = this.shadowRoot;
+        const style = document.createElement('style');
+        style.textContent = DIALOG_STYLES;
+        const scrim = document.createElement('div');
+        scrim.className = 'scrim';
+        scrim.addEventListener('click', () => {
+            const view = this._views[this._views.length - 1];
+            if (view && view.kind === 'menu') this.close();
+        });
+        this._sheet = document.createElement('div');
+        this._sheet.className = 'sheet';
+        this._sheet.setAttribute('role', 'dialog');
+        this._sheet.setAttribute('aria-modal', 'true');
+        this._sheet.setAttribute('aria-labelledby', 'vacuum-dialog-title');
+        this._sheet.tabIndex = -1;
+        root.append(style, scrim, this._sheet);
+    }
+
+    _focusable() {
+        if (!this._sheet) return [];
+        return this._sheet.querySelectorAll('button, input, select, textarea, [tabindex]')
+            .filter((node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
+    }
+
+    _focusFirst() {
+        if (!this._sheet || !this.isConnected) return;
+        (this._focusable()[0] || this._sheet).focus();
+    }
+
+    _render() {
+        const hass = this._hass;
+        const view = this._views[this._views.length - 1];
+        if (!hass || !view) return;
+        if (!this._sheet) this._build();
+        this._seen = watchSnapshot(hass, view.watch ? view.watch() : []);
+        const focused = this._focusable().indexOf(this.shadowRoot.activeElement);
+        const scrollTop = this._sheet.scrollTop;
+        this._sheet.setAttribute('data-kind', view.kind);
+
+        const head = document.createElement('div');
+        head.className = 'head';
+        if (this._views.length > 1) head.appendChild(this._headButton('back', 'mdi:arrow-left', 'zurueck', () => this._goBack()));
+        // Rule 2, anatomy: the close X sits top left, ahead of the title.
+        head.appendChild(this._headButton('close', 'mdi:close', 'schliessen', () => this.close()));
+        const title = document.createElement('h1');
+        title.id = 'vacuum-dialog-title';
+        title.textContent = view.title;
+        head.appendChild(title);
+        const body = document.createElement('div');
+        body.className = 'body';
+        view.render(body, hass, this);
+        this._sheet.replaceChildren(head, body);
+        this._sheet.scrollTop = scrollTop;
+        if (focused >= 0) {
+            const controls = this._focusable();
+            (controls[Math.min(focused, controls.length - 1)] || this._sheet).focus();
+        }
+    }
+
+    _headButton(action, icon, labelKey, onClick) {
+        const button = BuschUI.action({ label: translate(this._hass, labelKey), icon, variant: 'icon-only', onClick });
+        button.setAttribute('data-action', action);
+        return button;
+    }
+}
+
 class BuschVacuumCard extends HTMLElement {
     constructor() {
         super();
@@ -911,6 +1303,7 @@ class BuschVacuumCard extends HTMLElement {
         this._pending = null; // { state, from, timer }: tapped target state until the device confirms
         this._task = 'all'; // chosen task type (CORE-06)
         this._dismissed = new Map(); // message kind → text wiped away, until the message changes (CORE-10)
+        this._dialog = null;
     }
 
     static getConfigElement() {
@@ -939,6 +1332,7 @@ class BuschVacuumCard extends HTMLElement {
         // the house. Only the vacuum and the few sensors shown redraw.
         const unchanged = snapshotUnchanged(this._seen, hass) && (!hass || hass.entities === this._relatedFrom);
         this._hass = hass;
+        if (this._dialog) this._dialog.hass = hass;
         if (!unchanged) this._update();
     }
 
@@ -982,6 +1376,13 @@ class BuschVacuumCard extends HTMLElement {
             head.classList.add('head');
             head.appendChild(this._title);
             head.appendChild(this._stateLine);
+            // Built once and only hidden: the dialog hands focus back to this very node.
+            this._menuButton = BuschUI.action({ label: 'menu', icon: 'mdi:dots-vertical', variant: 'icon-only', onClick: () => this._openDialog(this._menuView()) });
+            this._menuButton.classList.add('menu-button');
+            this._menuButton.setAttribute('aria-haspopup', 'dialog');
+            const top = document.createElement('div');
+            top.className = 'top';
+            top.append(head, this._menuButton);
             this._stats = document.createElement('div');
             this._stats.className = 'stats';
             this._controls = document.createElement('div');
@@ -992,7 +1393,7 @@ class BuschVacuumCard extends HTMLElement {
             this._messages.className = 'messages';
             this._taskArea = document.createElement('div');
             this._taskArea.className = 'task-area';
-            card.append(this._progress, head, this._messages, this._stats, this._taskArea, this._controls);
+            card.append(this._progress, top, this._messages, this._stats, this._taskArea, this._controls);
         }
         this._update();
     }
@@ -1023,6 +1424,9 @@ class BuschVacuumCard extends HTMLElement {
         const shown = this._pending ? this._pending.state : real ? real.state : 'unavailable';
 
         this._title.textContent = real ? real.attributes.friendly_name || this._opts.entity : this._opts.entity;
+        const menuLabel = translate(hass, 'menu');
+        BuschUI.action({ node: this._menuButton, label: menuLabel, icon: 'mdi:dots-vertical', variant: 'icon-only', onClick: () => this._openDialog(this._menuView()) });
+        this._menuButton.hidden = menuFor(model).length === 0;
         this._stateLine.textContent = real ? formatState(hass, real, shown) : shown;
 
         const stats = [];
@@ -1056,6 +1460,66 @@ class BuschVacuumCard extends HTMLElement {
         });
         if (model.can('dock')) buttons.push(this._dock(hass, model));
         this._controls.replaceChildren(...buttons);
+    }
+
+    _openDialog(view) {
+        if (this._dialog && this._dialog.isConnected) return;
+        const dialog = document.createElement(DIALOG_TAG);
+        dialog.hass = this._hass;
+        dialog.show(view);
+        dialog.addEventListener('dialog-closed', () => { if (this._dialog === dialog) this._dialog = null; });
+        this._dialog = dialog;
+        document.body.appendChild(dialog);
+    }
+
+    /** Main menu (CORE-05): entries by can(); Locate acts, the others open their module's view. */
+    _menuView() {
+        return {
+            title: translate(this._hass, 'menu'),
+            kind: 'menu',
+            watch: () => [this._opts.entity],
+            render: (body, hass, dialog) => {
+                const model = this._model();
+                const list = document.createElement('div');
+                list.className = 'menu';
+                for (const entry of menuFor(model)) {
+                    const text = translate(hass, entry.text);
+                    const low = entry.name === 'consumables' ? Object.values(model.consumables()).filter((v) => v < 30).length : 0;
+                    const lowText = low ? translate(hass, 'zubehoerNiedrig', { n: low }) : '';
+                    const item = BuschUI.action({ label: lowText ? text + ' · ' + lowText : text, text, icon: entry.icon, variant: 'quiet', onClick: () => {
+                        if (entry.name === 'locate') {
+                            hass.callService('vacuum', 'locate', { entity_id: this._opts.entity });
+                            dialog.close();
+                        } else dialog.show(this._placeholderView(entry));
+                    } });
+                    item.classList.add('menu-item');
+                    item.setAttribute('data-entry', entry.name);
+                    if (low) {
+                        const badge = document.createElement('span');
+                        badge.className = 'badge';
+                        badge.setAttribute('aria-hidden', 'true');
+                        badge.textContent = String(low);
+                        item.appendChild(badge);
+                    }
+                    list.appendChild(item);
+                }
+                body.appendChild(list);
+            }
+        };
+    }
+
+    /** Filled by the entry's module; until then it says so. Kind editor: these become settings (R04). */
+    _placeholderView(entry) {
+        return {
+            title: translate(this._hass, entry.text),
+            kind: 'editor',
+            render: (body, hass) => {
+                const note = document.createElement('p');
+                note.className = 'placeholder';
+                note.textContent = translate(hass, 'platzhalter', { modul: entry.module });
+                body.appendChild(note);
+            }
+        };
     }
 
     _progressBar(percent) {
@@ -1276,11 +1740,13 @@ BuschVacuumCard.__internals = {
     normalizeConfig,
     findRelated,
     VacuumModel,
+    DIALOG_STYLES,
     version: CARD_VERSION
 };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, BuschVacuumCard);
 if (!customElements.get(EDITOR_TAG)) customElements.define(EDITOR_TAG, BuschVacuumCardEditor);
+if (!customElements.get(DIALOG_TAG)) customElements.define(DIALOG_TAG, BuschVacuumDialog);
 
 window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === CARD_TAG)) {
