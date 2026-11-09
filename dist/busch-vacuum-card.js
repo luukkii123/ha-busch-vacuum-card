@@ -1179,8 +1179,9 @@ ha-card {
     min-width: 0;
     overflow-wrap: anywhere;
 }
+/* The level word on a line of its own: inline, the wrapped text's box would cover it. */
 .message-text strong {
-    margin-inline-end: var(--ha-space-1, 4px);
+    display: block;
 }
 .task-area {
     display: flex;
@@ -1196,7 +1197,8 @@ ha-card {
     display: inline-flex;
     align-items: center;
     gap: var(--ha-space-1, 4px);
-    flex: 1 1 0;
+    /* Content width as basis: on a phone the five types wrap instead of clipping icon and word. */
+    flex: 1 1 auto;
     justify-content: center;
     white-space: nowrap;
     overflow: hidden;
@@ -1529,7 +1531,7 @@ class BuschVacuumDialog extends HTMLElement {
 
     _focusable() {
         if (!this._sheet) return [];
-        return this._sheet.querySelectorAll('button, input, select, textarea, [tabindex]')
+        return Array.from(this._sheet.querySelectorAll('button, input, select, textarea, [tabindex]'))
             .filter((node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
     }
 
