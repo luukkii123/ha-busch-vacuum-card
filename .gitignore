@@ -1,0 +1,15 @@
+node_modules/
+__pycache__/
+*.pyc
+.env
+config.json
+graphify-out/
+docs/render/ergebnis*/
+docs/render/out/
+.DS_Store
+
+# Nur lokal: Agenteneinstieg, Abnahme-/Auditberichte, Screenshots mit Echtdaten
+AGENTS.md
+CLAUDE.md
+docs/abnahme-*.md
+docs/images/
