@@ -237,10 +237,36 @@ const TEXTE_BUSCH_VACUUM_CARD = {
         name: 'Busch Saugroboter',
         description: 'Status und Steuerung eines Saugroboters mit allem, was das Gerät kann, auch ohne Karte.',
         labels: {
-            entity: 'Saugroboter'
+            entity: 'Saugroboter',
+            title: 'Titel',
+            scripts: 'Skripte als Shortcuts',
+            layout_section: 'Layout',
+            full_height: 'Volle Höhe',
+            aspect_ratio: 'Seitenverhältnis',
+            max_height_offset: 'Höhenabzug',
+            left_handed: 'Linkshänder',
+            operation_section: 'Bedienung',
+            locked: 'Karten-Sperre',
+            touch_lock: 'Haltezeit zum Entsperren',
+            disable_haptic: 'Vibration aus',
+            display_section: 'Anzeige',
+            hidden_card_objects: 'Ausgeblendete Teile'
         },
         helpers: {
-            entity: 'Der Saugroboter, den die Karte zeigt; zugehörige Entitäten findet sie über das Gerät. Pflichtfeld ohne Vorgabe.'
+            entity: 'Der Saugroboter, den die Karte zeigt; zugehörige Entitäten findet sie über das Gerät. Pflichtfeld ohne Vorgabe.',
+            title: 'Überschrift der Karte statt des Gerätenamens. Vorgabe leer, dann steht dort der Gerätename.',
+            scripts: 'Skripte, die das Shortcut-Menü vor den Shortcuts des Geräts anbietet. Vorgabe keine.',
+            layout_section: 'Höhe und Form der Karte und auf welcher Seite die Aktionsknöpfe liegen.',
+            full_height: 'Die Karte füllt die sichtbare Höhe unter der Kopfleiste von Home Assistant. Vorgabe aus.',
+            aspect_ratio: 'Feste Form der Karte wie 16:9, 4/3 oder 1.5; gilt nicht mit voller Höhe und nicht im Panel. Vorgabe leer.',
+            max_height_offset: 'So viele Pixel zieht die Karte von ihrer größten Höhe ab, etwa für eigene Kopfzeilen. Vorgabe 0.',
+            left_handed: 'Legt die Aktionsknöpfe nach links und die Stationsanzeige nach rechts. Vorgabe aus.',
+            operation_section: 'Sperre gegen versehentliches Verschieben der Karte und Vibration am Handy.',
+            locked: 'Wann die Karte gesperrt startet; Automatisch sperrt am Touchgerät außerhalb einer Panel-Ansicht. Vorgabe Automatisch.',
+            touch_lock: 'So lange hältst du das Schloss, um die Sperre umzuschalten, 100 bis 400 Millisekunden. Vorgabe 200.',
+            disable_haptic: 'Schaltet die kurze Vibration beim Tippen am Handy ab. Vorgabe aus.',
+            display_section: 'Welche Teile die Karte zeigt.',
+            hidden_card_objects: 'Gewählte Teile zeigt die Karte nicht; ohne „Bestätigung beim Kartenwechsel“ wechselt sie die Karte ohne Rückfrage. Vorgabe keine.'
         },
         texte: {
             fehlerKeineEntitaet: 'Bitte einen Saugroboter (vacuum.*) als Entität wählen.',
@@ -297,17 +323,68 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zubehoerNiedrig: '{n} unter 30 %',
             platzhalter: 'Diese Ansicht kommt mit einem späteren Ausbau der Karte (Modul „{modul}“).',
             gesperrt: 'Karte gesperrt – zum Entsperren halten',
-            entsperrt: 'Karte entsperrt – zum Sperren halten'
+            entsperrt: 'Karte entsperrt – zum Sperren halten',
+            lock_auto: 'Automatisch',
+            lock_only_touch: 'Nur am Touchgerät',
+            lock_never: 'Nie',
+            lock_always: 'Immer',
+            obj_title: 'Titel',
+            obj_state: 'Statuszeile',
+            obj_menu: 'Menü',
+            obj_status: 'Statuswerte',
+            obj_task_type: 'Aufgabenwahl',
+            obj_controls: 'Steuerleiste',
+            obj_action_buttons: 'Aktionsknöpfe',
+            obj_animations: 'Animationen',
+            obj_shortcuts: 'Shortcuts',
+            obj_cruising_history: 'Cruising-Verlauf',
+            obj_error_message: 'Fehlermeldungen',
+            obj_warning_message: 'Warnungen',
+            obj_info_message: 'Hinweise',
+            obj_low_water_message: 'Wassermangel',
+            obj_map_change_confirmation: 'Bestätigung beim Kartenwechsel',
+            obj_progress_bar: 'Fortschrittsbalken',
+            obj_dock_status_indicator: 'Stationsanzeige',
+            kartenWechselTitel: 'Karte wechseln',
+            kartenWechselFrage: 'Zur Karte „{karte}“ wechseln? Der Roboter arbeitet danach mit dieser Karte.',
+            wechseln: 'Wechseln',
+            abbrechen: 'Abbrechen'
         }
     },
     en: {
         name: 'Busch vacuum',
         description: 'Status and control of a robot vacuum with everything the device can do, even without a map.',
         labels: {
-            entity: 'Robot vacuum'
+            entity: 'Robot vacuum',
+            title: 'Title',
+            scripts: 'Scripts as shortcuts',
+            layout_section: 'Layout',
+            full_height: 'Full height',
+            aspect_ratio: 'Aspect ratio',
+            max_height_offset: 'Height offset',
+            left_handed: 'Left-handed',
+            operation_section: 'Operation',
+            locked: 'Map lock',
+            touch_lock: 'Hold time to unlock',
+            disable_haptic: 'Vibration off',
+            display_section: 'Display',
+            hidden_card_objects: 'Hidden parts'
         },
         helpers: {
-            entity: 'The robot vacuum this card shows; it finds the related entities through the device. Required, no default.'
+            entity: 'The robot vacuum this card shows; it finds the related entities through the device. Required, no default.',
+            title: 'Card heading instead of the device name. Default empty, which shows the device name.',
+            scripts: 'Scripts the shortcut menu offers ahead of the device shortcuts. Default none.',
+            layout_section: 'Height and shape of the card and on which side the action buttons sit.',
+            full_height: 'The card fills the visible height below the Home Assistant header. Default off.',
+            aspect_ratio: 'Fixed shape such as 16:9, 4/3 or 1.5; ignored with full height and in a panel. Default empty.',
+            max_height_offset: 'Pixels taken off the largest card height, for example for custom headers. Default 0.',
+            left_handed: 'Puts the action buttons on the left and the station status on the right. Default off.',
+            operation_section: 'Lock against moving the map by accident, and vibration on phones.',
+            locked: 'When the map starts locked; Automatic locks on touch devices outside a panel view. Default Automatic.',
+            touch_lock: 'How long you hold the lock to toggle it, 100 to 400 milliseconds. Default 200.',
+            disable_haptic: 'Turns off the short vibration on taps on phones. Default off.',
+            display_section: 'Which parts the card shows.',
+            hidden_card_objects: 'The card does not show the chosen parts; without “Map change confirmation” it changes maps without asking. Default none.'
         },
         texte: {
             fehlerKeineEntitaet: 'Please choose a robot vacuum (vacuum.*) as entity.',
@@ -364,14 +441,35 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zubehoerNiedrig: '{n} below 30 %',
             platzhalter: 'This view comes with a later update of the card (module “{modul}”).',
             gesperrt: 'Map locked – hold to unlock',
-            entsperrt: 'Map unlocked – hold to lock'
+            entsperrt: 'Map unlocked – hold to lock',
+            lock_auto: 'Automatic',
+            lock_only_touch: 'Touch devices only',
+            lock_never: 'Never',
+            lock_always: 'Always',
+            obj_title: 'Title',
+            obj_state: 'Status line',
+            obj_menu: 'Menu',
+            obj_status: 'Status values',
+            obj_task_type: 'Task type',
+            obj_controls: 'Control bar',
+            obj_action_buttons: 'Action buttons',
+            obj_animations: 'Animations',
+            obj_shortcuts: 'Shortcuts',
+            obj_cruising_history: 'Cruising history',
+            obj_error_message: 'Errors',
+            obj_warning_message: 'Warnings',
+            obj_info_message: 'Info messages',
+            obj_low_water_message: 'Low water',
+            obj_map_change_confirmation: 'Map change confirmation',
+            obj_progress_bar: 'Progress bar',
+            obj_dock_status_indicator: 'Station status',
+            kartenWechselTitel: 'Change map',
+            kartenWechselFrage: 'Change to the map “{karte}”? The robot then works with this map.',
+            wechseln: 'Change',
+            abbrechen: 'Cancel'
         }
     }
 };
-
-const SCHEMA_BUSCH_VACUUM_CARD = [
-    { name: 'entity', required: true, selector: { entity: { domain: 'vacuum' } } }
-];
 
 function textTable(hass) {
     return BuschUI.dictionary(TEXTE_BUSCH_VACUUM_CARD, hass, { legacy: true });
@@ -408,6 +506,40 @@ class ConfigError extends Error {
 const LOCK_MODES = ['auto', 'only_touch', 'never', 'always'];
 const TOUCH_LOCK_MS = { min: 100, max: 400, standard: 200 };
 
+/** Parts `hidden_card_objects` can hide (inventory CORE-18); shortcuts takes effect with its module. */
+const HIDDEN_OBJECTS = [
+    'title', 'state', 'menu', 'status', 'task_type', 'controls', 'action_buttons', 'animations', 'shortcuts',
+    'cruising_history', 'error_message', 'warning_message', 'info_message', 'low_water_message',
+    'map_change_confirmation', 'progress_bar', 'dock_status_indicator'
+];
+
+/** Every option the card reads; the editor translates the select options (localSchema). */
+const SCHEMA_BUSCH_VACUUM_CARD = [
+    { name: 'entity', required: true, selector: { entity: { domain: 'vacuum' } } },
+    { name: 'title', selector: { text: {} } },
+    { name: 'scripts', selector: { entity: { domain: 'script', multiple: true } } },
+    { name: 'layout_section', type: 'expandable', flatten: true, icon: 'mdi:page-layout-body', schema: [
+        { name: 'full_height', selector: { boolean: {} } },
+        { name: 'aspect_ratio', selector: { text: {} } },
+        { name: 'max_height_offset', selector: { number: { min: 0, max: 400, step: 1, mode: 'box', unit_of_measurement: 'px' } } },
+        { name: 'left_handed', selector: { boolean: {} } }
+    ] },
+    { name: 'operation_section', type: 'expandable', flatten: true, icon: 'mdi:lock-outline', schema: [
+        { name: 'locked', selector: { select: { mode: 'dropdown', options: LOCK_MODES } } },
+        { name: 'touch_lock', selector: { number: { min: TOUCH_LOCK_MS.min, max: TOUCH_LOCK_MS.max, step: 10, mode: 'slider', unit_of_measurement: 'ms' } } },
+        { name: 'disable_haptic', selector: { boolean: {} } }
+    ] },
+    { name: 'display_section', type: 'expandable', flatten: true, icon: 'mdi:eye-off-outline', schema: [
+        { name: 'hidden_card_objects', selector: { select: { multiple: true, mode: 'list', options: HIDDEN_OBJECTS } } }
+    ] }
+];
+
+/** What the editor shows for an unset option; equal values are never written. */
+const EDITOR_DEFAULTS = {
+    title: '', scripts: [], full_height: false, aspect_ratio: '', max_height_offset: 0, left_handed: false,
+    locked: 'auto', touch_lock: TOUCH_LOCK_MS.standard, disable_haptic: false, hidden_card_objects: []
+};
+
 const numberOf = (value) => (value === undefined || value === null || value === '' ? NaN : Number(value));
 
 /** `16:9`, `16/9` or a number → a CSS aspect-ratio value, else null. */
@@ -427,6 +559,9 @@ function normalizeConfig(raw) {
     const hold = numberOf(raw.touch_lock);
     return {
         entity,
+        title: typeof raw.title === 'string' ? raw.title.trim() : '',
+        scripts: Array.isArray(raw.scripts) ? raw.scripts.filter((id) => typeof id === 'string' && domainOf(id) === 'script') : [],
+        hidden_card_objects: Array.isArray(raw.hidden_card_objects) ? raw.hidden_card_objects.filter((name) => HIDDEN_OBJECTS.includes(name)) : [],
         left_handed: raw.left_handed === true,
         full_height: raw.full_height === true,
         aspect_ratio: aspectRatio(raw.aspect_ratio),
@@ -455,6 +590,41 @@ function startsLocked(mode, touch, panel) {
 }
 
 const HAPTIC_MS = 10;
+
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+/** HA's locale; `system` means the browser's. */
+function localeOf(hass) {
+    const locale = (hass && hass.locale) || {};
+    const browser = typeof navigator !== 'undefined' && navigator.language;
+    return { locale, language: locale.language || browser || 'en', browser: browser || 'en' };
+}
+
+/** CORE-16: a clock time in HA's 12/24 h setting (`language` and `system` follow the locale). */
+function clockText(hass, hours, minutes) {
+    const { locale, language, browser } = localeOf(hass);
+    const format = locale.time_format;
+    const tag = format === 'system' ? browser : language;
+    const hour12 = format === '12' ? true : format === '24' ? false : !!new Intl.DateTimeFormat(tag, { hour: 'numeric' }).resolvedOptions().hour12;
+    // As HA's own formatTime: 24 h with two digits (09:30), 12 h without (9:30 AM).
+    return new Intl.DateTimeFormat(tag, { hour: hour12 ? 'numeric' : '2-digit', minute: '2-digit', hourCycle: hour12 ? 'h12' : 'h23' })
+        .format(new Date(2000, 0, 1, hours, minutes));
+}
+
+/** CORE-16: first day of the week as in Date#getDay (0 = Sunday), from HA, else the locale. */
+function firstWeekday(hass) {
+    const { locale, language, browser } = localeOf(hass);
+    const day = WEEKDAYS.indexOf(locale.first_weekday);
+    if (day >= 0) return day;
+    try {
+        const info = new Intl.Locale(locale.first_weekday === 'system' ? browser : language);
+        const week = typeof info.getWeekInfo === 'function' ? info.getWeekInfo() : info.weekInfo;
+        if (week && week.firstDay) return week.firstDay % 7;
+    } catch (e) {
+        // no week data in this browser: Monday, as in most of Europe
+    }
+    return 1;
+}
 
 // ---------------------------------------------------------------------------
 // Device model (CORE-01/02)
@@ -764,6 +934,10 @@ const CARD_STYLES = BuschUI.cardStyles + `
     display: block;
     container-type: inline-size;
 }
+/* hidden_card_objects: a hidden part never shows, whatever display its class sets. */
+[hidden] {
+    display: none !important;
+}
 ha-card {
     overflow-x: hidden;
     overflow-y: auto;
@@ -779,7 +953,7 @@ ha-card {
     display: flex;
     align-items: flex-start;
     gap: var(--ha-space-3, 12px);
-    color: var(--error-color, #db4437);
+    color: var(--bvc-error-color, var(--error-color, #db4437));
     font-size: var(--ha-font-size-s, 14px);
     overflow-wrap: anywhere;
 }
@@ -864,14 +1038,14 @@ ha-card {
     font-size: var(--ha-font-size-s, 12px);
 }
 .metric[data-battery=charging] ha-icon {
-    color: var(--success-color, #43a047);
+    color: var(--bvc-success-color, var(--success-color, #43a047));
 }
 .metric[data-battery=paused] ha-icon {
-    color: var(--warning-color, #ffa600);
+    color: var(--bvc-warning-color, var(--warning-color, #ffa600));
 }
 .metric[data-battery=low] ha-icon,
 .metric[data-battery=low] .metric-value {
-    color: var(--error-color, #db4437);
+    color: var(--bvc-error-color, var(--error-color, #db4437));
 }
 .controls {
     display: flex;
@@ -938,12 +1112,12 @@ ha-card {
     min-width: 0;
 }
 .dock[data-dock=warning] {
-    border-color: var(--warning-color, #ffa600);
-    color: var(--warning-color, #ffa600);
+    border-color: var(--bvc-warning-color, var(--warning-color, #ffa600));
+    color: var(--bvc-warning-color, var(--warning-color, #ffa600));
 }
 .dock[data-dock=error] {
-    border-color: var(--error-color, #db4437);
-    color: var(--error-color, #db4437);
+    border-color: var(--bvc-error-color, var(--error-color, #db4437));
+    color: var(--bvc-error-color, var(--error-color, #db4437));
 }
 .progress {
     display: block;
@@ -953,16 +1127,16 @@ ha-card {
     border: 0;
     appearance: none;
     background: var(--divider-color, #e0e0e0);
-    accent-color: var(--primary-color, #03a9f4);
+    accent-color: var(--bvc-accent-color, var(--primary-color, #03a9f4));
 }
 .progress::-webkit-progress-bar {
     background: var(--divider-color, #e0e0e0);
 }
 .progress::-webkit-progress-value {
-    background: var(--primary-color, #03a9f4);
+    background: var(--bvc-accent-color, var(--primary-color, #03a9f4));
 }
 .progress::-moz-progress-bar {
-    background: var(--primary-color, #03a9f4);
+    background: var(--bvc-accent-color, var(--primary-color, #03a9f4));
 }
 .messages {
     display: flex;
@@ -978,27 +1152,27 @@ ha-card {
     align-items: center;
     gap: var(--ha-space-2, 8px);
     padding: var(--ha-space-1, 4px) var(--ha-space-1, 4px) var(--ha-space-1, 4px) var(--ha-space-3, 12px);
-    border-inline-start: 4px solid var(--info-color, #039be5);
+    border-inline-start: 4px solid var(--bvc-info-color, var(--info-color, #039be5));
     border-radius: var(--ha-card-border-radius, 12px);
     background: var(--secondary-background-color, #eeeeee);
     min-width: 0;
 }
 .message[data-kind=error] {
-    border-color: var(--error-color, #db4437);
+    border-color: var(--bvc-error-color, var(--error-color, #db4437));
 }
 .message[data-kind=warning],
 .message[data-kind=low_water] {
-    border-color: var(--warning-color, #ffa600);
+    border-color: var(--bvc-warning-color, var(--warning-color, #ffa600));
 }
 .message > ha-icon {
     flex: none;
 }
 .message[data-kind=error] > ha-icon {
-    color: var(--error-color, #db4437);
+    color: var(--bvc-error-color, var(--error-color, #db4437));
 }
 .message[data-kind=warning] > ha-icon,
 .message[data-kind=low_water] > ha-icon {
-    color: var(--warning-color, #ffa600);
+    color: var(--bvc-warning-color, var(--warning-color, #ffa600));
 }
 .message-text {
     flex: 1;
@@ -1034,7 +1208,7 @@ ha-card {
     --mdc-icon-size: 20px;
 }
 .task[aria-checked=true] {
-    background: var(--primary-color, #03a9f4);
+    background: var(--bvc-accent-color, var(--primary-color, #03a9f4));
     color: var(--text-primary-color, #ffffff);
 }
 .task-hint,
@@ -1102,6 +1276,31 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 @media (prefers-reduced-motion: reduce) {
     .scrim, .sheet { animation: none; }
 }
+/* hidden_card_objects: animations */
+:host([data-still]) .scrim,
+:host([data-still]) .sheet {
+    animation: none;
+}
+/* Confirmations are narrow (hacs/docs/ui-regeln.md: 320 px), full screen on phones like any dialog. */
+.sheet[data-kind=confirm] {
+    width: min(320px, 100%);
+}
+@media (max-width: 449.98px), (max-height: 499.98px) {
+    .sheet[data-kind=confirm] { width: 100%; }
+}
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--ha-space-2, 8px);
+    margin-top: var(--ha-space-4, 16px);
+}
+.actions .busch-ui-action {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
 .head {
     display: flex;
     align-items: center;
@@ -1153,7 +1352,7 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     flex: none;
     padding: 0 var(--ha-space-2, 8px);
     border-radius: 999px;
-    background: var(--warning-color, #ffa600);
+    background: var(--bvc-warning-color, var(--warning-color, #ffa600));
     color: var(--text-primary-color, #ffffff);
     font-size: var(--ha-font-size-s, 12px);
 }
@@ -1433,6 +1632,15 @@ class BuschVacuumCard extends HTMLElement {
         if (this._lock) this._renderLock();
     }
 
+    /** hidden_card_objects (CORE-18). */
+    _hidden(name) {
+        return this._opts.hidden_card_objects.includes(name);
+    }
+
+    _menuEntries(model) {
+        return menuFor(model).filter((entry) => !(entry.name === 'cruising_history' && this._hidden('cruising_history')));
+    }
+
     _haptic() {
         if (!this._opts || this._opts.disable_haptic) return;
         try {
@@ -1546,7 +1754,7 @@ class BuschVacuumCard extends HTMLElement {
             head.appendChild(this._title);
             head.appendChild(this._stateLine);
             // Built once and only hidden: the dialog hands focus back to this very node.
-            this._menuButton = BuschUI.action({ label: 'menu', icon: 'mdi:dots-vertical', variant: 'icon-only', onClick: () => this._openDialog(this._menuView()) });
+            this._menuButton = BuschUI.action({ label: translate(null, 'menu'), icon: 'mdi:dots-vertical', variant: 'icon-only', onClick: () => this._openDialog(this._menuView()) });
             this._menuButton.classList.add('menu-button');
             this._menuButton.setAttribute('aria-haspopup', 'dialog');
             const top = document.createElement('div');
@@ -1592,10 +1800,14 @@ class BuschVacuumCard extends HTMLElement {
         this._seen = watchSnapshot(hass, [this._opts.entity, ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state', 'sensor.error', 'sensor.cleaning_progress'].map((k) => model.entity(k)).filter(Boolean)]);
         const shown = this._pending ? this._pending.state : real ? real.state : 'unavailable';
 
-        this._title.textContent = real ? real.attributes.friendly_name || this._opts.entity : this._opts.entity;
+        this._title.textContent = this._opts.title || (real && real.attributes.friendly_name) || this._opts.entity;
+        this._title.hidden = this._hidden('title');
+        this._stateLine.hidden = this._hidden('state');
+        this._stats.hidden = this._hidden('status');
+        this._controls.hidden = this._hidden('controls');
         const menuLabel = translate(hass, 'menu');
         BuschUI.action({ node: this._menuButton, label: menuLabel, icon: 'mdi:dots-vertical', variant: 'icon-only', onClick: () => this._openDialog(this._menuView()) });
-        this._menuButton.hidden = menuFor(model).length === 0;
+        this._menuButton.hidden = this._hidden('menu') || this._menuEntries(model).length === 0;
         this._renderLock();
         this._stateLine.textContent = real ? formatState(hass, real, shown) : shown;
 
@@ -1613,12 +1825,12 @@ class BuschVacuumCard extends HTMLElement {
         this._stats.replaceChildren(...stats);
 
         const active = taskActive(model, shown);
-        const percent = active && model.can('cleaning_progress') ? progressOf(hass, model) : null;
+        const percent = active && model.can('cleaning_progress') && !this._hidden('progress_bar') ? progressOf(hass, model) : null;
         this._progress.replaceChildren(...(percent === null ? [] : [this._progressBar(percent)]));
         this._renderMessages(hass, model);
         const needsMap = this._renderTasks(hass, model, active);
 
-        const buttons = controlsFor(model, shown).map((name) => {
+        const buttons = (this._hidden('action_buttons') ? [] : controlsFor(model, shown)).map((name) => {
             const label = translate(hass, name);
             // shortcut: map task types cannot start before map-view; Start waits with the hint shown.
             const blocked = name === 'start' && needsMap;
@@ -1628,13 +1840,14 @@ class BuschVacuumCard extends HTMLElement {
             button.setAttribute('data-action', name);
             return button;
         });
-        if (model.can('dock')) buttons.push(this._dock(hass, model));
+        if (model.can('dock') && !this._hidden('dock_status_indicator')) buttons.push(this._dock(hass, model));
         this._controls.replaceChildren(...buttons);
     }
 
     _openDialog(view) {
         if (this._dialog && this._dialog.isConnected) return;
         const dialog = document.createElement(DIALOG_TAG);
+        dialog.toggleAttribute('data-still', this._hidden('animations'));
         dialog.hass = this._hass;
         dialog.show(view);
         dialog.addEventListener('dialog-closed', () => { if (this._dialog === dialog) this._dialog = null; });
@@ -1652,7 +1865,7 @@ class BuschVacuumCard extends HTMLElement {
                 const model = this._model();
                 const list = document.createElement('div');
                 list.className = 'menu';
-                for (const entry of menuFor(model)) {
+                for (const entry of this._menuEntries(model)) {
                     const text = translate(hass, entry.text);
                     const low = entry.name === 'consumables' ? Object.values(model.consumables()).filter((v) => v < 30).length : 0;
                     const lowText = low ? translate(hass, 'zubehoerNiedrig', { n: low }) : '';
@@ -1692,6 +1905,36 @@ class BuschVacuumCard extends HTMLElement {
         };
     }
 
+    /**
+     * CORE-20: a map change asks first, unless `map_change_confirmation` is
+     * hidden. map-view calls this with the map's name and the change itself.
+     */
+    _confirmMapChange(name, change) {
+        if (this._hidden('map_change_confirmation')) {
+            change();
+            return;
+        }
+        const view = {
+            title: translate(this._hass, 'kartenWechselTitel'),
+            kind: 'confirm',
+            render: (body, hass, dialog) => {
+                const question = document.createElement('p');
+                question.className = 'placeholder';
+                question.textContent = translate(hass, 'kartenWechselFrage', { karte: name });
+                const actions = document.createElement('div');
+                actions.className = 'actions';
+                const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog.close() });
+                cancel.setAttribute('data-action', 'cancel');
+                const confirm = BuschUI.action({ label: translate(hass, 'wechseln'), text: translate(hass, 'wechseln'), variant: 'primary', onClick: () => { dialog.close(); change(); } });
+                confirm.setAttribute('data-action', 'confirm');
+                actions.append(cancel, confirm);
+                body.append(question, actions);
+            }
+        };
+        if (this._dialog && this._dialog.isConnected) this._dialog.show(view);
+        else this._openDialog(view);
+    }
+
     _progressBar(percent) {
         const bar = document.createElement('progress');
         bar.className = 'progress';
@@ -1703,6 +1946,10 @@ class BuschVacuumCard extends HTMLElement {
 
     /** Task type choice (CORE-06). Returns true when the chosen type still needs the map. */
     _renderTasks(hass, model, active) {
+        if (this._hidden('task_type')) {
+            this._taskArea.replaceChildren();
+            return false;
+        }
         const types = tasksFor(model);
         const nodes = [];
         const chosen = active ? runningTask(model) : this._task;
@@ -1760,7 +2007,7 @@ class BuschVacuumCard extends HTMLElement {
 
     /** Messages (CORE-10): level as word and colour (R17); wiped ones stay away until they change. */
     _renderMessages(hass, model) {
-        const list = messagesFor(hass, model);
+        const list = messagesFor(hass, model).filter((m) => !this._hidden(m.kind + '_message'));
         for (const [kind, text] of this._dismissed) if (!list.some((m) => m.kind === kind && m.text === text)) this._dismissed.delete(kind);
         const nodes = list.filter((m) => this._dismissed.get(m.kind) !== m.text).map((m) => {
             const look = MESSAGE_LOOK[m.kind];
@@ -1848,6 +2095,18 @@ class BuschVacuumCard extends HTMLElement {
 
 const EDITOR_STYLES = BuschUI.editorStyles;
 
+/** The schema with the select options named in the user's language. */
+function localSchema(hass, schema = SCHEMA_BUSCH_VACUUM_CARD) {
+    return schema.map((field) => {
+        if (field.schema) return Object.assign({}, field, { schema: localSchema(hass, field.schema) });
+        const select = field.selector && field.selector.select;
+        if (!select) return field;
+        const prefix = field.name === 'locked' ? 'lock_' : 'obj_';
+        const options = select.options.map((value) => ({ value, label: translate(hass, prefix + value) }));
+        return Object.assign({}, field, { selector: { select: Object.assign({}, select, { options }) } });
+    });
+}
+
 class BuschVacuumCardEditor extends BuschUI.EditorBase {
     constructor() {
         super();
@@ -1864,9 +2123,16 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
     }
 
     set hass(hass) {
+        const language = BuschUI.language(hass, { legacy: true });
+        const relabel = language !== this._language;
         this._hass = hass;
-        if (this._form) this._form.hass = hass;
-        else this._render();
+        this._language = language;
+        if (!this._form) this._render();
+        else {
+            this._form.hass = hass;
+            // Option names are part of the schema; a new hass each state change must not rebuild it.
+            if (relabel) this._form.schema = localSchema(hass);
+        }
     }
 
     get hass() {
@@ -1889,6 +2155,10 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
             form.addEventListener('value-changed', (event) => {
                 event.stopPropagation();
                 const next = BuschUI.updateConfig(this._config, event.detail.value || {});
+                // Only what differs from the defaults: the YAML stays as short as a hand-written one.
+                for (const [key, standard] of Object.entries(EDITOR_DEFAULTS)) {
+                    if (next[key] === undefined || next[key] === null || BuschUI.configsEqual(next[key], standard)) delete next[key];
+                }
                 next.type = 'custom:' + CARD_TAG;
                 this._publishConfig(next);
             });
@@ -1896,8 +2166,8 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
             this._form = form;
         }
         this._form.hass = this._hass;
-        this._form.schema = SCHEMA_BUSCH_VACUUM_CARD;
-        this._form.data = BuschUI.cloneConfig(this._config);
+        this._form.schema = localSchema(this._hass);
+        this._form.data = Object.assign(BuschUI.cloneConfig(EDITOR_DEFAULTS), BuschUI.cloneConfig(this._config));
     }
 }
 
@@ -1913,6 +2183,8 @@ BuschVacuumCard.__internals = {
     VacuumModel,
     DIALOG_STYLES,
     CARD_STYLES,
+    clockText,
+    firstWeekday,
     version: CARD_VERSION
 };
 
