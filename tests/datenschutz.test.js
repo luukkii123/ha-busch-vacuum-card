@@ -49,6 +49,48 @@ for (const datei of ERWARTET) {
   });
 }
 
+// Grundriss: die echten Raumrechtecke (x0,y0,x1,y1) stehen nur privat; hier
+// liegen ihre scrypt-Werte — langsam, damit sich kleine Zahlen nicht durchprobieren lassen.
+const ECHTE_RAEUME = new Set([
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+]);
+const raumWert = (r) => crypto.scryptSync(`${r.x0},${r.y0},${r.x1},${r.y1}`, 'busch-vacuum-raeume', 32).toString('hex');
+
+/** Räume der Kartenkameras, deren Rechteck dem echten Grundriss entspricht. */
+function echteRaeume(fixture, werte = ECHTE_RAEUME) {
+  const funde = [];
+  for (const [id, s] of Object.entries(fixture.states)) {
+    if (!id.startsWith('camera.')) continue;
+    for (const [nr, r] of Object.entries(s.attributes.rooms || {})) if (werte.has(raumWert(r))) funde.push(`${id} Raum ${nr}`);
+  }
+  return funde;
+}
+
+for (const datei of ERWARTET) {
+  test(`${datei}: kein echter Grundriss (Raumrechtecke)`, () => {
+    assert.deepEqual(echteRaeume(JSON.parse(fs.readFileSync(path.join(ORDNER, datei), 'utf8'))), []);
+  });
+}
+
+test('Gegenprobe: die Grundriss-Prüfung schlägt an', () => {
+  const rechteck = { x0: -100, y0: -200, x1: 300, y1: 400 };
+  assert.deepEqual(echteRaeume({ states: { 'camera.k': { attributes: { rooms: { 1: rechteck } } } } }, new Set([raumWert(rechteck)])), ['camera.k Raum 1']);
+  assert.deepEqual(echteRaeume({ states: { 'camera.k': { attributes: { rooms: { 1: { ...rechteck, x0: -101 } } } } } }, new Set([raumWert(rechteck)])), []);
+});
+
 test('Gegenprobe: die Prüfung schlägt an', () => {
   assert.equal(privateFunde('ip 10.0.0.1').length, 1);
   assert.equal(privateFunde('aa:bb:cc:dd:ee:ff').length, 1);
