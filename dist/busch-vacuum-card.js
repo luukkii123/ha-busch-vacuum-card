@@ -295,7 +295,9 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             entryMaps: 'Kartenverwaltung',
             entrySettings: 'Geräteeinstellungen',
             zubehoerNiedrig: '{n} unter 30 %',
-            platzhalter: 'Diese Ansicht kommt mit einem späteren Ausbau der Karte (Modul „{modul}“).'
+            platzhalter: 'Diese Ansicht kommt mit einem späteren Ausbau der Karte (Modul „{modul}“).',
+            gesperrt: 'Karte gesperrt – zum Entsperren halten',
+            entsperrt: 'Karte entsperrt – zum Sperren halten'
         }
     },
     en: {
@@ -360,7 +362,9 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             entryMaps: 'Map management',
             entrySettings: 'Device settings',
             zubehoerNiedrig: '{n} below 30 %',
-            platzhalter: 'This view comes with a later update of the card (module “{modul}”).'
+            platzhalter: 'This view comes with a later update of the card (module “{modul}”).',
+            gesperrt: 'Map locked – hold to unlock',
+            entsperrt: 'Map unlocked – hold to lock'
         }
     }
 };
@@ -401,12 +405,56 @@ class ConfigError extends Error {
 // Configuration
 // ---------------------------------------------------------------------------
 
+const LOCK_MODES = ['auto', 'only_touch', 'never', 'always'];
+const TOUCH_LOCK_MS = { min: 100, max: 400, standard: 200 };
+
+const numberOf = (value) => (value === undefined || value === null || value === '' ? NaN : Number(value));
+
+/** `16:9`, `16/9` or a number → a CSS aspect-ratio value, else null. */
+function aspectRatio(value) {
+    if (typeof value === 'number') return value > 0 ? String(value) : null;
+    const match = /^\s*(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)\s*$/.exec(String(value || ''));
+    if (match) return Number(match[1]) > 0 && Number(match[2]) > 0 ? match[1] + ' / ' + match[2] : null;
+    const single = numberOf(value);
+    return Number.isFinite(single) && single > 0 ? String(single) : null;
+}
+
 function normalizeConfig(raw) {
     const entity = raw && typeof raw.entity === 'string' ? raw.entity.trim() : '';
     if (!entity) throw new ConfigError('fehlerKeineEntitaet');
     if (domainOf(entity) !== 'vacuum') throw new ConfigError('fehlerFalscheDomain', { entity });
-    return { entity };
+    const offset = numberOf(raw.max_height_offset);
+    const hold = numberOf(raw.touch_lock);
+    return {
+        entity,
+        left_handed: raw.left_handed === true,
+        full_height: raw.full_height === true,
+        aspect_ratio: aspectRatio(raw.aspect_ratio),
+        max_height_offset: Number.isFinite(offset) ? offset : 0,
+        locked: LOCK_MODES.includes(raw.locked) ? raw.locked : 'auto',
+        touch_lock: Number.isFinite(hold) ? Math.min(TOUCH_LOCK_MS.max, Math.max(TOUCH_LOCK_MS.min, hold)) : TOUCH_LOCK_MS.standard,
+        disable_haptic: raw.disable_haptic === true
+    };
 }
+
+function touchDevice() {
+    try {
+        if (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches) return true;
+    } catch (e) {
+        // no media queries: fall back to the touch point count
+    }
+    return typeof navigator !== 'undefined' && Number(navigator.maxTouchPoints) > 0;
+}
+
+/** CORE-14: whether the map starts locked. auto = touch outside a panel view. */
+function startsLocked(mode, touch, panel) {
+    if (mode === 'always') return true;
+    if (mode === 'only_touch') return touch;
+    if (mode === 'auto') return touch && !panel;
+    return false;
+}
+
+const HAPTIC_MS = 10;
 
 // ---------------------------------------------------------------------------
 // Device model (CORE-01/02)
@@ -717,7 +765,10 @@ const CARD_STYLES = BuschUI.cardStyles + `
     container-type: inline-size;
 }
 ha-card {
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* CORE-13: a normal card never grows past the visible view. */
+    max-height: calc(100dvh - var(--bvc-header-height, 56px) - var(--bvc-height-offset, 0px));
     padding: var(--ha-space-4, 16px);
     box-sizing: border-box;
     display: flex;
@@ -731,6 +782,22 @@ ha-card {
     color: var(--error-color, #db4437);
     font-size: var(--ha-font-size-s, 14px);
     overflow-wrap: anywhere;
+}
+:host([data-layout=panel]) {
+    height: 100%;
+}
+:host([data-layout=panel]) ha-card {
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+}
+:host([data-layout=full]) ha-card {
+    height: calc(100dvh - var(--bvc-header-height, 56px) - var(--bvc-height-offset, 0px));
+}
+:host([data-aspect]) ha-card {
+    aspect-ratio: var(--bvc-aspect-ratio);
 }
 .top {
     display: flex;
@@ -827,11 +894,32 @@ ha-card {
     white-space: nowrap;
     min-width: 0;
 }
+.controls {
+    justify-content: flex-end;
+}
+/* CORE-08: action buttons right, the station status left; left-handed mirrors it. */
+.dock {
+    order: -1;
+    margin-inline-end: auto;
+}
+:host([data-hand=left]) .controls {
+    justify-content: flex-start;
+}
+:host([data-hand=left]) .dock {
+    order: 1;
+    margin-inline-end: 0;
+    margin-inline-start: auto;
+}
+.lock[hidden] {
+    display: none;
+}
+.lock {
+    flex: none;
+}
 .dock {
     display: inline-flex;
     align-items: center;
     gap: var(--ha-space-1, 4px);
-    margin-inline-start: auto;
     min-height: 44px;
     min-width: 0;
     padding: 0 var(--ha-space-3, 12px);
@@ -1304,6 +1392,85 @@ class BuschVacuumCard extends HTMLElement {
         this._task = 'all'; // chosen task type (CORE-06)
         this._dismissed = new Map(); // message kind → text wiped away, until the message changes (CORE-10)
         this._dialog = null;
+        this._panel = false;
+        this._locked = null; // null: not decided yet; the user's choice survives updates
+        this._lockTimer = null;
+        this._lockHeld = false;
+    }
+
+    /** Set by Home Assistant in a panel view. */
+    set isPanel(value) {
+        this._panel = !!value;
+        this._applyLayout(true);
+    }
+
+    set layout(value) {
+        this._panel = value === 'panel';
+        this._applyLayout(true);
+    }
+
+    /** CORE-13/08/14: layout attributes on the host; the lock restarts on a new layout or config. */
+    _applyLayout(reset) {
+        if (!this._opts) return;
+        const opts = this._opts;
+        this.setAttribute('data-layout', this._panel ? 'panel' : opts.full_height ? 'full' : 'card');
+        this.setAttribute('data-hand', opts.left_handed ? 'left' : 'right');
+        // HA's own header height; set here because ui-regeln-pruefen.py does not list --header-height yet.
+        this.style.setProperty('--bvc-header-height', 'var(--header-height, 56px)');
+        this.style.setProperty('--bvc-height-offset', opts.max_height_offset + 'px');
+        if (opts.aspect_ratio && !opts.full_height && !this._panel) {
+            this.setAttribute('data-aspect', '');
+            this.style.setProperty('--bvc-aspect-ratio', opts.aspect_ratio);
+        } else {
+            this.removeAttribute('data-aspect');
+            this.style.removeProperty('--bvc-aspect-ratio');
+        }
+        if (reset || this._locked === null) {
+            this._lockShown = startsLocked(opts.locked, touchDevice(), this._panel);
+            this._locked = this._lockShown;
+        }
+        this.setAttribute('data-locked', String(this._locked));
+        if (this._lock) this._renderLock();
+    }
+
+    _haptic() {
+        if (!this._opts || this._opts.disable_haptic) return;
+        try {
+            if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(HAPTIC_MS);
+        } catch (e) {
+            // vibration refused (no user gesture, policy): stay silent
+        }
+    }
+
+    _toggleLock() {
+        this._locked = !this._locked;
+        this._lockShown = true;
+        this._haptic();
+        this.setAttribute('data-locked', String(this._locked));
+        this._renderLock();
+    }
+
+    _renderLock() {
+        const model = this._hass ? this._model() : null;
+        const label = translate(this._hass, this._locked ? 'gesperrt' : 'entsperrt');
+        BuschUI.action({ node: this._lock, label, icon: this._locked ? 'mdi:lock' : 'mdi:lock-open-variant', variant: 'icon-only', onClick: (event) => {
+            // Keyboard (detail 0) toggles at once; a pointer must hold (touch_lock).
+            if (event && event.detail === 0) this._toggleLock();
+        } });
+        this._lock.hidden = !(model && model.can('map') && this._lockShown);
+    }
+
+    _buildLock() {
+        const lock = document.createElement('button');
+        lock.className = 'lock';
+        const cancel = () => { clearTimeout(this._lockTimer); this._lockTimer = null; };
+        lock.addEventListener('pointerdown', () => {
+            cancel();
+            this._lockTimer = setTimeout(() => { this._lockTimer = null; this._toggleLock(); }, this._opts.touch_lock);
+        });
+        for (const type of ['pointerup', 'pointercancel', 'pointerleave']) lock.addEventListener(type, cancel);
+        this._lock = lock;
+        return lock;
     }
 
     static getConfigElement() {
@@ -1324,7 +1491,9 @@ class BuschVacuumCard extends HTMLElement {
         this._errorVars = validated.ok ? null : validated.error.textVars;
         this._related = null;
         this._endPending();
+        this._locked = null;
         this._build();
+        this._applyLayout(false);
     }
 
     set hass(hass) {
@@ -1382,7 +1551,7 @@ class BuschVacuumCard extends HTMLElement {
             this._menuButton.setAttribute('aria-haspopup', 'dialog');
             const top = document.createElement('div');
             top.className = 'top';
-            top.append(head, this._menuButton);
+            top.append(head, this._buildLock(), this._menuButton);
             this._stats = document.createElement('div');
             this._stats.className = 'stats';
             this._controls = document.createElement('div');
@@ -1427,6 +1596,7 @@ class BuschVacuumCard extends HTMLElement {
         const menuLabel = translate(hass, 'menu');
         BuschUI.action({ node: this._menuButton, label: menuLabel, icon: 'mdi:dots-vertical', variant: 'icon-only', onClick: () => this._openDialog(this._menuView()) });
         this._menuButton.hidden = menuFor(model).length === 0;
+        this._renderLock();
         this._stateLine.textContent = real ? formatState(hass, real, shown) : shown;
 
         const stats = [];
@@ -1544,7 +1714,7 @@ class BuschVacuumCard extends HTMLElement {
             const shownChoice = types.some((t) => t.name === chosen) ? chosen : 'all';
             types.forEach((type, index) => {
                 const label = translate(hass, type.text);
-                const button = BuschUI.action({ label, text: label, icon: type.icon, disabled: active, onClick: () => { this._task = type.name; this._update(); } });
+                const button = BuschUI.action({ label, text: label, icon: type.icon, disabled: active, onClick: () => { this._task = type.name; this._haptic(); this._update(); } });
                 button.classList.add('task');
                 button.setAttribute('role', 'radio');
                 button.setAttribute('data-task', type.name);
@@ -1653,6 +1823,7 @@ class BuschVacuumCard extends HTMLElement {
 
     _call(name, real) {
         const control = CONTROLS[name];
+        this._haptic();
         this._endPending();
         const pending = { state: control.target, from: real ? real.state : null, timer: null };
         pending.timer = setTimeout(() => {
@@ -1741,6 +1912,7 @@ BuschVacuumCard.__internals = {
     findRelated,
     VacuumModel,
     DIALOG_STYLES,
+    CARD_STYLES,
     version: CARD_VERSION
 };
 
