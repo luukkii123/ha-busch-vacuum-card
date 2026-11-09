@@ -148,6 +148,8 @@ function einfacherSauger(zustand = 'docked', attribute = {}) {
   return { entity_id: 'vacuum.robo', state: zustand, last_updated: String(Math.random()), attributes: Object.assign({ friendly_name: 'Robo' }, attribute) };
 }
 
+const ZUSTAND = { docked: 'Angedockt', cleaning: 'Reinigt', paused: 'Pausiert', returning: 'Kehrt zurück', idle: 'Untätig', error: 'Fehler', unavailable: 'Nicht verfügbar' };
+
 /**
  * `states` (und optional `entities`/`services`) wie in HA. `rufe` sammelt jeden
  * callService-Aufruf; `antwort` bestimmt, was callService zurückgibt (Vorgabe:
@@ -160,6 +162,8 @@ function neuesHaus({ states, entities = {}, services = {}, sprache = 'de' } = {}
   haus.hass = () => ({
     states: haus.states, entities: haus.entities, services: haus.services,
     language: haus.sprache, locale: { language: haus.sprache }, themes: {}, config: { unit_system: { length: 'km' } },
+    // Wie HAs Formatierer: Zustände übersetzt, Zahl mit der Einheit der Entität.
+    formatEntityState: (s, zustand = s.state) => (ZUSTAND[zustand] || zustand) + (s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : ''),
     callService: (domain, service, data) => { haus.rufe.push({ domain, service, data }); return haus.antwort(domain, service, data); },
   });
   haus.states = states;

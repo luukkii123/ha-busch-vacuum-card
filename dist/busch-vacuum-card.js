@@ -243,7 +243,26 @@ const TEXTE_BUSCH_VACUUM_CARD = {
         texte: {
             fehlerKeineEntitaet: 'Bitte einen Saugroboter (vacuum.*) als Entität wählen.',
             fehlerFalscheDomain: '„{entity}“ ist kein Saugroboter (vacuum.*).',
-            keinFormular: 'Der Editor von Home Assistant ist noch nicht geladen.'
+            keinFormular: 'Der Editor von Home Assistant ist noch nicht geladen.',
+            flaeche: 'Fläche',
+            zeit: 'Zeit',
+            akku: 'Akku',
+            akkuLaedt: 'lädt',
+            akkuNiedrig: 'niedrig',
+            akkuPause: 'lädt zum Fortsetzen',
+            start: 'Reinigen',
+            pause: 'Pause',
+            resume: 'Fortsetzen',
+            stop: 'Stopp',
+            return: 'Zurück',
+            station: 'Station',
+            frischwasserFehlt: 'Frischwassertank fehlt',
+            frischwasserNiedrig: 'Frischwasser niedrig',
+            schmutzwasser: 'Schmutzwassertank fehlt oder voll',
+            staubbeutelFehlt: 'Staubbeutel fehlt',
+            staubbeutelPruefen: 'Staubbeutel prüfen',
+            reinigungsmittelNiedrig: 'Reinigungsmittel niedrig',
+            ablaufFehler: 'Entwässerung fehlgeschlagen'
         }
     },
     en: {
@@ -258,7 +277,26 @@ const TEXTE_BUSCH_VACUUM_CARD = {
         texte: {
             fehlerKeineEntitaet: 'Please choose a robot vacuum (vacuum.*) as entity.',
             fehlerFalscheDomain: '“{entity}” is not a robot vacuum (vacuum.*).',
-            keinFormular: 'The Home Assistant editor has not loaded yet.'
+            keinFormular: 'The Home Assistant editor has not loaded yet.',
+            flaeche: 'Area',
+            zeit: 'Time',
+            akku: 'Battery',
+            akkuLaedt: 'charging',
+            akkuNiedrig: 'low',
+            akkuPause: 'charging to resume',
+            start: 'Clean',
+            pause: 'Pause',
+            resume: 'Resume',
+            stop: 'Stop',
+            return: 'Return',
+            station: 'Station',
+            frischwasserFehlt: 'Clean water tank missing',
+            frischwasserNiedrig: 'Clean water low',
+            schmutzwasser: 'Dirty water tank missing or full',
+            staubbeutelFehlt: 'Dust bag missing',
+            staubbeutelPruefen: 'Check dust bag',
+            reinigungsmittelNiedrig: 'Detergent low',
+            ablaufFehler: 'Draining failed'
         }
     }
 };
@@ -414,6 +452,110 @@ class VacuumModel {
 // Card
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Status and control (CORE-03/04/07/11)
+// ---------------------------------------------------------------------------
+
+/** How long a tapped target state is shown before the device has to confirm it. */
+const OPTIMISTIC_HOLD_MS = 5000;
+
+/** Control buttons: the can() name each needs, its vacuum service and the state it leads to. */
+const CONTROLS = {
+    start: { feature: 'start', service: 'start', target: 'cleaning', icon: 'mdi:play', variant: 'primary' },
+    resume: { feature: 'start', service: 'start', target: 'cleaning', icon: 'mdi:play', variant: 'primary' },
+    pause: { feature: 'pause', service: 'pause', target: 'paused', icon: 'mdi:pause' },
+    stop: { feature: 'stop', service: 'stop', target: 'idle', icon: 'mdi:stop' },
+    return: { feature: 'return_home', service: 'return_to_base', target: 'returning', icon: 'mdi:home-import-outline' }
+};
+
+const CONTROLS_BY_STATE = {
+    docked: ['start'],
+    idle: ['start', 'return'],
+    cleaning: ['pause', 'stop', 'return'],
+    paused: ['resume', 'stop', 'return'],
+    returning: ['pause', 'stop'],
+    error: ['start', 'return']
+};
+
+function controlsFor(model, state) {
+    let names = CONTROLS_BY_STATE[state] || [];
+    // Stop also ends what the dock is doing.
+    if (state === 'docked' && (model.attr('washing') || model.attr('drying'))) names = names.concat('stop');
+    return names.filter((name) => model.can(CONTROLS[name].feature));
+}
+
+const UNUSABLE = ['unavailable', 'unknown'];
+
+/** Home Assistant's own text for a state: translated, with the entity's unit. */
+function formatState(hass, stateObj, state) {
+    if (hass && typeof hass.formatEntityState === 'function') return hass.formatEntityState(stateObj, state);
+    const unit = stateObj.attributes.unit_of_measurement;
+    return (state || stateObj.state) + (unit ? ' ' + unit : '');
+}
+
+/** A value from the device's sensor (HA units), else from the vacuum attribute. */
+function statText(hass, model, key, attribute, unit) {
+    const id = model.entity(key);
+    const sensor = id && hass.states[id];
+    if (sensor && !UNUSABLE.includes(sensor.state)) return formatState(hass, sensor);
+    const value = model.attr(attribute);
+    return value === undefined || value === null || value === '' ? null : value + ' ' + unit;
+}
+
+function batteryInfo(hass, model) {
+    const id = model.entity('sensor.battery_level');
+    const sensor = id && hass.states[id] && !UNUSABLE.includes(hass.states[id].state) ? hass.states[id] : null;
+    const raw = sensor ? sensor.state : (model.attr('battery_level') !== undefined ? model.attr('battery_level') : model.attr('battery'));
+    const level = Number(raw);
+    if (raw === undefined || raw === null || raw === '' || !Number.isFinite(level)) return null;
+    const binary = model.entity('binary_sensor.charging_state');
+    const charging = model.attr('charging') === true || !!(binary && hass.states[binary] && hass.states[binary].state === 'on');
+    // cleaning_paused: back at the dock mid-task, charging to resume.
+    const kind = charging && model.attr('cleaning_paused') ? 'paused' : charging ? 'charging' : level <= 20 ? 'low' : 'normal';
+    const tens = Math.min(100, Math.max(0, Math.floor(level / 10) * 10));
+    const icon = kind === 'paused' ? 'mdi:battery-clock'
+        : kind === 'low' ? 'mdi:battery-alert-variant-outline'
+        : kind === 'charging' ? (tens ? 'mdi:battery-charging-' + tens : 'mdi:battery-charging-outline')
+        : tens === 100 ? 'mdi:battery' : tens ? 'mdi:battery-' + tens : 'mdi:battery-outline';
+    const text = sensor ? formatState(hass, sensor) : Math.round(level) + ' %';
+    const word = { paused: 'akkuPause', charging: 'akkuLaedt', low: 'akkuNiedrig' }[kind];
+    return { kind, icon, text: word ? text + ' · ' + translate(hass, word) : text };
+}
+
+/** Station findings, errors first: [attribute, value, level, text key]. */
+const DOCK_CHECKS = [
+    ['clean_water_tank_status', 'not_installed', 'error', 'frischwasserFehlt'],
+    ['dirty_water_tank_status', 'not_installed_or_full', 'error', 'schmutzwasser'],
+    ['dust_bag_status', 'not_installed', 'error', 'staubbeutelFehlt'],
+    ['station_drainage_status', 'draining_failed', 'error', 'ablaufFehler'],
+    ['clean_water_tank_status', 'low_water', 'warning', 'frischwasserNiedrig'],
+    ['dust_bag_status', 'check', 'warning', 'staubbeutelPruefen'],
+    ['detergent_status', 'low_detergent', 'warning', 'reinigungsmittelNiedrig']
+];
+
+// The attributes carry display strings ("Low water"); the sensors the enum names.
+const enumName = (value) => String(value === undefined || value === null ? '' : value).trim().toLowerCase().replace(/[\s-]+/g, '_');
+
+function dockStatus(model) {
+    const hit = DOCK_CHECKS.find(([attribute, value]) => enumName(model.attr(attribute)) === value);
+    return hit ? { level: hit[2], key: hit[3] } : { level: 'ok', key: null };
+}
+
+/** The entities a render reads; Home Assistant replaces a state object on every change. */
+function watchSnapshot(hass, ids) {
+    return { language: BuschUI.language(hass, { legacy: true }), ids, objects: ids.map((id) => hass.states[id]) };
+}
+
+function snapshotUnchanged(snapshot, hass) {
+    if (!snapshot || !hass || !hass.states) return false;
+    if (BuschUI.language(hass, { legacy: true }) !== snapshot.language) return false;
+    return snapshot.ids.every((id, i) => hass.states[id] === snapshot.objects[i]);
+}
+
+// ---------------------------------------------------------------------------
+// Card
+// ---------------------------------------------------------------------------
+
 const CARD_STYLES = BuschUI.cardStyles + `
 :host {
     display: block;
@@ -423,6 +565,9 @@ ha-card {
     overflow: hidden;
     padding: var(--ha-space-4, 16px);
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-3, 12px);
 }
 .error {
     display: flex;
@@ -431,6 +576,118 @@ ha-card {
     color: var(--error-color, #db4437);
     font-size: var(--ha-font-size-s, 14px);
     overflow-wrap: anywhere;
+}
+.head {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.title {
+    margin: 0;
+    font-size: var(--ha-font-size-l, 20px);
+    font-weight: var(--ha-font-weight-medium, 500);
+    color: var(--primary-text-color, #212121);
+}
+.state {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    gap: var(--ha-space-2, 8px);
+}
+.stats:empty {
+    display: none;
+}
+.metric {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: var(--ha-space-1, 4px);
+    min-width: 0;
+}
+.metric ha-icon {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    --mdc-icon-size: 20px;
+}
+.metric-label,
+.metric-value {
+    grid-column: 2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.metric-label {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 12px);
+}
+.metric[data-battery=charging] ha-icon {
+    color: var(--success-color, #43a047);
+}
+.metric[data-battery=paused] ha-icon {
+    color: var(--warning-color, #ffa600);
+}
+.metric[data-battery=low] ha-icon,
+.metric[data-battery=low] .metric-value {
+    color: var(--error-color, #db4437);
+}
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ha-space-2, 8px);
+    align-items: center;
+}
+.controls:empty {
+    display: none;
+}
+.ctl ha-icon {
+    order: -1;
+}
+.ctl {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.dock {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    margin-inline-start: auto;
+    min-height: 44px;
+    min-width: 0;
+    padding: 0 var(--ha-space-3, 12px);
+    box-sizing: border-box;
+    border: 1px solid var(--divider-color, #e0e0e0);
+    border-radius: var(--ha-card-border-radius, 12px);
+    color: var(--secondary-text-color, #727272);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.dock span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.dock[data-dock=warning] {
+    border-color: var(--warning-color, #ffa600);
+    color: var(--warning-color, #ffa600);
+}
+.dock[data-dock=error] {
+    border-color: var(--error-color, #db4437);
+    color: var(--error-color, #db4437);
 }
 `;
 
@@ -442,6 +699,11 @@ class BuschVacuumCard extends HTMLElement {
         this._hass = null;
         this._errorKey = null;
         this._errorVars = null;
+        this._card = null;
+        this._seen = null; // what the last update read, see watchSnapshot()
+        this._related = null;
+        this._relatedFrom = null;
+        this._pending = null; // { state, from, timer }: tapped target state until the device confirms
     }
 
     static getConfigElement() {
@@ -460,12 +722,17 @@ class BuschVacuumCard extends HTMLElement {
         // Remembered as a key, translated when the box is drawn.
         this._errorKey = validated.ok ? null : (validated.error.textKey || 'fehlerKeineEntitaet');
         this._errorVars = validated.ok ? null : validated.error.textVars;
-        this._render();
+        this._related = null;
+        this._endPending();
+        this._build();
     }
 
     set hass(hass) {
+        // Home Assistant hands every card a new hass on every state change in
+        // the house. Only the vacuum and the few sensors shown redraw.
+        const unchanged = snapshotUnchanged(this._seen, hass) && (!hass || hass.entities === this._relatedFrom);
         this._hass = hass;
-        this._render();
+        if (!unchanged) this._update();
     }
 
     get hass() {
@@ -481,24 +748,135 @@ class BuschVacuumCard extends HTMLElement {
         return { columns: 12, min_columns: 6 };
     }
 
-    _render() {
+    _build() {
         const root = this.shadowRoot;
         root.innerHTML = '';
+        this._seen = null;
         const style = document.createElement('style');
         style.textContent = CARD_STYLES;
         root.appendChild(style);
         const card = document.createElement('ha-card');
         card.dataset.uiContract = 'Busch HA UI 0.1.0';
+        root.appendChild(card);
+        this._card = card;
         if (this._errorKey) {
             const box = document.createElement('div');
             box.className = 'error';
             box.appendChild(BuschUI.ha.icon('mdi:alert-circle-outline'));
-            const message = document.createElement('span');
-            message.textContent = translate(this._hass, this._errorKey, this._errorVars);
-            box.appendChild(message);
+            this._errorText = document.createElement('span');
+            box.appendChild(this._errorText);
             card.appendChild(box);
+        } else {
+            this._title = document.createElement('h2');
+            this._title.className = 'title';
+            this._stateLine = document.createElement('div');
+            this._stateLine.className = 'state';
+            const head = BuschUI.header({ titleNode: this._title });
+            head.classList.add('head');
+            head.appendChild(this._title);
+            head.appendChild(this._stateLine);
+            this._stats = document.createElement('div');
+            this._stats.className = 'stats';
+            this._controls = document.createElement('div');
+            this._controls.className = 'controls';
+            card.append(head, this._stats, this._controls);
         }
-        root.appendChild(card);
+        this._update();
+    }
+
+    _model() {
+        const hass = this._hass;
+        if (!this._related || hass.entities !== this._relatedFrom) {
+            // shortcut: without a registry the prefix fallback is computed once per
+            // config; entities added later need a reload. Fine for old frontends only.
+            this._related = findRelated(hass, this._opts.entity);
+            this._relatedFrom = hass.entities;
+        }
+        return new VacuumModel(hass, this._opts.entity, this._related);
+    }
+
+    _update() {
+        const hass = this._hass;
+        if (!hass || !this._card) return;
+        if (this._errorKey) {
+            this._errorText.textContent = translate(hass, this._errorKey, this._errorVars);
+            this._seen = watchSnapshot(hass, []);
+            return;
+        }
+        const model = this._model();
+        const real = model.state;
+        if (this._pending && (!real || real.state === this._pending.state || real.state !== this._pending.from)) this._endPending();
+        this._seen = watchSnapshot(hass, [this._opts.entity, ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state'].map((k) => model.entity(k)).filter(Boolean)]);
+        const shown = this._pending ? this._pending.state : real ? real.state : 'unavailable';
+
+        this._title.textContent = real ? real.attributes.friendly_name || this._opts.entity : this._opts.entity;
+        this._stateLine.textContent = real ? formatState(hass, real, shown) : shown;
+
+        const stats = [];
+        const area = statText(hass, model, 'sensor.cleaned_area', 'cleaned_area', 'm²');
+        if (area !== null) stats.push(this._metric('area', 'flaeche', area, 'mdi:texture-box'));
+        const time = statText(hass, model, 'sensor.cleaning_time', 'cleaning_time', 'min');
+        if (time !== null) stats.push(this._metric('time', 'zeit', time, 'mdi:timer-outline'));
+        const battery = batteryInfo(hass, model);
+        if (battery) {
+            const node = this._metric('battery', 'akku', battery.text, battery.icon);
+            node.setAttribute('data-battery', battery.kind);
+            stats.push(node);
+        }
+        this._stats.replaceChildren(...stats);
+
+        const buttons = controlsFor(model, shown).map((name) => {
+            const label = translate(hass, name);
+            const button = BuschUI.action({ label, text: label, icon: CONTROLS[name].icon, variant: CONTROLS[name].variant || 'secondary', onClick: () => this._call(name, real) });
+            button.classList.add('ctl');
+            button.setAttribute('data-action', name);
+            return button;
+        });
+        if (model.can('dock')) buttons.push(this._dock(hass, model));
+        this._controls.replaceChildren(...buttons);
+    }
+
+    _metric(name, labelKey, value, icon) {
+        const node = BuschUI.metric(translate(this._hass, labelKey), value);
+        node.setAttribute('data-metric', name);
+        const symbol = BuschUI.ha.icon(icon);
+        symbol.setAttribute('aria-hidden', 'true');
+        node.appendChild(symbol);
+        return node;
+    }
+
+    /** Station status: colour AND text (R17), so it never speaks through colour alone. */
+    _dock(hass, model) {
+        const status = dockStatus(model);
+        const node = document.createElement('div');
+        node.className = 'dock';
+        node.setAttribute('role', 'status');
+        node.setAttribute('data-dock', status.level);
+        const symbol = BuschUI.ha.icon(status.level === 'ok' ? 'mdi:home-variant-outline' : 'mdi:home-alert-outline');
+        symbol.setAttribute('aria-hidden', 'true');
+        const text = document.createElement('span');
+        text.textContent = translate(hass, 'station') + (status.key ? ' · ' + translate(hass, status.key) : '');
+        node.append(symbol, text);
+        return node;
+    }
+
+    _call(name, real) {
+        const control = CONTROLS[name];
+        this._endPending();
+        const pending = { state: control.target, from: real ? real.state : null, timer: null };
+        pending.timer = setTimeout(() => {
+            if (this._pending === pending) { this._pending = null; this._update(); }
+        }, OPTIMISTIC_HOLD_MS);
+        this._pending = pending;
+        Promise.resolve(this._hass.callService('vacuum', control.service, { entity_id: this._opts.entity })).catch(() => {
+            if (this._pending === pending) { this._endPending(); this._update(); }
+        });
+        this._update();
+    }
+
+    _endPending() {
+        if (this._pending) clearTimeout(this._pending.timer);
+        this._pending = null;
     }
 }
 
