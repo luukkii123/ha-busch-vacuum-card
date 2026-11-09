@@ -262,7 +262,25 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             staubbeutelFehlt: 'Staubbeutel fehlt',
             staubbeutelPruefen: 'Staubbeutel prüfen',
             reinigungsmittelNiedrig: 'Reinigungsmittel niedrig',
-            ablaufFehler: 'Entwässerung fehlgeschlagen'
+            ablaufFehler: 'Entwässerung fehlgeschlagen',
+            aufgabenart: 'Aufgabenart',
+            taskAll: 'Gesamt',
+            taskRoom: 'Raum',
+            taskZone: 'Zone',
+            taskSpot: 'Spot',
+            taskGoto: 'Hinfahren',
+            brauchtKarte: '„{task}“ braucht die Karte. Die Kartenansicht folgt in einem späteren Ausbau; bis dahin geht nur „Gesamt“.',
+            aufgabeLaeuft: 'Aufgabe läuft',
+            aufgabeGeplant: 'Geplante Aufgabe',
+            aufgabeShortcut: 'Shortcut-Aufgabe',
+            stufeError: 'Fehler',
+            stufeWarning: 'Warnung',
+            stufeInfo: 'Hinweis',
+            stufeLowWater: 'Wassermangel',
+            infoPausiert: 'Reinigung unterbrochen: lädt und setzt danach fort.',
+            warnungLoeschen: 'Warnung löschen',
+            ausblenden: 'Ausblenden',
+            fortschritt: 'Fortschritt {wert} %'
         }
     },
     en: {
@@ -296,7 +314,25 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             staubbeutelFehlt: 'Dust bag missing',
             staubbeutelPruefen: 'Check dust bag',
             reinigungsmittelNiedrig: 'Detergent low',
-            ablaufFehler: 'Draining failed'
+            ablaufFehler: 'Draining failed',
+            aufgabenart: 'Task type',
+            taskAll: 'All',
+            taskRoom: 'Room',
+            taskZone: 'Zone',
+            taskSpot: 'Spot',
+            taskGoto: 'Go to',
+            brauchtKarte: '“{task}” needs the map. The map view follows in a later update; until then only “All” works.',
+            aufgabeLaeuft: 'Task running',
+            aufgabeGeplant: 'Scheduled task',
+            aufgabeShortcut: 'Shortcut task',
+            stufeError: 'Error',
+            stufeWarning: 'Warning',
+            stufeInfo: 'Info',
+            stufeLowWater: 'Low water',
+            infoPausiert: 'Cleaning interrupted: charging, then it resumes.',
+            warnungLoeschen: 'Clear warning',
+            ausblenden: 'Dismiss',
+            fortschritt: 'Progress {wert} %'
         }
     }
 };
@@ -441,6 +477,8 @@ class VacuumModel {
             case 'map': return this.related.maps.map.length > 0;
             case 'dock': return this.caps.has('self_wash_base') || this.caps.has('auto_empty_base');
             case 'history': return !!this.entity('sensor.cleaning_history');
+            // CORE-10: the button is what v2.0.3 offers; the documented service only if present.
+            case 'clear_warning': return !!this.entity('button.clear_warning') || this.can('dreame_vacuum.vacuum_clear_warning');
             default:
                 if (VACUUM_FEATURES[name]) return (this.features & VACUUM_FEATURES[name]) !== 0;
                 return this.caps.has(name);
@@ -539,6 +577,67 @@ const enumName = (value) => String(value === undefined || value === null ? '' : 
 function dockStatus(model) {
     const hit = DOCK_CHECKS.find(([attribute, value]) => enumName(model.attr(attribute)) === value);
     return hit ? { level: hit[2], key: hit[3] } : { level: 'ok', key: null };
+}
+
+// ---------------------------------------------------------------------------
+// Task type, messages, progress (CORE-06/09/10)
+// ---------------------------------------------------------------------------
+
+/** Task types in order; `needs` are can() names. Map types work once map-view exists. */
+const TASK_TYPES = [
+    { name: 'all', text: 'taskAll', icon: 'mdi:home-outline', needs: [] },
+    { name: 'room', text: 'taskRoom', icon: 'mdi:floor-plan', needs: ['map', 'dreame_vacuum.vacuum_clean_segment'], map: true },
+    { name: 'zone', text: 'taskZone', icon: 'mdi:select-drag', needs: ['map', 'dreame_vacuum.vacuum_clean_zone'], map: true },
+    { name: 'spot', text: 'taskSpot', icon: 'mdi:target', needs: ['map', 'dreame_vacuum.vacuum_clean_spot'], map: true },
+    { name: 'goto', text: 'taskGoto', icon: 'mdi:map-marker-outline', needs: ['map', 'dreame_vacuum.vacuum_goto'], map: true }
+];
+
+const tasksFor = (model) => TASK_TYPES.filter((t) => t.needs.every((n) => model.can(n)));
+
+/** A task is under way — also paused or charging mid-task (`started`). */
+function taskActive(model, shown) {
+    const started = model.attr('started');
+    return typeof started === 'boolean' ? started || ['cleaning', 'paused'].includes(shown) : ['cleaning', 'paused'].includes(shown);
+}
+
+function runningTask(model) {
+    if (model.attr('segment_cleaning')) return 'room';
+    if (model.attr('zone_cleaning')) return 'zone';
+    if (model.attr('spot_cleaning')) return 'spot';
+    return 'all';
+}
+
+const MESSAGE_LOOK = {
+    error: { word: 'stufeError', icon: 'mdi:alert-circle-outline' },
+    warning: { word: 'stufeWarning', icon: 'mdi:alert-outline' },
+    low_water: { word: 'stufeLowWater', icon: 'mdi:water-alert-outline' },
+    info: { word: 'stufeInfo', icon: 'mdi:information-outline' }
+};
+
+/** Current messages [{ kind, text }]: error or warning (one code), low water, info. */
+function messagesFor(hass, model) {
+    const list = [];
+    const id = model.entity('sensor.error');
+    const sensor = id && hass.states[id];
+    // The sensor carries HA's translated description; the attribute only English.
+    const fromSensor = sensor && !UNUSABLE.includes(sensor.state) && enumName(sensor.state) !== 'no_error' ? (sensor.attributes.description || formatState(hass, sensor)) : null;
+    const raw = model.attr('error');
+    const text = fromSensor || (raw && enumName(raw) !== 'no_error' ? String(raw) : null);
+    if (text) list.push({ kind: model.attr('has_error') ? 'error' : 'warning', text });
+    const low = model.attr('low_water_warning');
+    const lowText = low && enumName(low) !== 'no_warning' ? String(low) : '';
+    if (model.attr('low_water') === true || lowText) list.push({ kind: 'low_water', text: lowText });
+    if (model.attr('cleaning_paused')) list.push({ kind: 'info', text: translate(hass, 'infoPausiert') });
+    return list;
+}
+
+/** Cleaning progress in percent from the sensor (else the attribute), or null. */
+function progressOf(hass, model) {
+    const id = model.entity('sensor.cleaning_progress');
+    const sensor = id && hass.states[id];
+    const raw = sensor && !UNUSABLE.includes(sensor.state) ? sensor.state : model.attr('cleaning_progress');
+    const value = Number(raw);
+    return raw === undefined || raw === null || raw === '' || !Number.isFinite(value) ? null : Math.min(100, Math.max(0, value));
 }
 
 /** The entities a render reads; Home Assistant replaces a state object on every change. */
@@ -689,6 +788,112 @@ ha-card {
     border-color: var(--error-color, #db4437);
     color: var(--error-color, #db4437);
 }
+.progress {
+    display: block;
+    height: 4px;
+    margin: calc(-1 * var(--ha-space-4, 16px)) calc(-1 * var(--ha-space-4, 16px)) 0;
+    width: calc(100% + 2 * var(--ha-space-4, 16px));
+    border: 0;
+    appearance: none;
+    background: var(--divider-color, #e0e0e0);
+    accent-color: var(--primary-color, #03a9f4);
+}
+.progress::-webkit-progress-bar {
+    background: var(--divider-color, #e0e0e0);
+}
+.progress::-webkit-progress-value {
+    background: var(--primary-color, #03a9f4);
+}
+.progress::-moz-progress-bar {
+    background: var(--primary-color, #03a9f4);
+}
+.messages {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-2, 8px);
+}
+.messages:empty,
+.task-area:empty {
+    display: none;
+}
+.message {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-2, 8px);
+    padding: var(--ha-space-1, 4px) var(--ha-space-1, 4px) var(--ha-space-1, 4px) var(--ha-space-3, 12px);
+    border-inline-start: 4px solid var(--info-color, #039be5);
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--secondary-background-color, #eeeeee);
+    min-width: 0;
+}
+.message[data-kind=error] {
+    border-color: var(--error-color, #db4437);
+}
+.message[data-kind=warning],
+.message[data-kind=low_water] {
+    border-color: var(--warning-color, #ffa600);
+}
+.message > ha-icon {
+    flex: none;
+}
+.message[data-kind=error] > ha-icon {
+    color: var(--error-color, #db4437);
+}
+.message[data-kind=warning] > ha-icon,
+.message[data-kind=low_water] > ha-icon {
+    color: var(--warning-color, #ffa600);
+}
+.message-text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.message-text strong {
+    margin-inline-end: var(--ha-space-1, 4px);
+}
+.task-area {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-2, 8px);
+}
+.tasks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ha-space-1, 4px);
+}
+.task {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    flex: 1 1 0;
+    justify-content: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.task ha-icon {
+    order: -1;
+    --mdc-icon-size: 20px;
+}
+.task[aria-checked=true] {
+    background: var(--primary-color, #03a9f4);
+    color: var(--text-primary-color, #ffffff);
+}
+.task-hint,
+.task-badge {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+    overflow-wrap: anywhere;
+}
+.task-badge ha-icon,
+.task-hint ha-icon {
+    flex: none;
+    --mdc-icon-size: 18px;
+}
 `;
 
 class BuschVacuumCard extends HTMLElement {
@@ -704,6 +909,8 @@ class BuschVacuumCard extends HTMLElement {
         this._related = null;
         this._relatedFrom = null;
         this._pending = null; // { state, from, timer }: tapped target state until the device confirms
+        this._task = 'all'; // chosen task type (CORE-06)
+        this._dismissed = new Map(); // message kind → text wiped away, until the message changes (CORE-10)
     }
 
     static getConfigElement() {
@@ -779,7 +986,13 @@ class BuschVacuumCard extends HTMLElement {
             this._stats.className = 'stats';
             this._controls = document.createElement('div');
             this._controls.className = 'controls';
-            card.append(head, this._stats, this._controls);
+            this._progress = document.createElement('div');
+            this._progress.className = 'progress-slot';
+            this._messages = document.createElement('div');
+            this._messages.className = 'messages';
+            this._taskArea = document.createElement('div');
+            this._taskArea.className = 'task-area';
+            card.append(this._progress, head, this._messages, this._stats, this._taskArea, this._controls);
         }
         this._update();
     }
@@ -806,7 +1019,7 @@ class BuschVacuumCard extends HTMLElement {
         const model = this._model();
         const real = model.state;
         if (this._pending && (!real || real.state === this._pending.state || real.state !== this._pending.from)) this._endPending();
-        this._seen = watchSnapshot(hass, [this._opts.entity, ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state'].map((k) => model.entity(k)).filter(Boolean)]);
+        this._seen = watchSnapshot(hass, [this._opts.entity, ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state', 'sensor.error', 'sensor.cleaning_progress'].map((k) => model.entity(k)).filter(Boolean)]);
         const shown = this._pending ? this._pending.state : real ? real.state : 'unavailable';
 
         this._title.textContent = real ? real.attributes.friendly_name || this._opts.entity : this._opts.entity;
@@ -825,15 +1038,129 @@ class BuschVacuumCard extends HTMLElement {
         }
         this._stats.replaceChildren(...stats);
 
+        const active = taskActive(model, shown);
+        const percent = active && model.can('cleaning_progress') ? progressOf(hass, model) : null;
+        this._progress.replaceChildren(...(percent === null ? [] : [this._progressBar(percent)]));
+        this._renderMessages(hass, model);
+        const needsMap = this._renderTasks(hass, model, active);
+
         const buttons = controlsFor(model, shown).map((name) => {
             const label = translate(hass, name);
-            const button = BuschUI.action({ label, text: label, icon: CONTROLS[name].icon, variant: CONTROLS[name].variant || 'secondary', onClick: () => this._call(name, real) });
+            // shortcut: map task types cannot start before map-view; Start waits with the hint shown.
+            const blocked = name === 'start' && needsMap;
+            const button = BuschUI.action({ label, text: label, icon: CONTROLS[name].icon, variant: CONTROLS[name].variant || 'secondary', disabled: blocked, onClick: () => this._call(name, real) });
+            if (blocked) button.setAttribute('aria-describedby', 'task-hint');
             button.classList.add('ctl');
             button.setAttribute('data-action', name);
             return button;
         });
         if (model.can('dock')) buttons.push(this._dock(hass, model));
         this._controls.replaceChildren(...buttons);
+    }
+
+    _progressBar(percent) {
+        const bar = document.createElement('progress');
+        bar.className = 'progress';
+        bar.max = 100;
+        bar.value = percent;
+        bar.setAttribute('aria-label', translate(this._hass, 'fortschritt', { wert: Math.round(percent) }));
+        return bar;
+    }
+
+    /** Task type choice (CORE-06). Returns true when the chosen type still needs the map. */
+    _renderTasks(hass, model, active) {
+        const types = tasksFor(model);
+        const nodes = [];
+        const chosen = active ? runningTask(model) : this._task;
+        if (types.length > 1) {
+            const group = document.createElement('div');
+            group.className = 'tasks';
+            group.setAttribute('role', 'radiogroup');
+            group.setAttribute('aria-label', translate(hass, 'aufgabenart'));
+            const shownChoice = types.some((t) => t.name === chosen) ? chosen : 'all';
+            types.forEach((type, index) => {
+                const label = translate(hass, type.text);
+                const button = BuschUI.action({ label, text: label, icon: type.icon, disabled: active, onClick: () => { this._task = type.name; this._update(); } });
+                button.classList.add('task');
+                button.setAttribute('role', 'radio');
+                button.setAttribute('data-task', type.name);
+                button.setAttribute('aria-checked', String(type.name === shownChoice));
+                button.tabIndex = type.name === shownChoice ? 0 : -1;
+                button.addEventListener('keydown', (event) => {
+                    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+                    if (!step || active) return;
+                    event.preventDefault();
+                    this._task = types[(index + step + types.length) % types.length].name;
+                    this._update();
+                    const next = this._taskArea.querySelector('[data-task="' + this._task + '"]');
+                    if (next) next.focus();
+                });
+                group.appendChild(button);
+            });
+            nodes.push(group);
+        }
+        const type = TASK_TYPES.find((t) => t.name === this._task);
+        const needsMap = !active && types.length > 1 && !!type && !!type.map && types.includes(type);
+        if (needsMap) nodes.push(this._note('task-hint', 'mdi:map-search-outline', translate(hass, 'brauchtKarte', { task: translate(hass, type.text) })));
+        if (active) {
+            const [key, icon] = model.attr('scheduled_clean') ? ['aufgabeGeplant', 'mdi:calendar-clock']
+                : model.attr('shortcut_task') ? ['aufgabeShortcut', 'mdi:star-four-points-outline']
+                : ['aufgabeLaeuft', 'mdi:progress-clock'];
+            nodes.push(this._note('task-badge', icon, translate(hass, key)));
+        }
+        this._taskArea.replaceChildren(...nodes);
+        return needsMap;
+    }
+
+    _note(className, icon, text) {
+        const node = document.createElement('div');
+        node.className = className;
+        if (className === 'task-hint') node.id = 'task-hint';
+        const symbol = BuschUI.ha.icon(icon);
+        symbol.setAttribute('aria-hidden', 'true');
+        const span = document.createElement('span');
+        span.textContent = text;
+        node.append(symbol, span);
+        return node;
+    }
+
+    /** Messages (CORE-10): level as word and colour (R17); wiped ones stay away until they change. */
+    _renderMessages(hass, model) {
+        const list = messagesFor(hass, model);
+        for (const [kind, text] of this._dismissed) if (!list.some((m) => m.kind === kind && m.text === text)) this._dismissed.delete(kind);
+        const nodes = list.filter((m) => this._dismissed.get(m.kind) !== m.text).map((m) => {
+            const look = MESSAGE_LOOK[m.kind];
+            const node = document.createElement('div');
+            node.className = 'message';
+            node.setAttribute('data-kind', m.kind);
+            node.setAttribute('role', m.kind === 'error' ? 'alert' : 'status');
+            const symbol = BuschUI.ha.icon(look.icon);
+            symbol.setAttribute('aria-hidden', 'true');
+            const body = document.createElement('div');
+            body.className = 'message-text';
+            const word = document.createElement('strong');
+            word.textContent = translate(hass, look.word);
+            const text = document.createElement('span');
+            text.textContent = m.text;
+            body.append(word, text);
+            node.append(symbol, body);
+            if (m.kind === 'warning' && model.can('clear_warning')) {
+                const clear = BuschUI.action({ label: translate(hass, 'warnungLoeschen'), icon: 'mdi:broom', variant: 'quiet', onClick: () => this._clearWarning(model) });
+                clear.setAttribute('data-action', 'clear');
+                node.appendChild(clear);
+            }
+            const dismiss = BuschUI.action({ label: translate(hass, 'ausblenden'), icon: 'mdi:close', variant: 'quiet', onClick: () => { this._dismissed.set(m.kind, m.text); this._update(); } });
+            dismiss.setAttribute('data-action', 'dismiss');
+            node.appendChild(dismiss);
+            return node;
+        });
+        this._messages.replaceChildren(...nodes);
+    }
+
+    _clearWarning(model) {
+        const button = model.entity('button.clear_warning');
+        if (button) this._hass.callService('button', 'press', { entity_id: button });
+        else this._hass.callService('dreame_vacuum', 'vacuum_clear_warning', { entity_id: this._opts.entity });
     }
 
     _metric(name, labelKey, value, icon) {
