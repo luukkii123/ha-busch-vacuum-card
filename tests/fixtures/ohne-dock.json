@@ -1,0 +1,5424 @@
+{
+ "beschreibung": "Abgeleitet aus einem Dreame X40 Ultra (dreame_vacuum 2.0.3, lesend 09.11.2026); Namen, Netzwerk, Tokens ersetzt. Ohne Basisstation.",
+ "disabled": [
+  "button.robo_start_mapping",
+  "camera.robo_map_data",
+  "number.robo_volume",
+  "number.robo_wetness_level",
+  "select.robo_map_rotation",
+  "select.robo_mop_extend_frequency",
+  "select.robo_voice_assistant_language",
+  "sensor.robo_firmware_version",
+  "switch.robo_ai_fluid_detection",
+  "switch.robo_ai_furniture_detection",
+  "switch.robo_ai_obstacle_detection",
+  "switch.robo_ai_obstacle_image_upload",
+  "switch.robo_ai_obstacle_picture",
+  "switch.robo_ai_pet_detection",
+  "switch.robo_camera_light_brightness_auto",
+  "switch.robo_carpet_boost",
+  "switch.robo_child_lock",
+  "switch.robo_collision_avoidance",
+  "switch.robo_dnd",
+  "switch.robo_dnd_disable_auto_empty",
+  "switch.robo_dnd_disable_resume_cleaning",
+  "switch.robo_dnd_reduce_volume",
+  "switch.robo_fill_light",
+  "switch.robo_floor_direction_cleaning",
+  "switch.robo_fuzzy_obstacle_detection",
+  "switch.robo_gap_cleaning_extension",
+  "switch.robo_human_follow",
+  "switch.robo_intensive_carpet_cleaning",
+  "switch.robo_mop_extend",
+  "switch.robo_mopping_under_furnitures",
+  "switch.robo_multi_floor_map",
+  "switch.robo_off_peak_charging",
+  "switch.robo_side_reach",
+  "switch.robo_stain_avoidance",
+  "switch.robo_streaming_voice_prompt",
+  "switch.robo_voice_assistant",
+  "time.robo_dnd_end",
+  "time.robo_dnd_start",
+  "time.robo_off_peak_charging_end",
+  "time.robo_off_peak_charging_start"
+ ],
+ "entities": {
+  "binary_sensor.robo_charging_state": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "binary_sensor.robo_charging_state",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "charging_state"
+  },
+  "binary_sensor.robo_maintenance": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "binary_sensor.robo_maintenance",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "maintenance"
+  },
+  "binary_sensor.robo_problem": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "binary_sensor.robo_problem",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "problem"
+  },
+  "button.robo_backup_saved_map": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "button.robo_backup_saved_map",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "backup_saved_map"
+  },
+  "button.robo_clear_warning": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "button.robo_clear_warning",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "clear_warning"
+  },
+  "button.robo_reload_shortcuts": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "button.robo_reload_shortcuts",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "reload_shortcuts"
+  },
+  "button.robo_reset_filter": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "button.robo_reset_filter",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "reset_filter"
+  },
+  "button.robo_reset_main_brush": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "button.robo_reset_main_brush",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "reset_main_brush"
+  },
+  "button.robo_reset_sensor": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "button.robo_reset_sensor",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "reset_sensor"
+  },
+  "button.robo_reset_side_brush": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "button.robo_reset_side_brush",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "reset_side_brush"
+  },
+  "button.robo_start_fast_mapping": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "button.robo_start_fast_mapping",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "start_fast_mapping"
+  },
+  "camera.robo_map": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "camera.robo_map",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "map"
+  },
+  "camera.robo_map_1": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "camera.robo_map_1",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "saved_map"
+  },
+  "camera.robo_wifi_map_1": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "camera.robo_wifi_map_1",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "wifi_map"
+  },
+  "number.robo_camera_light_brightness": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "number.robo_camera_light_brightness",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "camera_light_brightness"
+  },
+  "number.robo_room_1_wetness_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "number.robo_room_1_wetness_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "wetness_level"
+  },
+  "number.robo_room_3_wetness_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "number.robo_room_3_wetness_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "wetness_level"
+  },
+  "number.robo_room_4_wetness_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "number.robo_room_4_wetness_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "wetness_level"
+  },
+  "number.robo_room_5_wetness_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "number.robo_room_5_wetness_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "wetness_level"
+  },
+  "number.robo_room_6_wetness_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "number.robo_room_6_wetness_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "wetness_level"
+  },
+  "number.robo_room_7_wetness_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "number.robo_room_7_wetness_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "wetness_level"
+  },
+  "number.robo_room_9_wetness_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "number.robo_room_9_wetness_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "wetness_level"
+  },
+  "select.robo_carpet_cleaning": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_carpet_cleaning",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "carpet_cleaning"
+  },
+  "select.robo_cleangenius": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_cleangenius",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleangenius"
+  },
+  "select.robo_cleangenius_mode": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_cleangenius_mode",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleangenius_mode"
+  },
+  "select.robo_cleaning_mode": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_cleaning_mode",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_mode"
+  },
+  "select.robo_cleaning_route": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_cleaning_route",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_route"
+  },
+  "select.robo_mop_pad_humidity": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_mop_pad_humidity",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "mop_pad_humidity"
+  },
+  "select.robo_room_1_cleaning_mode": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_1_cleaning_mode",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_mode"
+  },
+  "select.robo_room_1_cleaning_route": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_1_cleaning_route",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_route"
+  },
+  "select.robo_room_1_cleaning_times": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_1_cleaning_times",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_times"
+  },
+  "select.robo_room_1_floor_material": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_1_floor_material",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material"
+  },
+  "select.robo_room_1_floor_material_direction": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_1_floor_material_direction",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material_direction"
+  },
+  "select.robo_room_1_mop_pad_humidity": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_1_mop_pad_humidity",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "mop_pad_humidity"
+  },
+  "select.robo_room_1_name": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_1_name",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "name"
+  },
+  "select.robo_room_1_order": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_1_order",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "order"
+  },
+  "select.robo_room_1_suction_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_1_suction_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "suction_level"
+  },
+  "select.robo_room_1_visibility": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_1_visibility",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "visibility"
+  },
+  "select.robo_room_3_cleaning_mode": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_3_cleaning_mode",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_mode"
+  },
+  "select.robo_room_3_cleaning_route": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_3_cleaning_route",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_route"
+  },
+  "select.robo_room_3_cleaning_times": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_3_cleaning_times",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_times"
+  },
+  "select.robo_room_3_floor_material": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_3_floor_material",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material"
+  },
+  "select.robo_room_3_floor_material_direction": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_3_floor_material_direction",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material_direction"
+  },
+  "select.robo_room_3_mop_pad_humidity": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_3_mop_pad_humidity",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "mop_pad_humidity"
+  },
+  "select.robo_room_3_name": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_3_name",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "name"
+  },
+  "select.robo_room_3_order": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_3_order",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "order"
+  },
+  "select.robo_room_3_suction_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_3_suction_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "suction_level"
+  },
+  "select.robo_room_3_visibility": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_3_visibility",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "visibility"
+  },
+  "select.robo_room_4_cleaning_mode": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_4_cleaning_mode",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_mode"
+  },
+  "select.robo_room_4_cleaning_route": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_4_cleaning_route",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_route"
+  },
+  "select.robo_room_4_cleaning_times": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_4_cleaning_times",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_times"
+  },
+  "select.robo_room_4_floor_material": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_4_floor_material",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material"
+  },
+  "select.robo_room_4_floor_material_direction": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_4_floor_material_direction",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material_direction"
+  },
+  "select.robo_room_4_mop_pad_humidity": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_4_mop_pad_humidity",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "mop_pad_humidity"
+  },
+  "select.robo_room_4_name": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_4_name",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "name"
+  },
+  "select.robo_room_4_order": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_4_order",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "order"
+  },
+  "select.robo_room_4_suction_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_4_suction_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "suction_level"
+  },
+  "select.robo_room_4_visibility": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_4_visibility",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "visibility"
+  },
+  "select.robo_room_5_cleaning_mode": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_5_cleaning_mode",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_mode"
+  },
+  "select.robo_room_5_cleaning_route": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_5_cleaning_route",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_route"
+  },
+  "select.robo_room_5_cleaning_times": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_5_cleaning_times",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_times"
+  },
+  "select.robo_room_5_floor_material": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_5_floor_material",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material"
+  },
+  "select.robo_room_5_floor_material_direction": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_5_floor_material_direction",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material_direction"
+  },
+  "select.robo_room_5_mop_pad_humidity": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_5_mop_pad_humidity",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "mop_pad_humidity"
+  },
+  "select.robo_room_5_name": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_5_name",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "name"
+  },
+  "select.robo_room_5_order": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_5_order",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "order"
+  },
+  "select.robo_room_5_suction_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_5_suction_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "suction_level"
+  },
+  "select.robo_room_5_visibility": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_5_visibility",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "visibility"
+  },
+  "select.robo_room_6_cleaning_mode": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_6_cleaning_mode",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_mode"
+  },
+  "select.robo_room_6_cleaning_route": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_6_cleaning_route",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_route"
+  },
+  "select.robo_room_6_cleaning_times": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_6_cleaning_times",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_times"
+  },
+  "select.robo_room_6_floor_material": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_6_floor_material",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material"
+  },
+  "select.robo_room_6_floor_material_direction": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_6_floor_material_direction",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material_direction"
+  },
+  "select.robo_room_6_mop_pad_humidity": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_6_mop_pad_humidity",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "mop_pad_humidity"
+  },
+  "select.robo_room_6_name": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_6_name",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "name"
+  },
+  "select.robo_room_6_order": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_6_order",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "order"
+  },
+  "select.robo_room_6_suction_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_6_suction_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "suction_level"
+  },
+  "select.robo_room_6_visibility": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_6_visibility",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "visibility"
+  },
+  "select.robo_room_7_cleaning_mode": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_7_cleaning_mode",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_mode"
+  },
+  "select.robo_room_7_cleaning_route": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_7_cleaning_route",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_route"
+  },
+  "select.robo_room_7_cleaning_times": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_7_cleaning_times",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_times"
+  },
+  "select.robo_room_7_floor_material": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_7_floor_material",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material"
+  },
+  "select.robo_room_7_floor_material_direction": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_7_floor_material_direction",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material_direction"
+  },
+  "select.robo_room_7_mop_pad_humidity": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_7_mop_pad_humidity",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "mop_pad_humidity"
+  },
+  "select.robo_room_7_name": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_7_name",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "name"
+  },
+  "select.robo_room_7_order": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_7_order",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "order"
+  },
+  "select.robo_room_7_suction_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_7_suction_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "suction_level"
+  },
+  "select.robo_room_7_visibility": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_7_visibility",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "visibility"
+  },
+  "select.robo_room_9_cleaning_mode": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_9_cleaning_mode",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_mode"
+  },
+  "select.robo_room_9_cleaning_route": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_9_cleaning_route",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_route"
+  },
+  "select.robo_room_9_cleaning_times": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_9_cleaning_times",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_times"
+  },
+  "select.robo_room_9_floor_material": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_9_floor_material",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material"
+  },
+  "select.robo_room_9_floor_material_direction": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_9_floor_material_direction",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "floor_material_direction"
+  },
+  "select.robo_room_9_mop_pad_humidity": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_9_mop_pad_humidity",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "mop_pad_humidity"
+  },
+  "select.robo_room_9_name": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_9_name",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "name"
+  },
+  "select.robo_room_9_order": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_9_order",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "order"
+  },
+  "select.robo_room_9_suction_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_room_9_suction_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "suction_level"
+  },
+  "select.robo_room_9_visibility": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "select.robo_room_9_visibility",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "visibility"
+  },
+  "select.robo_selected_map": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_selected_map",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "selected_map"
+  },
+  "select.robo_suction_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "select.robo_suction_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "suction_level"
+  },
+  "sensor.robo_battery_level": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_battery_level",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "battery_level"
+  },
+  "sensor.robo_charging_status": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_charging_status",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "charging_status"
+  },
+  "sensor.robo_cleaned_area": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_cleaned_area",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaned_area"
+  },
+  "sensor.robo_cleaning_count": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_cleaning_count",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_count"
+  },
+  "sensor.robo_cleaning_history": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_cleaning_history",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_history"
+  },
+  "sensor.robo_cleaning_progress": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_cleaning_progress",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_progress"
+  },
+  "sensor.robo_cleaning_time": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_cleaning_time",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cleaning_time"
+  },
+  "sensor.robo_cruising_history": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_cruising_history",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "cruising_history"
+  },
+  "sensor.robo_current_room": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_current_room",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "current_room"
+  },
+  "sensor.robo_error": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_error",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "error"
+  },
+  "sensor.robo_filter_left": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_filter_left",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "filter_left"
+  },
+  "sensor.robo_filter_time_left": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_filter_time_left",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "filter_time_left"
+  },
+  "sensor.robo_first_cleaning_date": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_first_cleaning_date",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "first_cleaning_date"
+  },
+  "sensor.robo_main_brush_left": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_main_brush_left",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "main_brush_left"
+  },
+  "sensor.robo_main_brush_time_left": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_main_brush_time_left",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "main_brush_time_left"
+  },
+  "sensor.robo_mapping_time": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_mapping_time",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "mapping_time"
+  },
+  "sensor.robo_mop_pad": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_mop_pad",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "mop_pad"
+  },
+  "sensor.robo_relocation_status": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_relocation_status",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "relocation_status"
+  },
+  "sensor.robo_sensor_dirty_left": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_sensor_dirty_left",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "sensor_dirty_left"
+  },
+  "sensor.robo_sensor_dirty_time_left": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_sensor_dirty_time_left",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "sensor_dirty_time_left"
+  },
+  "sensor.robo_side_brush_left": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_side_brush_left",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "side_brush_left"
+  },
+  "sensor.robo_side_brush_time_left": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_side_brush_time_left",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "side_brush_time_left"
+  },
+  "sensor.robo_state": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_state",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "state"
+  },
+  "sensor.robo_status": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_status",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "status"
+  },
+  "sensor.robo_stream_status": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_stream_status",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "stream_status"
+  },
+  "sensor.robo_task_status": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_task_status",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "task_status"
+  },
+  "sensor.robo_task_type": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "sensor.robo_task_type",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "task_type"
+  },
+  "sensor.robo_total_cleaned_area": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_total_cleaned_area",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "total_cleaned_area"
+  },
+  "sensor.robo_total_cleaning_time": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "diagnostic",
+   "entity_id": "sensor.robo_total_cleaning_time",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "total_cleaning_time"
+  },
+  "switch.robo_clean_carpets_first": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_clean_carpets_first",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "clean_carpets_first"
+  },
+  "switch.robo_customized_cleaning": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "switch.robo_customized_cleaning",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "customized_cleaning"
+  },
+  "switch.robo_large_particles_boost": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_large_particles_boost",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "large_particles_boost"
+  },
+  "switch.robo_max_suction_power": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "switch.robo_max_suction_power",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "max_suction_power"
+  },
+  "switch.robo_obstacle_avoidance": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_obstacle_avoidance",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "obstacle_avoidance"
+  },
+  "switch.robo_pet_focused_detection": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_pet_focused_detection",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "pet_focused_detection"
+  },
+  "switch.robo_pet_picture": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_pet_picture",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "pet_picture"
+  },
+  "switch.robo_resume_cleaning": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_resume_cleaning",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "resume_cleaning"
+  },
+  "switch.robo_side_brush_carpet_rotate": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_side_brush_carpet_rotate",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "side_brush_carpet_rotate"
+  },
+  "vacuum.robo": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": null,
+   "entity_id": "vacuum.robo",
+   "has_entity_name": false,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "dreame_vacuum"
+  }
+ },
+ "services": {
+  "dreame_vacuum": {
+   "update": {
+    "fields": {}
+   },
+   "vacuum_backup_map": {
+    "fields": {
+     "map_id": {}
+    }
+   },
+   "vacuum_call_action": {
+    "fields": {}
+   },
+   "vacuum_clean_segment": {
+    "fields": {
+     "repeats": {},
+     "segments": {},
+     "suction_level": {},
+     "water_volume": {}
+    }
+   },
+   "vacuum_clean_spot": {
+    "fields": {
+     "points": {},
+     "repeats": {},
+     "suction_level": {},
+     "water_volume": {}
+    }
+   },
+   "vacuum_clean_zone": {
+    "fields": {
+     "repeats": {},
+     "suction_level": {},
+     "water_volume": {},
+     "zone": {}
+    }
+   },
+   "vacuum_delete_map": {
+    "fields": {
+     "map_id": {}
+    }
+   },
+   "vacuum_delete_shortcut": {
+    "fields": {
+     "shortcut_id": {}
+    }
+   },
+   "vacuum_discard_temporary_map": {
+    "fields": {}
+   },
+   "vacuum_follow_path": {
+    "fields": {
+     "points": {}
+    }
+   },
+   "vacuum_goto": {
+    "fields": {
+     "x": {},
+     "y": {}
+    }
+   },
+   "vacuum_install_voice_pack": {
+    "fields": {
+     "lang_id": {},
+     "md5": {},
+     "size": {},
+     "url": {}
+    }
+   },
+   "vacuum_merge_segments": {
+    "fields": {}
+   },
+   "vacuum_remote_control_move_step": {
+    "fields": {
+     "rotation": {},
+     "velocity": {}
+    }
+   },
+   "vacuum_rename_map": {
+    "fields": {
+     "map_id": {},
+     "map_name": {}
+    }
+   },
+   "vacuum_rename_segment": {
+    "fields": {
+     "segment_id": {},
+     "segment_name": {}
+    }
+   },
+   "vacuum_rename_shortcut": {
+    "fields": {
+     "shortcut_id": {},
+     "shortcut_name": {}
+    }
+   },
+   "vacuum_replace_temporary_map": {
+    "fields": {
+     "map_id": {}
+    }
+   },
+   "vacuum_request_map": {
+    "fields": {}
+   },
+   "vacuum_reset_consumable": {
+    "fields": {
+     "consumable": {}
+    }
+   },
+   "vacuum_restore_map": {
+    "fields": {
+     "map_id": {},
+     "recovery_map_index": {}
+    }
+   },
+   "vacuum_restore_map_from_file": {
+    "fields": {
+     "file_url": {},
+     "map_id": {}
+    }
+   },
+   "vacuum_save_temporary_map": {
+    "fields": {}
+   },
+   "vacuum_select_map": {
+    "fields": {
+     "map_id": {}
+    }
+   },
+   "vacuum_set_carpet_area": {
+    "fields": {}
+   },
+   "vacuum_set_carpet_type": {
+    "fields": {}
+   },
+   "vacuum_set_cleaning_sequence": {
+    "fields": {
+     "cleaning_sequence": {}
+    }
+   },
+   "vacuum_set_curtain": {
+    "fields": {}
+   },
+   "vacuum_set_custom_carpet_cleaning": {
+    "fields": {}
+   },
+   "vacuum_set_custom_cleaning": {
+    "fields": {
+     "cleaning_mode": {},
+     "mop_pressure": {},
+     "mop_temperature": {},
+     "repeats": {},
+     "segment_id": {},
+     "suction_level": {},
+     "water_volume": {},
+     "wetness_level": {}
+    }
+   },
+   "vacuum_set_floor_material": {
+    "fields": {}
+   },
+   "vacuum_set_furniture": {
+    "fields": {}
+   },
+   "vacuum_set_hidden_segments": {
+    "fields": {}
+   },
+   "vacuum_set_low_lying_area": {
+    "fields": {}
+   },
+   "vacuum_set_mop_type": {
+    "fields": {}
+   },
+   "vacuum_set_obstacle_ignore": {
+    "fields": {
+     "obstacle_ignored": {},
+     "x": {},
+     "y": {}
+    }
+   },
+   "vacuum_set_predefined_points": {
+    "fields": {}
+   },
+   "vacuum_set_property": {
+    "fields": {}
+   },
+   "vacuum_set_restricted_zone": {
+    "fields": {}
+   },
+   "vacuum_set_router_position": {
+    "fields": {}
+   },
+   "vacuum_set_segment_type": {
+    "fields": {}
+   },
+   "vacuum_set_threshold": {
+    "fields": {}
+   },
+   "vacuum_set_virtual_threshold": {
+    "fields": {}
+   },
+   "vacuum_set_walls": {
+    "fields": {}
+   },
+   "vacuum_split_segments": {
+    "fields": {}
+   },
+   "vacuum_start_shortcut": {
+    "fields": {
+     "shortcut_id": {}
+    }
+   }
+  },
+  "vacuum": {
+   "clean_area": {
+    "fields": {
+     "cleaning_area_id": {}
+    }
+   },
+   "clean_spot": {
+    "fields": {}
+   },
+   "locate": {
+    "fields": {}
+   },
+   "pause": {
+    "fields": {}
+   },
+   "return_to_base": {
+    "fields": {}
+   },
+   "send_command": {
+    "fields": {
+     "command": {},
+     "params": {}
+    }
+   },
+   "set_fan_speed": {
+    "fields": {
+     "fan_speed": {}
+    }
+   },
+   "start": {
+    "fields": {}
+   },
+   "stop": {
+    "fields": {}
+   }
+  }
+ },
+ "states": {
+  "binary_sensor.robo_charging_state": {
+   "attributes": {
+    "device_class": "battery_charging",
+    "friendly_name": "Robo Ladevorgang",
+    "icon": "mdi:power-plug"
+   },
+   "entity_id": "binary_sensor.robo_charging_state",
+   "state": "off"
+  },
+  "binary_sensor.robo_maintenance": {
+   "attributes": {
+    "device_class": "problem",
+    "friendly_name": "Robo Wartung",
+    "icon": "mdi:wrench-check",
+    "items": []
+   },
+   "entity_id": "binary_sensor.robo_maintenance",
+   "state": "off"
+  },
+  "binary_sensor.robo_problem": {
+   "attributes": {
+    "code": null,
+    "device_class": "problem",
+    "friendly_name": "Robo Problem",
+    "icon": "mdi:check-circle-outline",
+    "type": null
+   },
+   "entity_id": "binary_sensor.robo_problem",
+   "state": "off"
+  },
+  "button.robo_backup_saved_map": {
+   "attributes": {
+    "friendly_name": "Robo Karte sichern",
+    "icon": "mdi:cloud-upload"
+   },
+   "entity_id": "button.robo_backup_saved_map",
+   "state": "unknown"
+  },
+  "button.robo_clear_warning": {
+   "attributes": {
+    "friendly_name": "Robo Warnung löschen",
+    "icon": "mdi:clipboard-check-outline"
+   },
+   "entity_id": "button.robo_clear_warning",
+   "state": "unavailable"
+  },
+  "button.robo_reload_shortcuts": {
+   "attributes": {
+    "friendly_name": "Robo Kurzbefehle neu laden",
+    "icon": "mdi:motion-play-outline"
+   },
+   "entity_id": "button.robo_reload_shortcuts",
+   "state": "unknown"
+  },
+  "button.robo_reset_filter": {
+   "attributes": {
+    "friendly_name": "Robo Filter zurücksetzen",
+    "icon": "mdi:air-filter"
+   },
+   "entity_id": "button.robo_reset_filter",
+   "state": "unknown"
+  },
+  "button.robo_reset_main_brush": {
+   "attributes": {
+    "friendly_name": "Robo Hauptbürste zurücksetzen",
+    "icon": "mdi:car-turbocharger"
+   },
+   "entity_id": "button.robo_reset_main_brush",
+   "state": "unknown"
+  },
+  "button.robo_reset_sensor": {
+   "attributes": {
+    "friendly_name": "Robo Sensorreinigung zurücksetzen",
+    "icon": "mdi:radar"
+   },
+   "entity_id": "button.robo_reset_sensor",
+   "state": "unknown"
+  },
+  "button.robo_reset_side_brush": {
+   "attributes": {
+    "friendly_name": "Robo Seitenbürste zurücksetzen",
+    "icon": "mdi:pinwheel-outline"
+   },
+   "entity_id": "button.robo_reset_side_brush",
+   "state": "unknown"
+  },
+  "button.robo_start_fast_mapping": {
+   "attributes": {
+    "friendly_name": "Robo Schnellkartierung starten",
+    "icon": "mdi:map-plus"
+   },
+   "entity_id": "button.robo_start_fast_mapping",
+   "state": "unknown"
+  },
+  "camera.robo_map": {
+   "attributes": {
+    "access_token": "testtoken",
+    "calibration_points": [
+     {
+      "map": {
+       "x": 748,
+       "y": 134
+      },
+      "vacuum": {
+       "x": 0,
+       "y": 0
+      }
+     },
+     {
+      "map": {
+       "x": 828,
+       "y": 134
+      },
+      "vacuum": {
+       "x": 1000,
+       "y": 0
+      }
+     },
+     {
+      "map": {
+       "x": 748,
+       "y": 54
+      },
+      "vacuum": {
+       "x": 0,
+       "y": 1000
+      }
+     }
+    ],
+    "carpets": [
+     {
+      "angle": null,
+      "x0": 1794,
+      "x1": 3545,
+      "x2": 3545,
+      "x3": 1794,
+      "y0": -9569,
+      "y1": -9569,
+      "y2": -8439,
+      "y3": -8439
+     },
+     {
+      "angle": null,
+      "x0": 1681,
+      "x1": 4336,
+      "x2": 4336,
+      "x3": 1681,
+      "y0": -9795,
+      "y1": -9795,
+      "y2": -8100,
+      "y3": -8100
+     },
+     {
+      "angle": null,
+      "x0": 1455,
+      "x1": 4110,
+      "x2": 4110,
+      "x3": 1455,
+      "y0": -4258,
+      "y1": -4258,
+      "y2": -2620,
+      "y3": -2620
+     }
+    ],
+    "charger_position": {
+     "a": 273,
+     "x": 1484,
+     "y": -489
+    },
+    "cleaning_history_picture": {
+     "10: 11/06 07:50 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=10&v=1793947814",
+     "11: 11/05 09:47 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=11&v=1793868431",
+     "12: 11/05 08:56 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=12&v=1793865398",
+     "13: 11/04 12:35 - Cleaning (Interrupted)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=13&v=1793792134",
+     "14: 11/04 08:36 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=14&v=1793777772",
+     "15: 11/04 07:48 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=15&v=1793774893",
+     "16: 11/03 07:46 - Cleaning (Interrupted)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=16&v=1793688384",
+     "17: 11/02 13:14 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=17&v=1793621675",
+     "18: 11/02 12:28 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=18&v=1793618912",
+     "19: 10/31 14:30 - Room Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=19&v=1793453426",
+     "1: 11/09 13:47 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=1&v=1794228429",
+     "20: 10/31 14:05 - Room Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=20&v=1793451933",
+     "21: 10/31 13:56 - Room Cleaning (Interrupted)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=21&v=1793451414",
+     "22: 10/31 11:23 - Cleaning (Interrupted)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=22&v=1793442189",
+     "23: 10/29 10:03 - Room Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=23&v=1793264638",
+     "24: 10/28 17:43 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=24&v=1793205795",
+     "25: 10/26 13:00 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=25&v=1793016030",
+     "26: 10/26 12:10 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=26&v=1793013053",
+     "27: 10/22 07:52 - Cleaning (Interrupted)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=27&v=1792648324",
+     "28: 10/21 07:45 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=28&v=1792561558",
+     "29: 10/20 15:15 - Room Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=29&v=1792502148",
+     "2: 11/09 12:46 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=2&v=1794224793",
+     "30: 10/20 15:06 - Room Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=30&v=1792501614",
+     "3: 11/08 15:52 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=3&v=1794149563",
+     "4: 11/08 15:00 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=4&v=1794146417",
+     "5: 11/08 13:00 - Room Cleaning (Interrupted)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=5&v=1794139246",
+     "6: 11/07 17:03 - Room Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=6&v=1794067428",
+     "7: 11/07 16:45 - Room Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=7&v=1794066325",
+     "8: 11/07 11:38 - Cleaning (Interrupted)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=8&v=1794047923",
+     "9: 11/06 08:44 - Cleaning (Completed)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=9&v=1793951086"
+    },
+    "color_scheme": "Dreame Light",
+    "cruising_history_picture": {
+     "1: 04/19/25 17:55 - Cruising Path (Interrupted)": "/api/camera_history_map_proxy/camera.robo_map?token=testtoken&index=1&v=1745078136&cruising=1"
+    },
+    "curtains": [],
+    "deleted_carpets": [
+     {
+      "angle": null,
+      "x0": 238,
+      "x1": 3740,
+      "x2": 3740,
+      "x3": 238,
+      "y0": -11236,
+      "y1": -11236,
+      "y2": -8354,
+      "y3": -8354
+     },
+     {
+      "angle": null,
+      "x0": 1992,
+      "x1": 4252,
+      "x2": 4252,
+      "x3": 1992,
+      "y0": -4174,
+      "y1": -4174,
+      "y2": -3044,
+      "y3": -3044
+     }
+    ],
+    "detected_carpets": [
+     {
+      "angle": null,
+      "x0": -5466.5,
+      "x1": -4732.0,
+      "x2": -4732.0,
+      "x3": -5466.5,
+      "y0": -1122.5,
+      "y1": -1122.5,
+      "y2": -557.5,
+      "y3": -557.5
+     },
+     {
+      "angle": null,
+      "x0": 635.5,
+      "x1": 1878.5,
+      "x2": 1878.5,
+      "x3": 635.5,
+      "y0": -4230.0,
+      "y1": -4230.0,
+      "y2": -3552.0,
+      "y3": -3552.0
+     },
+     {
+      "angle": null,
+      "x0": 2330.5,
+      "x1": 3517.0,
+      "x2": 3517.0,
+      "x3": 2330.5,
+      "y0": -4230.0,
+      "y1": -4230.0,
+      "y2": -3665.0,
+      "y3": -3665.0
+     },
+     {
+      "angle": null,
+      "x0": -4280.0,
+      "x1": -1172.5,
+      "x2": -1172.5,
+      "x3": -4280.0,
+      "y0": -8015.5,
+      "y1": -8015.5,
+      "y2": -6320.5,
+      "y3": -6320.5
+     },
+     {
+      "angle": null,
+      "x0": 3912.5,
+      "x1": 4251.5,
+      "x2": 4251.5,
+      "x3": 3912.5,
+      "y0": -9484.5,
+      "y1": -9484.5,
+      "y2": -8298.0,
+      "y3": -8298.0
+     },
+     {
+      "angle": null,
+      "x0": 635.5,
+      "x1": 3121.5,
+      "x2": 3121.5,
+      "x3": 635.5,
+      "y0": -9880.0,
+      "y1": -9880.0,
+      "y2": -7281.0,
+      "y3": -7281.0
+     }
+    ],
+    "dust_collection_count": 0,
+    "entity_picture": "/api/camera_proxy/camera.robo_map?token=testtoken&v=1794243086",
+    "frame_id": 1180,
+    "friendly_name": "Robo Aktuelle Karte",
+    "icon": "mdi:map",
+    "impassable_thresholds": [],
+    "is_empty": false,
+    "map_id": 2,
+    "map_index": 1,
+    "mop_wash_count": 3,
+    "no_go_areas": [],
+    "no_mopping_areas": [],
+    "obstacle_picture": {},
+    "obstacles": {
+     "1": {
+      "ignore_status": "Not Ignored",
+      "picture_status": "Disabled",
+      "reason": "Blocked by threshold",
+      "room": "Primary Bedroom",
+      "type": "Vernachlässigter Raum",
+      "x": -698,
+      "y": -7157
+     },
+     "2": {
+      "ignore_status": "Not Ignored",
+      "picture_status": "Disabled",
+      "reason": "Blocked by door",
+      "room": "Galerie",
+      "type": "Vernachlässigter Raum",
+      "x": 248,
+      "y": -7012
+     },
+     "3": {
+      "ignore_status": "Not Ignored",
+      "picture_status": "Disabled",
+      "reason": "Blocked by door",
+      "room": "Bathroom",
+      "type": "Vernachlässigter Raum",
+      "x": -31,
+      "y": -5857
+     }
+    },
+    "passable_thresholds": [
+     {
+      "x0": -4584,
+      "x1": -3289,
+      "y0": -7932,
+      "y1": -7932
+     },
+     {
+      "x0": -4708,
+      "x1": -3234,
+      "y0": -7418,
+      "y1": -7418
+     }
+    ],
+    "ramps": [],
+    "recovery_map_file": {
+     "04/26/26 13:23:13: Map2 (Bearbeitete Karte)": "/api/camera_recovery_map_proxy/camera.robo_map?token=testtoken&index=2&v=1777202593&file=1",
+     "11/21/24 10:20:19: Map1 (Originalkarte)": "/api/camera_recovery_map_proxy/camera.robo_map?token=testtoken&index=1&v=1732180819&file=1"
+    },
+    "recovery_map_picture": {
+     "04/26/26 13:23:13: Map2 (Bearbeitete Karte)": "/api/camera_recovery_map_proxy/camera.robo_map?token=testtoken&index=2&v=1777202593",
+     "11/21/24 10:20:19: Map1 (Originalkarte)": "/api/camera_recovery_map_proxy/camera.robo_map?token=testtoken&index=1&v=1732180819"
+    },
+    "rooms": {
+     "1": {
+      "cleaning_mode": 2,
+      "cleaning_route": 2,
+      "cleaning_times": 3,
+      "color_index": 1,
+      "floor_material": "Wood",
+      "floor_material_direction": "Horizontal",
+      "icon": "mdi:chef-hat",
+      "index": 0,
+      "name": "Atelier",
+      "order": 4,
+      "room_id": 1,
+      "suction_level": 3,
+      "type": 4,
+      "visibility": "Visible",
+      "water_volume": 3,
+      "wetness_level": 27,
+      "x": 1229,
+      "x0": -1737,
+      "x1": 2896,
+      "y": -981,
+      "y0": -2422,
+      "y1": 7
+     },
+     "3": {
+      "cleaning_mode": 2,
+      "cleaning_route": 2,
+      "cleaning_times": 2,
+      "color_index": 2,
+      "floor_material": "Wood",
+      "floor_material_direction": "Vertical",
+      "icon": "mdi:sofa-outline",
+      "index": 0,
+      "name": "Salon",
+      "order": 1,
+      "room_id": 3,
+      "suction_level": 3,
+      "type": 1,
+      "visibility": "Visible",
+      "water_volume": 2,
+      "wetness_level": 16,
+      "x": -3461,
+      "x0": -5918,
+      "x1": -1116,
+      "y": -2902,
+      "y0": -5812,
+      "y1": -162
+     },
+     "4": {
+      "cleaning_mode": 2,
+      "cleaning_route": 1,
+      "cleaning_times": 1,
+      "color_index": 3,
+      "custom_name": "Galerie",
+      "floor_material": "Tile",
+      "icon": "mdi:home-outline",
+      "index": 1,
+      "name": "Galerie",
+      "order": 7,
+      "room_id": 4,
+      "suction_level": 1,
+      "type": 0,
+      "visibility": "Visible",
+      "water_volume": 2,
+      "wetness_level": 16,
+      "x": 2585,
+      "x0": 410,
+      "x1": 10128,
+      "y": -6349,
+      "y0": -9146,
+      "y1": -4682
+     },
+     "5": {
+      "cleaning_mode": 2,
+      "cleaning_route": 2,
+      "cleaning_times": 1,
+      "color_index": 1,
+      "floor_material": "Wood",
+      "floor_material_direction": "Horizontal",
+      "icon": "mdi:bed-king-outline",
+      "index": 0,
+      "name": "Bibliothek",
+      "order": 2,
+      "room_id": 5,
+      "suction_level": 3,
+      "type": 2,
+      "visibility": "Visible",
+      "water_volume": 2,
+      "wetness_level": 16,
+      "x": -4252,
+      "x0": -8574,
+      "x1": -1116,
+      "y": -8496,
+      "y0": -11123,
+      "y1": -5247
+     },
+     "6": {
+      "cleaning_mode": 0,
+      "cleaning_route": 2,
+      "cleaning_times": 2,
+      "color_index": 2,
+      "custom_name": "Werkstatt",
+      "floor_material": "Wood",
+      "floor_material_direction": "Vertical",
+      "icon": "mdi:home-outline",
+      "index": 2,
+      "name": "Werkstatt",
+      "order": 5,
+      "room_id": 6,
+      "suction_level": 3,
+      "type": 0,
+      "visibility": "Visible",
+      "water_volume": 1,
+      "wetness_level": 5,
+      "x": 1003,
+      "x0": -1285,
+      "x1": 4421,
+      "y": -10134,
+      "y0": -16547,
+      "y1": -7789
+     },
+     "7": {
+      "cleaning_mode": 2,
+      "cleaning_route": 2,
+      "cleaning_times": 2,
+      "color_index": 0,
+      "floor_material": "Tile",
+      "icon": "mdi:foot-print",
+      "index": 0,
+      "name": "Wintergarten",
+      "order": 3,
+      "room_id": 7,
+      "suction_level": 3,
+      "type": 8,
+      "visibility": "Visible",
+      "water_volume": 2,
+      "wetness_level": 16,
+      "x": -410,
+      "x0": -1172,
+      "x1": 410,
+      "y": -5049,
+      "y0": -7789,
+      "y1": -2366
+     },
+     "9": {
+      "cleaning_mode": 0,
+      "cleaning_route": 2,
+      "cleaning_times": 2,
+      "color_index": 2,
+      "floor_material": "Tile",
+      "icon": "mdi:toilet",
+      "index": 0,
+      "name": "Sauna",
+      "order": 6,
+      "room_id": 9,
+      "suction_level": 3,
+      "type": 6,
+      "visibility": "Visible",
+      "water_volume": 2,
+      "wetness_level": 16,
+      "x": 2472,
+      "x0": 353,
+      "x1": 4082,
+      "y": -3806,
+      "y0": -5021,
+      "y1": -2818
+     }
+    },
+    "rotation": 0,
+    "router_position": {
+     "x": 2560,
+     "y": -3063
+    },
+    "saved_map_id": 3,
+    "startup_method": "Through App",
+    "supported_features": 0,
+    "updated_at": "2026-11-09T17:51:26.350546",
+    "vacuum_position": {
+     "a": 273,
+     "x": 1484,
+     "y": -489
+    },
+    "virtual_walls": [
+     {
+      "x0": 777,
+      "x1": 794,
+      "y0": -7926,
+      "y1": -6336
+     }
+    ],
+    "wifi_map_picture": "/api/camera_wifi_map_proxy/camera.robo_map?token=testtoken&v=1794232113"
+   },
+   "entity_id": "camera.robo_map",
+   "state": "2026-11-09 17:51:26"
+  },
+  "camera.robo_map_1": {
+   "attributes": {
+    "access_token": "testtoken",
+    "calibration_points": [
+     {
+      "map": {
+       "x": 748,
+       "y": 135
+      },
+      "vacuum": {
+       "x": 0,
+       "y": 0
+      }
+     },
+     {
+      "map": {
+       "x": 828,
+       "y": 135
+      },
+      "vacuum": {
+       "x": 1000,
+       "y": 0
+      }
+     },
+     {
+      "map": {
+       "x": 748,
+       "y": 55
+      },
+      "vacuum": {
+       "x": 0,
+       "y": 1000
+      }
+     }
+    ],
+    "carpets": [
+     {
+      "angle": null,
+      "x0": 1794,
+      "x1": 3545,
+      "x2": 3545,
+      "x3": 1794,
+      "y0": -9569,
+      "y1": -9569,
+      "y2": -8439,
+      "y3": -8439
+     },
+     {
+      "angle": null,
+      "x0": 1681,
+      "x1": 4336,
+      "x2": 4336,
+      "x3": 1681,
+      "y0": -9795,
+      "y1": -9795,
+      "y2": -8100,
+      "y3": -8100
+     },
+     {
+      "angle": null,
+      "x0": 1455,
+      "x1": 4110,
+      "x2": 4110,
+      "x3": 1455,
+      "y0": -4258,
+      "y1": -4258,
+      "y2": -2620,
+      "y3": -2620
+     }
+    ],
+    "charger_position": {
+     "a": 273,
+     "x": 1482,
+     "y": -474
+    },
+    "curtains": [],
+    "deleted_carpets": [
+     {
+      "angle": null,
+      "x0": 238,
+      "x1": 3740,
+      "x2": 3740,
+      "x3": 238,
+      "y0": -11236,
+      "y1": -11236,
+      "y2": -8354,
+      "y3": -8354
+     },
+     {
+      "angle": null,
+      "x0": 1992,
+      "x1": 4252,
+      "x2": 4252,
+      "x3": 1992,
+      "y0": -4174,
+      "y1": -4174,
+      "y2": -3044,
+      "y3": -3044
+     }
+    ],
+    "detected_carpets": [
+     {
+      "angle": null,
+      "x0": -5466.5,
+      "x1": -4732.0,
+      "x2": -4732.0,
+      "x3": -5466.5,
+      "y0": -1122.5,
+      "y1": -1122.5,
+      "y2": -557.5,
+      "y3": -557.5
+     },
+     {
+      "angle": null,
+      "x0": 635.5,
+      "x1": 1878.5,
+      "x2": 1878.5,
+      "x3": 635.5,
+      "y0": -4230.0,
+      "y1": -4230.0,
+      "y2": -3552.0,
+      "y3": -3552.0
+     },
+     {
+      "angle": null,
+      "x0": 2330.5,
+      "x1": 3517.0,
+      "x2": 3517.0,
+      "x3": 2330.5,
+      "y0": -4230.0,
+      "y1": -4230.0,
+      "y2": -3665.0,
+      "y3": -3665.0
+     },
+     {
+      "angle": null,
+      "x0": -4280.0,
+      "x1": -1172.5,
+      "x2": -1172.5,
+      "x3": -4280.0,
+      "y0": -8015.5,
+      "y1": -8015.5,
+      "y2": -6320.5,
+      "y3": -6320.5
+     },
+     {
+      "angle": null,
+      "x0": 3912.5,
+      "x1": 4251.5,
+      "x2": 4251.5,
+      "x3": 3912.5,
+      "y0": -9484.5,
+      "y1": -9484.5,
+      "y2": -8298.0,
+      "y3": -8298.0
+     },
+     {
+      "angle": null,
+      "x0": 635.5,
+      "x1": 3121.5,
+      "x2": 3121.5,
+      "x3": 635.5,
+      "y0": -9880.0,
+      "y1": -9880.0,
+      "y2": -7281.0,
+      "y3": -7281.0
+     }
+    ],
+    "entity_picture": "/api/camera_proxy/camera.robo_map_1?token=testtoken&v=1794232113",
+    "friendly_name": "Robo Gespeicherte Karte 1",
+    "icon": "mdi:map-search",
+    "impassable_thresholds": [],
+    "is_empty": false,
+    "map_id": 3,
+    "map_index": 1,
+    "map_name": "Map 1",
+    "no_go_areas": [],
+    "no_mopping_areas": [],
+    "passable_thresholds": [
+     {
+      "x0": -4584,
+      "x1": -3289,
+      "y0": -7932,
+      "y1": -7932
+     },
+     {
+      "x0": -4708,
+      "x1": -3234,
+      "y0": -7418,
+      "y1": -7418
+     }
+    ],
+    "ramps": [],
+    "recovery_map_file": {
+     "04/26/26 13:23:13: Map2 (Bearbeitete Karte)": "/api/camera_recovery_map_proxy/camera.robo_map_1?token=testtoken&index=2&v=1777202593&file=1",
+     "11/21/24 10:20:19: Map1 (Originalkarte)": "/api/camera_recovery_map_proxy/camera.robo_map_1?token=testtoken&index=1&v=1732180819&file=1"
+    },
+    "recovery_map_list": [
+     {
+      "date": "2026-04-26 13:23",
+      "map_type": "Bearbeitete Karte",
+      "object_name": "cloud/geraet/1/102"
+     },
+     {
+      "date": "2024-11-21 10:20",
+      "map_type": "Originalkarte",
+      "object_name": "cloud/geraet/1/100"
+     }
+    ],
+    "recovery_map_picture": {
+     "04/26/26 13:23:13: Map2 (Bearbeitete Karte)": "/api/camera_recovery_map_proxy/camera.robo_map_1?token=testtoken&index=2&v=1777202593",
+     "11/21/24 10:20:19: Map1 (Originalkarte)": "/api/camera_recovery_map_proxy/camera.robo_map_1?token=testtoken&index=1&v=1732180819"
+    },
+    "rooms": {
+     "1": {
+      "cleaning_mode": 2,
+      "cleaning_route": 2,
+      "cleaning_times": 3,
+      "color_index": 1,
+      "floor_material": "Wood",
+      "floor_material_direction": "Horizontal",
+      "icon": "mdi:chef-hat",
+      "index": 0,
+      "name": "Atelier",
+      "order": 4,
+      "room_id": 1,
+      "suction_level": 3,
+      "type": 4,
+      "visibility": "Visible",
+      "water_volume": 3,
+      "wetness_level": 27,
+      "x": 1229,
+      "x0": -1737,
+      "x1": 3969,
+      "y": -981,
+      "y0": -2592,
+      "y1": 177
+     },
+     "3": {
+      "cleaning_mode": 2,
+      "cleaning_route": 2,
+      "cleaning_times": 2,
+      "color_index": 2,
+      "floor_material": "Wood",
+      "floor_material_direction": "Vertical",
+      "icon": "mdi:sofa-outline",
+      "index": 0,
+      "name": "Salon",
+      "order": 1,
+      "room_id": 3,
+      "suction_level": 3,
+      "type": 1,
+      "visibility": "Visible",
+      "water_volume": 2,
+      "wetness_level": 16,
+      "x": -3461,
+      "x0": -6031,
+      "x1": -1116,
+      "y": -2902,
+      "y0": -5925,
+      "y1": 7
+     },
+     "4": {
+      "cleaning_mode": 2,
+      "cleaning_route": 1,
+      "cleaning_times": 1,
+      "color_index": 3,
+      "custom_name": "Galerie",
+      "floor_material": "Tile",
+      "icon": "mdi:home-outline",
+      "index": 1,
+      "name": "Galerie",
+      "order": 7,
+      "room_id": 4,
+      "suction_level": 1,
+      "type": 0,
+      "visibility": "Visible",
+      "water_volume": 2,
+      "wetness_level": 16,
+      "x": 2585,
+      "x0": 410,
+      "x1": 10240,
+      "y": -6349,
+      "y0": -9146,
+      "y1": -4569
+     },
+     "5": {
+      "cleaning_mode": 2,
+      "cleaning_route": 2,
+      "cleaning_times": 1,
+      "color_index": 1,
+      "floor_material": "Wood",
+      "floor_material_direction": "Horizontal",
+      "icon": "mdi:bed-king-outline",
+      "index": 0,
+      "name": "Bibliothek",
+      "order": 2,
+      "room_id": 5,
+      "suction_level": 3,
+      "type": 2,
+      "visibility": "Visible",
+      "water_volume": 2,
+      "wetness_level": 16,
+      "x": -4252,
+      "x0": -8630,
+      "x1": -1059,
+      "y": -8496,
+      "y0": -11179,
+      "y1": -5247
+     },
+     "6": {
+      "cleaning_mode": 0,
+      "cleaning_route": 2,
+      "cleaning_times": 2,
+      "color_index": 2,
+      "custom_name": "Werkstatt",
+      "floor_material": "Wood",
+      "floor_material_direction": "Vertical",
+      "icon": "mdi:home-outline",
+      "index": 2,
+      "name": "Werkstatt",
+      "order": 5,
+      "room_id": 6,
+      "suction_level": 3,
+      "type": 0,
+      "visibility": "Visible",
+      "water_volume": 1,
+      "wetness_level": 5,
+      "x": 1003,
+      "x0": -1285,
+      "x1": 4704,
+      "y": -10134,
+      "y0": -16773,
+      "y1": -7789
+     },
+     "7": {
+      "cleaning_mode": 2,
+      "cleaning_route": 2,
+      "cleaning_times": 2,
+      "color_index": 0,
+      "floor_material": "Tile",
+      "icon": "mdi:foot-print",
+      "index": 0,
+      "name": "Wintergarten",
+      "order": 3,
+      "room_id": 7,
+      "suction_level": 3,
+      "type": 8,
+      "visibility": "Visible",
+      "water_volume": 2,
+      "wetness_level": 16,
+      "x": -410,
+      "x0": -1172,
+      "x1": 410,
+      "y": -5049,
+      "y0": -7959,
+      "y1": -2366
+     },
+     "9": {
+      "cleaning_mode": 0,
+      "cleaning_route": 2,
+      "cleaning_times": 2,
+      "color_index": 2,
+      "floor_material": "Tile",
+      "icon": "mdi:toilet",
+      "index": 0,
+      "name": "Sauna",
+      "order": 6,
+      "room_id": 9,
+      "suction_level": 3,
+      "type": 6,
+      "visibility": "Visible",
+      "water_volume": 2,
+      "wetness_level": 16,
+      "x": 2472,
+      "x0": 353,
+      "x1": 4647,
+      "y": -3806,
+      "y0": -5021,
+      "y1": -2366
+     }
+    },
+    "rotation": 0,
+    "router_position": {
+     "x": 2560,
+     "y": -3063
+    },
+    "selected": true,
+    "supported_features": 0,
+    "updated_at": "2026-11-09T14:48:33.137943",
+    "virtual_walls": [
+     {
+      "x0": 777,
+      "x1": 794,
+      "y0": -7926,
+      "y1": -6336
+     }
+    ],
+    "wifi_map_picture": "/api/camera_wifi_map_proxy/camera.robo_map_1?token=testtoken&v=1794232113"
+   },
+   "entity_id": "camera.robo_map_1",
+   "state": "2026-11-09 14:48:33"
+  },
+  "camera.robo_wifi_map_1": {
+   "attributes": {
+    "access_token": "testtoken",
+    "calibration_points": [
+     {
+      "map": {
+       "x": 240,
+       "y": 26
+      },
+      "vacuum": {
+       "x": 0,
+       "y": 0
+      }
+     },
+     {
+      "map": {
+       "x": 280,
+       "y": 26
+      },
+      "vacuum": {
+       "x": 1000,
+       "y": 0
+      }
+     },
+     {
+      "map": {
+       "x": 240,
+       "y": -14
+      },
+      "vacuum": {
+       "x": 0,
+       "y": 1000
+      }
+     }
+    ],
+    "charger_position": {
+     "a": 274,
+     "x": 1484,
+     "y": -487
+    },
+    "entity_picture": "/api/camera_proxy/camera.robo_wifi_map_1?token=testtoken&v=1794232113",
+    "frame_id": 1176,
+    "friendly_name": "Robo Gespeicherte WLAN-Karte 1",
+    "icon": "mdi:wifi-settings",
+    "is_empty": false,
+    "map_id": 2,
+    "rotation": 0,
+    "router_position": {
+     "x": 2560,
+     "y": -3063
+    },
+    "selected": true,
+    "supported_features": 0,
+    "updated_at": "2026-11-09T14:48:33.137943"
+   },
+   "entity_id": "camera.robo_wifi_map_1",
+   "state": "2026-11-09 14:48:33"
+  },
+  "number.robo_camera_light_brightness": {
+   "attributes": {
+    "friendly_name": "Robo Kameralicht-Helligkeit",
+    "icon": "mdi:brightness-percent",
+    "max": 100,
+    "min": 40,
+    "mode": "slider",
+    "step": 1,
+    "unit_of_measurement": "%"
+   },
+   "entity_id": "number.robo_camera_light_brightness",
+   "state": "unavailable"
+  },
+  "number.robo_room_1_wetness_level": {
+   "attributes": {
+    "friendly_name": "Robo Feuchtigkeit Atelier",
+    "icon": "mdi:water-plus",
+    "max": 32,
+    "min": 1,
+    "mode": "slider",
+    "step": 1
+   },
+   "entity_id": "number.robo_room_1_wetness_level",
+   "state": "unavailable"
+  },
+  "number.robo_room_3_wetness_level": {
+   "attributes": {
+    "friendly_name": "Robo Feuchtigkeit Salon",
+    "icon": "mdi:water",
+    "max": 32,
+    "min": 1,
+    "mode": "slider",
+    "step": 1
+   },
+   "entity_id": "number.robo_room_3_wetness_level",
+   "state": "unavailable"
+  },
+  "number.robo_room_4_wetness_level": {
+   "attributes": {
+    "friendly_name": "Robo Feuchtigkeit Galerie",
+    "icon": "mdi:water",
+    "max": 32,
+    "min": 1,
+    "mode": "slider",
+    "step": 1
+   },
+   "entity_id": "number.robo_room_4_wetness_level",
+   "state": "unavailable"
+  },
+  "number.robo_room_5_wetness_level": {
+   "attributes": {
+    "friendly_name": "Robo Feuchtigkeit Bibliothek",
+    "icon": "mdi:water",
+    "max": 32,
+    "min": 1,
+    "mode": "slider",
+    "step": 1
+   },
+   "entity_id": "number.robo_room_5_wetness_level",
+   "state": "unavailable"
+  },
+  "number.robo_room_6_wetness_level": {
+   "attributes": {
+    "friendly_name": "Robo Feuchtigkeit Werkstatt",
+    "icon": "mdi:water-minus",
+    "max": 32,
+    "min": 1,
+    "mode": "slider",
+    "step": 1
+   },
+   "entity_id": "number.robo_room_6_wetness_level",
+   "state": "unavailable"
+  },
+  "number.robo_room_7_wetness_level": {
+   "attributes": {
+    "friendly_name": "Robo Feuchtigkeit Wintergarten",
+    "icon": "mdi:water",
+    "max": 32,
+    "min": 1,
+    "mode": "slider",
+    "step": 1
+   },
+   "entity_id": "number.robo_room_7_wetness_level",
+   "state": "unavailable"
+  },
+  "number.robo_room_9_wetness_level": {
+   "attributes": {
+    "friendly_name": "Robo Feuchtigkeit Sauna",
+    "icon": "mdi:water",
+    "max": 32,
+    "min": 1,
+    "mode": "slider",
+    "step": 1
+   },
+   "entity_id": "number.robo_room_9_wetness_level",
+   "state": "unavailable"
+  },
+  "select.robo_carpet_cleaning": {
+   "attributes": {
+    "friendly_name": "Robo Teppichreinigung",
+    "icon": "mdi:close-box-outline",
+    "options": [
+     "avoidance",
+     "adaptation",
+     "remove_mop",
+     "vacuum_and_mop",
+     "ignore"
+    ],
+    "value": 3
+   },
+   "entity_id": "select.robo_carpet_cleaning",
+   "state": "remove_mop"
+  },
+  "select.robo_cleangenius": {
+   "attributes": {
+    "friendly_name": "Robo CleanGenius",
+    "icon": "mdi:atom",
+    "options": [
+     "off",
+     "routine_cleaning",
+     "deep_cleaning"
+    ],
+    "value": 0
+   },
+   "entity_id": "select.robo_cleangenius",
+   "state": "off"
+  },
+  "select.robo_cleangenius_mode": {
+   "attributes": {
+    "friendly_name": "Robo CleanGenius-Modus",
+    "icon": "mdi:atom",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_cleangenius_mode",
+   "state": "unavailable"
+  },
+  "select.robo_cleaning_mode": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsmodus",
+    "icon": "mdi:water-polo",
+    "options": [
+     "sweeping",
+     "mopping",
+     "sweeping_and_mopping",
+     "mopping_after_sweeping"
+    ],
+    "value": 5123
+   },
+   "entity_id": "select.robo_cleaning_mode",
+   "state": "mopping_after_sweeping"
+  },
+  "select.robo_cleaning_route": {
+   "attributes": {
+    "friendly_name": "Robo Route",
+    "icon": "mdi:heating-coil",
+    "options": [
+     "quick",
+     "standard",
+     "intensive",
+     "deep"
+    ],
+    "value": 3
+   },
+   "entity_id": "select.robo_cleaning_route",
+   "state": "deep"
+  },
+  "select.robo_mop_pad_humidity": {
+   "attributes": {
+    "friendly_name": "Robo Wischpad-Feuchtigkeit",
+    "icon": "mdi:water",
+    "options": [
+     "slightly_dry",
+     "moist",
+     "wet"
+    ],
+    "value": 2
+   },
+   "entity_id": "select.robo_mop_pad_humidity",
+   "state": "moist"
+  },
+  "select.robo_room_1_cleaning_mode": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsmodus Atelier",
+    "icon": "mdi:hydro-power",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_1_cleaning_mode",
+   "state": "unavailable"
+  },
+  "select.robo_room_1_cleaning_route": {
+   "attributes": {
+    "friendly_name": "Robo Route Atelier",
+    "icon": "mdi:swap-vertical-variant",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_1_cleaning_route",
+   "state": "unavailable"
+  },
+  "select.robo_room_1_cleaning_times": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsanzahl Atelier",
+    "icon": "mdi:home-floor-3",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_1_cleaning_times",
+   "state": "unavailable"
+  },
+  "select.robo_room_1_floor_material": {
+   "attributes": {
+    "friendly_name": "Robo Bodenmaterial Atelier",
+    "icon": "mdi:pine-tree-box",
+    "options": [
+     "none",
+     "tile",
+     "wood"
+    ],
+    "value": 1
+   },
+   "entity_id": "select.robo_room_1_floor_material",
+   "state": "wood"
+  },
+  "select.robo_room_1_floor_material_direction": {
+   "attributes": {
+    "friendly_name": "Robo Bodenrichtung Atelier",
+    "icon": "mdi:swap-horizontal-bold",
+    "options": [
+     "vertical",
+     "horizontal"
+    ],
+    "value": 0
+   },
+   "entity_id": "select.robo_room_1_floor_material_direction",
+   "state": "horizontal"
+  },
+  "select.robo_room_1_mop_pad_humidity": {
+   "attributes": {
+    "friendly_name": "Robo Wischpad-Feuchtigkeit Atelier",
+    "icon": "mdi:water-plus",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_1_mop_pad_humidity",
+   "state": "unavailable"
+  },
+  "select.robo_room_1_name": {
+   "attributes": {
+    "friendly_name": "Robo Raum 1 Name",
+    "icon": "mdi:chef-hat",
+    "index": 0,
+    "options": [
+     "Salon 2",
+     "Bibliothek 2",
+     "Arbeitszimmer",
+     "Atelier",
+     "Esszimmer",
+     "Sauna 2",
+     "Balkon",
+     "Wintergarten 2",
+     "Hauswirtschaftsraum",
+     "Garderobe",
+     "Besprechungsraum",
+     "Büro",
+     "Fitnessbereich",
+     "Erholungsbereich",
+     "Nebenzimmer"
+    ],
+    "room_id": 1,
+    "type": 4
+   },
+   "entity_id": "select.robo_room_1_name",
+   "state": "Atelier"
+  },
+  "select.robo_room_1_order": {
+   "attributes": {
+    "friendly_name": "Robo Reihenfolge Atelier",
+    "icon": "mdi:chef-hat",
+    "options": [
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6",
+     "7"
+    ]
+   },
+   "entity_id": "select.robo_room_1_order",
+   "state": "4"
+  },
+  "select.robo_room_1_suction_level": {
+   "attributes": {
+    "friendly_name": "Robo Saugkraft Atelier",
+    "icon": "mdi:fan-speed-3",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_1_suction_level",
+   "state": "unavailable"
+  },
+  "select.robo_room_1_visibility": {
+   "attributes": {
+    "friendly_name": "Robo Sichtbarkeit Atelier",
+    "icon": "mdi:eye-check",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_1_visibility",
+   "state": "unavailable"
+  },
+  "select.robo_room_3_cleaning_mode": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsmodus Salon",
+    "icon": "mdi:hydro-power",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_3_cleaning_mode",
+   "state": "unavailable"
+  },
+  "select.robo_room_3_cleaning_route": {
+   "attributes": {
+    "friendly_name": "Robo Route Salon",
+    "icon": "mdi:swap-vertical-variant",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_3_cleaning_route",
+   "state": "unavailable"
+  },
+  "select.robo_room_3_cleaning_times": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsanzahl Salon",
+    "icon": "mdi:home-floor-2",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_3_cleaning_times",
+   "state": "unavailable"
+  },
+  "select.robo_room_3_floor_material": {
+   "attributes": {
+    "friendly_name": "Robo Bodenmaterial Salon",
+    "icon": "mdi:pine-tree-box",
+    "options": [
+     "none",
+     "tile",
+     "wood"
+    ],
+    "value": 1
+   },
+   "entity_id": "select.robo_room_3_floor_material",
+   "state": "wood"
+  },
+  "select.robo_room_3_floor_material_direction": {
+   "attributes": {
+    "friendly_name": "Robo Bodenrichtung Salon",
+    "icon": "mdi:swap-vertical-bold",
+    "options": [
+     "vertical",
+     "horizontal"
+    ],
+    "value": 90
+   },
+   "entity_id": "select.robo_room_3_floor_material_direction",
+   "state": "vertical"
+  },
+  "select.robo_room_3_mop_pad_humidity": {
+   "attributes": {
+    "friendly_name": "Robo Wischpad-Feuchtigkeit Salon",
+    "icon": "mdi:water",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_3_mop_pad_humidity",
+   "state": "unavailable"
+  },
+  "select.robo_room_3_name": {
+   "attributes": {
+    "friendly_name": "Robo Raum 3 Name",
+    "icon": "mdi:sofa-outline",
+    "index": 0,
+    "options": [
+     "Salon",
+     "Bibliothek 2",
+     "Arbeitszimmer",
+     "Atelier 2",
+     "Esszimmer",
+     "Sauna 2",
+     "Balkon",
+     "Wintergarten 2",
+     "Hauswirtschaftsraum",
+     "Garderobe",
+     "Besprechungsraum",
+     "Büro",
+     "Fitnessbereich",
+     "Erholungsbereich",
+     "Nebenzimmer"
+    ],
+    "room_id": 3,
+    "type": 1
+   },
+   "entity_id": "select.robo_room_3_name",
+   "state": "Salon"
+  },
+  "select.robo_room_3_order": {
+   "attributes": {
+    "friendly_name": "Robo Reihenfolge Salon",
+    "icon": "mdi:sofa-outline",
+    "options": [
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6",
+     "7"
+    ]
+   },
+   "entity_id": "select.robo_room_3_order",
+   "state": "1"
+  },
+  "select.robo_room_3_suction_level": {
+   "attributes": {
+    "friendly_name": "Robo Saugkraft Salon",
+    "icon": "mdi:fan-speed-3",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_3_suction_level",
+   "state": "unavailable"
+  },
+  "select.robo_room_3_visibility": {
+   "attributes": {
+    "friendly_name": "Robo Sichtbarkeit Salon",
+    "icon": "mdi:eye-check",
+    "options": [
+     "visible",
+     "hidden"
+    ],
+    "value": 1
+   },
+   "entity_id": "select.robo_room_3_visibility",
+   "state": "visible"
+  },
+  "select.robo_room_4_cleaning_mode": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsmodus Galerie",
+    "icon": "mdi:hydro-power",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_4_cleaning_mode",
+   "state": "unavailable"
+  },
+  "select.robo_room_4_cleaning_route": {
+   "attributes": {
+    "friendly_name": "Robo Route Galerie",
+    "icon": "mdi:sine-wave",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_4_cleaning_route",
+   "state": "unavailable"
+  },
+  "select.robo_room_4_cleaning_times": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsanzahl Galerie",
+    "icon": "mdi:home-floor-1",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_4_cleaning_times",
+   "state": "unavailable"
+  },
+  "select.robo_room_4_floor_material": {
+   "attributes": {
+    "friendly_name": "Robo Bodenmaterial Galerie",
+    "icon": "mdi:apps",
+    "options": [
+     "none",
+     "tile",
+     "wood"
+    ],
+    "value": 2
+   },
+   "entity_id": "select.robo_room_4_floor_material",
+   "state": "tile"
+  },
+  "select.robo_room_4_floor_material_direction": {
+   "attributes": {
+    "friendly_name": "Robo Bodenrichtung Galerie",
+    "icon": "mdi:arrow-top-left-bottom-right-bold",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_4_floor_material_direction",
+   "state": "unavailable"
+  },
+  "select.robo_room_4_mop_pad_humidity": {
+   "attributes": {
+    "friendly_name": "Robo Wischpad-Feuchtigkeit Galerie",
+    "icon": "mdi:water",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_4_mop_pad_humidity",
+   "state": "unavailable"
+  },
+  "select.robo_room_4_name": {
+   "attributes": {
+    "friendly_name": "Robo Raum 4 Name",
+    "icon": "mdi:home-outline",
+    "index": 1,
+    "options": [
+     "Galerie",
+     "Salon 2",
+     "Bibliothek 2",
+     "Arbeitszimmer",
+     "Atelier 2",
+     "Esszimmer",
+     "Sauna 2",
+     "Balkon",
+     "Wintergarten 2",
+     "Hauswirtschaftsraum",
+     "Garderobe",
+     "Besprechungsraum",
+     "Büro",
+     "Fitnessbereich",
+     "Erholungsbereich",
+     "Nebenzimmer"
+    ],
+    "room_id": 4,
+    "type": 0
+   },
+   "entity_id": "select.robo_room_4_name",
+   "state": "Galerie"
+  },
+  "select.robo_room_4_order": {
+   "attributes": {
+    "friendly_name": "Robo Reihenfolge Galerie",
+    "icon": "mdi:home-outline",
+    "options": [
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6",
+     "7"
+    ]
+   },
+   "entity_id": "select.robo_room_4_order",
+   "state": "7"
+  },
+  "select.robo_room_4_suction_level": {
+   "attributes": {
+    "friendly_name": "Robo Saugkraft Galerie",
+    "icon": "mdi:fan-speed-1",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_4_suction_level",
+   "state": "unavailable"
+  },
+  "select.robo_room_4_visibility": {
+   "attributes": {
+    "friendly_name": "Robo Sichtbarkeit Galerie",
+    "icon": "mdi:eye-check",
+    "options": [
+     "visible",
+     "hidden"
+    ],
+    "value": 1
+   },
+   "entity_id": "select.robo_room_4_visibility",
+   "state": "visible"
+  },
+  "select.robo_room_5_cleaning_mode": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsmodus Bibliothek",
+    "icon": "mdi:hydro-power",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_5_cleaning_mode",
+   "state": "unavailable"
+  },
+  "select.robo_room_5_cleaning_route": {
+   "attributes": {
+    "friendly_name": "Robo Route Bibliothek",
+    "icon": "mdi:swap-vertical-variant",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_5_cleaning_route",
+   "state": "unavailable"
+  },
+  "select.robo_room_5_cleaning_times": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsanzahl Bibliothek",
+    "icon": "mdi:home-floor-1",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_5_cleaning_times",
+   "state": "unavailable"
+  },
+  "select.robo_room_5_floor_material": {
+   "attributes": {
+    "friendly_name": "Robo Bodenmaterial Bibliothek",
+    "icon": "mdi:pine-tree-box",
+    "options": [
+     "none",
+     "tile",
+     "wood"
+    ],
+    "value": 1
+   },
+   "entity_id": "select.robo_room_5_floor_material",
+   "state": "wood"
+  },
+  "select.robo_room_5_floor_material_direction": {
+   "attributes": {
+    "friendly_name": "Robo Bodenrichtung Bibliothek",
+    "icon": "mdi:swap-horizontal-bold",
+    "options": [
+     "vertical",
+     "horizontal"
+    ],
+    "value": 0
+   },
+   "entity_id": "select.robo_room_5_floor_material_direction",
+   "state": "horizontal"
+  },
+  "select.robo_room_5_mop_pad_humidity": {
+   "attributes": {
+    "friendly_name": "Robo Wischpad-Feuchtigkeit Bibliothek",
+    "icon": "mdi:water",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_5_mop_pad_humidity",
+   "state": "unavailable"
+  },
+  "select.robo_room_5_name": {
+   "attributes": {
+    "friendly_name": "Robo Raum 5 Name",
+    "icon": "mdi:bed-king-outline",
+    "index": 0,
+    "options": [
+     "Salon 2",
+     "Bibliothek",
+     "Arbeitszimmer",
+     "Atelier 2",
+     "Esszimmer",
+     "Sauna 2",
+     "Balkon",
+     "Wintergarten 2",
+     "Hauswirtschaftsraum",
+     "Garderobe",
+     "Besprechungsraum",
+     "Büro",
+     "Fitnessbereich",
+     "Erholungsbereich",
+     "Nebenzimmer"
+    ],
+    "room_id": 5,
+    "type": 2
+   },
+   "entity_id": "select.robo_room_5_name",
+   "state": "Bibliothek"
+  },
+  "select.robo_room_5_order": {
+   "attributes": {
+    "friendly_name": "Robo Reihenfolge Bibliothek",
+    "icon": "mdi:bed-king-outline",
+    "options": [
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6",
+     "7"
+    ]
+   },
+   "entity_id": "select.robo_room_5_order",
+   "state": "2"
+  },
+  "select.robo_room_5_suction_level": {
+   "attributes": {
+    "friendly_name": "Robo Saugkraft Bibliothek",
+    "icon": "mdi:fan-speed-3",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_5_suction_level",
+   "state": "unavailable"
+  },
+  "select.robo_room_5_visibility": {
+   "attributes": {
+    "friendly_name": "Robo Sichtbarkeit Bibliothek",
+    "icon": "mdi:eye-check",
+    "options": [
+     "visible",
+     "hidden"
+    ],
+    "value": 1
+   },
+   "entity_id": "select.robo_room_5_visibility",
+   "state": "visible"
+  },
+  "select.robo_room_6_cleaning_mode": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsmodus Werkstatt",
+    "icon": "mdi:broom",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_6_cleaning_mode",
+   "state": "unavailable"
+  },
+  "select.robo_room_6_cleaning_route": {
+   "attributes": {
+    "friendly_name": "Robo Route Werkstatt",
+    "icon": "mdi:swap-vertical-variant",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_6_cleaning_route",
+   "state": "unavailable"
+  },
+  "select.robo_room_6_cleaning_times": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsanzahl Werkstatt",
+    "icon": "mdi:home-floor-2",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_6_cleaning_times",
+   "state": "unavailable"
+  },
+  "select.robo_room_6_floor_material": {
+   "attributes": {
+    "friendly_name": "Robo Bodenmaterial Werkstatt",
+    "icon": "mdi:pine-tree-box",
+    "options": [
+     "none",
+     "tile",
+     "wood"
+    ],
+    "value": 1
+   },
+   "entity_id": "select.robo_room_6_floor_material",
+   "state": "wood"
+  },
+  "select.robo_room_6_floor_material_direction": {
+   "attributes": {
+    "friendly_name": "Robo Bodenrichtung Werkstatt",
+    "icon": "mdi:swap-vertical-bold",
+    "options": [
+     "vertical",
+     "horizontal"
+    ],
+    "value": 90
+   },
+   "entity_id": "select.robo_room_6_floor_material_direction",
+   "state": "vertical"
+  },
+  "select.robo_room_6_mop_pad_humidity": {
+   "attributes": {
+    "friendly_name": "Robo Wischpad-Feuchtigkeit Werkstatt",
+    "icon": "mdi:water-minus",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_6_mop_pad_humidity",
+   "state": "unavailable"
+  },
+  "select.robo_room_6_name": {
+   "attributes": {
+    "friendly_name": "Robo Raum 6 Name",
+    "icon": "mdi:home-outline",
+    "index": 2,
+    "options": [
+     "Werkstatt",
+     "Salon 2",
+     "Bibliothek 2",
+     "Arbeitszimmer",
+     "Atelier 2",
+     "Esszimmer",
+     "Sauna 2",
+     "Balkon",
+     "Wintergarten 2",
+     "Hauswirtschaftsraum",
+     "Garderobe",
+     "Besprechungsraum",
+     "Büro",
+     "Fitnessbereich",
+     "Erholungsbereich",
+     "Nebenzimmer"
+    ],
+    "room_id": 6,
+    "type": 0
+   },
+   "entity_id": "select.robo_room_6_name",
+   "state": "Werkstatt"
+  },
+  "select.robo_room_6_order": {
+   "attributes": {
+    "friendly_name": "Robo Reihenfolge Werkstatt",
+    "icon": "mdi:home-outline",
+    "options": [
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6",
+     "7"
+    ]
+   },
+   "entity_id": "select.robo_room_6_order",
+   "state": "5"
+  },
+  "select.robo_room_6_suction_level": {
+   "attributes": {
+    "friendly_name": "Robo Saugkraft Werkstatt",
+    "icon": "mdi:fan-speed-3",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_6_suction_level",
+   "state": "unavailable"
+  },
+  "select.robo_room_6_visibility": {
+   "attributes": {
+    "friendly_name": "Robo Sichtbarkeit Werkstatt",
+    "icon": "mdi:eye-check",
+    "options": [
+     "visible",
+     "hidden"
+    ],
+    "value": 1
+   },
+   "entity_id": "select.robo_room_6_visibility",
+   "state": "visible"
+  },
+  "select.robo_room_7_cleaning_mode": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsmodus Wintergarten",
+    "icon": "mdi:hydro-power",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_7_cleaning_mode",
+   "state": "unavailable"
+  },
+  "select.robo_room_7_cleaning_route": {
+   "attributes": {
+    "friendly_name": "Robo Route Wintergarten",
+    "icon": "mdi:swap-vertical-variant",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_7_cleaning_route",
+   "state": "unavailable"
+  },
+  "select.robo_room_7_cleaning_times": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsanzahl Wintergarten",
+    "icon": "mdi:home-floor-2",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_7_cleaning_times",
+   "state": "unavailable"
+  },
+  "select.robo_room_7_floor_material": {
+   "attributes": {
+    "friendly_name": "Robo Bodenmaterial Wintergarten",
+    "icon": "mdi:apps",
+    "options": [
+     "none",
+     "tile",
+     "wood"
+    ],
+    "value": 2
+   },
+   "entity_id": "select.robo_room_7_floor_material",
+   "state": "tile"
+  },
+  "select.robo_room_7_floor_material_direction": {
+   "attributes": {
+    "friendly_name": "Robo Bodenrichtung Wintergarten",
+    "icon": "mdi:arrow-top-left-bottom-right-bold",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_7_floor_material_direction",
+   "state": "unavailable"
+  },
+  "select.robo_room_7_mop_pad_humidity": {
+   "attributes": {
+    "friendly_name": "Robo Wischpad-Feuchtigkeit Wintergarten",
+    "icon": "mdi:water",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_7_mop_pad_humidity",
+   "state": "unavailable"
+  },
+  "select.robo_room_7_name": {
+   "attributes": {
+    "friendly_name": "Robo Raum 7 Name",
+    "icon": "mdi:foot-print",
+    "index": 0,
+    "options": [
+     "Salon 2",
+     "Bibliothek 2",
+     "Arbeitszimmer",
+     "Atelier 2",
+     "Esszimmer",
+     "Sauna 2",
+     "Balkon",
+     "Wintergarten",
+     "Hauswirtschaftsraum",
+     "Garderobe",
+     "Besprechungsraum",
+     "Büro",
+     "Fitnessbereich",
+     "Erholungsbereich",
+     "Nebenzimmer"
+    ],
+    "room_id": 7,
+    "type": 8
+   },
+   "entity_id": "select.robo_room_7_name",
+   "state": "Wintergarten"
+  },
+  "select.robo_room_7_order": {
+   "attributes": {
+    "friendly_name": "Robo Reihenfolge Wintergarten",
+    "icon": "mdi:foot-print",
+    "options": [
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6",
+     "7"
+    ]
+   },
+   "entity_id": "select.robo_room_7_order",
+   "state": "3"
+  },
+  "select.robo_room_7_suction_level": {
+   "attributes": {
+    "friendly_name": "Robo Saugkraft Wintergarten",
+    "icon": "mdi:fan-speed-3",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_7_suction_level",
+   "state": "unavailable"
+  },
+  "select.robo_room_7_visibility": {
+   "attributes": {
+    "friendly_name": "Robo Sichtbarkeit Wintergarten",
+    "icon": "mdi:eye-check",
+    "options": [
+     "visible",
+     "hidden"
+    ],
+    "value": 1
+   },
+   "entity_id": "select.robo_room_7_visibility",
+   "state": "visible"
+  },
+  "select.robo_room_9_cleaning_mode": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsmodus Sauna",
+    "icon": "mdi:broom",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_9_cleaning_mode",
+   "state": "unavailable"
+  },
+  "select.robo_room_9_cleaning_route": {
+   "attributes": {
+    "friendly_name": "Robo Route Sauna",
+    "icon": "mdi:swap-vertical-variant",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_9_cleaning_route",
+   "state": "unavailable"
+  },
+  "select.robo_room_9_cleaning_times": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsanzahl Sauna",
+    "icon": "mdi:home-floor-2",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_9_cleaning_times",
+   "state": "unavailable"
+  },
+  "select.robo_room_9_floor_material": {
+   "attributes": {
+    "friendly_name": "Robo Bodenmaterial Sauna",
+    "icon": "mdi:apps",
+    "options": [
+     "none",
+     "tile",
+     "wood"
+    ],
+    "value": 2
+   },
+   "entity_id": "select.robo_room_9_floor_material",
+   "state": "tile"
+  },
+  "select.robo_room_9_floor_material_direction": {
+   "attributes": {
+    "friendly_name": "Robo Bodenrichtung Sauna",
+    "icon": "mdi:arrow-top-left-bottom-right-bold",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_9_floor_material_direction",
+   "state": "unavailable"
+  },
+  "select.robo_room_9_mop_pad_humidity": {
+   "attributes": {
+    "friendly_name": "Robo Wischpad-Feuchtigkeit Sauna",
+    "icon": "mdi:water",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_9_mop_pad_humidity",
+   "state": "unavailable"
+  },
+  "select.robo_room_9_name": {
+   "attributes": {
+    "friendly_name": "Robo Raum 9 Name",
+    "icon": "mdi:toilet",
+    "index": 0,
+    "options": [
+     "Salon 2",
+     "Bibliothek 2",
+     "Arbeitszimmer",
+     "Atelier 2",
+     "Esszimmer",
+     "Sauna",
+     "Balkon",
+     "Wintergarten 2",
+     "Hauswirtschaftsraum",
+     "Garderobe",
+     "Besprechungsraum",
+     "Büro",
+     "Fitnessbereich",
+     "Erholungsbereich",
+     "Nebenzimmer"
+    ],
+    "room_id": 9,
+    "type": 6
+   },
+   "entity_id": "select.robo_room_9_name",
+   "state": "Sauna"
+  },
+  "select.robo_room_9_order": {
+   "attributes": {
+    "friendly_name": "Robo Reihenfolge Sauna",
+    "icon": "mdi:toilet",
+    "options": [
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6",
+     "7"
+    ]
+   },
+   "entity_id": "select.robo_room_9_order",
+   "state": "6"
+  },
+  "select.robo_room_9_suction_level": {
+   "attributes": {
+    "friendly_name": "Robo Saugkraft Sauna",
+    "icon": "mdi:fan-speed-3",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_room_9_suction_level",
+   "state": "unavailable"
+  },
+  "select.robo_room_9_visibility": {
+   "attributes": {
+    "friendly_name": "Robo Sichtbarkeit Sauna",
+    "icon": "mdi:eye-check",
+    "options": [
+     "visible",
+     "hidden"
+    ],
+    "value": 1
+   },
+   "entity_id": "select.robo_room_9_visibility",
+   "state": "visible"
+  },
+  "select.robo_selected_map": {
+   "attributes": {
+    "friendly_name": "Robo Ausgewählte Karte",
+    "icon": "mdi:map-check",
+    "options": [
+     "unavailable"
+    ]
+   },
+   "entity_id": "select.robo_selected_map",
+   "state": "unavailable"
+  },
+  "select.robo_suction_level": {
+   "attributes": {
+    "friendly_name": "Robo Saugkraft",
+    "icon": "mdi:fan-speed-3",
+    "options": [
+     "quiet",
+     "standard",
+     "strong",
+     "turbo"
+    ],
+    "value": 3
+   },
+   "entity_id": "select.robo_suction_level",
+   "state": "turbo"
+  },
+  "sensor.robo_battery_level": {
+   "attributes": {
+    "device_class": "battery",
+    "friendly_name": "Robo Batteriestand",
+    "icon": "mdi:battery",
+    "state_class": "measurement",
+    "unit_of_measurement": "%",
+    "value": 100
+   },
+   "entity_id": "sensor.robo_battery_level",
+   "state": "100"
+  },
+  "sensor.robo_charging_status": {
+   "attributes": {
+    "friendly_name": "Robo Ladestatus",
+    "icon": "mdi:home-lightning-bolt",
+    "value": 1
+   },
+   "entity_id": "sensor.robo_charging_status",
+   "state": "charging_completed"
+  },
+  "sensor.robo_cleaned_area": {
+   "attributes": {
+    "device_class": "area",
+    "friendly_name": "Robo Gereinigte Fläche",
+    "icon": "mdi:ruler-square",
+    "unit_of_measurement": "m²"
+   },
+   "entity_id": "sensor.robo_cleaned_area",
+   "state": "24"
+  },
+  "sensor.robo_cleaning_count": {
+   "attributes": {
+    "friendly_name": "Robo Anzahl Reinigungen",
+    "icon": "mdi:counter",
+    "state_class": "total_increasing",
+    "unit_of_measurement": "x"
+   },
+   "entity_id": "sensor.robo_cleaning_count",
+   "state": "1128"
+  },
+  "sensor.robo_cleaning_history": {
+   "attributes": {
+    "10-20 15:06": {
+     "cleaned_area": "4 m²",
+     "cleaning_time": "5 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1792501991,
+     "pet": false,
+     "status": "Room cleaning",
+     "timestamp": 1792501614.0
+    },
+    "10-20 15:15": {
+     "cleaned_area": "4 m²",
+     "cleaning_time": "5 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1792501991,
+     "pet": false,
+     "status": "Room cleaning",
+     "timestamp": 1792502148.0
+    },
+    "10-21 07:45": {
+     "blocked_rooms": {
+      "4": "Blocked by threshold"
+     },
+     "cleaned_area": "34 m²",
+     "cleaning_time": "58 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1792565431,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1792561558.0
+    },
+    "10-22 07:52": {
+     "blocked_rooms": {
+      "4": "Blocked by threshold",
+      "5": "Blocked by threshold"
+     },
+     "cleaned_area": "35 m²",
+     "cleaning_time": "64 min",
+     "cleanup_method": "Default mode",
+     "completed": false,
+     "interrupt_reason": "Task completed",
+     "mop_pad": "Not installed",
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1792648324.0
+    },
+    "10-26 12:10": {
+     "blocked_rooms": {
+      "4": "Blocked by door",
+      "5": "Blocked by door"
+     },
+     "cleaned_area": "28 m²",
+     "cleaning_time": "41 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1793015855,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793013053.0
+    },
+    "10-26 13:00": {
+     "blocked_rooms": {
+      "4": "Blocked by door",
+      "5": "Blocked by door"
+     },
+     "cleaned_area": "24 m²",
+     "cleaning_time": "43 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1793015855,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793016030.0
+    },
+    "10-28 17:43": {
+     "blocked_rooms": {
+      "4": "Blocked by dynamic obstacle",
+      "5": "Blocked by threshold"
+     },
+     "cleaned_area": "20 m²",
+     "cleaning_time": "47 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1793208856,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793205795.0
+    },
+    "10-29 10:03": {
+     "cleaned_area": "10 m²",
+     "cleaning_time": "22 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1793266104,
+     "pet": false,
+     "status": "Room cleaning",
+     "timestamp": 1793264638.0
+    },
+    "10-31 11:23": {
+     "cleaned_area": "14 m²",
+     "cleaning_time": "25 min",
+     "cleanup_method": "Default mode",
+     "completed": false,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1793444589,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793442189.0
+    },
+    "10-31 13:56": {
+     "cleaned_area": "0 m²",
+     "cleaning_time": "4 min",
+     "cleanup_method": "Default mode",
+     "completed": false,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1793451892,
+     "pet": false,
+     "status": "Room cleaning",
+     "timestamp": 1793451414.0
+    },
+    "10-31 14:05": {
+     "cleaned_area": "10 m²",
+     "cleaning_time": "19 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1793453268,
+     "pet": false,
+     "status": "Room cleaning",
+     "timestamp": 1793451933.0
+    },
+    "10-31 14:30": {
+     "cleaned_area": "10 m²",
+     "cleaning_time": "25 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1793453268,
+     "pet": false,
+     "status": "Room cleaning",
+     "timestamp": 1793453426.0
+    },
+    "11-02 12:28": {
+     "blocked_rooms": {
+      "4": "Blocked by door",
+      "5": "Blocked by door",
+      "6": "Blocked by door"
+     },
+     "cleaned_area": "27 m²",
+     "cleaning_time": "36 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1793621517,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793618912.0
+    },
+    "11-02 13:14": {
+     "blocked_rooms": {
+      "4": "Blocked by door",
+      "5": "Blocked by door",
+      "6": "Blocked by door"
+     },
+     "cleaned_area": "19 m²",
+     "cleaning_time": "40 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1793621517,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793621675.0
+    },
+    "11-03 07:46": {
+     "blocked_rooms": {},
+     "cleaned_area": "11 m²",
+     "cleaning_time": "11 min",
+     "cleanup_method": "Default mode",
+     "completed": false,
+     "mop_pad": "Not installed",
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793688384.0
+    },
+    "11-04 07:48": {
+     "blocked_rooms": {
+      "4": "Blocked by door",
+      "5": "Blocked by door",
+      "9": "Blocked by door"
+     },
+     "cleaned_area": "30 m²",
+     "cleaning_time": "43 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1793777634,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793774893.0
+    },
+    "11-04 08:36": {
+     "blocked_rooms": {},
+     "cleaned_area": "21 m²",
+     "cleaning_time": "40 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1793777634,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793777772.0
+    },
+    "11-04 12:35": {
+     "cleaned_area": "0 m²",
+     "cleaning_time": "0 min",
+     "cleanup_method": "Default mode",
+     "completed": false,
+     "mop_pad": "Not installed",
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793792134.0
+    },
+    "11-05 08:56": {
+     "blocked_rooms": {
+      "4": "Blocked by threshold",
+      "5": "Blocked by door"
+     },
+     "cleaned_area": "28 m²",
+     "cleaning_time": "42 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1793868273,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793865398.0
+    },
+    "11-05 09:47": {
+     "blocked_rooms": {
+      "4": "Blocked by door",
+      "5": "Blocked by threshold"
+     },
+     "cleaned_area": "24 m²",
+     "cleaning_time": "54 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1793868273,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793868431.0
+    },
+    "11-06 07:50": {
+     "blocked_rooms": {
+      "4": "Blocked by door",
+      "5": "Blocked by threshold"
+     },
+     "cleaned_area": "33 m²",
+     "cleaning_time": "48 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1793950948,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793947814.0
+    },
+    "11-06 08:44": {
+     "blocked_rooms": {
+      "4": "Blocked by door",
+      "5": "Blocked by door",
+      "9": "Blocked by door"
+     },
+     "cleaned_area": "25 m²",
+     "cleaning_time": "56 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1793950948,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1793951086.0
+    },
+    "11-07 11:38": {
+     "cleaned_area": "33 m²",
+     "cleaning_time": "49 min",
+     "cleanup_method": "Default mode",
+     "completed": false,
+     "mop_pad": "Not installed",
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1794047923.0
+    },
+    "11-07 16:45": {
+     "cleaned_area": "10 m²",
+     "cleaning_time": "13 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1794067260,
+     "pet": false,
+     "status": "Room cleaning",
+     "timestamp": 1794066325.0
+    },
+    "11-07 17:03": {
+     "cleaned_area": "10 m²",
+     "cleaning_time": "18 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1794067260,
+     "pet": false,
+     "status": "Room cleaning",
+     "timestamp": 1794067428.0
+    },
+    "11-08 13:00": {
+     "cleaned_area": "0 m²",
+     "cleaning_time": "0 min",
+     "cleanup_method": "Default mode",
+     "completed": false,
+     "mop_pad": "Not installed",
+     "pet": false,
+     "status": "Room cleaning",
+     "timestamp": 1794139246.0
+    },
+    "11-08 15:00": {
+     "blocked_rooms": {
+      "4": "Blocked by door"
+     },
+     "cleaned_area": "36 m²",
+     "cleaning_time": "45 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1794149402,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1794146417.0
+    },
+    "11-08 15:52": {
+     "blocked_rooms": {
+      "4": "Blocked by dynamic obstacle",
+      "5": "Blocked by threshold",
+      "9": "Blocked by door"
+     },
+     "cleaned_area": "25 m²",
+     "cleaning_time": "53 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1794149402,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1794149563.0
+    },
+    "11-09 12:46": {
+     "blocked_rooms": {
+      "4": "Blocked by door",
+      "5": "Blocked by door"
+     },
+     "cleaned_area": "34 m²",
+     "cleaning_time": "51 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Not installed",
+     "multiple_cleaning_time": 1794228271,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1794224793.0
+    },
+    "11-09 13:47": {
+     "blocked_rooms": {
+      "4": "Blocked by door",
+      "5": "Blocked by threshold",
+      "9": "Blocked by door"
+     },
+     "cleaned_area": "24 m²",
+     "cleaning_time": "53 min",
+     "cleanup_method": "Default mode",
+     "completed": true,
+     "mop_pad": "Installed",
+     "multiple_cleaning_time": 1794228271,
+     "pet": false,
+     "status": "Cleaning",
+     "timestamp": 1794228429.0
+    },
+    "device_class": "timestamp",
+    "friendly_name": "Robo Reinigungsverlauf",
+    "icon": "mdi:clipboard-text-clock"
+   },
+   "entity_id": "sensor.robo_cleaning_history",
+   "state": "2026-11-09T12:47:09+00:00"
+  },
+  "sensor.robo_cleaning_progress": {
+   "attributes": {
+    "friendly_name": "Robo Reinigungsfortschritt",
+    "icon": "mdi:home-percent",
+    "unit_of_measurement": "%"
+   },
+   "entity_id": "sensor.robo_cleaning_progress",
+   "state": "unavailable"
+  },
+  "sensor.robo_cleaning_time": {
+   "attributes": {
+    "device_class": "duration",
+    "friendly_name": "Robo Reinigungszeit",
+    "icon": "mdi:timer-sand",
+    "unit_of_measurement": "min"
+   },
+   "entity_id": "sensor.robo_cleaning_time",
+   "state": "53"
+  },
+  "sensor.robo_cruising_history": {
+   "attributes": {
+    "2025-04-19 17:55": {
+     "completed": false,
+     "cruising_time": "1 min",
+     "cruising_type": 0,
+     "map_index": 0,
+     "status": "Cruising path",
+     "timestamp": 1745078136.0
+    },
+    "device_class": "timestamp",
+    "friendly_name": "Robo Fahrtverlauf",
+    "icon": "mdi:map-marker-path"
+   },
+   "entity_id": "sensor.robo_cruising_history",
+   "state": "2025-04-19T16:55:36+00:00"
+  },
+  "sensor.robo_current_room": {
+   "attributes": {
+    "friendly_name": "Robo Aktueller Raum",
+    "icon": "mdi:home-map-marker",
+    "room_icon": "mdi:chef-hat",
+    "room_id": 1,
+    "room_name": "Kitchen"
+   },
+   "entity_id": "sensor.robo_current_room",
+   "state": "Atelier"
+  },
+  "sensor.robo_error": {
+   "attributes": {
+    "description": "Kein Fehler",
+    "faults": [],
+    "friendly_name": "Robo Fehler",
+    "icon": "mdi:check-circle-outline",
+    "value": 0
+   },
+   "entity_id": "sensor.robo_error",
+   "state": "no_error"
+  },
+  "sensor.robo_filter_left": {
+   "attributes": {
+    "friendly_name": "Robo Filter",
+    "icon": "mdi:air-filter",
+    "unit_of_measurement": "%"
+   },
+   "entity_id": "sensor.robo_filter_left",
+   "state": "69"
+  },
+  "sensor.robo_filter_time_left": {
+   "attributes": {
+    "device_class": "duration",
+    "friendly_name": "Robo Filter (Restzeit)",
+    "icon": "mdi:air-filter",
+    "unit_of_measurement": "h"
+   },
+   "entity_id": "sensor.robo_filter_time_left",
+   "state": "104"
+  },
+  "sensor.robo_first_cleaning_date": {
+   "attributes": {
+    "device_class": "timestamp",
+    "friendly_name": "Robo Erste Reinigung",
+    "icon": "mdi:calendar-start",
+    "value": 1732181565
+   },
+   "entity_id": "sensor.robo_first_cleaning_date",
+   "state": "2024-11-21T09:32:45+00:00"
+  },
+  "sensor.robo_main_brush_left": {
+   "attributes": {
+    "friendly_name": "Robo Hauptbürste",
+    "icon": "mdi:car-turbocharger",
+    "unit_of_measurement": "%"
+   },
+   "entity_id": "sensor.robo_main_brush_left",
+   "state": "84"
+  },
+  "sensor.robo_main_brush_time_left": {
+   "attributes": {
+    "device_class": "duration",
+    "friendly_name": "Robo Hauptbürste (Restzeit)",
+    "icon": "mdi:car-turbocharger",
+    "unit_of_measurement": "h"
+   },
+   "entity_id": "sensor.robo_main_brush_time_left",
+   "state": "254"
+  },
+  "sensor.robo_mapping_time": {
+   "attributes": {
+    "device_class": "duration",
+    "friendly_name": "Robo Kartierungszeit",
+    "icon": "mdi:map-clock",
+    "unit_of_measurement": "min"
+   },
+   "entity_id": "sensor.robo_mapping_time",
+   "state": "unavailable"
+  },
+  "sensor.robo_mop_pad": {
+   "attributes": {
+    "friendly_name": "Robo Wischpad",
+    "icon": "mdi:google-circles-communities"
+   },
+   "entity_id": "sensor.robo_mop_pad",
+   "state": "installed"
+  },
+  "sensor.robo_relocation_status": {
+   "attributes": {
+    "friendly_name": "Robo Standortbestimmungsstatus",
+    "icon": "mdi:map-marker-radius",
+    "value": 0
+   },
+   "entity_id": "sensor.robo_relocation_status",
+   "state": "located"
+  },
+  "sensor.robo_sensor_dirty_left": {
+   "attributes": {
+    "friendly_name": "Robo Sensorreinigung",
+    "icon": "mdi:radar",
+    "unit_of_measurement": "%"
+   },
+   "entity_id": "sensor.robo_sensor_dirty_left",
+   "state": "88"
+  },
+  "sensor.robo_sensor_dirty_time_left": {
+   "attributes": {
+    "device_class": "duration",
+    "friendly_name": "Robo Sensorreinigung (Restzeit)",
+    "icon": "mdi:radar",
+    "unit_of_measurement": "h"
+   },
+   "entity_id": "sensor.robo_sensor_dirty_time_left",
+   "state": "26"
+  },
+  "sensor.robo_side_brush_left": {
+   "attributes": {
+    "friendly_name": "Robo Seitenbürste",
+    "icon": "mdi:pinwheel-outline",
+    "unit_of_measurement": "%"
+   },
+   "entity_id": "sensor.robo_side_brush_left",
+   "state": "98"
+  },
+  "sensor.robo_side_brush_time_left": {
+   "attributes": {
+    "device_class": "duration",
+    "friendly_name": "Robo Seitenbürste (Restzeit)",
+    "icon": "mdi:pinwheel-outline",
+    "unit_of_measurement": "h"
+   },
+   "entity_id": "sensor.robo_side_brush_time_left",
+   "state": "196"
+  },
+  "sensor.robo_state": {
+   "attributes": {
+    "friendly_name": "Robo Zustand",
+    "icon": "mdi:robot-vacuum",
+    "value": 13
+   },
+   "entity_id": "sensor.robo_state",
+   "state": "charging_completed"
+  },
+  "sensor.robo_status": {
+   "attributes": {
+    "friendly_name": "Robo Status",
+    "icon": "mdi:vacuum",
+    "value": 14
+   },
+   "entity_id": "sensor.robo_status",
+   "state": "sleeping"
+  },
+  "sensor.robo_stream_status": {
+   "attributes": {
+    "friendly_name": "Robo Stream-Status",
+    "icon": "mdi:webcam",
+    "value": "{\"operType\":\"end\",\"operation\":\"monitor\",\"result\":0,\"status\":0}"
+   },
+   "entity_id": "sensor.robo_stream_status",
+   "state": "idle"
+  },
+  "sensor.robo_task_status": {
+   "attributes": {
+    "friendly_name": "Robo Aufgabenstatus",
+    "icon": "mdi:file-tree",
+    "value": 0
+   },
+   "entity_id": "sensor.robo_task_status",
+   "state": "completed"
+  },
+  "sensor.robo_task_type": {
+   "attributes": {
+    "friendly_name": "Robo Aufgabentyp",
+    "icon": "mdi:sitemap"
+   },
+   "entity_id": "sensor.robo_task_type",
+   "state": "unavailable"
+  },
+  "sensor.robo_total_cleaned_area": {
+   "attributes": {
+    "device_class": "area",
+    "friendly_name": "Robo Gesamte gereinigte Fläche",
+    "icon": "mdi:set-square",
+    "state_class": "total_increasing",
+    "unit_of_measurement": "m²"
+   },
+   "entity_id": "sensor.robo_total_cleaned_area",
+   "state": "21901"
+  },
+  "sensor.robo_total_cleaning_time": {
+   "attributes": {
+    "device_class": "duration",
+    "friendly_name": "Robo Gesamte Reinigungszeit",
+    "icon": "mdi:timer-outline",
+    "state_class": "total_increasing",
+    "unit_of_measurement": "min"
+   },
+   "entity_id": "sensor.robo_total_cleaning_time",
+   "state": "39334"
+  },
+  "switch.robo_clean_carpets_first": {
+   "attributes": {
+    "friendly_name": "Robo Teppiche zuerst reinigen",
+    "icon": "mdi:order-bool-descending-variant"
+   },
+   "entity_id": "switch.robo_clean_carpets_first",
+   "state": "off"
+  },
+  "switch.robo_customized_cleaning": {
+   "attributes": {
+    "friendly_name": "Robo Individuelle Reinigung",
+    "icon": "mdi:home-search",
+    "value": 0
+   },
+   "entity_id": "switch.robo_customized_cleaning",
+   "state": "off"
+  },
+  "switch.robo_large_particles_boost": {
+   "attributes": {
+    "friendly_name": "Robo Boost für große Partikel",
+    "icon": "mdi:weather-dust"
+   },
+   "entity_id": "switch.robo_large_particles_boost",
+   "state": "on"
+  },
+  "switch.robo_max_suction_power": {
+   "attributes": {
+    "friendly_name": "Robo Maximale Saugkraft",
+    "icon": "mdi:weather-windy",
+    "value": 0
+   },
+   "entity_id": "switch.robo_max_suction_power",
+   "state": "off"
+  },
+  "switch.robo_obstacle_avoidance": {
+   "attributes": {
+    "friendly_name": "Robo Hindernisumgehung",
+    "icon": "mdi:video-3d"
+   },
+   "entity_id": "switch.robo_obstacle_avoidance",
+   "state": "on"
+  },
+  "switch.robo_pet_focused_detection": {
+   "attributes": {
+    "friendly_name": "Robo Haustierfokussierte Erkennung",
+    "icon": "mdi:dog"
+   },
+   "entity_id": "switch.robo_pet_focused_detection",
+   "state": "unavailable"
+  },
+  "switch.robo_pet_picture": {
+   "attributes": {
+    "friendly_name": "Robo Haustierbilder",
+    "icon": "mdi:cat"
+   },
+   "entity_id": "switch.robo_pet_picture",
+   "state": "unavailable"
+  },
+  "switch.robo_resume_cleaning": {
+   "attributes": {
+    "friendly_name": "Robo Reinigung fortsetzen",
+    "icon": "mdi:play-pause",
+    "value": 1
+   },
+   "entity_id": "switch.robo_resume_cleaning",
+   "state": "on"
+  },
+  "switch.robo_side_brush_carpet_rotate": {
+   "attributes": {
+    "friendly_name": "Robo Seitenbürstendrehung auf Teppich",
+    "icon": "mdi:format-rotate-90"
+   },
+   "entity_id": "switch.robo_side_brush_carpet_rotate",
+   "state": "off"
+  },
+  "vacuum.robo": {
+   "attributes": {
+    "active_segments": null,
+    "ai_obstacle_detection": false,
+    "ai_obstacle_image_upload": false,
+    "ai_obstacle_picture": true,
+    "ai_pet_detection": false,
+    "ap": {
+     "rssi": -54,
+     "ssid": "Testnetz"
+    },
+    "battery": 100,
+    "capabilities": [
+     "lidar_navigation",
+     "multi_floor_map",
+     "ai_detection",
+     "mop_pad_lifting",
+     "mop_pad_lifting_plus",
+     "customized_cleaning",
+     "auto_switch_settings",
+     "mop_pad_unmounting",
+     "mopping_after_sweeping",
+     "wifi_map",
+     "backup_map",
+     "dnd",
+     "dnd_task",
+     "shortcuts",
+     "carpet_recognition",
+     "fill_light",
+     "voice_assistant",
+     "mop_pad_swing",
+     "mop_pad_swing_plus",
+     "mop_extend",
+     "off_peak_charging",
+     "max_suction_power",
+     "obstacle_image_crop",
+     "tight_mopping",
+     "floor_material",
+     "floor_material_edit",
+     "multi_segment_floor_material",
+     "floor_direction_cleaning",
+     "segment_visibility",
+     "cleangenius",
+     "large_particles_boost",
+     "fluid_detection",
+     "intensive_carpet_cleaning",
+     "mopping_settings",
+     "cleaning_route",
+     "segment_slow_clean_route",
+     "pet_furniture",
+     "task_type",
+     "auto_rename_segment",
+     "ultra_clean_mode",
+     "clean_carpets_first",
+     "saved_furnitures",
+     "extended_furnitures",
+     "furnitures_v2",
+     "wetness",
+     "wetness_level",
+     "obstacles",
+     "water_check",
+     "auto_carpet_cleaning",
+     "segment_mopping_settings",
+     "max_suction_power_extended",
+     "new_state",
+     "camera_streaming",
+     "stream_ali",
+     "video_dynamic_vendor",
+     "video_during_cleaning",
+     "pet_snapshot",
+     "video_audio",
+     "gen5",
+     "cleangenius_mode",
+     "side_reach",
+     "dnd_functions",
+     "ramps",
+     "virtual_tracks",
+     "side_brush_carpet_rotate",
+     "area_rotation",
+     "carpet_cleanset_v2",
+     "carpet_shape",
+     "carpet_id",
+     "cleaning_sequence_v2",
+     "walls_v3",
+     "quick_map_recovery",
+     "cleaning_progress",
+     "curtains",
+     "skip_area",
+     "legacy_warnings",
+     "custom_cleaning_mode",
+     "cruising",
+     "map",
+     "walls"
+    ],
+    "carpet_avoidance": false,
+    "carpet_boost": true,
+    "carpet_cleaning": "Remove mop",
+    "carpet_cleaning_list": [
+     "Avoidance",
+     "Adaptation",
+     "Remove mop",
+     "Vacuum and mop",
+     "Ignore"
+    ],
+    "carpet_recognition": 1,
+    "charging": false,
+    "child_lock": false,
+    "clean_carpets_first": false,
+    "cleaned_area": 24,
+    "cleangenius": "Off",
+    "cleangenius_cleaning": false,
+    "cleangenius_list": [
+     "Off",
+     "Routine cleaning",
+     "Deep cleaning"
+    ],
+    "cleangenius_mode": "Mop after vacuum",
+    "cleangenius_mode_list": [],
+    "cleaning_count": 1128,
+    "cleaning_mode": "Mopping after sweeping",
+    "cleaning_mode_list": [
+     "Sweeping",
+     "Mopping",
+     "Sweeping and mopping",
+     "Mopping after sweeping"
+    ],
+    "cleaning_paused": 0,
+    "cleaning_progress": 0,
+    "cleaning_route": "Deep",
+    "cleaning_route_list": [
+     "Quick",
+     "Standard",
+     "Intensive",
+     "Deep"
+    ],
+    "cleaning_sequence": [
+     3,
+     5,
+     7,
+     1,
+     6,
+     9,
+     4
+    ],
+    "cleaning_time": 53,
+    "collision_avoidance": true,
+    "completed_segments": null,
+    "cruising": false,
+    "current_mop_type": 1,
+    "current_segment": 1,
+    "custom_mopping_mode": 1,
+    "customized_cleaning": false,
+    "device_class": "dreame_vacuum",
+    "dnd": [
+     {
+      "enabled": true,
+      "end": "09:00",
+      "id": 0,
+      "repeats": 127,
+      "ss": 0,
+      "start": "20:00"
+     }
+    ],
+    "dnd_disable_auto_empty": true,
+    "dnd_disable_resume_cleaning": true,
+    "dnd_reduce_volume": true,
+    "docked": true,
+    "error": "No error",
+    "fan_speed": "turbo",
+    "fan_speed_list": [
+     "silent",
+     "standard",
+     "strong",
+     "turbo"
+    ],
+    "faults": {},
+    "fill_light": true,
+    "filter_left": 69,
+    "filter_time_left": 104,
+    "firmware_version": "1771",
+    "floor_direction_cleaning": true,
+    "floor_direction_cleaning_available": true,
+    "friendly_name": "Robo",
+    "gap_cleaning_extension": true,
+    "has_error": false,
+    "has_saved_map": true,
+    "has_temporary_map": false,
+    "icon": "mdi:sleep",
+    "intensive_carpet_cleaning": true,
+    "large_particles_boost": true,
+    "last_updated_time": {
+     "auto_empty_status": 1794228292,
+     "cleaning_paused": 1794221115,
+     "faults": 1794221115,
+     "low_water_warning": 1794221115,
+     "task_status": 1794232113
+    },
+    "located": true,
+    "main_brush_left": 84,
+    "main_brush_time_left": 254,
+    "map_backup_status": "Idle",
+    "map_count": 1,
+    "map_recovery_status": "Idle",
+    "mapping": false,
+    "mapping_available": false,
+    "maps": [
+     {
+      "custom_name": null,
+      "date": "2026-11-09T14:48:33",
+      "id": 3,
+      "index": 1,
+      "name": "Karte 1",
+      "recovery_map": [
+       "11/21/24 10:20:19: Map1 (Original)",
+       "04/26/26 13:23:13: Map2 (Edited)"
+      ]
+     }
+    ],
+    "max_suction_power": false,
+    "mop_extend": true,
+    "mop_extend_frequency": "High",
+    "mop_extend_frequency_list": [
+     "Standard",
+     "Intelligent",
+     "High"
+    ],
+    "mop_pad": true,
+    "mop_pad_humidity": "Moist",
+    "mop_pad_humidity_list": [
+     "Slightly dry",
+     "Moist",
+     "Wet"
+    ],
+    "mopping_mode": 2,
+    "mopping_under_furnitures": true,
+    "multi_floor_map": false,
+    "nation_matched": "matched",
+    "obstacle_avoidance": true,
+    "off_peak_charging": false,
+    "off_peak_charging_end": "08:00",
+    "off_peak_charging_start": "22:00",
+    "paused": false,
+    "pet_focused_cleaning": false,
+    "pet_focused_detection": false,
+    "relocation_status": "Located",
+    "resume_cleaning": true,
+    "returning": false,
+    "returning_paused": false,
+    "rooms": {
+     "Karte 1": [
+      {
+       "icon": "mdi:chef-hat",
+       "id": 1,
+       "index": 0,
+       "name": "Atelier",
+       "type": 4
+      },
+      {
+       "icon": "mdi:sofa-outline",
+       "id": 3,
+       "index": 0,
+       "name": "Salon",
+       "type": 1
+      },
+      {
+       "icon": "mdi:home-outline",
+       "id": 4,
+       "index": 1,
+       "name": "Galerie",
+       "type": 0
+      },
+      {
+       "icon": "mdi:bed-king-outline",
+       "id": 5,
+       "index": 0,
+       "name": "Bibliothek",
+       "type": 2
+      },
+      {
+       "icon": "mdi:home-outline",
+       "id": 6,
+       "index": 2,
+       "name": "Werkstatt",
+       "type": 0
+      },
+      {
+       "icon": "mdi:foot-print",
+       "id": 7,
+       "index": 0,
+       "name": "Wintergarten",
+       "type": 8
+      },
+      {
+       "icon": "mdi:toilet",
+       "id": 9,
+       "index": 0,
+       "name": "Sauna",
+       "type": 6
+      }
+     ]
+    },
+    "running": false,
+    "schedule": [],
+    "scheduled_clean": false,
+    "segment_cleaning": false,
+    "selected_map": "Karte 1",
+    "selected_map_id": 3,
+    "selected_map_index": 1,
+    "sensor_dirty_left": 88,
+    "sensor_dirty_time_left": 26,
+    "shortcut_task": false,
+    "shortcuts": {},
+    "side_brush_carpet_rotate": false,
+    "side_brush_left": 98,
+    "side_brush_time_left": 196,
+    "skip_area_available": false,
+    "skipped_segments": null,
+    "spot_cleaning": false,
+    "started": false,
+    "startup_method": "Through App",
+    "status": "sleeping",
+    "streaming_voice_prompt": true,
+    "suction_level": "Turbo",
+    "suction_level_list": [
+     "Quiet",
+     "Standard",
+     "Strong",
+     "Turbo"
+    ],
+    "supported_features": 31676,
+    "task_type": 0,
+    "tight_mopping": false,
+    "timezone": "Europe/Vienna",
+    "timing_clean": 0,
+    "total_cleaned_area": 21901,
+    "total_cleaning_time": 39334,
+    "total_cruise_time": 1745078134,
+    "total_runtime": 1,
+    "vacuum_state": "charging_completed",
+    "voice_assistant": true,
+    "voice_assistant_language": "English",
+    "voice_assistant_language_list": [
+     "English",
+     "German",
+     "Russian",
+     "Italian",
+     "French",
+     "Korean",
+     "Chinese"
+    ],
+    "voice_packet_id": "DE",
+    "volume": 1,
+    "wetness_level": 26,
+    "zone_cleaning": false
+   },
+   "entity_id": "vacuum.robo",
+   "state": "docked"
+  }
+ }
+}

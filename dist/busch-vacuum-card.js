@@ -307,6 +307,110 @@ function normalizeConfig(raw) {
 }
 
 // ---------------------------------------------------------------------------
+// Device model (CORE-01/02)
+// ---------------------------------------------------------------------------
+
+/** VacuumEntityFeature bits of Home Assistant that the card asks about. */
+const VACUUM_FEATURES = {
+    pause: 4, stop: 8, return_home: 16, fan_speed: 32, send_command: 256,
+    locate: 512, clean_spot: 1024, start: 8192
+};
+
+/** The map cameras of dreame_vacuum, by translation key. */
+const MAP_ROLES = ['map', 'saved_map', 'wifi_map', 'map_data'];
+
+const objectIdOf = (entityId) => String(entityId || '').split('.').slice(1).join('.');
+
+/** Camera role from its translation key, or from the entity id when the key is missing. */
+function cameraRole(key) {
+    if (MAP_ROLES.includes(key)) return key;
+    if (/^wifi_map(_\d+)?$/.test(key)) return 'wifi_map';
+    if (/^map_\d+$/.test(key)) return 'saved_map';
+    return null;
+}
+
+/**
+ * Every entity of the vacuum's device, filed by role:
+ *   device  `<domain>.<translation_key>` → entity id (select.suction_level …)
+ *   rooms   room number → the same, per room (select.robo_room_3_suction_level)
+ *   maps    camera role → entity ids (current, saved per floor, Wi-Fi, raw data)
+ *
+ * Found through `hass.entities` (the frontend's registry, no request of its
+ * own). Without a device id — older frontends, or an entity outside the
+ * registry — the entity id prefix of the vacuum is the fallback. Disabled
+ * entities are never in `hass.entities`; their values come from the vacuum's
+ * attributes (VacuumModel.attr), their writes from the integration's services.
+ */
+function findRelated(hass, entityId) {
+    const registry = (hass && hass.entities) || {};
+    const own = registry[entityId];
+    const prefix = objectIdOf(entityId) + '_';
+    const found = own && own.device_id
+        ? Object.values(registry).filter((e) => e.device_id === own.device_id && e.entity_id !== entityId).map((e) => e.entity_id)
+        : Object.keys((hass && hass.states) || {}).filter((id) => id !== entityId && objectIdOf(id).startsWith(prefix));
+    const related = { ids: [entityId], device: {}, rooms: {}, maps: { map: [], saved_map: [], wifi_map: [], map_data: [] } };
+    found.sort().forEach((id) => {
+        const domain = domainOf(id);
+        const objectId = objectIdOf(id);
+        const rest = objectId.startsWith(prefix) ? objectId.slice(prefix.length) : objectId;
+        // shortcut: the room number comes from the entity id (room_<n>_…); a renamed
+        // per-room entity lands with the device ones. Upgrade if users rename them.
+        const room = /^room_(\d+)_/.exec(rest);
+        const entry = registry[id];
+        const key = (entry && entry.translation_key) || (room ? rest.slice(room[0].length) : rest);
+        related.ids.push(id);
+        const role = domain === 'camera' ? cameraRole(key) : null;
+        if (role) related.maps[role].push(id);
+        else if (room) (related.rooms[room[1]] = related.rooms[room[1]] || {})[domain + '.' + key] = id;
+        else related.device[domain + '.' + key] = id;
+    });
+    return related;
+}
+
+/**
+ * What the device can do. `can()` is the ONE place every part of the card
+ * asks (spec: Boundaries) — from the vacuum's `capabilities`, its feature
+ * bits, the entities found and the services Home Assistant offers.
+ */
+class VacuumModel {
+    constructor(hass, entityId, related) {
+        this.hass = hass;
+        this.entityId = entityId;
+        this.state = (hass && hass.states && hass.states[entityId]) || null;
+        this.related = related || findRelated(hass, entityId);
+        const caps = this.state && this.state.attributes.capabilities;
+        this.caps = new Set(Array.isArray(caps) ? caps : []);
+        this.features = Number((this.state && this.state.attributes.supported_features) || 0);
+    }
+
+    /** One of the device's entities by `<domain>.<translation_key>`, or null. */
+    entity(key) {
+        return this.related.device[key] || null;
+    }
+
+    /** A value of the vacuum itself — also for settings whose entity is disabled. */
+    attr(name) {
+        return this.state ? this.state.attributes[name] : undefined;
+    }
+
+    can(name) {
+        if (name.includes('.')) {
+            const [domain, service] = name.split('.');
+            const services = (this.hass && this.hass.services) || {};
+            return !!(services[domain] && services[domain][service]);
+        }
+        switch (name) {
+            case 'map': return this.related.maps.map.length > 0;
+            case 'dock': return this.caps.has('self_wash_base') || this.caps.has('auto_empty_base');
+            case 'history': return !!this.entity('sensor.cleaning_history');
+            default:
+                if (VACUUM_FEATURES[name]) return (this.features & VACUUM_FEATURES[name]) !== 0;
+                return this.caps.has(name);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Card
 // ---------------------------------------------------------------------------
 
@@ -465,6 +569,8 @@ BuschVacuumCard.__internals = {
     TEXTE: TEXTE_BUSCH_VACUUM_CARD,
     SCHEMA: SCHEMA_BUSCH_VACUUM_CARD,
     normalizeConfig,
+    findRelated,
+    VacuumModel,
     version: CARD_VERSION
 };
 

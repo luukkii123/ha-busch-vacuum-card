@@ -1,0 +1,74 @@
+{
+ "beschreibung": "Synthetisch: nur ein Saugroboter einer fremden Integration, ohne Dreame-Attribute und -Entitäten.",
+ "disabled": [],
+ "entities": {
+  "vacuum.robo": {
+   "area_id": null,
+   "device_id": "geraet_minimal",
+   "entity_category": null,
+   "entity_id": "vacuum.robo",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "demo",
+   "translation_key": null
+  }
+ },
+ "services": {
+  "vacuum": {
+   "clean_area": {
+    "fields": {
+     "cleaning_area_id": {}
+    }
+   },
+   "clean_spot": {
+    "fields": {}
+   },
+   "locate": {
+    "fields": {}
+   },
+   "pause": {
+    "fields": {}
+   },
+   "return_to_base": {
+    "fields": {}
+   },
+   "send_command": {
+    "fields": {
+     "command": {},
+     "params": {}
+    }
+   },
+   "set_fan_speed": {
+    "fields": {
+     "fan_speed": {}
+    }
+   },
+   "start": {
+    "fields": {}
+   },
+   "stop": {
+    "fields": {}
+   }
+  }
+ },
+ "states": {
+  "vacuum.robo": {
+   "attributes": {
+    "battery_level": 80,
+    "fan_speed": "standard",
+    "fan_speed_list": [
+     "quiet",
+     "standard",
+     "strong"
+    ],
+    "friendly_name": "Robo",
+    "supported_features": 12348
+   },
+   "entity_id": "vacuum.robo",
+   "state": "docked"
+  }
+ }
+}

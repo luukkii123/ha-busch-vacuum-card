@@ -170,6 +170,12 @@ function neuesHaus({ states, entities = {}, services = {}, sprache = 'de' } = {}
   return haus;
 }
 
+/** Haus aus einer Fixture unter tests/fixtures/ (voll, minimal, ohne-dock, ohne-karte). */
+function hausAus(name, optionen = {}) {
+  const f = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', name + '.json'), 'utf8'));
+  return neuesHaus(Object.assign({ states: f.states, entities: f.entities, services: f.services }, optionen));
+}
+
 /** Karte bauen, ins Dokument hängen, hass setzen. */
 function neueKarte(umgebung, haus, config = {}) {
   const karte = umgebung.document.createElement('busch-vacuum-card');
@@ -182,4 +188,4 @@ function neueKarte(umgebung, haus, config = {}) {
 /** Alle Mikrotasks (Promise-Ketten) abarbeiten. */
 const mikro = () => new Promise((r) => setImmediate(r));
 
-module.exports = { neueUhr, neueUmgebung, neuesHaus, neueKarte, einfacherSauger, mikro };
+module.exports = { neueUhr, neueUmgebung, neuesHaus, hausAus, neueKarte, einfacherSauger, mikro };
