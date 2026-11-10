@@ -5417,6 +5417,16 @@ function writeRoom(card, id, change) {
     });
 }
 
+/** Mop type of one room: never with map_id — a foreign one switches the map (device.py#L7681). */
+function writeMopType(card, id, type) {
+    return trackWrite(card, 'mop:' + id, {
+        want: type,
+        label: roomName(roomsOf(card._model())[id], id),
+        check: (m) => String((roomsOf(m)[id] || {}).mop_type || '').toUpperCase() === type,
+        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_mop_type', { entity_id: card._opts.entity, mop_type: { [id]: type } })
+    });
+}
+
 /** A settings-style row for a room field: select of codes or number (same look as settingRow). */
 function roomFieldRow(hass, { key, label, value, options, number, state, words, disabled, onChange }) {
     const row = document.createElement('div');
@@ -5541,6 +5551,23 @@ function roomView(card, id) {
                         }
                         return writeRoom(card, id, { [key]: n });
                     }
+                }));
+            }
+            // SET-06: mop type A/B/C, its own service (device.py#L7655).
+            if (model.can('auto_change_mop')) {
+                const mopTrack = 'mop:' + id;
+                const mopPending = card._settingWrites.get(mopTrack);
+                if (mopPending && mopPending.check(model)) settleWrite(card, mopTrack);
+                const mopBusy = card._settingWrites.get(mopTrack);
+                const mopNote = card._settingNotes.get(mopTrack);
+                const value = mopBusy ? mopBusy.want : room.mop_type ? String(room.mop_type).toUpperCase() : undefined;
+                list.appendChild(roomFieldRow(hass, {
+                    key: 'mop_type', label: entityLabel(hass, 'select', 'mop_type'), value,
+                    options: ['A', 'B', 'C'].map((t) => [t, optionLabel(hass, 'mop_type', t)]),
+                    state: mopBusy ? 'busy' : mopNote ? 'error' : lock ? 'locked' : value === undefined ? 'unknown' : 'ok',
+                    words: mopBusy ? translate(hass, 'speichert') : mopNote || (value === undefined ? translate(hass, 'wertUnbekannt') : ''),
+                    disabled: !!lock || !!mopBusy,
+                    onChange: (type) => writeMopType(card, id, type)
                 }));
             }
             body.appendChild(list);

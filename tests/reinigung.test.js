@@ -298,3 +298,21 @@ test('Auf alle Räume übertragen: Bestätigung mit Raumliste, nacheinander, Abb
   assert.match($d(k.u, '.body').textContent, /unavailable_while_running/);
   assert.match($d(k.u, '.body').textContent, /Bibliothek/, 'geänderte Räume genannt');
 });
+
+// ── Task 4: Mop-Typ ─────────────────────────────────────────────────────────
+
+test('Mop-Typ: X40 ohne Zeile; mit auto_change_mop genau vacuum_set_mop_type ohne map_id', () => {
+  assert.equal(raumFeld(raumSeite(3), 'mop_type'), null, 'X40 kann es nicht');
+  const k = raumSeite(3, { caps: (c) => c.concat('auto_change_mop'), raeume: { 3: { mop_type: 'A' } } });
+  const feld = raumFeld(k, 'mop_type').querySelector('select');
+  assert.equal(feld.value, 'A');
+  assert.deepEqual(feld.childNodes.map((o) => o.value), ['A', 'B', 'C']);
+  feld.value = 'B';
+  feld.dispatchEvent(k.u.neuesEreignis('change'));
+  assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_set_mop_type', data: { entity_id: 'vacuum.robo', mop_type: { 3: 'B' } } }]);
+  assert.equal(raumFeld(k, 'mop_type').getAttribute('data-state'), 'busy');
+  neueRaeume(k, { 3: { mop_type: 'B' } });
+  assert.equal(raumFeld(k, 'mop_type').getAttribute('data-state'), 'ok');
+  const gesperrt = raumSeite(3, { caps: (c) => c.concat('auto_change_mop'), raeume: { 3: { mop_type: 'A' } }, attribute: { has_temporary_map: true } });
+  assert.equal(raumFeld(gesperrt, 'mop_type').querySelector('select').disabled, true);
+});
