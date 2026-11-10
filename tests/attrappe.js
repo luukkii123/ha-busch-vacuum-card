@@ -146,6 +146,8 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
     setTimeout: uhr.setTimeout, clearTimeout: uhr.clearTimeout, Date: uhr.Date,
     requestAnimationFrame: (fn) => { bilder.set(++bildNr, fn); return bildNr; }, cancelAnimationFrame: (id) => bilder.delete(id),
     Promise, Math, JSON, Object, Array, Map, Set, WeakMap, Number, String, Boolean, Error, Symbol, Intl, RegExp,
+    // Wie im Browser: Base64 → Binärtext (Raumnamen der Kartendaten).
+    atob: (b) => Buffer.from(String(b), 'base64').toString('latin1'),
   };
   kontext.globalThis = kontext;
   vm.createContext(kontext);

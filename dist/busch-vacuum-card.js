@@ -11018,7 +11018,8 @@ const EDIT_TEXTS = {
         kartenZaehler: '{art}: {neu} neu, {geaendert} geändert, {geloescht} gelöscht',
         kartenWackeln: 'Ungespeicherte Änderungen',
         kartenOffenFrage: 'Es gibt {n} ungespeicherte Änderungen. Speichern, verwerfen oder weiter bearbeiten?',
-        kartenWeiter: 'Weiter bearbeiten'
+        kartenWeiter: 'Weiter bearbeiten',
+        kartenOhneDaten: 'Gesperrt: Die Bearbeitungsdaten der Karte fehlen (Wände, Teppich-IDs, Möbel). Die anderen Werkzeuge gehen.'
     },
     en: {
         kartenSicherungTitel: 'Save map',
@@ -11044,7 +11045,8 @@ const EDIT_TEXTS = {
         kartenZaehler: '{art}: {neu} new, {geaendert} changed, {geloescht} deleted',
         kartenWackeln: 'Unsaved changes',
         kartenOffenFrage: 'There are {n} unsaved changes. Save, discard or keep editing?',
-        kartenWeiter: 'Keep editing'
+        kartenWeiter: 'Keep editing',
+        kartenOhneDaten: 'Locked: the map’s edit data is missing (walls, carpet ids, furniture). The other tools work.'
     }
 };
 for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
@@ -11264,6 +11266,233 @@ function dirtyChoice(card, { count, save, discard }) {
             body.appendChild(actions);
         }
     };
+}
+
+// ── Edit data and capabilities (map-editor Task 2): pure functions ────────────
+
+const roundMm = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? v : Math.round(Number(v)));
+const cloneList = (list) => (list === null || list === undefined ? list : JSON.parse(JSON.stringify(list)));
+
+/** Axis-parallel rectangle [x0, y0, x1, y1] of 8 corner values (map.py get_data) or an attribute area. */
+function rectOf(item) {
+    const corners = areaCorners(item);
+    const xs = corners.map((c) => Number(c.x)), ys = corners.map((c) => Number(c.y));
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map(roundMm);
+}
+
+/** A room name of the map data: base64 UTF-8 (map.py get_data), null when absent or broken. */
+function segmentName(b64) {
+    if (!b64 || typeof atob !== 'function') return null;
+    try {
+        return decodeURIComponent(Array.from(atob(String(b64)), (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+    } catch (e) {
+        return null;
+    }
+}
+
+const WALL_FIELDS = ['x0', 'y0', 'x1', 'y1', 'ix0', 'iy0', 'ix1', 'iy1', 'type', 'x', 'y'];
+const DOOR_FIELDS = ['x0', 'y0', 'x1', 'y1', 'ix0', 'iy0', 'ix1', 'iy1', 'type', 'id', 'status'];
+const fieldsOf = (names, values) => Object.fromEntries(names.map((name, i) => [name, values[i] === undefined ? null : values[i]]));
+
+/** Furniture of the map data [x, y, w, h, type, edit_type, angle, scale, segment_id, furniture_id] (map.py#L8871). */
+function furnitureFromData(f) {
+    const [x, y, width, height, type, editType, angle, scale, segment, id] = f;
+    return { x, y, width, height, type, editType, angle, scale, segment, id: id === undefined ? null : id };
+}
+
+/** The service's order [id, type, room, w, h, x, y, angle, scale, edit_type, modified] (map.py set_furnitures L2428); no id = new (−1). */
+function furnitureEntry(f, modified = 0) {
+    return [f.id === null || f.id === undefined ? -1 : f.id, f.type, f.segment, f.width, f.height, roundMm(f.x), roundMm(f.y), f.angle || 0, f.scale === undefined || f.scale === null ? 1 : f.scale, f.editType || 0, modified];
+}
+
+/**
+ * The edit data (camera_map_data_proxy, map.py get_data ab L8380) as the editor
+ * reads it, or null without data. A field the integration left out (None)
+ * stays null — "not known", never an empty list the save would send.
+ */
+function editData(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const list = (value, fn) => (Array.isArray(value) ? value.map(fn) : null);
+    const carpet = (c) => ({ rect: rectOf(c), id: c[8] === undefined ? null : c[8], ellipse: c[9] ? 1 : 0, cleaning: c[10] === undefined ? null : c[10], preferences: c[11] === undefined ? null : c[11], type: c[12] === undefined ? null : c[12], hidden: c[13] ? 1 : 0 });
+    const segments = list(raw.segments, (s) => ({
+        id: s[0], x: s[1], y: s[2], type: s[3] === undefined ? null : s[3], name: segmentName(s[4]), index: s[5] === undefined ? null : s[5],
+        color: s[6] === undefined ? null : s[6], neighbors: Array.isArray(s[7]) ? s[7].slice() : [], floorMaterial: s[8] === undefined ? null : s[8],
+        floorDirection: s[9] === undefined ? null : s[9], visibility: s[10] === undefined ? null : s[10]
+    })) || [];
+    return {
+        walls: raw.walls && typeof raw.walls === 'object' ? Object.entries(raw.walls).flatMap(([room, walls]) => (walls || []).map((w) => Object.assign({ room: String(room) }, fieldsOf(WALL_FIELDS, w)))) : null,
+        doors: list(raw.doors, (d) => fieldsOf(DOOR_FIELDS, d)),
+        carpets: list(raw.carpets, carpet),
+        deletedCarpets: list(raw.deleted_carpets, (c) => ({ rect: rectOf(c), id: c[8] === undefined ? null : c[8] })),
+        detectedCarpets: list(raw.detected_carpets, carpet),
+        furnitures: list(raw.furnitures, furnitureFromData),
+        points: list(raw.predefined_points, (p) => [roundMm(p[0]), roundMm(p[1])]),
+        stationSegment: raw.station_segment === undefined || raw.station_segment === null ? null : raw.station_segment,
+        segments,
+        neighbors: Object.fromEntries(segments.map((s) => [s.id, s.neighbors]))
+    };
+}
+
+/** Zones and ramps of the attributes: rectangle plus the 5th value only when the object carries one (spec: Grenzen). */
+function zoneEntry(item) {
+    const rect = rectOf(item);
+    const angle = Array.isArray(item) ? item[8] : item.angle;
+    return angle === null || angle === undefined ? rect : rect.concat([angle]);
+}
+
+const lineEntry = (item) => (Array.isArray(item) ? item.slice(0, 4) : [item.x0, item.y0, item.x1, item.y1]).map(roundMm);
+
+function pointEntries(raw) {
+    if (!raw || typeof raw !== 'object') return [];
+    return Object.values(raw).map((p) => (Array.isArray(p) ? [p[0], p[1]] : [p && p.x, p && p.y]).map(roundMm)).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+}
+
+/**
+ * Every object list of the active map, each entry in its service's value order
+ * (one shape for drafts, counts and payloads). Attributes for zones, lines and
+ * points; the edit data for what only it carries (walls `[room, …11]`, doors,
+ * carpets with id/ellipse/type, furniture with edit_type). null = not known:
+ * that tool stays locked, its service is never sent.
+ */
+function editLists(attrs, data) {
+    const a = attrs || {};
+    const fromAttr = (key, fn) => (Array.isArray(a[key]) ? a[key].map(fn) : []);
+    const router = a.router_position && Number.isFinite(Number(a.router_position.x)) ? [[roundMm(a.router_position.x), roundMm(a.router_position.y)]] : [];
+    return {
+        no_go_areas: fromAttr('no_go_areas', zoneEntry),
+        no_mopping_areas: fromAttr('no_mopping_areas', zoneEntry),
+        virtual_walls: fromAttr('virtual_walls', lineEntry),
+        passable_thresholds: fromAttr('passable_thresholds', lineEntry),
+        impassable_thresholds: fromAttr('impassable_thresholds', lineEntry),
+        ramps: fromAttr('ramps', zoneEntry),
+        virtual_thresholds: fromAttr('virtual_thresholds', lineEntry),
+        curtains: fromAttr('curtains', lineEntry),
+        predefined_points: data && data.points ? cloneList(data.points) : pointEntries(a.predefined_points),
+        router,
+        carpets: data && data.carpets ? data.carpets.map((c) => c.rect.concat([c.id === null ? -1 : c.id, c.ellipse, c.type === null ? 7 : c.type])) : null,
+        deleted_carpets: data && data.deletedCarpets ? data.deletedCarpets.map((c) => c.rect.slice()) : null,
+        furnitures: data && data.furnitures ? data.furnitures.map((f) => furnitureEntry(f)) : null,
+        walls: data && data.walls ? data.walls.map((w) => [w.room].concat(WALL_FIELDS.map((k) => w[k]))) : null,
+        doors: data && data.doors ? data.doors.map((d) => DOOR_FIELDS.map((k) => d[k])) : null
+    };
+}
+
+/**
+ * Write groups: one service each, always with its COMPLETE lists (spec:
+ * Grundregel Listen — every object service replaces its whole list; restricted
+ * and threshold carry all three). Later tasks add their groups here.
+ */
+const EDIT_GROUPS = {
+    restricted: { service: 'vacuum_set_restricted_zone', lists: ['virtual_walls', 'no_go_areas', 'no_mopping_areas'], data: (l) => ({ walls: l.virtual_walls, zones: l.no_go_areas, no_mops: l.no_mopping_areas }) },
+    threshold: { service: 'vacuum_set_threshold', lists: ['passable_thresholds', 'impassable_thresholds', 'ramps'], data: (l) => ({ passable_thresholds: l.passable_thresholds, impassable_thresholds: l.impassable_thresholds, ramps: l.ramps }) },
+    virtual_threshold: { service: 'vacuum_set_virtual_threshold', lists: ['virtual_thresholds'], data: (l) => ({ virtual_thresholds: l.virtual_thresholds }) },
+    curtain: { service: 'vacuum_set_curtain', lists: ['curtains'], data: (l) => ({ curtains: l.curtains }) },
+    carpet: { service: 'vacuum_set_carpet_area', lists: ['carpets', 'deleted_carpets'], data: (l) => ({ carpets: l.carpets, deleted_carpets: l.deleted_carpets }) },
+    furniture: { service: 'vacuum_set_furniture', lists: ['furnitures'], data: (l) => ({ furnitures: l.furnitures }) },
+    points: { service: 'vacuum_set_predefined_points', lists: ['predefined_points'], data: (l) => ({ points: l.predefined_points }) },
+    walls: { service: 'vacuum_set_walls', lists: ['walls', 'doors'], data: (l, mapId) => {
+        const walls = {};
+        for (const [room, ...values] of l.walls) (walls[room] = walls[room] || []).push(values);
+        return { walls, doors: l.doors, map_id: mapId };
+    } },
+    // One position, not a list; without one there is nothing to send.
+    router: { service: 'vacuum_set_router_position', lists: ['router'], data: (l) => (l.router.length ? { x: l.router[0][0], y: l.router[0][1] } : null) }
+};
+
+/** The group a list belongs to (one list, one group). */
+const editGroupOf = (list) => Object.keys(EDIT_GROUPS).find((g) => EDIT_GROUPS[g].lists.includes(list)) || null;
+
+/** { service, data } of a group from the lists (copied), or null when a list is unknown. */
+function payloadFor(group, lists, mapId) {
+    const def = EDIT_GROUPS[group];
+    if (!def || def.lists.some((name) => !Array.isArray(lists[name]))) return null;
+    const copy = Object.fromEntries(def.lists.map((name) => [name, cloneList(lists[name])]));
+    const data = def.data(copy, mapId);
+    return data ? { service: def.service, data } : null;
+}
+
+/** Services that edit objects of the stored map (VacuumModel `map_edit`); map management is not among them. */
+const EDIT_SERVICES = ['vacuum_rename_segment', 'vacuum_set_segment_type', 'vacuum_set_hidden_segments', 'vacuum_set_floor_material', 'vacuum_split_segments',
+    'vacuum_merge_segments', 'vacuum_set_walls', 'vacuum_set_restricted_zone', 'vacuum_set_threshold', 'vacuum_set_virtual_threshold', 'vacuum_set_curtain',
+    'vacuum_set_carpet_area', 'vacuum_set_carpet_type', 'vacuum_set_custom_carpet_cleaning', 'vacuum_set_furniture', 'vacuum_set_predefined_points', 'vacuum_set_router_position'];
+
+const EDIT_TOOL_NAMES = ['rooms', 'walls', 'zones', 'lines', 'carpets', 'furniture', 'points', 'wifi'];
+
+/**
+ * Per tool: shown (capability, attribute ≠ None, service present — R18),
+ * locked + reason (a text key). Without edit data only walls, carpets and
+ * furniture lock (they need ids and shapes only the data has, spec: Daten).
+ */
+function editCaps(model, data, attrs) {
+    const a = attrs || {};
+    const svc = (name) => model.can('dreame_vacuum.' + name);
+    const has = (key) => a[key] !== undefined && a[key] !== null;
+    const needs = (ok) => ({ locked: !ok, reason: ok ? '' : 'kartenOhneDaten' });
+    const rooms = {
+        visibility: model.can('segment_visibility') && svc('vacuum_set_hidden_segments'),
+        floor: model.can('floor_material') && svc('vacuum_set_floor_material'),
+        direction: model.can('floor_material') && model.can('floor_direction_cleaning') && svc('vacuum_set_floor_material')
+    };
+    const carpets = {
+        type: model.can('carpet_type') && svc('vacuum_set_carpet_type'),
+        cleaning: model.can('carpet_recognition') && svc('vacuum_set_custom_carpet_cleaning')
+    };
+    const shown = {
+        rooms: (Object.keys(a.rooms || {}).length > 0 && ['vacuum_rename_segment', 'vacuum_set_segment_type', 'vacuum_split_segments', 'vacuum_merge_segments'].some(svc)) || rooms.visibility || rooms.floor,
+        walls: model.can('walls') && svc('vacuum_set_walls'),
+        zones: (svc('vacuum_set_restricted_zone') && (has('no_go_areas') || has('no_mopping_areas'))) || (svc('vacuum_set_threshold') && has('ramps')),
+        lines: (svc('vacuum_set_restricted_zone') && has('virtual_walls')) || (svc('vacuum_set_threshold') && (has('passable_thresholds') || has('impassable_thresholds')))
+            || (svc('vacuum_set_virtual_threshold') && has('virtual_thresholds')) || (model.can('curtains') && svc('vacuum_set_curtain') && has('curtains')),
+        carpets: svc('vacuum_set_carpet_area') && (has('carpets') || has('deleted_carpets') || model.can('carpet_recognition')),
+        furniture: svc('vacuum_set_furniture') && (has('furnitures') || ['furnitures_v2', 'furnitures_v3', 'saved_furnitures', 'pet_furniture', 'extended_furnitures'].some((c) => model.can(c))),
+        points: model.can('cruising') && svc('vacuum_set_predefined_points'),
+        wifi: model.can('wifi_map') && svc('vacuum_set_router_position')
+    };
+    const locks = {
+        walls: needs(!!(data && data.walls && data.doors)),
+        carpets: needs(!!(data && data.carpets && data.deletedCarpets)),
+        furniture: needs(!!(data && data.furnitures))
+    };
+    const caps = {};
+    for (const name of EDIT_TOOL_NAMES) caps[name] = Object.assign({ shown: !!shown[name] }, locks[name] || { locked: false, reason: '' });
+    caps.rooms.features = rooms;
+    caps.carpets.features = carpets;
+    return caps;
+}
+
+/**
+ * Edit data of the active map, loaded on entering the edit mode and again only
+ * for a new frame_id (own save or not): `&v=<frame_id>` because the answer is
+ * cached as immutable; a stored map reads `&saved=1&index=` (walls only come
+ * with the stored map, map.py#L8629). When map-view already holds the data of
+ * the same frame with walls, it is reused — 0 extra requests (R20).
+ * Resolves to editData(raw) or null (request failed: three tools stay locked).
+ */
+function loadEditData(card) {
+    const m = card._map;
+    if (!m) return Promise.resolve(null);
+    const cur = m.current();
+    const have = card._editData;
+    if (have && have.frame === cur.frameId && have.mapId === cur.mapId) return have.promise;
+    const model = card._model();
+    const saved = model.attr('has_saved_map') !== false && model.attr('has_temporary_map') !== true && cur.index !== null;
+    const entry = { frame: cur.frameId, mapId: cur.mapId, data: null, failed: false, promise: null };
+    card._editData = entry;
+    const own = m._data && m._data.raw && m._data.raw.frame_id === cur.frameId ? m._data.raw : null;
+    const settle = (raw) => {
+        entry.data = editData(raw);
+        entry.failed = !entry.data;
+        return entry.data;
+    };
+    if (own && (!saved || (own.walls !== undefined && own.walls !== null) || !model.can('walls'))) {
+        entry.promise = Promise.resolve(settle(own));
+        return entry.promise;
+    }
+    const url = '/api/camera_map_data_proxy/' + cur.camera + '?token=' + encodeURIComponent(cur.objects.access_token || '')
+        + (saved ? '&saved=1&index=' + encodeURIComponent(cur.index) : '') + '&v=' + encodeURIComponent(cur.frameId);
+    entry.promise = typeof fetch !== 'function' ? Promise.resolve(settle(null))
+        : Promise.resolve().then(() => fetch(m._url(url))).then((res) => (res && res.ok ? res.json() : null)).then(settle, () => settle(null));
+    return entry.promise;
 }
 
 // ---------------------------------------------------------------------------
@@ -11852,6 +12081,13 @@ BuschVacuumCard.__internals = {
     mapConfirm,
     mapUndoConfirm,
     dirtyChoice,
+    editData,
+    editLists,
+    payloadFor,
+    furnitureEntry,
+    EDIT_GROUPS,
+    editCaps,
+    loadEditData,
     REMOTE,
     remoteValue,
     RemoteSender,
