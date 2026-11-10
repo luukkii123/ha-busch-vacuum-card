@@ -9153,6 +9153,38 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     .remote-map-base { max-height: max(56px, calc(100vh - 300px)); }
     .remote-help { display: none; }
 }
+/* map-editor: confirmation objects, shake on open changes, edit view */
+.edit-objects {
+    margin: 0 0 var(--ha-space-3, 12px);
+    padding-inline-start: var(--ha-space-5, 20px);
+    overflow-wrap: anywhere;
+}
+.sheet.shake { animation: bvc-shake 0.36s ease-in-out; }
+@keyframes bvc-shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-8px); }
+    75% { transform: translateX(8px); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .sheet.shake { animation: none; outline: 2px solid var(--bvc-error-color, var(--error-color, #db4437)); }
+}
+.form-note[data-kind=warning] { color: var(--bvc-warning-color, var(--warning-color, #b26a00)); }
+.form-note[data-kind=dirty]::before, .form-note[data-kind=warning]::before { content: "⚠ "; }
+.edit-map { position: relative; min-height: 220px; margin: 0 0 var(--ha-space-3, 12px); }
+.edit-tools, .edit-list, .edit-row { display: flex; flex-wrap: wrap; gap: var(--ha-space-2, 8px); margin: 0 0 var(--ha-space-3, 12px); }
+.edit-tools [aria-pressed=true] { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 1px; }
+.edit-list { flex-direction: column; }
+.edit-item { display: flex; align-items: center; gap: var(--ha-space-2, 8px); min-height: 44px; min-width: 0; }
+.edit-item > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.edit-item[data-state]::after { content: attr(data-state-text); font-size: 0.85em; padding: 2px 6px; border: 1px dashed currentColor; border-radius: 4px; }
+.edit-coords { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--ha-space-2, 8px); }
+.edit-coords .field { min-width: 0; }
+.map-entry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ha-space-2, 8px); padding: var(--ha-space-2, 8px) 0; border-bottom: 1px solid var(--divider-color, #e0e0e0); }
+.map-entry img { width: 64px; height: 48px; object-fit: contain; flex: 0 0 auto; }
+.map-entry > span { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
+.wifi-legend { display: flex; flex-wrap: wrap; gap: var(--ha-space-2, 8px); font-size: 0.9em; }
+.wifi-legend i { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-inline-end: 4px; }
+
 `;
 
 /**
@@ -9201,6 +9233,12 @@ class BuschVacuumDialog extends HTMLElement {
             if (this._closing) {
                 this._closing = false;
                 this._dismiss();
+                return;
+            }
+            if (!this._popSteps && this._guarded()) {
+                // The back gesture already took our entry: put it back, the view stays.
+                this._depth = Math.max(0, this._depth - 1);
+                this._push();
                 return;
             }
             if (this._views.length > 1) {
@@ -9278,8 +9316,24 @@ class BuschVacuumDialog extends HTMLElement {
         }
     }
 
+    /**
+     * A view with open changes (`guard()` true) does not go: the sheet shakes
+     * and the view asks itself (HACS Regel 2, R10). Only forms use it.
+     */
+    _guarded() {
+        const view = this._views[this._views.length - 1];
+        if (!view || !view.guard || !view.guard(this)) return false;
+        if (this._sheet) {
+            this._sheet.classList.remove('shake');
+            this._sheet.classList.add('shake');
+            setTimeout(() => this._sheet && this._sheet.classList.remove('shake'), 400);
+        }
+        return true;
+    }
+
     /** Escape and the back arrow: one view back, out only from the first. */
     _goBack() {
+        if (this._guarded()) return;
         if (this._views.length > 1) {
             this._leave(this._views.slice(-1));
             if (this._depth > 1) {
@@ -9308,6 +9362,7 @@ class BuschVacuumDialog extends HTMLElement {
     }
 
     close() {
+        if (this._guarded()) return;
         this._leave(this._views);
         if (this._depth > 0) {
             const steps = this._depth;
@@ -9662,6 +9717,7 @@ class BuschVacuumCard extends HTMLElement {
             }
             this._map.update(hass, model);
         }
+        if (this._editSession) this._editSession.onHass(model);
 
         const stats = [];
         const area = statText(hass, model, 'sensor.cleaned_area', 'cleaned_area', 'm²');
@@ -10933,6 +10989,284 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
 }
 
 // ---------------------------------------------------------------------------
+// Map editor (map-editor): safety frame, edit data, tools — every write of the
+// robot's stored map passes MapEditSession and one confirmation (spec 2026-11-10)
+// ---------------------------------------------------------------------------
+
+const EDIT_TEXTS = {
+    de: {
+        kartenSicherungTitel: 'Karte speichern',
+        kartenKarte: 'Karte: {karte}',
+        kartenSicherungNeu: 'Vor dem Speichern wird jetzt eine Sicherung der Karte erstellt.',
+        kartenSicherungDa: 'Sicherung dieser Sitzung erstellt um {zeit}.',
+        kartenKeineSicherung: 'Keine Sicherung möglich — Rückweg nur über Rückgängig und die Stände Original/Bearbeitet.',
+        kartenRueckweg: 'Nicht per Rückgängig umkehrbar. Rückweg: Wiederherstellen in der Kartensicherung.',
+        kartenSicherungLaeuft: 'Sicherung läuft …',
+        kartenSpeichernLaeuft: 'Speichern läuft …',
+        kartenSicherungFehler: 'Sicherung fehlgeschlagen ({grund}). Die Karte ist unverändert; deine Änderungen bleiben erhalten. Erneut versuchen oder abbrechen.',
+        kartenSicherungZeit: 'Zeitlimit 60 s überschritten',
+        kartenSchreibFehler: 'Speichern fehlgeschlagen ({grund}). Deine Änderungen bleiben erhalten. Erneut versuchen oder abbrechen.',
+        kartenErneut: 'Erneut versuchen',
+        kartenGespeichert: 'Gespeichert',
+        rueckgaengig: 'Rückgängig',
+        kartenRueckgaengigTitel: 'Änderung zurücknehmen',
+        kartenRueckgaengigText: 'Sendet den Stand vor der letzten Speicherung: {was}.',
+        kartenSperreAufgabe: 'Gesperrt, solange eine Aufgabe läuft.',
+        kartenSperreTemporaer: 'Gesperrt, solange eine temporäre Karte offen ist.',
+        kartenSperreSicherung: 'Gesperrt, solange eine Sicherung oder Wiederherstellung läuft.',
+        kartenSperreLaeuft: 'Eine Speicherung läuft bereits.',
+        kartenZaehler: '{art}: {neu} neu, {geaendert} geändert, {geloescht} gelöscht',
+        kartenWackeln: 'Ungespeicherte Änderungen',
+        kartenOffenFrage: 'Es gibt {n} ungespeicherte Änderungen. Speichern, verwerfen oder weiter bearbeiten?',
+        kartenWeiter: 'Weiter bearbeiten'
+    },
+    en: {
+        kartenSicherungTitel: 'Save map',
+        kartenKarte: 'Map: {karte}',
+        kartenSicherungNeu: 'A backup of the map is made now, before saving.',
+        kartenSicherungDa: 'Backup of this session made at {zeit}.',
+        kartenKeineSicherung: 'No backup possible — the way back is only Undo and the Original/Edited states.',
+        kartenRueckweg: 'Cannot be undone. Way back: restore in the map backup.',
+        kartenSicherungLaeuft: 'Backing up …',
+        kartenSpeichernLaeuft: 'Saving …',
+        kartenSicherungFehler: 'Backup failed ({grund}). The map is unchanged; your changes are kept. Try again or cancel.',
+        kartenSicherungZeit: 'time limit of 60 s exceeded',
+        kartenSchreibFehler: 'Saving failed ({grund}). Your changes are kept. Try again or cancel.',
+        kartenErneut: 'Try again',
+        kartenGespeichert: 'Saved',
+        rueckgaengig: 'Undo',
+        kartenRueckgaengigTitel: 'Take back change',
+        kartenRueckgaengigText: 'Sends the state before the last save: {was}.',
+        kartenSperreAufgabe: 'Locked while a task is running.',
+        kartenSperreTemporaer: 'Locked while a temporary map is open.',
+        kartenSperreSicherung: 'Locked while a backup or restore is running.',
+        kartenSperreLaeuft: 'A save is already running.',
+        kartenZaehler: '{art}: {neu} new, {geaendert} changed, {geloescht} deleted',
+        kartenWackeln: 'Unsaved changes',
+        kartenOffenFrage: 'There are {n} unsaved changes. Save, discard or keep editing?',
+        kartenWeiter: 'Keep editing'
+    }
+};
+for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
+
+const BACKUP_TIMEOUT_MS = 60000;
+/** Services that refuse while a task runs (device.py: carpets, points, walls, router, visibility, deleting a map). */
+const EDIT_TASK_LOCKED = new Set(['vacuum_set_carpet_area', 'vacuum_set_carpet_type', 'vacuum_set_custom_carpet_cleaning', 'vacuum_set_predefined_points', 'vacuum_set_walls', 'vacuum_set_router_position', 'vacuum_set_hidden_segments', 'vacuum_delete_map', 'vacuum_split_segments', 'vacuum_merge_segments']);
+/** What a temporary map still allows: its own management and new mapping. */
+const EDIT_TEMPORARY_OK = new Set(['vacuum_save_temporary_map', 'vacuum_discard_temporary_map', 'vacuum_replace_temporary_map', 'vacuum_backup_map', 'vacuum_request_map']);
+
+/**
+ * The one writer of the robot's map (spec: Schreiben). Only a grant handed out
+ * by a confirmation click may call it — no code path reaches a map service
+ * without the dialog (Sicherheitsrahmen 3, tested over all callers).
+ */
+function mapWrite(card, grant, service, data) {
+    if (!grant || grant.card !== card || !grant.confirmed) throw new Error('map write without confirmation: ' + service);
+    return Promise.resolve(card._hass.callService('dreame_vacuum', service, Object.assign({ entity_id: card._opts.entity }, data)));
+}
+
+/** A confirmation click: the only source of a grant for mapWrite. */
+const confirmGrant = (card) => ({ card, confirmed: true });
+
+class MapEditSession {
+    constructor(card) {
+        this.card = card;
+        const cur = card._map ? card._map.current() : {};
+        this.mapId = cur.mapId !== undefined ? cur.mapId : null;
+        this.frameId = cur.frameId !== undefined ? cur.frameId : null;
+        this.mapName = cur.name || '';
+        this.backedUpAt = null; // first save of a session backs up, later ones do not
+        this.undo = [];
+        this.busy = null; // 'backup' | 'save'
+        this.error = null;
+        this.saved = null; // text of the last save, for "Gespeichert · Rückgängig"
+        this._wait = null;
+    }
+
+    model() {
+        return this.card._model();
+    }
+
+    /** Backup possible: capability, status attribute, service, a stored map (device.py#L7049 refuses otherwise). */
+    canBackup(model = this.model()) {
+        return model.can('backup_map') && model.attr('map_backup_status') !== undefined && model.can('dreame_vacuum.vacuum_backup_map')
+            && model.attr('has_saved_map') !== false && model.attr('has_temporary_map') !== true;
+    }
+
+    /** Why a service may not be sent now (text key), or ''. */
+    lock(service, model = this.model()) {
+        if (this.busy) return 'kartenSperreLaeuft';
+        if (['map_backup_status', 'map_recovery_status'].some((k) => /running/i.test(String(model.attr(k))))) return 'kartenSperreSicherung';
+        if (EDIT_TASK_LOCKED.has(service) && taskActive(model, model.state ? model.state.state : 'unavailable')) return 'kartenSperreAufgabe';
+        if (model.attr('has_temporary_map') === true && !EDIT_TEMPORARY_OK.has(service)) return 'kartenSperreTemporaer';
+        return '';
+    }
+
+    /** vacuum_backup_map, then wait for map_backup_status Running → Success/Idle (state updates, 60 s). */
+    backup(grant, mapId = this.mapId) {
+        return new Promise((resolve, reject) => {
+            // A stale "Success"/"Failed" of an earlier backup counts only once the status moved.
+            const wait = { running: false, start: String(this.model().attr('map_backup_status') || ''), resolve, reject, timer: null };
+            const end = (error) => {
+                if (this._wait !== wait) return;
+                clearTimeout(wait.timer);
+                this._wait = null;
+                if (error) reject(error);
+                else resolve();
+            };
+            wait.end = end;
+            this._wait = wait;
+            wait.timer = setTimeout(() => end(new Error(translate(this.card._hass, 'kartenSicherungZeit'))), BACKUP_TIMEOUT_MS);
+            mapWrite(this.card, grant, 'vacuum_backup_map', { map_id: mapId }).then(() => this.onHass(this.model()), (error) => end(error));
+        });
+    }
+
+    /** Fed by the card on every own update: the backup status decides. */
+    onHass(model) {
+        const wait = this._wait;
+        if (!wait) return;
+        const status = String(model.attr('map_backup_status') || '');
+        if (/running/i.test(status)) wait.running = true;
+        else if (!wait.running && status === wait.start) return;
+        else if (/success|idle/i.test(status)) wait.end();
+        else if (/fail|error/i.test(status)) wait.end(new Error(status));
+    }
+
+    /**
+     * After a confirmation: backup first (once per session, when possible), then
+     * the calls in order. False when something blocked or failed; `error` says what.
+     */
+    async commit(grant, calls, { undo = null, backup = true, text = '' } = {}) {
+        if (this.busy) return false;
+        const model = this.model();
+        const blocked = calls.map((c) => this.lock(c.service, model)).find(Boolean);
+        if (blocked) {
+            this.error = { kind: 'lock', text: translate(this.card._hass, blocked) };
+            rerender(this.card);
+            return false;
+        }
+        this.error = null;
+        try {
+            if (backup && this.backedUpAt === null && this.canBackup(model)) {
+                this.busy = 'backup';
+                rerender(this.card);
+                await this.backup(grant);
+                this.backedUpAt = Date.now();
+            }
+            this.busy = 'save';
+            rerender(this.card);
+            for (const call of calls) await mapWrite(this.card, grant, call.service, call.data);
+            if (undo) this.undo.push(undo);
+            this.saved = text;
+            return true;
+        } catch (error) {
+            const key = this.busy === 'backup' ? 'kartenSicherungFehler' : 'kartenSchreibFehler';
+            this.error = { kind: this.busy, text: translate(this.card._hass, key, { grund: errorText(error) }) };
+            return false;
+        } finally {
+            this.busy = null;
+            rerender(this.card);
+        }
+    }
+}
+
+/** "No-Go-Zonen: 1 neu, 1 geändert, 0 gelöscht" (R13: the objects, not only a question). */
+function editCountLine(hass, art, c) {
+    return translate(hass, 'kartenZaehler', { art, neu: c.added || 0, geaendert: c.changed || 0, geloescht: c.removed || 0 });
+}
+
+/**
+ * The confirmation of every save (Sicherheitsrahmen 3): title, affected objects,
+ * map, backup note, way back; no outside click (kind confirm); one call per
+ * click; a failed backup keeps everything and offers a retry.
+ * opts: { title, lines, action, destructive, irreversible, calls, undo, backup, done }
+ */
+function mapConfirm(card, session, opts) {
+    return {
+        title: opts.title,
+        kind: 'confirm',
+        watch: () => [card._opts.entity],
+        render: (body, hass, dialog) => {
+            const list = document.createElement('ul');
+            list.className = 'edit-objects';
+            for (const line of opts.lines || []) {
+                const item = document.createElement('li');
+                item.textContent = line;
+                list.appendChild(item);
+            }
+            body.appendChild(list);
+            body.appendChild(noteLine(translate(hass, 'kartenKarte', { karte: session.mapName })));
+            if (opts.backup !== false) {
+                const backupText = session.backedUpAt !== null ? translate(hass, 'kartenSicherungDa', { zeit: clockText(hass, new Date(session.backedUpAt).getHours(), new Date(session.backedUpAt).getMinutes()) })
+                    : session.canBackup() ? translate(hass, 'kartenSicherungNeu') : translate(hass, 'kartenKeineSicherung');
+                body.appendChild(noteLine(backupText, 'backup'));
+            }
+            if (opts.irreversible) body.appendChild(noteLine(translate(hass, 'kartenRueckweg'), 'warning'));
+            if (session.busy) body.appendChild(noteLine(translate(hass, session.busy === 'backup' ? 'kartenSicherungLaeuft' : 'kartenSpeichernLaeuft'), 'busy'));
+            if (session.error) body.appendChild(noteLine(session.error.text, 'error'));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), disabled: !!session.busy, onClick: () => { session.error = null; dialog._goBack(); } });
+            cancel.setAttribute('data-action', 'cancel');
+            const label = session.error && session.error.kind !== 'lock' ? translate(hass, 'kartenErneut') : opts.action;
+            const go = BuschUI.action({ label, text: label, variant: opts.destructive ? 'destructive' : 'primary', disabled: !!session.busy, onClick: () => {
+                if (session.busy) return; // R11: a double tap sends once
+                session.commit(confirmGrant(card), opts.calls, { undo: opts.undo, backup: opts.backup !== false, text: opts.title }).then((ok) => {
+                    if (!ok) return dialog._render();
+                    if (opts.done) opts.done(dialog);
+                    else dialog.back(1);
+                    return undefined;
+                });
+            } });
+            go.setAttribute('data-action', 'confirm');
+            actions.append(cancel, go);
+            body.appendChild(actions);
+        }
+    };
+}
+
+/** Undo (Sicherheitsrahmen 4a): the remembered lists with the same services, confirmed, no new backup. */
+function mapUndoConfirm(card, session, done) {
+    const last = session.undo[session.undo.length - 1];
+    if (!last) return null;
+    const hass = card._hass;
+    return mapConfirm(card, session, {
+        title: translate(hass, 'kartenRueckgaengigTitel'),
+        lines: [translate(hass, 'kartenRueckgaengigText', { was: last.text })],
+        action: translate(hass, 'rueckgaengig'),
+        calls: last.calls,
+        backup: false,
+        done: (dialog) => {
+            session.undo.pop();
+            if (done) done(dialog);
+            else dialog.back(1);
+        }
+    });
+}
+
+/** R10/Regel 2: open changes on leave → the choice save / discard / keep editing. */
+function dirtyChoice(card, { count, save, discard }) {
+    return {
+        title: translate(card._hass, 'kartenWackeln'),
+        kind: 'confirm',
+        watch: () => [],
+        render: (body, hass, dialog) => {
+            body.appendChild(noteLine(translate(hass, 'kartenOffenFrage', { n: count() })));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const keep = BuschUI.action({ label: translate(hass, 'kartenWeiter'), text: translate(hass, 'kartenWeiter'), onClick: () => dialog._goBack() });
+            keep.setAttribute('data-action', 'keep');
+            const drop = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), variant: 'destructive', onClick: () => discard(dialog) });
+            drop.setAttribute('data-action', 'discard');
+            const store = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', onClick: () => save(dialog) });
+            store.setAttribute('data-action', 'save');
+            actions.append(keep, drop, store);
+            body.appendChild(actions);
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Remote control (remote): one sender, sliders, hold buttons and keys feed it (R08)
 // ---------------------------------------------------------------------------
 
@@ -11512,6 +11846,12 @@ BuschVacuumCard.__internals = {
     historySums,
     historyUrl,
     recleanState,
+    HIDDEN_OBJECTS,
+    MapEditSession,
+    mapWrite,
+    mapConfirm,
+    mapUndoConfirm,
+    dirtyChoice,
     REMOTE,
     remoteValue,
     RemoteSender,
