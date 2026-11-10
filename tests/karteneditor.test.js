@@ -1086,3 +1086,104 @@ test('EDI-03 Zusammenführen: genau zwei Räume (Fläche/Chip), Nachbarschaft au
   assert.equal(k2.I.mergeCheck(k2.I.editData(raumdaten()), [1, 4]), 'zusammenNachbarn');
   assert.equal(k2.I.mergeCheck(null, [1]), 'zusammenZwei');
 });
+
+// ── Checkpoint B (nach Task 3–6): Sicherheitsrahmen deckt jede Speicherung ──
+
+/** Quelltext ohne Kommentare; Zeichenketten bleiben (Dienstnamen sind Zeichenketten). */
+function ohneKommentare(text) {
+  let aus = '', i = 0;
+  while (i < text.length) {
+    const c = text[i], n = text[i + 1];
+    if (c === '/' && n === '/') { while (i < text.length && text[i] !== '\n') i++; continue; }
+    if (c === '/' && n === '*') { const e = text.indexOf('*/', i + 2); aus += ' '.repeat(e + 2 - i); i = e + 2; continue; }
+    if (c === "'" || c === '"' || c === '`') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== c) j += text[j] === '\\' ? 2 : 1;
+      aus += text.slice(i, j + 1); i = j + 1; continue;
+    }
+    aus += c; i++;
+  }
+  return aus;
+}
+/** [Anfang, Ende) des Rumpfs ab `kopf` (Klammern gezählt, Zeichenketten übersprungen). */
+function spanne(text, kopf) {
+  const start = text.indexOf(kopf);
+  assert.ok(start >= 0, 'nicht gefunden: ' + kopf);
+  let i = text.indexOf('{', start + kopf.length - 1), tiefe = 0;
+  for (; i < text.length; i++) {
+    const c = text[i];
+    if (c === "'" || c === '"' || c === '`') { let j = i + 1; while (text[j] !== c) j += text[j] === '\\' ? 2 : 1; i = j; continue; }
+    if (c === '{') tiefe++;
+    if (c === '}' && --tiefe === 0) return [start, i + 1];
+  }
+  throw new Error('offen: ' + kopf);
+}
+const fundstellen = (text, muster) => Array.from(text.matchAll(muster), (m) => m.index);
+const drin = (i, [a, b]) => i >= a && i < b;
+
+/** Kartendienste der Spec-Tabellen (Kartenverwaltung, Räume, Objekte, Wände, WLAN) und der Sicherung. */
+const KARTENDIENSTE = ['vacuum_set_property', 'vacuum_call_action', 'vacuum_rename_map', 'vacuum_select_map', 'vacuum_delete_map', 'vacuum_save_temporary_map',
+  'vacuum_discard_temporary_map', 'vacuum_replace_temporary_map', 'vacuum_request_map', 'vacuum_rename_segment', 'vacuum_set_segment_type', 'vacuum_set_hidden_segments',
+  'vacuum_set_floor_material', 'vacuum_split_segments', 'vacuum_merge_segments', 'vacuum_set_restricted_zone', 'vacuum_set_threshold', 'vacuum_set_virtual_threshold',
+  'vacuum_set_curtain', 'vacuum_set_carpet_area', 'vacuum_set_carpet_type', 'vacuum_set_custom_carpet_cleaning', 'vacuum_set_furniture', 'vacuum_set_predefined_points',
+  'vacuum_set_walls', 'vacuum_set_router_position', 'vacuum_backup_map'];
+/** Wege außerhalb von mapWrite, je mit eigener Bestätigung oder als dokumentierte Ausnahme. */
+const EIGENE_WEGE = {
+  vacuum_select_map: 'CORE-20: nur in card._confirmMapChange (MapView.selectMap, Spec „Wählen“)',
+  vacuum_set_property: 'device-settings writeSetting; multi_floor_map nur über SETTINGS.confirm',
+  vacuum_call_action: 'device-settings callAction; start_mapping/start_fast_mapping nur im done einer mapConfirm',
+  vacuum_request_map: 'dokumentierte Ausnahme: requestMap, nicht zerstörend (Spec-Tabelle), ohne Bestätigung',
+};
+
+test('EDI-02 Checkpoint B: alle Aufrufer von mapWrite/confirmGrant gegen die Bestätigungswege; jeder Kartendienst der Spec nur hinter einer Bestätigung (requestMap Ausnahme)', () => {
+  const quelle = ohneKommentare(require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'dist', 'busch-vacuum-card.js'), 'utf8'));
+  const confirm = spanne(quelle, 'function mapConfirm(');
+  const session = spanne(quelle, 'class MapEditSession {');
+  const request = spanne(quelle, 'function requestMap(');
+  const newMap = spanne(quelle, 'function newMapActions(');
+  // 1. Grants: genau eine Quelle, der Klick in mapConfirm; kein nachgebauter Grant.
+  const grants = fundstellen(quelle, /confirmGrant\(/g);
+  assert.equal(grants.length, 1, 'confirmGrant( genau einmal aufgerufen');
+  assert.ok(drin(grants[0], confirm), 'nur in mapConfirm');
+  const klick = quelle.slice(quelle.lastIndexOf('const go = BuschUI.action(', grants[0]), grants[0]);
+  assert.match(klick, /onClick: \(\) => \{/, 'im onClick des Bestätigungsknopfs');
+  assert.deepEqual(fundstellen(quelle, /confirmed:\s*true/g).length, 1, 'confirmed: true nur in confirmGrant');
+  assert.equal(aufbau().I.confirmGrant, undefined, 'confirmGrant nicht exportiert');
+  // 2. mapWrite: nur MapEditSession (Sicherung + commit nach dem Grant).
+  const schreiber = fundstellen(quelle, /(?<!function )mapWrite\(/g);
+  assert.equal(schreiber.length, 2);
+  for (const i of schreiber) assert.ok(drin(i, session), 'mapWrite nur in MapEditSession');
+  assert.deepEqual(fundstellen(quelle, /\.commit\(/g).filter((i) => !drin(i, confirm)), [], 'commit nur aus mapConfirm');
+  // 3. Jeder callService: Kartendienste nur über mapWrite oder die eigenen Wege.
+  const aufrufe = Array.from(quelle.matchAll(/callService\(\s*([^,]+?),\s*([^,]+?),/g), (m) => ({ i: m.index, dienst: m[2].trim() }));
+  const dynamisch = aufrufe.filter((a) => !/^'[^']*'$/.test(a.dienst));
+  assert.deepEqual(dynamisch.map((a) => a.dienst).sort(), ['call ? call.service : control.service', 'payload.service', 'service'], 'nur bekannte Sender mit variablem Dienst');
+  assert.ok(drin(dynamisch.find((a) => a.dienst === 'service').i, spanne(quelle, 'function mapWrite(')), 'variabler Kartendienst nur in mapWrite');
+  assert.ok(drin(dynamisch.find((a) => a.dienst === 'payload.service').i, spanne(quelle, 'function runReclean(')), 'Aufgabe (taskPayload) in runReclean');
+  const aufgaben = quelle.slice(...spanne(quelle, 'const TASK_SERVICES = {'));
+  for (const d of KARTENDIENSTE) assert.ok(!aufgaben.includes("'" + d + "'"), 'Aufgabendienste sind keine Kartendienste: ' + d);
+  for (const a of aufrufe.filter((x) => KARTENDIENSTE.includes(x.dienst.slice(1, -1)))) {
+    const dienst = a.dienst.slice(1, -1);
+    assert.ok(EIGENE_WEGE[dienst], dienst + ' direkt über callService statt mapWrite');
+    const zeile = quelle.slice(quelle.lastIndexOf('\n', a.i), a.i);
+    if (dienst === 'vacuum_select_map') assert.match(zeile, /_confirmMapChange\(/, 'Kartenwahl nur hinter CORE-20');
+    if (dienst === 'vacuum_request_map') assert.ok(drin(a.i, request), 'request_map nur in requestMap');
+  }
+  // 4. Die eigenen Wege bestätigen selbst: multi_floor_map mit confirm, Kartierung im done einer mapConfirm.
+  const k = aufbau();
+  assert.equal(k.I.SETTINGS.multi_floor_map.confirm, true);
+  for (const key of ['start_mapping', 'start_fast_mapping']) {
+    for (const i of fundstellen(quelle, new RegExp("'" + key + "'", 'g'))) assert.ok(drin(i, newMap), key + ' nur in newMapActions');
+  }
+  const kartierung = quelle.slice(...newMap);
+  assert.ok(kartierung.indexOf('callAction(') > kartierung.indexOf('done:') && kartierung.indexOf('done:') > kartierung.indexOf('mapConfirm('), 'callAction erst im done der Bestätigung');
+  // 5. Klassifizierung vollständig: jeder Kartendienst ist mapWrite-Dienst (Gruppen, Verwaltung, Teilen/Zusammenführen) oder eigener Weg.
+  const ueberMapWrite = KARTENDIENSTE.filter((d) => !EIGENE_WEGE[d]);
+  for (const g of Object.values(k.I.EDIT_GROUPS)) assert.ok(ueberMapWrite.includes(g.service), 'Gruppe ' + g.service + ' ist ein Spec-Dienst');
+  for (const d of ueberMapWrite) {
+    assert.ok(quelle.includes("'" + d + "'"), d + ' kommt im Quelltext vor');
+    assert.throws(() => k.I.mapWrite(k.karte, null, d, {}), /without confirmation/, d);
+    assert.throws(() => k.I.mapWrite(k.karte, { card: k.karte, confirmed: false }, d, {}), /without confirmation/, d);
+  }
+  assert.deepEqual(k.haus.rufe, []);
+});
