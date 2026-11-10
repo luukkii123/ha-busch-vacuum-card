@@ -324,15 +324,25 @@ Syntax und Node-Tests (im Container, die Share ist FUSE):
 
 ```bash
 REPO=/pfad/zu/ha-busch-vacuum-card
-docker run --rm --name test-hacs-t882-node -v "$REPO:/vac:ro" -w /vac node:22-alpine \
+LABELS='--label aicli.project=hacs --label aicli.todo=882 --label aicli.lifecycle=test'
+docker run --rm --name test-hacs-t882-node $LABELS \
+  --label "aicli.session=Claude · HACS · <Sitzung>" --label aicli.cleanup-after=<JJJJ-MM-TTThh:mmZ> \
+  -v "$REPO:/vac:ro" -w /vac node:22-alpine \
   sh -c 'node --check dist/busch-vacuum-card.js && node --test tests/*.test.js'
 ```
+
+Jeder `docker run` braucht (Hook-Pflicht seit 10.11.2026, Regeln in
+`docs/docker-stack-regeln.md` der Projektebene) den Namen
+`test-hacs-t<todo>-<zweck>` und die fünf Labels `aicli.project`,
+`aicli.todo`, `aicli.session` (Sitzungsname), `aicli.lifecycle=test` und
+`aicli.cleanup-after` (UTC-Zeitpunkt, ab dem der Container weg sein darf).
+`--rm` entfernt ihn nach dem Lauf; übrig gebliebene mit `docker ps -a
+--filter label=aicli.todo=882` prüfen.
 
 UI-Regeln (HACS-Ebene):
 
 ```bash
-cd /pfad/zu/hacs
-python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card
+python3 /pfad/zu/hacs/scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card
 ```
 
 Browser: `docs/render/render.py` lädt die Datei über HTTP in Chromium, mit
@@ -346,7 +356,9 @@ REPO=/pfad/zu/ha-busch-vacuum-card
 HACS=/pfad/zu/hacs
 W=/pfad/zu/arbeitskopie   # nicht auf der FUSE-Share
 rm -rf "$W/repo" && mkdir -p "$W/repo" && cp -r "$REPO/dist" "$REPO/tests" "$REPO/docs" "$W/repo/"
-docker run --rm --name test-hacs-t882-render -v "$REPO:/cards:ro" \
+docker run --rm --name test-hacs-t882-render $LABELS \
+  --label "aicli.session=Claude · HACS · <Sitzung>" --label aicli.cleanup-after=<JJJJ-MM-TTThh:mmZ> \
+  -v "$REPO:/cards:ro" \
   -v "$HACS/docs/render:/work:ro" -v "$W/repo:/out" --entrypoint bash \
   mcr.microsoft.com/playwright/python:v1.62.0-noble -c \
   'pip install -q --break-system-packages playwright==1.62.0 >/dev/null 2>&1; \
