@@ -271,6 +271,34 @@ while a task runs or when the run was on another map.
 cruising type and map, without area sums or re-cleaning. Hide its menu entry
 with `hidden_card_objects: cruising_history`.
 
+## Remote control
+
+*Remote control* in the menu (robots with the integration's
+`vacuum_remote_control_move_step` service) drives the robot by hand, for
+example out from under a bed.
+
+> **Safety:** every input moves the robot. The view opens **unarmed**; only
+> *Start control* lets the sticks and keys through, anew on every opening.
+> Reversing has no collision guard. Letting go stops at once — so do losing
+> the window focus, switching tabs, leaving the view, a service error, no
+> answer within 2 s and a lost connection. If the connection is lost, the
+> stop may not arrive: stop the robot with its button or in the Dreame app.
+
+- Two sticks, usable at the same time with two fingers: speed (vertical) and
+  steering (horizontal), a dead zone in the middle; on phones held sideways
+  they sit at the screen edges around the map. Left-handed (`left_handed`)
+  swaps them.
+- Hold buttons ▲ ▼ and turn left/right drive at 50 % while pressed; *Stop*
+  stops. *Precision* halves speed and turning.
+- Keyboard: `W`/`↑` forward, `S`/`↓` back, `A`/`←` left, `D`/`→` right
+  (combinable), `Shift` slower, `Ctrl` slower turning (`Ctrl+W`/`Ctrl+S`
+  stay with the browser), `Space` stop, `Escape` stop and back.
+- The live map shows the robot's position and heading; *Resume* (a paused or
+  started task) and *Return to dock* (when not docked) appear by state.
+- At most one call is under way; the next follows its answer, at least
+  200 ms later (≤ 5 per second), always with the newest value. Limits: forward
+  100, backward −100, turning ±128.
+
 ## Theming
 
 The card follows your Home Assistant theme. These optional theme variables

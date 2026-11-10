@@ -24,6 +24,10 @@ Covered (plan 2026-11-09-busch-vacuum-card-core, Task 8):
     Data mode and image fallback, overlays on the expected pixels, zoom
     buttons/keys/wheel, lock, motion, obstacle bubble and dialog, map info,
     floor choice, touch targets, no foreign requests, a lab timing
+  * remote (plan 2026-11-10-busch-vacuum-card-remote, Task 6): unarmed/armed at
+    390x844, 844x390, 1280x800, light/dark; real mouse drag, two real touch points
+    (CDP), keyboard, stop after release/blur/visibilitychange/Escape, rate and
+    spacing from timestamps; every call stays in the harness stub
   * history (plan 2026-11-10-busch-vacuum-card-history, Task 7): the history
     endpoints answer with a SYNTHETIC run (gzip JSON like the integration, an
     SVG picture, an SVG obstacle photo): list, groups, detail with cleaning and
@@ -227,7 +231,7 @@ PAGE = """<!doctype html>
     states: data.states, entities: data.entities, services: data.services,
     formatEntityState: (s, state = s.state) => (WORDS[lang][state] || state)
       + (s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : ''),
-    callService: (domain, service, payload) => { window.__serviceCalls.push({ domain, service, payload }); return Promise.resolve(); }
+    callService: (domain, service, payload) => { window.__serviceCalls.push({ domain, service, payload, at: performance.now() }); return Promise.resolve(); }
   });
   window.closeDialogs = () => document.querySelectorAll('busch-vacuum-dialog').forEach((d) => d.remove());
   window.buildCard = ({ data, lang = 'de', config = {}, panel = false }) => {
@@ -1246,6 +1250,198 @@ def main():
               json.dumps({"first": first, "second": second, "back": back}))
 
         # ------------------------------------------------------------------
+        # 3i. Remote control (remote Task 6): unarmed/armed at 390x844, 844x390 and 1280x800,
+        #     light/dark; real pointer input (mouse and two touch points over CDP), keyboard,
+        #     stop after release/blur/visibilitychange. Every service call lands in the harness
+        #     stub (window.__serviceCalls) -- nothing reaches a device -- and is cleared afterwards.
+        # ------------------------------------------------------------------
+        remote_open = """async (arm) => { window.closeDialogs(); window.__serviceCalls = []; const c = window.card();
+            const I = customElements.get('busch-vacuum-card').__internals; const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+            c._openDialog(I.MODULE_VIEWS.remote(c)); await wait(200);
+            const sr = window.dialog().shadowRoot; if (arm) sr.querySelector('[data-action="arm"]').click(); await wait(120);
+            return sr.querySelector('h1').textContent; }"""
+        remote_geo_js = """() => { const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet'), r = sheet.getBoundingClientRect();
+            const box = (sel) => { const n = sr.querySelector(sel); if (!n || !n.getClientRects().length) return null; const b = n.getBoundingClientRect();
+                return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, w: b.width, h: b.height }; };
+            const base = sr.querySelector('.remote-map-base'), active = sr.activeElement;
+            return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, W: innerWidth, H: innerHeight,
+                     overflowX: sheet.scrollWidth - sheet.clientWidth, small: window.smallTargets(sr), state: sr.querySelector('.remote').getAttribute('data-state'),
+                     speed: box('[data-axis="velocity"]'), turn: box('[data-axis="turn"]'), map: box('.remote-map'), holds: box('.remote-holds'),
+                     base: base ? { tag: base.tagName, w: base.width || base.naturalWidth || 0 } : null, robot: box('.remote-robot'),
+                     warning: box('.remote-warning'), help: box('.remote-help'), arm: box('[data-action="arm"]'), stop: box('[data-action="stop"]'),
+                     knobs: Array.from(sr.querySelectorAll('.remote-knob')).map((k) => { const b = k.getBoundingClientRect(); return Math.abs(b.width - b.height) <= 1; }),
+                     focus: active ? (active.getAttribute('data-axis') || active.getAttribute('data-action')) : null }; }"""
+        remote_geo = []
+        for w, h in ((390, 844), (844, 390), (1280, 800)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                for armed in (False, True):
+                    build("docked")
+                    page.wait_for_timeout(250)
+                    title = page.evaluate(remote_open, armed)
+                    page.wait_for_timeout(250)
+                    g = page.evaluate(remote_geo_js)
+                    shot(f"fernsteuerung-{'frei' if armed else 'unscharf'}-{w}x{h}-{th}.png")
+                    page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                    remote_geo.append({"w": w, "h": h, "theme": th, "armed": armed, "title": title, **g})
+        report["remoteDialogs"] = remote_geo
+        bad = [x for x in remote_geo if not inside(x) or x["small"] or x["overflowX"] > 1 or x["title"] != "Fernsteuerung"
+               or min(x["speed"]["w"], x["speed"]["h"], x["turn"]["w"], x["turn"]["h"]) < 48
+               or x["speed"]["bottom"] > x["H"] + 0.5 or x["turn"]["bottom"] > x["H"] + 0.5
+               or not x["stop"] or x["stop"]["bottom"] > x["H"] + 0.5 or x["knobs"] != [True, True]]
+        check("remote: 3 sizes x 2 themes x unarmed/armed inside the viewport, no sideways overflow, 44 px buttons, sticks >= 48 px, round knobs, sticks and Stop on screen without scrolling",
+              not bad, json.dumps(bad[:3]))
+        port_ = [x for x in remote_geo if x["w"] == 390]
+        land = [x for x in remote_geo if x["w"] == 844]
+        desk = [x for x in remote_geo if x["w"] == 1280]
+        check("remote layout: portrait map above the sticks (speed left, steering right); phone landscape sticks at the edges around the map; desktop with keyboard help; map copied from the one MapView with a robot marker",
+              all(x["map"] and x["map"]["bottom"] <= x["speed"]["top"] + 0.5 and x["speed"]["right"] <= x["turn"]["left"] for x in port_)
+              and all(x["map"] and x["speed"]["right"] <= x["map"]["left"] and x["turn"]["left"] >= x["map"]["right"] for x in land)
+              and all(x["help"] for x in desk) and all(x["help"] is None for x in land)
+              and all(x["warning"] for x in remote_geo)
+              and all(x["base"] and x["base"]["w"] > 0 and x["robot"] for x in remote_geo),
+              json.dumps([{k: x[k] for k in ("w", "h", "armed", "map", "speed", "turn", "help", "base", "robot")} for x in remote_geo if x["theme"] == "light"]))
+        check("remote: opens unarmed with the start button, armed hides it and puts the focus on the speed stick; no call by opening or arming",
+              all((x["state"] == "unarmed" and x["arm"]) if not x["armed"] else (x["state"] == "ready" and x["arm"] is None and x["focus"] == "velocity") for x in remote_geo),
+              json.dumps([{k: x[k] for k in ("w", "armed", "state", "arm", "focus")} for x in remote_geo]))
+
+        calls = lambda: page.evaluate("() => window.__serviceCalls.map((c) => [c.service, c.payload.velocity, c.payload.rotation, Math.round(c.at)])")
+        moves = lambda cs: [c for c in cs if c[0] == "vacuum_remote_control_move_step"]
+        centre = lambda sel: page.evaluate("""(sel) => { const b = window.dialog().shadowRoot.querySelector(sel).getBoundingClientRect();
+            return [b.left + b.width / 2, b.top + b.height / 2, b.width, b.height]; }""", sel)
+        remote = {}
+        page.set_viewport_size({"width": 390, "height": 844})
+        theme("light")
+        build("docked")
+        page.wait_for_timeout(250)
+        # Unarmed: a real drag sends nothing.
+        page.evaluate(remote_open, False)
+        x, y, sw, sh = centre('[data-axis="velocity"]')
+        page.mouse.move(x, y)
+        page.mouse.down()
+        page.mouse.move(x, y - sh / 2, steps=5)
+        page.wait_for_timeout(400)
+        page.mouse.up()
+        remote["unarmed"] = calls()
+        # Armed, mouse: drag up, hold, release.
+        page.evaluate(remote_open, True)
+        x, y, sw, sh = centre('[data-axis="velocity"]')
+        page.mouse.move(x, y)
+        page.mouse.down()
+        page.mouse.move(x, y - sh / 2, steps=5)
+        page.wait_for_timeout(1000)
+        held = page.evaluate("() => window.dialog().shadowRoot.querySelector('[data-axis=\"velocity\"]').getAttribute('aria-valuetext')")
+        page.mouse.up()
+        page.wait_for_timeout(500)
+        remote["mouse"] = calls()
+        remote["mouseHeld"] = held
+        remote["mouseAfter"] = page.evaluate("() => window.dialog().shadowRoot.querySelector('[data-axis=\"velocity\"]').getAttribute('aria-valuetext')")
+        # Keyboard: W+D held, then release; blur and visibilitychange while W is held.
+        page.evaluate(remote_open, True)
+        page.keyboard.down("w")
+        page.keyboard.down("d")
+        page.wait_for_timeout(1100)
+        page.keyboard.up("w")
+        page.keyboard.up("d")
+        page.wait_for_timeout(500)
+        remote["keys"] = calls()
+        page.evaluate(remote_open, True)
+        page.keyboard.down("w")
+        page.wait_for_timeout(450)
+        page.evaluate("() => window.dispatchEvent(new Event('blur'))")
+        page.wait_for_timeout(500)
+        page.keyboard.up("w")
+        remote["blur"] = calls()
+        page.evaluate(remote_open, True)
+        page.keyboard.down("ArrowUp")
+        page.wait_for_timeout(450)
+        page.evaluate("""() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+            document.dispatchEvent(new Event('visibilitychange')); delete document.hidden; }""")
+        page.wait_for_timeout(500)
+        page.keyboard.up("ArrowUp")
+        remote["hidden"] = calls()
+        page.evaluate(remote_open, True)
+        page.keyboard.down("ArrowUp")
+        page.wait_for_timeout(450)
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(600)
+        page.keyboard.up("ArrowUp")
+        remote["escape"] = calls()
+        remote["escapeOpen"] = page.evaluate("() => !!window.dialog()")
+        page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+        # Reduced motion: the knob springs back without a transition.
+        page.emulate_media(reduced_motion="reduce")
+        page.evaluate(remote_open, False)
+        remote["reducedTransition"] = page.evaluate("() => getComputedStyle(window.dialog().shadowRoot.querySelector('.remote-knob')).transitionDuration")
+        page.emulate_media(reduced_motion="no-preference")
+        remote["normalTransition"] = page.evaluate("() => getComputedStyle(window.dialog().shadowRoot.querySelector('.remote-knob')).transitionDuration")
+        page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+        # Two fingers at once: real touch points over CDP (each its own pointerId and capture).
+        touch_ctx = browser.new_context(viewport={"width": 844, "height": 390}, device_scale_factor=2, locale="de-DE", has_touch=True, is_mobile=True)
+        tp = touch_ctx.new_page()
+        tp.on("console", lambda m: report["consoleErrors"].append(m.text) if m.type == "error" else None)
+        tp.on("pageerror", lambda e: report["pageErrors"].append(str(e)))
+        tp.route("**/api/camera_*proxy/**", camera_route)
+        tp.goto(f"http://127.0.0.1:{port}/{harness.relative_to(repo_root).as_posix()}")
+        tp.wait_for_function("() => !!customElements.get('busch-vacuum-card')", timeout=15000)
+        tp.evaluate("(a) => window.buildCard(a)", {"data": data["docked"], "lang": "de", "config": {}, "panel": False})
+        tp.wait_for_timeout(250)
+        tp.evaluate(remote_open, True)
+        cdp = touch_ctx.new_cdp_session(tp)
+        pos = lambda sel: tp.evaluate("""(sel) => { const b = window.dialog().shadowRoot.querySelector(sel).getBoundingClientRect();
+            return [b.left + b.width / 2, b.top + b.height / 2, b.width, b.height]; }""", sel)
+        vx, vy, _, vh = pos('[data-axis="velocity"]')
+        tx, ty, tw, _ = pos('[data-axis="turn"]')
+        pts = lambda a, b: [{"x": a[0], "y": a[1], "id": 1}, {"x": b[0], "y": b[1], "id": 2}]
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": pts((vx, vy), (tx, ty))})
+        for i in range(1, 6):
+            cdp.send("Input.dispatchTouchEvent", {"type": "touchMove", "touchPoints": pts((vx, vy - vh * 0.09 * i), (tx + tw * 0.09 * i, ty))})
+            tp.wait_for_timeout(40)
+        tp.wait_for_timeout(900)
+        both = tp.evaluate("() => window.__serviceCalls.map((c) => [c.service, c.payload.velocity, c.payload.rotation])")
+        texts = tp.evaluate("() => ['velocity', 'turn'].map((a) => window.dialog().shadowRoot.querySelector('[data-axis=\"' + a + '\"]').getAttribute('aria-valuetext'))")
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+        tp.wait_for_timeout(500)
+        remote["touch"] = tp.evaluate("() => window.__serviceCalls.map((c) => [c.service, c.payload.velocity, c.payload.rotation, Math.round(c.at)])")
+        remote["touchBoth"] = both
+        remote["touchTexts"] = texts
+        tp.screenshot(path=str(out_dir / "fernsteuerung-zwei-finger-844x390.png"))
+        report["screenshots"].append("fernsteuerung-zwei-finger-844x390.png")
+        touch_ctx.close()
+        report["remote"] = remote
+
+        def gaps_ok(cs):
+            ms = moves(cs)
+            # The harness answers at once: consecutive moves keep the 200 ms spacing (the stop comes without it).
+            ts = [c[3] for c in ms if c[1] or c[2]]
+            return all(b - a >= 195 for a, b in zip(ts, ts[1:]))
+        def stops_last(cs):
+            ms = moves(cs)
+            return len(ms) >= 2 and ms[-1][1:3] == [0, 0] and any(c[1] or c[2] for c in ms)
+        def rate_ok(cs):
+            ts = [c[3] for c in moves(cs)]
+            return all(len([t for t in ts if s <= t < s + 1000]) <= 6 for s in ts)  # 5 moves + the stop
+        check("remote pointer: unarmed drag sends nothing; armed mouse drag moves forward (aria 'vorwärts 100 %'), release stops and springs back to 'Mitte'",
+              remote["unarmed"] == [] and stops_last(remote["mouse"]) and gaps_ok(remote["mouse"]) and remote["mouseHeld"] == "vorwärts 100 %" and remote["mouseAfter"] == "Mitte",
+              json.dumps({k: remote[k] for k in ("unarmed", "mouse", "mouseHeld", "mouseAfter")}))
+        check("remote two fingers (real touch points): speed and steering in the same step, lifting stops",
+              any(c[1] > 0 and c[2] < 0 for c in moves(remote["touchBoth"])) and stops_last(remote["touch"]) and gaps_ok(remote["touch"])
+              and texts[0].startswith("vorwärts") and texts[1].startswith("rechts"),
+              json.dumps({"both": remote["touchBoth"], "texts": texts, "touch": remote["touch"]}))
+        check("remote keyboard: W+D combined (100, -128), <= 5 calls/s with >= 200 ms spacing, last keyup stops; stop after window blur, visibilitychange and Escape (which leaves the view)",
+              any(c[1:3] == [100, -128] for c in moves(remote["keys"])) and stops_last(remote["keys"]) and gaps_ok(remote["keys"]) and rate_ok(remote["keys"])
+              and all(stops_last(remote[k]) and moves(remote[k])[-1][1:3] == [0, 0] for k in ("blur", "hidden", "escape"))
+              and not remote["escapeOpen"],
+              json.dumps({k: remote[k] for k in ("keys", "blur", "hidden", "escape", "escapeOpen")}))
+        check("remote motion: the knob springs back with a transition, none with prefers-reduced-motion",
+              remote["reducedTransition"] in ("0s", "1e-05s") and remote["normalTransition"] == "0.15s",
+              json.dumps({"reduced": remote["reducedTransition"], "normal": remote["normalTransition"]}))
+        # Only remote calls happened here, all in the stub; the page-wide "no service call" check stays meaningful.
+        report["remoteServiceCalls"] = sum(len(moves(remote[k])) for k in ("mouse", "keys", "blur", "hidden", "escape", "touch"))
+        page.evaluate("() => { window.__serviceCalls = []; }")
+
+        # ------------------------------------------------------------------
         clean_open = """(steps) => { window.closeDialogs(); const b = window.card().shadowRoot.querySelector('[data-action=clean-settings]');
             if (!b) return 'missing settings button'; b.click(); const sr = () => window.dialog().shadowRoot;
             for (const sel of steps) { const n = sr().querySelector(sel); if (!n) return 'missing ' + sel; n.click(); }
@@ -1458,6 +1654,16 @@ def main():
                     messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
                     vor_messung=lambda pg: (build("docked"), page.wait_for_timeout(150)))
                 page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            for label, arm in (("fernsteuerung", False), ("fernsteuerung_frei", True)):
+                r["regel1_dialog_" + label] = lauf_breiten(
+                    page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, ".sheet"),
+                    vor_messung=lambda pg, a=arm: (build("docked"), page.wait_for_timeout(150), page.evaluate(remote_open, a), page.wait_for_timeout(300)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            r["regel2_dialog_fernsteuerung"] = lauf_breiten(
+                page, breiten=(390, 960), hoehe=900,
+                messung=lambda pg: messe_popup(pg, lambda: page.evaluate(remote_open, False), ".sheet", '[data-action="close"]', dialog_typ="bearbeitung"),
+                vor_messung=lambda pg: (build("docked"), page.wait_for_timeout(150)))
+            page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
             r["regel1_karte_shortcuts"] = lauf_breiten(
                 page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
                 vor_messung=lambda pg: (build("shortcuts", config=short_config), page.wait_for_timeout(200)))

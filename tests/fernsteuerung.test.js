@@ -831,3 +831,19 @@ test('Layout: Hochformat Karte oben; Querformat am Handy Regler an den Rändern 
   eintrag(u, 'remote').click();
   assert.equal($d(u, '.remote').getAttribute('data-hand'), 'left');
 });
+
+test('Dialog-Element entfernt (ohne Schließen): Stopp und keine Tasten-/Fokus-Zuhörer mehr', async () => {
+  const k = ansicht();
+  await k.faehrt();
+  const dialog = dialogVon(k.u);
+  dialog.remove();
+  letzterIstStopp(k.haus);
+  await k.antworte();
+  k.u.uhr.vor(400);
+  await k.antworte();
+  const vorher = k.haus.rufe.length;
+  taste(k.u, 'w');
+  for (const fn of k.u.kontext.window.listeners.blur || []) fn({});
+  k.u.uhr.vor(1000);
+  assert.equal(k.haus.rufe.length, vorher, 'eine abgehängte Ansicht reagiert nicht mehr');
+});

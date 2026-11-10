@@ -293,6 +293,31 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
   danach gelöscht; Größe/Lauflängen als scrypt-Werte in
   `tests/datenschutz.test.js`.
 
+## Fernsteuerung (Modul remote)
+
+- Ein Schreibweg (R08): Regler, Halte-Knöpfe und Tasten rufen nur
+  `view.remote.input(quelle, { v, t } | null)` (v vorwärts, t links positiv,
+  je −1…1, Quellen addiert); `remoteValue(axis, raw, mods)` bildet ab
+  (Totzone 0,15, Grenzen in `REMOTE`: vorwärts 100, rückwärts −100,
+  Drehen ±128; Umschalt halbiert Tempo, Strg Drehen, Präzision beides).
+- `RemoteSender` ist der einzige Weg zum Gerät:
+  `dreame_vacuum.vacuum_remote_control_move_step { entity_id, velocity,
+  rotation }` ohne `prompt`; ein Aufruf gleichzeitig, ≥ 200 ms Abstand,
+  neuester Wert; Stopp `{0,0}` mit Vorrang und einmal nach 300 ms; Fehler
+  oder 2 s ohne Antwort → Zustand `error`, Stopp-Versuch, keine Bewegung
+  mehr. Ein Stopp ohne vorige Bewegung sendet nichts.
+- Dialog: Ansichten mit `leave()` hören jedes Verlassen zuerst (×, Zurück,
+  Escape, Zurück-Geste, Schließen), Ansichten mit `update(hass)` zeichnen
+  sich selbst nach. Die Fernsteuerung hat `watch: []` und baut ihr DOM
+  einmal je Öffnen — ein gehaltener Regler verliert seinen Zeiger nie durch
+  ein Update.
+- Karte: keine zweite `MapView`. Bildmodus: dasselbe `entity_picture` wie die
+  Hauptkarte (Browser-Cache); Datenmodus: Kopie des gemalten Canvas, neu bei
+  `map-frame` — `toImage` bildet dort in Gitter-Pixel ab, das
+  `entity_picture` passte nicht. Marker in % von `_size`, nur `transform`.
+- Annahme bis Live-Lauf 2: positive `rotation` = links (gegen den
+  Uhrzeigersinn); als `shortcut:` im Code markiert.
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):
@@ -358,6 +383,27 @@ echten HA-Selektoren. Die Abnahme mit `karten-alle.sh` und E2E läuft einmal
 am Ende aller Module.
 
 ## Geprüft
+
+**10.11.2026 · 0.1.0, Modul remote (#882, Tasks 1–6, nicht getaggt; Live-Teil Task 7 offen)**
+
+1. `node --check` grün; `node --test` 494/494 (58 Tests `tests/fernsteuerung.test.js`).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. `render.py`: 61/61, UI-Regeln 0 (Regel 1 unscharf/freigegeben, Regel 2),
+   0 Konsolen-/Seitenfehler, 0 Fremdanfragen. Fernsteuerung bei 390×844,
+   844×390, 1280×800 × hell/dunkel × unscharf/freigegeben: im Bild, kein
+   Seitenüberlauf, Knöpfe ≥ 44 px, Regler ≥ 48 px und mit Stopp ohne Scrollen
+   sichtbar, Karte aus der einen MapView mit Marker. Echte Zeiger: Maus-Ziehen
+   (unscharf 0 Aufrufe), zwei Touch-Punkte über CDP gleichzeitig, Tastatur
+   W+D, Stopp nach Loslassen/blur/visibilitychange/Escape, Abstand ≥ 200 ms
+   und ≤ 5/s aus Zeitstempeln. 39 Aufrufe nur in der Attrappe, danach geleert.
+   Der Lauf fand: entfernte Dialoge ließen ihre Tastenzuhörer aktiv (mehrere
+   Sender je Taste — jetzt `leave` auch in `disconnectedCallback`), ovaler
+   Lenkknopf im Querformat, Stopp unter dem Bildrand, Marker am Kartenrand
+   abgeschnitten, `display` hob `hidden` der Aktionsknöpfe auf — behoben und
+   in den Bildern nachgesehen.
+4. Live: **nicht ausgeführt** (Roboter darf nicht bewegt werden); kein
+   Aufruf von `vacuum_remote_control_move_step`. Ablauf des ersten
+   Kalibrierlaufs im Plan remote, Task 7.
 
 **10.11.2026 · 0.1.0, Modul history (#882, Tasks 1–7, nicht getaggt)**
 

@@ -9022,7 +9022,9 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     position: relative;
     display: inline-block;
     max-width: 100%;
-    overflow: hidden;
+    /* The robot may stand on the picture's edge: its symbol (24 px) shows whole, nothing else spills. */
+    overflow: clip;
+    overflow-clip-margin: 14px;
     line-height: 0;
     border-radius: 12px;
     background: var(--secondary-background-color, #e5e5e5);
@@ -9032,7 +9034,8 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     width: auto;
     height: auto;
     max-width: 100%;
-    max-height: 34vh;
+    max-height: 30vh;
+    border-radius: 12px;
 }
 .remote-marker {
     position: absolute;
@@ -9077,7 +9080,14 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     flex-wrap: wrap;
     gap: var(--ha-space-2, 8px);
 }
-.remote-actions .busch-ui-action { min-height: 48px; }
+.remote-actions .busch-ui-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-2, 8px);
+    min-height: 48px;
+}
+.remote-actions .busch-ui-action ha-icon { order: -1; }
+.remote-actions .busch-ui-action[hidden] { display: none; }
 .remote-stick {
     position: relative;
     display: flex;
@@ -9090,7 +9100,8 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     box-sizing: border-box;
     border-radius: 999px;
     background: var(--secondary-background-color, #e5e5e5);
-    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+    /* An inset line, not a border: the knob stays exactly a third of the track. */
+    box-shadow: inset 0 0 0 1px var(--divider-color, rgba(0, 0, 0, 0.12));
 }
 .remote-stick[data-axis=velocity] { width: 72px; height: 216px; }
 .remote-stick[data-axis=turn] { width: 216px; max-width: 100%; height: 72px; }
@@ -9138,8 +9149,8 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     .remote-info { grid-area: info; }
     .remote-map-wrap { grid-area: map; }
     .remote-actions { grid-area: actions; justify-content: center; }
-    .remote-map-base { max-height: 38vh; }
-    .remote-stick[data-axis=turn] { width: 168px; }
+    /* What is left of the phone's height after head, text, hold buttons and Stop: Stop stays on screen. */
+    .remote-map-base { max-height: max(56px, calc(100vh - 300px)); }
     .remote-help { display: none; }
 }
 `;
@@ -9249,6 +9260,8 @@ class BuschVacuumDialog extends HTMLElement {
     }
 
     disconnectedCallback() {
+        // Removed from outside without close(): its views must still stop and let go of their listeners.
+        this._leave(this._views);
         document.removeEventListener('keydown', this._onKey);
         document.removeEventListener('focusin', this._onFocus, true);
         window.removeEventListener('popstate', this._onPop);
@@ -11252,7 +11265,11 @@ function remoteView(card) {
         node.addEventListener('pointerdown', (event) => {
             if (!ctl.armed || pointer !== null) return;
             pointer = event.pointerId;
-            if (typeof node.setPointerCapture === 'function') node.setPointerCapture(pointer);
+            try {
+                node.setPointerCapture(pointer);
+            } catch (e) {
+                // a pointer the browser does not know (synthetic event): the release events still end it
+            }
             if (event.preventDefault) event.preventDefault();
             node.setAttribute('data-held', '');
             at(event);
@@ -11281,7 +11298,11 @@ function remoteView(card) {
         button.addEventListener('pointerdown', (event) => {
             if (!ctl.armed || pointer !== null) return;
             pointer = event.pointerId;
-            if (typeof button.setPointerCapture === 'function') button.setPointerCapture(pointer);
+            try {
+                button.setPointerCapture(pointer);
+            } catch (e) {
+                // a pointer the browser does not know (synthetic event): the release events still end it
+            }
             if (event.preventDefault) event.preventDefault();
             ctl.input('hold:' + name, axes);
         });
