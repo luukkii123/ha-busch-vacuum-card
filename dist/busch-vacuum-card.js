@@ -541,6 +541,41 @@ const HIDDEN_OBJECTS = [
     'map_change_confirmation', 'progress_bar', 'dock_status_indicator'
 ];
 
+/**
+ * Map objects `hidden_objects` can hide (MAP-03), one layer each. Image mode
+ * cannot hide what the integration burns into its picture (spec map-view, R24).
+ */
+const MAP_OBJECTS = [
+    'rooms', 'cleaning_settings', 'blocked_rooms', 'robot', 'charger', 'station_status', 'router', 'path',
+    'carpets', 'detected_carpets', 'deleted_carpets', 'furnitures', 'no_go_areas', 'no_mopping_areas',
+    'virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'ramps', 'curtains', 'predefined_points',
+    'obstacles', 'stains', 'pets'
+];
+
+/** Per map (`map_config.map_<index>`, MAP-06) with what applies when a value is missing. */
+const MAP_CONFIG_DEFAULTS = { object_scale: 1, object_opacity: 1, font_size: 12, hidden_objects: [] };
+
+const inRange = (value, min, max, standard) => {
+    const n = numberOf(value);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : standard;
+};
+
+/** `map_config`: only `map_<index>` keys, each value checked; unknown keys dropped. */
+function normalizeMapConfig(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    for (const [key, value] of Object.entries(raw)) {
+        if (!/^map_\d+$/.test(key) || !value || typeof value !== 'object') continue;
+        const entry = {};
+        if (value.object_scale !== undefined) entry.object_scale = inRange(value.object_scale, 0.25, 4, 1);
+        if (value.object_opacity !== undefined) entry.object_opacity = inRange(value.object_opacity, 0, 1, 1);
+        if (value.font_size !== undefined) entry.font_size = inRange(value.font_size, 6, 40, 12);
+        if (Array.isArray(value.hidden_objects)) entry.hidden_objects = value.hidden_objects.filter((n) => MAP_OBJECTS.includes(n));
+        out[key] = entry;
+    }
+    return out;
+}
+
 /** Every option the card reads; the editor translates the select options (localSchema). */
 const SCHEMA_BUSCH_VACUUM_CARD = [
     { name: 'entity', required: true, selector: { entity: { domain: 'vacuum' } } },
@@ -596,7 +631,9 @@ function normalizeConfig(raw) {
         max_height_offset: Number.isFinite(offset) ? offset : 0,
         locked: LOCK_MODES.includes(raw.locked) ? raw.locked : 'auto',
         touch_lock: Number.isFinite(hold) ? Math.min(TOUCH_LOCK_MS.max, Math.max(TOUCH_LOCK_MS.min, hold)) : TOUCH_LOCK_MS.standard,
-        disable_haptic: raw.disable_haptic === true
+        disable_haptic: raw.disable_haptic === true,
+        hidden_objects: Array.isArray(raw.hidden_objects) ? raw.hidden_objects.filter((name) => MAP_OBJECTS.includes(name)) : [],
+        map_config: normalizeMapConfig(raw.map_config)
     };
 }
 
@@ -1129,6 +1166,194 @@ const MAP_ZOOM = { min: 1, max: 8, step: 2, wheel: 0.0015 };
 const TAP = { slop: 6, doubleMs: 300, doubleSlop: 24 };
 const LOUPE = { size: 120, magnify: 2 };
 
+/** Built-in layers: hidden_objects name, z order, how it draws. Modules add theirs with addLayer. */
+const MAP_LAYERS = [
+    ['path', 10, 'path'], ['carpets', 20, 'area'], ['detected_carpets', 21, 'area'], ['deleted_carpets', 22, 'area'],
+    ['furnitures', 25, 'furniture'], ['no_go_areas', 30, 'area'], ['no_mopping_areas', 31, 'area'], ['ramps', 32, 'area'],
+    ['curtains', 33, 'line'], ['virtual_walls', 40, 'line'], ['passable_thresholds', 41, 'line'], ['impassable_thresholds', 42, 'line'],
+    ['rooms', 50, 'rooms'], ['cleaning_settings', 51, 'settings'], ['blocked_rooms', 52, 'blocked'],
+    ['predefined_points', 60, 'points'], ['obstacles', 70, 'obstacles'], ['stains', 71, 'obstacles'], ['pets', 72, 'obstacles'],
+    ['router', 80, 'point'], ['charger', 85, 'point'], ['station_status', 86, 'station'], ['robot', 90, 'robot']
+];
+
+/** Obstacle type codes (types.py ObstacleType) by layer; the rest are obstacles. Codes come with the map data. */
+const OBSTACLE_KINDS = {
+    stains: [139, 169, 202, 206, 214, 215, 216],
+    pets: [135, 158, 209, 210],
+    blocked_rooms: [200]
+};
+
+/**
+ * Busch symbols (icon_set busch), drawn around 0,0 in screen px; each has its
+ * own shape so no state speaks through colour alone (R17).
+ */
+const MAP_SYMBOLS = {
+    robot: [['circle', { r: 13, class: 'ring' }], ['circle', { r: 10, class: 'body' }], ['path', { d: 'M4 -5 L10 0 L4 5 Z', class: 'mark' }]],
+    charger: [['rect', { x: -10, y: -10, width: 20, height: 20, rx: 5, class: 'body' }], ['path', { d: 'M-5 1 L0 -4 L5 1 M-3.5 0 V5 H3.5 V0', class: 'mark' }]],
+    router: [['circle', { r: 9, class: 'body' }], ['path', { d: 'M-5 -1 A7 7 0 0 1 5 -1 M-2.5 1.5 A3.5 3.5 0 0 1 2.5 1.5', class: 'mark' }], ['circle', { cy: 4, r: 1.5, class: 'dot' }]],
+    obstacle: [['path', { d: 'M0 -10 L10 8 H-10 Z', class: 'body' }], ['path', { d: 'M0 -3 V3 M0 5 V5.5', class: 'mark' }]],
+    stain: [['path', { d: 'M0 -10 C6 -2 8 2 8 4 A8 8 0 0 1 -8 4 C-8 2 -6 -2 0 -10 Z', class: 'body' }]],
+    pet: [['circle', { cy: 3, r: 6, class: 'body' }], ['circle', { cx: -6, cy: -5, r: 3, class: 'body' }], ['circle', { cx: 0, cy: -8, r: 3, class: 'body' }], ['circle', { cx: 6, cy: -5, r: 3, class: 'body' }]],
+    blocked: [['rect', { x: -7, y: -2, width: 14, height: 11, rx: 2, class: 'body' }], ['path', { d: 'M-4 -2 V-5 A4 4 0 0 1 4 -5 V-2', class: 'mark' }]],
+    point: [['circle', { r: 8, class: 'body' }], ['circle', { r: 3, class: 'dot' }]],
+    station: [['path', { d: 'M0 -9 L9 7 H-9 Z', class: 'body' }], ['path', { d: 'M0 -3 V2 M0 4 V4.5', class: 'mark' }]]
+};
+
+/** Corners of an area item (x0…y3, or a rectangle x0/y0/x1/y1) in robot mm. */
+function areaCorners(item) {
+    if (Array.isArray(item)) return [0, 2, 4, 6].map((i) => ({ x: item[i], y: item[i + 1] }));
+    if (item.x2 !== undefined) return [0, 1, 2, 3].map((i) => ({ x: item['x' + i], y: item['y' + i] }));
+    return [{ x: item.x0, y: item.y0 }, { x: item.x1, y: item.y0 }, { x: item.x1, y: item.y1 }, { x: item.x0, y: item.y1 }];
+}
+
+/** Obstacles of the current map as [id, item, layer]; the map data adds the type code. */
+function obstacleList(view, ctx) {
+    const codes = new Map(((ctx.data && ctx.data.raw && ctx.data.raw.obstacles) || []).map((o) => [String(o[0]), Number(o[3])]));
+    const attr = ctx.objects.obstacles;
+    return Object.entries(attr && typeof attr === 'object' ? attr : {}).map(([id, item]) => {
+        const code = codes.get(id);
+        const layer = Object.keys(OBSTACLE_KINDS).find((k) => OBSTACLE_KINDS[k].includes(code)) || 'obstacles';
+        return [id, item, layer];
+    });
+}
+
+const toPoints = (view, corners) => corners.map((c) => view.toImage(c)).map((p) => p.x + ',' + p.y).join(' ');
+
+/** How each kind of built-in layer reads its source and draws. */
+const MAP_DRAW = {
+    area: {
+        source: (view, name, ctx) => (ctx.data && ctx.data.raw && name === 'furnitures' ? ctx.data.raw[name] : ctx.objects[name]) || [],
+        render: (view, name, group, ctx) => (MAP_DRAW.area.source(view, name, ctx)).forEach((item, i) => {
+            group.appendChild(view.svgNode('polygon', { 'data-object': i, points: toPoints(view, areaCorners(item)) }));
+        })
+    },
+    line: {
+        source: (view, name, ctx) => ctx.objects[name] || [],
+        render: (view, name, group, ctx) => (ctx.objects[name] || []).forEach((item, i) => {
+            if (item.x2 !== undefined) return group.appendChild(view.svgNode('polygon', { 'data-object': i, points: toPoints(view, areaCorners(item)) }));
+            const a = view.toImage({ x: item.x0, y: item.y0 }), b = view.toImage({ x: item.x1, y: item.y1 });
+            group.appendChild(view.svgNode('line', { 'data-object': i, x1: a.x, y1: a.y, x2: b.x, y2: b.y }));
+        })
+    },
+    furniture: {
+        source: (view, name, ctx) => (ctx.data && ctx.data.raw && ctx.data.raw.furnitures) || [],
+        // [x, y, width, height, type, edit_type, angle, …] (map.py get_data): centre, size and turn in robot mm.
+        render: (view, name, group, ctx) => MAP_DRAW.furniture.source(view, name, ctx).forEach((f, i) => {
+            const [x, y, w, h, , , angle] = f.map(Number);
+            const rad = (angle || 0) * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+            const corners = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([dx, dy]) => ({ x: x + dx * cos - dy * sin, y: y + dx * sin + dy * cos }));
+            group.appendChild(view.svgNode('polygon', { 'data-object': i, points: toPoints(view, corners) }));
+        })
+    },
+    path: {
+        source: (view, name, ctx) => (ctx.data && ctx.data.raw && ctx.data.raw.path) || [],
+        // [type, x, y, x, y, …] per stroke; type 1 sweep, 2 mop, 3 sweep and mop (map.py path_types).
+        render: (view, name, group, ctx) => MAP_DRAW.path.source(view, name, ctx).forEach((stroke, i) => {
+            const pts = [];
+            for (let j = 1; j + 1 < stroke.length; j += 2) {
+                const p = view.toImage({ x: stroke[j], y: stroke[j + 1] });
+                pts.push(p.x + ',' + p.y);
+            }
+            group.appendChild(view.svgNode('polyline', { 'data-object': i, 'data-kind': stroke[0], points: pts.join(' ') }));
+        })
+    },
+    rooms: {
+        source: (view, name, ctx) => [ctx.rooms, view.model.attr('cleaning_sequence')],
+        render: (view, name, group, ctx) => {
+            const size = view.config(ctx.index).font_size;
+            for (const [id, room] of Object.entries(ctx.rooms)) {
+                if (!room || room.x === undefined || room.visibility === 'Hidden') continue;
+                const g = view._symbol(room, 'label', id);
+                g.appendChild(view.svgNode('text', { 'data-role': 'name', 'font-size': size, 'text-anchor': 'middle', y: size * 0.35 })).textContent = room.custom_name || room.name || '';
+                if (Number(room.order) > 0) {
+                    const badge = view.svgNode('g', { class: 'badge', transform: 'translate(0 ' + (-size * 1.4) + ')' });
+                    badge.appendChild(view.svgNode('circle', { r: size * 0.75 }));
+                    badge.appendChild(view.svgNode('text', { 'data-role': 'order', 'font-size': size * 0.9, 'text-anchor': 'middle', y: size * 0.32 })).textContent = String(room.order);
+                    g.appendChild(badge);
+                }
+                group.appendChild(g);
+            }
+        }
+    },
+    settings: {
+        // Customized Cleaning (SET-04 shows them): per room suction level, water, passes.
+        source: (view, name, ctx) => view.model.attr('customized_cleaning') ? Object.values(ctx.rooms).map((r) => [r.suction_level, r.water_volume, r.cleaning_times]) : null,
+        render: (view, name, group, ctx) => {
+            if (!view.model.attr('customized_cleaning')) return;
+            const size = view.config(ctx.index).font_size;
+            for (const [id, room] of Object.entries(ctx.rooms)) {
+                if (!room || room.x === undefined) continue;
+                const g = view._symbol(room, 'settings', id);
+                const text = view.svgNode('text', { 'data-role': 'settings', 'font-size': size * 0.85, 'text-anchor': 'middle', y: size * 1.6 });
+                text.textContent = [room.suction_level, room.water_volume].filter((v) => v !== undefined).map((v) => Number(v) + 1).join(' · ') + ' · ×' + (room.cleaning_times || 1);
+                g.appendChild(text);
+                group.appendChild(g);
+            }
+        }
+    },
+    blocked: {
+        // Blocked rooms of the last run (obstacle type 200, with reason) and skipped rooms at their centre.
+        source: (view, name, ctx) => [view.model.attr('skipped_segments'), obstacleList(view, ctx).filter((o) => o[2] === name), ctx.rooms],
+        render: (view, name, group, ctx) => {
+            for (const [id, item, layer] of obstacleList(view, ctx)) if (layer === name) group.appendChild(view._symbol(item, 'blocked', id));
+            for (const id of view.model.attr('skipped_segments') || []) {
+                const room = ctx.rooms[id];
+                if (room && room.x !== undefined) group.appendChild(view._symbol(room, 'blocked', 'room-' + id));
+            }
+        }
+    },
+    points: {
+        source: (view, name, ctx) => (ctx.data && ctx.data.raw && ctx.data.raw.predefined_points) || [],
+        render: (view, name, group, ctx) => MAP_DRAW.points.source(view, name, ctx).forEach((p, i) => {
+            group.appendChild(view._symbol({ x: p[0], y: p[1] }, 'point', i));
+        })
+    },
+    obstacles: {
+        source: (view, name, ctx) => obstacleList(view, ctx).filter((o) => o[2] === name),
+        render: (view, name, group, ctx) => {
+            const kind = { stains: 'stain', pets: 'pet' }[name] || 'obstacle';
+            for (const [id, item] of obstacleList(view, ctx).filter((o) => o[2] === name)) {
+                const g = view._symbol(item, kind, id);
+                if (g) {
+                    g.setAttribute('data-ignored', String(/ignored/i.test(String(item.ignore_status || '')) && !/not/i.test(String(item.ignore_status))));
+                    group.appendChild(g);
+                }
+            }
+        }
+    },
+    point: {
+        source: (view, name, ctx) => ctx.objects[name + '_position'] || null,
+        render: (view, name, group, ctx) => {
+            const p = ctx.objects[name + '_position'];
+            if (p) group.appendChild(view._symbol(p, name, name));
+        }
+    },
+    station: {
+        // The station's state next to it (DOCK-06 wording in core); text stays in the controls.
+        source: (view, name, ctx) => [dockStatus(view.model).level, ctx.objects.charger_position || null],
+        render: (view, name, group, ctx) => {
+            const p = ctx.objects.charger_position;
+            const level = dockStatus(view.model).level;
+            if (!p || level === 'ok') return;
+            const g = view._symbol(p, 'station', 'station');
+            g.setAttribute('data-level', level);
+            g.style.transform += ' translate(14px, -14px)';
+            group.appendChild(g);
+        }
+    },
+    robot: {
+        // Position is not part of the source: moving only changes the transform (_placeRobot).
+        source: (view, name, ctx) => [view.model.state && view.model.state.state, !!ctx.objects.vacuum_position],
+        render: (view, name, group, ctx) => {
+            const pos = ctx.objects.vacuum_position;
+            if (!pos) return;
+            const g = view._symbol(pos, 'robot', 'robot', { upright: false });
+            g.setAttribute('data-state', (view.model.state && view.model.state.state) || 'unknown');
+            group.appendChild(g);
+        }
+    }
+};
+
 /**
  * One per card (spec map-view, "Kartenvertrag"). Lives in the card's shadow
  * root and is never rebuilt on foreign updates: `update()` returns at once
@@ -1157,8 +1382,11 @@ class MapView {
         this._gesture = null;
         this._lastTap = null;
         this._mode = 'view';
+        this._layers = new Map(); // id → { z, render, hit, group, renders, sig, builtIn }
+        this._data = null; // decoded map data (data mode)
         this._build();
         this._bindGestures();
+        for (const [name, z, kind] of MAP_LAYERS) this._addBuiltIn(name, z, kind);
     }
 
     _build() {
@@ -1427,6 +1655,7 @@ class MapView {
         this.region.setAttribute('aria-label', translate(hass, 'karteAlt', { karte: this._mapName() }));
         if (this._showsMap()) this._loadImage(a.entity_picture);
         this._render();
+        this._renderLayers();
     }
 
     /** Whether there is a map to show at all (R18: empty and failed states replace it). */
@@ -1468,6 +1697,7 @@ class MapView {
             this.pan.insertBefore(img, this.svg);
             this._imageState = 'ready';
             this._render();
+            this._renderLayers();
         }, () => {
             if (this._imageUrl !== url) return;
             this._imageState = 'error';
@@ -1531,6 +1761,120 @@ class MapView {
         this.pan.style.height = height + 'px';
         this.pan.style.transform = 'matrix(' + [m.a, m.b, m.c, m.d, m.e, m.f].join(',') + ')';
         this.svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+        // Symbols keep their screen size: image px per screen px, times object_scale.
+        const options = this.config(this._attrs().map_index);
+        this.svg.style.setProperty('--bvc-map-symbol', String(options.object_scale / Math.hypot(m.a, m.b)));
+        this.svg.style.setProperty('--bvc-map-turn', -(Number(this._display.rotation) || 0) + 'deg');
+        this.svg.style.opacity = String(options.object_opacity);
+    }
+
+    // ── Layers (MAP-03) ───────────────────────────────────────────────────
+
+    /** An SVG element with attributes; layers draw with it. */
+    svgNode(tag, attrs) {
+        const node = document.createElementNS(SVG_NS, tag);
+        for (const [key, value] of Object.entries(attrs || {})) if (value !== undefined && value !== null) node.setAttribute(key, String(value));
+        return node;
+    }
+
+    /** A screen-sized symbol at a robot point: its own scale, never the zoom's. */
+    _symbol(robot, kind, id, { upright = true, angle = 0 } = {}) {
+        const p = this.toImage(robot);
+        if (!p) return null;
+        const g = this.svgNode('g', { 'data-object': id, 'data-symbol': kind });
+        g.style.transform = 'translate(' + p.x + 'px, ' + p.y + 'px) scale(var(--bvc-map-symbol))' + (upright ? ' rotate(var(--bvc-map-turn))' : ' rotate(' + angle + 'deg)');
+        for (const [tag, attrs] of MAP_SYMBOLS[kind] || []) g.appendChild(this.svgNode(tag, attrs));
+        return g;
+    }
+
+    _ctx() {
+        return Object.assign(this.current(), { toImage: (p) => this.toImage(p), svgNode: (tag, attrs) => this.svgNode(tag, attrs), data: this._data, model: this.model });
+    }
+
+    /** Contract: a layer of another module. `render(group, ctx)` draws in image px; `hit(point, ctx)` answers taps. */
+    addLayer(id, spec) {
+        this.removeLayer(id);
+        const group = this.svgNode('g', { 'data-layer': id });
+        const layer = Object.assign({ z: 0, renders: 0, sig: null, builtIn: false }, spec, { group });
+        const above = Array.from(this._layers.values()).filter((l) => l.z > layer.z).sort((x, y) => x.z - y.z)[0];
+        this.svg.insertBefore(group, above ? above.group : null);
+        this._layers.set(id, layer);
+        this._renderLayer(layer, true);
+        return group;
+    }
+
+    removeLayer(id) {
+        const layer = this._layers.get(id);
+        if (!layer) return;
+        layer.group.remove();
+        this._layers.delete(id);
+    }
+
+    /** Draws a layer again (all layers without id), e.g. after a module changed its own state. */
+    refresh(id) {
+        if (id !== undefined) {
+            const layer = this._layers.get(id);
+            if (layer) this._renderLayer(layer, true);
+            return;
+        }
+        for (const layer of this._layers.values()) this._renderLayer(layer, true);
+    }
+
+    _renderLayers() {
+        for (const layer of this._layers.values()) this._renderLayer(layer, false);
+        this._placeRobot();
+    }
+
+    _renderLayer(layer, force) {
+        if (!this.model) return;
+        const ctx = this._ctx();
+        const shown = !layer.builtIn || this.visible(layer.name);
+        const options = this.config(ctx.index);
+        // Built-in layers redraw when their source changed; module layers when the map or frame did.
+        const sig = JSON.stringify([ctx.calibration, shown, options.font_size, layer.builtIn ? layer.source(ctx) : ctx.frameId]);
+        if (!force && sig === layer.sig) return;
+        layer.sig = sig;
+        layer.group.hidden = !shown;
+        layer.group.replaceChildren();
+        if (!ctx.calibration || !shown) return;
+        layer.renders++;
+        layer.render(layer.group, ctx);
+    }
+
+    _addBuiltIn(name, z, kind) {
+        const draw = MAP_DRAW[kind];
+        this.addLayer(name, {
+            z, name, builtIn: true,
+            source: (ctx) => draw.source(this, name, ctx),
+            render: (group, ctx) => draw.render(this, name, group, ctx)
+        });
+    }
+
+    /** Robot movement: one transform on the existing symbol (R20). */
+    _placeRobot() {
+        const layer = this._layers.get('robot');
+        const node = layer && layer.group.firstChild;
+        const pos = this._attrs().vacuum_position;
+        if (!node || !pos || !this._matrix) return;
+        const p = this.toImage(pos);
+        const m = this._matrix;
+        const rad = (Number(pos.a) || 0) * Math.PI / 180;
+        const angle = Math.atan2(m.b * Math.cos(rad) + m.d * Math.sin(rad), m.a * Math.cos(rad) + m.c * Math.sin(rad)) * 180 / Math.PI;
+        node.style.transform = 'translate(' + p.x + 'px, ' + p.y + 'px) scale(var(--bvc-map-symbol)) rotate(' + Math.round(angle) + 'deg)';
+    }
+
+    /** Card options merged with `map_config.map_<index>`; hidden objects add up. */
+    config(index) {
+        const opts = this.card._opts || {};
+        const own = (opts.map_config && opts.map_config['map_' + index]) || {};
+        return Object.assign({}, MAP_CONFIG_DEFAULTS, own, {
+            hidden_objects: [...new Set([...(opts.hidden_objects || []), ...(own.hidden_objects || [])])]
+        });
+    }
+
+    /** Whether an object kind shows on the current map (`hidden_objects`, card and per map). */
+    visible(name) {
+        return !this.config(this._attrs().map_index).hidden_objects.includes(name);
     }
 
     // ── Contract ──────────────────────────────────────────────────────────
@@ -1702,6 +2046,166 @@ const CARD_STYLES = BuschUI.cardStyles + `
     height: 100%;
     overflow: visible;
     pointer-events: none;
+}
+/* Map colours (MAP-05/09): defaults here, colour scheme and override_colors set them inline on .map-view. */
+.map-view {
+    --bvc-map-path: var(--secondary-text-color, #727272);
+    --bvc-map-carpet: var(--secondary-text-color, #727272);
+    --bvc-map-furniture: var(--secondary-text-color, #727272);
+    --bvc-map-no-go: var(--bvc-error-color, var(--error-color, #db4437));
+    --bvc-map-no-mop: var(--info-color, #039be5);
+    --bvc-map-wall: var(--primary-text-color, #212121);
+    --bvc-map-virtual-wall: var(--bvc-error-color, var(--error-color, #db4437));
+    --bvc-map-robot: var(--primary-color, #03a9f4);
+    --bvc-map-charger: var(--bvc-success-color, var(--success-color, #43a047));
+}
+/* Layers (MAP-03): lines keep their screen width; colours from --bvc-map-*. */
+.map-layers [data-object] {
+    vector-effect: non-scaling-stroke;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+.map-layers polygon,
+.map-layers line,
+.map-layers polyline {
+    fill: none;
+    stroke-width: 2px;
+}
+[data-layer=path] [data-object] {
+    stroke: var(--bvc-map-path, var(--secondary-text-color, #727272));
+    stroke-width: 1px;
+    opacity: 0.7;
+}
+[data-layer=path] [data-kind="2"] {
+    stroke-dasharray: 3 2;
+}
+[data-layer=carpets] [data-object] {
+    stroke: var(--bvc-map-carpet, var(--secondary-text-color, #727272));
+    stroke-dasharray: 1 3;
+    stroke-width: 2px;
+}
+[data-layer=detected_carpets] [data-object] {
+    stroke: var(--bvc-map-carpet, var(--secondary-text-color, #727272));
+    stroke-dasharray: 1 6;
+    stroke-width: 1px;
+}
+[data-layer=deleted_carpets] [data-object] {
+    stroke: var(--bvc-map-carpet, var(--secondary-text-color, #727272));
+    stroke-dasharray: 8 4 1 4;
+    stroke-width: 1px;
+    opacity: 0.6;
+}
+[data-layer=furnitures] [data-object] {
+    stroke: var(--bvc-map-furniture, var(--secondary-text-color, #727272));
+    fill: var(--bvc-map-furniture, var(--secondary-text-color, #727272));
+    fill-opacity: 0.2;
+}
+[data-layer=no_go_areas] [data-object] {
+    stroke: var(--bvc-map-no-go, var(--bvc-error-color, var(--error-color, #db4437)));
+    fill: var(--bvc-map-no-go, var(--bvc-error-color, var(--error-color, #db4437)));
+    fill-opacity: 0.25;
+    stroke-width: 2px;
+}
+[data-layer=no_mopping_areas] [data-object] {
+    stroke: var(--bvc-map-no-mop, var(--info-color, #039be5));
+    fill: var(--bvc-map-no-mop, var(--info-color, #039be5));
+    fill-opacity: 0.2;
+    stroke-dasharray: 6 3;
+    stroke-width: 2px;
+}
+[data-layer=ramps] [data-object] {
+    stroke: var(--bvc-map-wall, var(--primary-text-color, #212121));
+    stroke-dasharray: 2 2;
+}
+[data-layer=curtains] [data-object] {
+    stroke: var(--bvc-map-wall, var(--primary-text-color, #212121));
+    stroke-dasharray: 10 2 2 2;
+}
+[data-layer=virtual_walls] [data-object] {
+    stroke: var(--bvc-map-virtual-wall, var(--bvc-error-color, var(--error-color, #db4437)));
+    stroke-width: 4px;
+}
+[data-layer=passable_thresholds] [data-object] {
+    stroke: var(--bvc-map-wall, var(--primary-text-color, #212121));
+    stroke-dasharray: 4 4;
+    stroke-width: 3px;
+}
+[data-layer=impassable_thresholds] [data-object] {
+    stroke: var(--bvc-map-virtual-wall, var(--bvc-error-color, var(--error-color, #db4437)));
+    stroke-dasharray: 12 3;
+    stroke-width: 5px;
+}
+.map-layers text {
+    fill: var(--primary-text-color, #212121);
+    paint-order: stroke;
+    stroke: var(--ha-card-background, var(--card-background-color, #ffffff));
+    stroke-width: 3px;
+    font-family: inherit;
+}
+.map-layers .badge circle {
+    fill: var(--bvc-accent-color, var(--primary-color, #03a9f4));
+}
+.map-layers .badge text {
+    fill: var(--text-primary-color, #ffffff);
+    stroke: none;
+}
+.map-layers [data-symbol] .body {
+    fill: var(--ha-card-background, var(--card-background-color, #ffffff));
+    stroke: var(--primary-text-color, #212121);
+    stroke-width: 1.5px;
+}
+.map-layers [data-symbol] .mark,
+.map-layers [data-symbol] .dot {
+    fill: none;
+    stroke: var(--primary-text-color, #212121);
+    stroke-width: 2px;
+}
+.map-layers [data-symbol] .dot {
+    fill: var(--primary-text-color, #212121);
+}
+.map-layers [data-symbol=robot] .body {
+    fill: var(--bvc-map-robot, var(--primary-color, #03a9f4));
+    stroke: var(--text-primary-color, #ffffff);
+}
+.map-layers [data-symbol=robot] .mark {
+    fill: var(--text-primary-color, #ffffff);
+    stroke: none;
+}
+.map-layers [data-symbol=robot] .ring {
+    fill: none;
+    stroke: var(--bvc-map-robot, var(--primary-color, #03a9f4));
+    stroke-width: 2px;
+    opacity: 0;
+}
+/* Robot state as ring shape, not only colour (R17): cleaning dashed, returning dotted, error solid red. */
+.map-layers [data-symbol=robot][data-state=cleaning] .ring {
+    opacity: 1;
+    stroke-dasharray: 4 3;
+}
+.map-layers [data-symbol=robot][data-state=returning] .ring {
+    opacity: 1;
+    stroke-dasharray: 1 3;
+}
+.map-layers [data-symbol=robot][data-state=error] .ring {
+    opacity: 1;
+    stroke: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.map-layers [data-symbol=charger] .body {
+    fill: var(--bvc-map-charger, var(--bvc-success-color, var(--success-color, #43a047)));
+    stroke: var(--text-primary-color, #ffffff);
+}
+.map-layers [data-symbol=charger] .mark {
+    stroke: var(--text-primary-color, #ffffff);
+}
+.map-layers [data-symbol=obstacle] .body,
+.map-layers [data-symbol=station] .body {
+    fill: var(--bvc-warning-color, var(--warning-color, #ffa600));
+}
+.map-layers [data-symbol=station][data-level=error] .body {
+    fill: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.map-layers [data-ignored=true] {
+    opacity: 0.45;
 }
 .map-notes {
     display: flex;

@@ -495,4 +495,103 @@ test('showLoupe/hideLoupe zeigt den Ausschnitt unter dem Zeiger', async () => {
   assert.equal(lupe.hidden, true);
 });
 
+// ── Task 5: Ebenen-API und Overlays ────────────────────────────────────────
+const ebene = (karte, name) => karte._map.svg.querySelector('[data-layer="' + name + '"]');
+const ebenenReihe = (karte) => karte._map.svg.childNodes.filter((n) => n.getAttribute('data-layer')).map((n) => n.getAttribute('data-layer'));
+const symbolGroesse = (karte) => Number(karte._map.svg.style['--bvc-map-symbol']);
+
+test('addLayer/removeLayer/refresh mit z-Reihenfolge', async () => {
+  const { karte } = await kartenKarte();
+  const m = karte._map;
+  const aufrufe = [];
+  m.addLayer('modul-oben', { z: 1000, render: (g, ctx) => { aufrufe.push(['oben', ctx.camera]); g.appendChild(m.svgNode('circle', { r: 3 })); } });
+  m.addLayer('modul-unten', { z: 0, render: () => aufrufe.push(['unten']) });
+  const reihe = ebenenReihe(karte);
+  assert.equal(reihe[0], 'modul-unten', 'z 0 zuunterst');
+  assert.equal(reihe.at(-1), 'modul-oben', 'z 1000 zuoberst');
+  assert.ok(reihe.indexOf('robot') < reihe.indexOf('modul-oben') && reihe.indexOf('rooms') > 0);
+  assert.deepEqual(aufrufe, [['oben', CAM], ['unten']]);
+  m.refresh('modul-oben');
+  assert.equal(aufrufe.length, 3);
+  assert.equal(ebene(karte, 'modul-oben').childNodes.length, 1, 'refresh zeichnet neu statt anzuhängen');
+  m.removeLayer('modul-oben');
+  assert.equal(ebene(karte, 'modul-oben'), null);
+  m.refresh();
+  assert.equal(aufrufe.length, 4, 'refresh() ohne id: alle fremden Ebenen');
+});
+
+test('je Objektart eine Ebene aus den Kamera-Attributen', async () => {
+  const { haus, karte } = await kartenKarte();
+  const a = haus.states[CAM].attributes;
+  const zahl = (name, sel = '[data-object]') => ebene(karte, name).querySelectorAll(sel).length;
+  assert.equal(zahl('rooms'), Object.keys(a.rooms).length);
+  assert.equal(zahl('carpets'), a.carpets.length);
+  assert.equal(zahl('detected_carpets'), a.detected_carpets.length);
+  assert.equal(zahl('deleted_carpets'), a.deleted_carpets.length);
+  assert.equal(zahl('virtual_walls'), a.virtual_walls.length);
+  assert.equal(zahl('passable_thresholds'), a.passable_thresholds.length);
+  assert.equal(zahl('obstacles'), Object.keys(a.obstacles).length);
+  for (const name of ['robot', 'charger', 'router']) assert.equal(zahl(name), 1, name);
+  for (const name of ['no_go_areas', 'no_mopping_areas', 'impassable_thresholds', 'ramps', 'curtains']) assert.equal(zahl(name), 0, name + ' leer in voll');
+  for (const name of ['path', 'furnitures', 'predefined_points', 'stains', 'pets', 'blocked_rooms', 'cleaning_settings', 'station_status']) assert.ok(ebene(karte, name), name + ' als Ebene da');
+  const namen = Object.values(a.rooms).map((r) => r.name).sort();
+  assert.deepEqual(ebene(karte, 'rooms').querySelectorAll('text').filter((n) => n.getAttribute('data-role') === 'name').map((n) => n.textContent).sort(), namen);
+  // Reihenfolge-Badge aus rooms[].order.
+  const atelier = ebene(karte, 'rooms').querySelectorAll('[data-object]').find((n) => n.getAttribute('data-object') === '1');
+  assert.equal(atelier.querySelectorAll('text').find((n) => n.getAttribute('data-role') === 'order').textContent, '4');
+});
+
+test('Roboter-Update ändert nur ein transform', async () => {
+  const { haus, karte } = await kartenKarte();
+  const m = karte._map;
+  const roboter = ebene(karte, 'robot').querySelector('[data-object]');
+  const vorher = roboter.style.transform;
+  const zaehler = () => Array.from(m._layers.values()).map((l) => l.renders);
+  const z = zaehler();
+  karte.hass = haus.setze(kamera(haus, { vacuum_position: { x: 0, y: 0, a: 90 } }));
+  assert.equal(ebene(karte, 'robot').querySelector('[data-object]'), roboter, 'derselbe Knoten');
+  assert.notEqual(roboter.style.transform, vorher);
+  assert.deepEqual(zaehler(), z, 'keine Ebene neu gezeichnet');
+  const p = m.toImage({ x: 0, y: 0 });
+  assert.match(roboter.style.transform, new RegExp('translate\\(' + p.x + 'px, ?' + p.y + 'px\\)'));
+});
+
+test('Symbole skalieren mit object_scale, nicht mit dem Zoom; font_size, object_opacity', async () => {
+  const { karte } = await kartenKarte('voll', { map_config: { map_1: { object_scale: 2, font_size: 16, object_opacity: 0.5 } } });
+  const m = karte._map;
+  const k = Math.hypot(m._view.a, m._view.b);
+  assert.ok(Math.abs(symbolGroesse(karte) - 2 / k) < 1e-9, 'Symbol in Bildschirm-px mal object_scale');
+  karte.shadowRoot.querySelector('[data-action="map-zoom-in"]').click();
+  assert.ok(Math.abs(symbolGroesse(karte) - 1 / k) < 1e-9, 'Zoom 2: halbe Bild-px, gleiche Bildschirmgröße');
+  assert.match(ebene(karte, 'robot').querySelector('[data-object]').style.transform, /scale\(var\(--bvc-map-symbol\)\)/);
+  assert.equal(ebene(karte, 'rooms').querySelector('text').getAttribute('font-size'), '16');
+  assert.equal(m.svg.style.opacity, '0.5');
+  const { karte: normal } = await kartenKarte();
+  assert.equal(normal._map.svg.style.opacity, '1');
+  assert.equal(normal._map.config(1).font_size, 12, 'Vorgabe');
+});
+
+test('hidden_objects global und je Karte blendet genau die genannte Ebene aus', async () => {
+  const { karte } = await kartenKarte('voll', { hidden_objects: ['carpets'], map_config: { map_1: { hidden_objects: ['obstacles'] } } });
+  const aus = ebenenReihe(karte).filter((n) => ebene(karte, n).hidden);
+  assert.deepEqual(aus.sort(), ['carpets', 'obstacles']);
+  assert.equal(karte._map.visible('carpets'), false);
+  assert.equal(karte._map.visible('obstacles'), false);
+  assert.equal(karte._map.visible('robot'), true);
+  const { karte: k2 } = await kartenKarte('voll', { map_config: { map_2: { hidden_objects: ['robot'] } } });
+  assert.equal(k2._map.visible('robot'), true, 'andere Karte wirkt nicht');
+  assert.deepEqual(karte._map.config(1).hidden_objects.sort(), ['carpets', 'obstacles']);
+});
+
+test('Objekte nicht nur über Farbe unterscheidbar (R17)', async () => {
+  const { karte } = await kartenKarte();
+  const formen = ['robot', 'charger', 'router', 'obstacles'].map((n) => ebene(karte, n).querySelector('[data-object]').getAttribute('data-symbol'));
+  assert.equal(new Set(formen).size, 4, 'eigene Form je Symbol: ' + formen);
+  const css = karte.shadowRoot.querySelector('style').textContent;
+  const linie = (sel) => (css.match(new RegExp(sel.replace(/[[\]]/g, '\\$&') + '[^{]*\\{([^}]*)\\}')) || [])[1] || '';
+  const muster = ['no_go_areas', 'no_mopping_areas', 'carpets', 'detected_carpets', 'deleted_carpets', 'virtual_walls', 'passable_thresholds', 'impassable_thresholds']
+    .map((n) => (linie('[data-layer=' + n + '] [data-object]').match(/stroke-dasharray:[^;]*/) || ['durchgezogen'])[0] + (linie('[data-layer=' + n + '] [data-object]').match(/stroke-width:[^;]*/) || [''])[0]);
+  assert.ok(new Set(muster).size >= 6, 'Strichart/-stärke unterscheidet: ' + muster.join(' | '));
+});
+
 module.exports = { intern, raeume };
