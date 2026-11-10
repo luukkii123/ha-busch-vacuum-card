@@ -369,8 +369,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskZone: 'Zone',
             taskSpot: 'Spot',
             taskGoto: 'Hinfahren',
-            brauchtKarte: '„{task}“ braucht die Karte. Die Kartenansicht folgt in einem späteren Ausbau; bis dahin geht nur „Gesamt“.',
             aufgabeLaeuft: 'Aufgabe läuft',
+            aufgabeFehler: '„{task}“ wurde nicht gestartet ({grund}). Deine Auswahl bleibt erhalten. Prüfe den Grund und starte erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
             sperreAblassenAufgabe: 'Während die Station Wasser ablässt oder sich selbst repariert, startet keine Aufgabe. Warte, bis sie fertig ist.',
             raumOhneKarte: 'Räume lassen sich nur auf einer gespeicherten Karte reinigen. Lass den Roboter die Karte fertig erstellen und speichern, oder wähle „Gesamt“.',
             leerRaum: 'Noch kein Raum gewählt. Tippe einen Raum auf der Karte oder einen Raum-Knopf an.',
@@ -818,8 +818,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskZone: 'Zone',
             taskSpot: 'Spot',
             taskGoto: 'Go to',
-            brauchtKarte: '“{task}” needs the map. The map view follows in a later update; until then only “All” works.',
             aufgabeLaeuft: 'Task running',
+            aufgabeFehler: '“{task}” did not start ({grund}). Your selection is kept. Check the reason and start again; if that does not help, check the dreame_vacuum integration.',
             sperreAblassenAufgabe: 'No task starts while the station drains water or repairs itself. Wait until it has finished.',
             raumOhneKarte: 'Rooms can only be cleaned on a saved map. Let the robot finish and save the map, or choose “All”.',
             leerRaum: 'No room chosen yet. Tap a room on the map or a room button.',
@@ -2399,6 +2399,8 @@ function taskActive(model, shown) {
 }
 
 function runningTask(model) {
+    // Go-To: native as cruising point (task_status), simulated as a small zone with a cruise point.
+    if (/cruising_point/i.test(String(model.attr('task_status') || '')) || cameraAttrs(model).active_cruise_points) return 'goto';
     if (model.attr('segment_cleaning')) return 'room';
     if (model.attr('zone_cleaning')) return 'zone';
     if (model.attr('spot_cleaning')) return 'spot';
@@ -2482,6 +2484,46 @@ function taskReady(model, task, selection, map) {
     // Only the simulated way (a small zone) refuses a target next to the robot.
     if (!model.can('cruising') && robot && Math.abs(target.x - robot.x) <= 2 * grid && Math.abs(target.y - robot.y) <= 2 * grid) return no('gotoAmRoboter');
     return { ok: true, reason: null };
+}
+
+const TASK_MAP_MODES = { room: 'pick-room', zone: 'draw-rect', spot: 'pick-point', goto: 'pick-point' };
+const SPOT_MM = 1500; // a spot cleans 1.5 × 1.5 m around its point (vacuum.py#L1135)
+
+/** Corners of a robot-mm rectangle as an image-px points string. */
+const boxPoints = (ctx, z) => [[z.x0, z.y0], [z.x1, z.y0], [z.x1, z.y1], [z.x0, z.y1]].map(([x, y]) => ctx.toImage({ x, y })).map((p) => p.x + ',' + p.y).join(' ');
+const spotBox = (p) => ({ x0: p.x - SPOT_MM / 2, y0: p.y - SPOT_MM / 2, x1: p.x + SPOT_MM / 2, y1: p.y + SPOT_MM / 2 });
+
+/** A screen-sized group at a robot point (like the map's symbols). */
+function screenMark(ctx, robot, attrs) {
+    const p = ctx.toImage(robot);
+    const g = ctx.svgNode('g', attrs);
+    g.style.transform = 'translate(' + p.x + 'px, ' + p.y + 'px) scale(var(--bvc-map-symbol)) rotate(var(--bvc-map-turn))';
+    return g;
+}
+
+/**
+ * The layer `tasks`: while a task runs, its targets from active_* (spec
+ * types.py#L5011–L5026); otherwise the card's own selection.
+ */
+function drawTasks(card, group, ctx) {
+    const model = ctx.model;
+    if (taskActive(model, model.state ? model.state.state : 'unavailable')) {
+        const a = ctx.objects;
+        for (const item of a.active_areas || []) group.appendChild(ctx.svgNode('polygon', { 'data-active': 'area', points: toPoints({ toImage: ctx.toImage }, areaCorners(item)) }));
+        for (const p of a.active_points || []) group.appendChild(ctx.svgNode('polygon', { 'data-active': 'point', points: boxPoints(ctx, spotBox(p)) }));
+        for (const id of a.active_segments || []) {
+            const room = ctx.rooms[id];
+            if (room && room.x !== undefined) group.appendChild(screenMark(ctx, room, { 'data-active': 'segment', 'data-room': id })).appendChild(ctx.svgNode('circle', { r: 9 }));
+        }
+        for (const p of Object.values(a.active_cruise_points || {})) if (p) group.appendChild(screenMark(ctx, p, { 'data-active': 'cruise' })).appendChild(ctx.svgNode('path', { d: 'M0 -12 L8 0 L0 12 L-8 0 Z' }));
+        return;
+    }
+    if (card._drawSelection) card._drawSelection(group, ctx);
+}
+
+/** Taps on the layer: the task types' own targets (handles, ×), else nothing. */
+function hitTasks(card, point, ctx) {
+    return card._hitSelection ? card._hitSelection(point, ctx) : null;
 }
 
 const MESSAGE_LOOK = {
@@ -5808,6 +5850,18 @@ canvas.map-base {
 .map-layers [data-symbol=station][data-level=error] .body {
     fill: var(--bvc-error-color, var(--error-color, #db4437));
 }
+/* clean-tasks: running targets dashed (R17: shape, not only colour), own selection solid. */
+.map-view {
+    --bvc-task-color: var(--bvc-accent-color, var(--primary-color, #03a9f4));
+    --bvc-task-invalid: var(--bvc-error-color, var(--error-color, #db4437));
+}
+[data-layer=tasks] [data-active] {
+    stroke: var(--bvc-task-color, var(--primary-color, #03a9f4));
+    fill: var(--bvc-task-color, var(--primary-color, #03a9f4));
+    fill-opacity: 0.2;
+    stroke-width: 2px;
+    stroke-dasharray: 6 3;
+}
 .map-layers [data-ignored=true] {
     opacity: 0.45;
 }
@@ -6173,9 +6227,24 @@ ha-card {
     overflow-wrap: anywhere;
 }
 .task-badge ha-icon,
-.task-hint ha-icon {
+.task-hint ha-icon,
+.task-error ha-icon {
     flex: none;
     --mdc-icon-size: 18px;
+}
+.task-error {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    padding: var(--ha-space-1, 4px) var(--ha-space-2, 8px);
+    border-inline-start: 4px solid var(--bvc-error-color, var(--error-color, #db4437));
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--secondary-background-color, #eeeeee);
+    font-size: var(--ha-font-size-s, 14px);
+    overflow-wrap: anywhere;
+}
+.task-error ha-icon {
+    color: var(--bvc-error-color, var(--error-color, #db4437));
 }
 `;
 
@@ -6811,6 +6880,11 @@ class BuschVacuumCard extends HTMLElement {
         this._relatedFrom = null;
         this._pending = null; // { state, from, timer }: tapped target state until the device confirms
         this._task = 'all'; // chosen task type (CORE-06)
+        // R21 on purpose: selection and repeats live only in memory; a remembered "3×" would clean three times unnoticed.
+        this._selection = emptySelection(); // clean-tasks: rooms, zones, spots, goto in robot mm (R08)
+        this._repeats = 1;
+        this._run = null; // { at, stopped, seen }: a task this card started, until it ends (TASK-01)
+        this._taskError = null; // R12 text of the last failed start
         this._dismissed = new Map(); // message kind → text wiped away, until the message changes (CORE-10)
         this._dialog = null;
         this._panel = false;
@@ -7034,7 +7108,7 @@ class BuschVacuumCard extends HTMLElement {
         const mapCamera = model.can('map') ? model.related.maps.map[0] : null;
         // The active map camera carries the robot's position: watched like the vacuum.
         // Scripts of the shortcut menu are watched too: name and running state (shortcuts).
-        this._seen = watchSnapshot(hass, [this._opts.entity, ...this._opts.scripts, ...(mapCamera ? [mapCamera] : []), ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state', 'sensor.error', 'sensor.cleaning_progress'].map((k) => model.entity(k)).filter(Boolean)]);
+        this._seen = watchSnapshot(hass, [this._opts.entity, ...this._opts.scripts, ...(mapCamera ? [mapCamera] : []), ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state', 'sensor.error', 'sensor.cleaning_progress', 'sensor.cleaning_history'].map((k) => model.entity(k)).filter(Boolean)]);
         const shown = this._pending ? this._pending.state : real ? real.state : 'unavailable';
 
         this._title.textContent = this._opts.title || (real && real.attributes.friendly_name) || this._opts.entity;
@@ -7070,16 +7144,20 @@ class BuschVacuumCard extends HTMLElement {
         this._stats.replaceChildren(...stats);
 
         const active = taskActive(model, shown);
+        this._checkEnd(model, real ? taskActive(model, real.state) : false);
         const percent = active && model.can('cleaning_progress') && !this._hidden('progress_bar') ? progressOf(hass, model) : null;
         this._progress.replaceChildren(...(percent === null ? [] : [this._progressBar(percent)]));
         this._renderMessages(hass, model);
-        const needsMap = this._renderTasks(hass, model, active);
+        const task = this._chosenTask(model);
+        const ready = this._renderTasks(hass, model, active, task);
+        this._syncTaskMap(model, active, task);
 
-        const buttons = (this._hidden('action_buttons') ? [] : controlsFor(model, shown)).map((name) => {
+        // CORE-08: Go-To has no action buttons; its target bubble is the one start.
+        const names = this._hidden('action_buttons') || (!active && task === 'goto') ? [] : controlsFor(model, shown);
+        const buttons = names.map((name) => {
             const label = translate(hass, name);
-            // shortcut: map task types cannot start before map-view; Start waits with the hint shown.
-            const blocked = name === 'start' && needsMap;
-            const button = BuschUI.action({ label, text: label, icon: CONTROLS[name].icon, variant: CONTROLS[name].variant || 'secondary', disabled: blocked, onClick: () => this._call(name, real) });
+            const blocked = name === 'start' && !ready.ok;
+            const button = BuschUI.action({ label, text: label, icon: CONTROLS[name].icon, variant: CONTROLS[name].variant || 'secondary', disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
             if (blocked) button.setAttribute('aria-describedby', 'task-hint');
             button.classList.add('ctl');
             button.setAttribute('data-action', name);
@@ -7197,15 +7275,22 @@ class BuschVacuumCard extends HTMLElement {
         return bar;
     }
 
-    /** Task type choice (CORE-06). Returns true when the chosen type still needs the map. */
-    _renderTasks(hass, model, active) {
+    /** The chosen task type if this device offers it, else 'all'. */
+    _chosenTask(model) {
+        const types = tasksFor(model);
+        return types.length > 1 && types.some((t) => t.name === this._task) ? this._task : 'all';
+    }
+
+    /** Task type choice (CORE-06) and the chosen type's panel. Returns taskReady() for Start. */
+    _renderTasks(hass, model, active, task) {
+        const ready = active ? { ok: true, reason: null } : taskReady(model, task, this._selection, this._taskMap());
         if (this._hidden('task_type')) {
             this._taskArea.replaceChildren();
-            return false;
+            return ready;
         }
         const types = tasksFor(model);
         const nodes = [];
-        const chosen = active ? runningTask(model) : this._task;
+        const chosen = active ? runningTask(model) : task;
         if (types.length > 1) {
             const group = document.createElement('div');
             group.className = 'tasks';
@@ -7214,7 +7299,7 @@ class BuschVacuumCard extends HTMLElement {
             const shownChoice = types.some((t) => t.name === chosen) ? chosen : 'all';
             types.forEach((type, index) => {
                 const label = translate(hass, type.text);
-                const button = BuschUI.action({ label, text: label, icon: type.icon, disabled: active, onClick: () => { this._task = type.name; this._haptic(); this._update(); } });
+                const button = BuschUI.action({ label, text: label, icon: type.icon, disabled: active, onClick: () => this._chooseTask(type.name) });
                 button.classList.add('task');
                 button.setAttribute('role', 'radio');
                 button.setAttribute('data-task', type.name);
@@ -7224,8 +7309,7 @@ class BuschVacuumCard extends HTMLElement {
                     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
                     if (!step || active) return;
                     event.preventDefault();
-                    this._task = types[(index + step + types.length) % types.length].name;
-                    this._update();
+                    this._chooseTask(types[(index + step + types.length) % types.length].name, true);
                     const next = this._taskArea.querySelector('[data-task="' + this._task + '"]');
                     if (next) next.focus();
                 });
@@ -7233,17 +7317,112 @@ class BuschVacuumCard extends HTMLElement {
             });
             nodes.push(group);
         }
-        const type = TASK_TYPES.find((t) => t.name === this._task);
-        const needsMap = !active && types.length > 1 && !!type && !!type.map && types.includes(type);
-        if (needsMap) nodes.push(this._note('task-hint', 'mdi:map-search-outline', translate(hass, 'brauchtKarte', { task: translate(hass, type.text) })));
         if (active) {
             const [key, icon] = model.attr('scheduled_clean') ? ['aufgabeGeplant', 'mdi:calendar-clock']
                 : model.attr('shortcut_task') ? ['aufgabeShortcut', 'mdi:star-four-points-outline']
                 : ['aufgabeLaeuft', 'mdi:progress-clock'];
             nodes.push(this._note('task-badge', icon, translate(hass, key)));
+        } else {
+            if (!ready.ok) nodes.push(this._note('task-hint', 'mdi:information-outline', translate(hass, ready.reason, { min: this._zoneMinText() })));
+            if (this._taskError) {
+                const error = this._note('task-error', 'mdi:alert-circle-outline', this._taskError);
+                error.setAttribute('role', 'alert');
+                nodes.push(error);
+            }
         }
         this._taskArea.replaceChildren(...nodes);
-        return needsMap;
+        return ready;
+    }
+
+    _chooseTask(name, quiet) {
+        if (!quiet) this._haptic();
+        this._task = name;
+        this._taskError = null;
+        this._update();
+    }
+
+    /** What taskReady() needs from the map: passable and the grid in mm (map data, else 50). */
+    _taskMap() {
+        const m = this._map;
+        if (!m) return null;
+        return { passable: (p) => m.passable(p), grid: (m._data && m._data.grid.grid) || GRID_MM };
+    }
+
+    _zoneMinText() {
+        const map = this._taskMap();
+        return String(2 * ((map && map.grid) || GRID_MM)) + ' mm';
+    }
+
+    /** Map mode and the layer `tasks` for the chosen type; while a task runs the layer shows its targets. */
+    _syncTaskMap(model, active, task) {
+        const m = this._map;
+        if (!m) return;
+        const mode = active ? 'view' : TASK_MAP_MODES[task] || 'view';
+        const layer = active || task !== 'all';
+        const key = mode + '|' + layer + '|' + task;
+        if (key !== this._taskMapKey) {
+            this._taskMapKey = key;
+            m.setMode(mode, mode === 'view' ? {} : this._taskModeOptions(task));
+            if (layer) m.addLayer('tasks', { z: 58, render: (group, ctx) => drawTasks(this, group, ctx), hit: (point, ctx) => hitTasks(this, point, ctx) });
+            else m.removeLayer('tasks');
+            this._activeSig = null;
+        }
+        // Running targets change with the camera's attributes, not always with its frame.
+        const a = cameraAttrs(model);
+        const sig = active ? JSON.stringify([a.active_segments, a.active_areas, a.active_points, a.active_cruise_points]) : null;
+        if (layer && sig !== this._activeSig) {
+            this._activeSig = sig;
+            m.refresh('tasks');
+        }
+    }
+
+    /** Options of setMode for a task type (filled by the task types' own code). */
+    _taskModeOptions() {
+        return {};
+    }
+
+    /** Start of the chosen task: exactly one service (spec table), optimistic, one call per tap (R11). */
+    _startTask(real) {
+        if (this._pending) return;
+        const model = this._model();
+        const task = this._chosenTask(model);
+        if (!taskReady(model, task, this._selection, this._taskMap()).ok) return;
+        const call = taskPayload(model, task, this._selection, this._repeats);
+        this._taskError = null;
+        this._run = { at: Date.now(), stopped: false, seen: false };
+        this._call('start', real, Object.assign({ task }, call));
+    }
+
+    /**
+     * TASK-01: back to "All" with an empty selection only at a natural end of
+     * a task this card started — the newest history entry since the start says
+     * completed (the integration loads it at status completed, device.py#L1889).
+     * Own stop: never. Without the history sensor: unless the card stopped it.
+     */
+    _checkEnd(model, active) {
+        const run = this._run;
+        if (!run) return;
+        if (active) {
+            run.seen = true;
+            return;
+        }
+        if (!run.seen) return;
+        if (run.stopped) {
+            this._run = null;
+            return;
+        }
+        const id = model.entity('sensor.cleaning_history');
+        const history = id && this._hass.states[id];
+        if (history) {
+            const since = Object.values(history.attributes || {}).filter((e) => e && typeof e === 'object' && Number(e.timestamp) * 1000 >= run.at - 60000);
+            // The history comes a few seconds after the end: until then the type stays.
+            if (!since.length) return;
+            this._run = null;
+            const newest = since.reduce((a, b) => (Number(b.timestamp) > Number(a.timestamp) ? b : a));
+            if (newest.completed !== true) return;
+        } else this._run = null;
+        this._task = 'all';
+        this._selection = emptySelection();
     }
 
     _note(className, icon, text) {
@@ -7322,17 +7501,27 @@ class BuschVacuumCard extends HTMLElement {
         return node;
     }
 
-    _call(name, real) {
+    /** One control or task start; `call` ({ task, domain, service, data }) replaces the vacuum service. */
+    _call(name, real, call) {
         const control = CONTROLS[name];
         this._haptic();
         this._endPending();
+        if ((name === 'stop' || name === 'return') && this._run) this._run.stopped = true;
         const pending = { state: control.target, from: real ? real.state : null, timer: null };
         pending.timer = setTimeout(() => {
             if (this._pending === pending) { this._pending = null; this._update(); }
         }, OPTIMISTIC_HOLD_MS);
         this._pending = pending;
-        Promise.resolve(this._hass.callService('vacuum', control.service, { entity_id: this._opts.entity })).catch(() => {
-            if (this._pending === pending) { this._endPending(); this._update(); }
+        const data = Object.assign({ entity_id: this._opts.entity }, call ? call.data : {});
+        Promise.resolve(this._hass.callService(call ? call.domain : 'vacuum', call ? call.service : control.service, data)).catch((error) => {
+            if (call) {
+                // R12: what failed and why; the selection stays for the next try.
+                this._run = null;
+                const type = TASK_TYPES.find((t) => t.name === call.task);
+                this._taskError = translate(this._hass, 'aufgabeFehler', { task: translate(this._hass, type ? type.text : 'taskAll'), grund: errorText(error) });
+            }
+            if (this._pending === pending) this._endPending();
+            this._update();
         });
         this._update();
     }

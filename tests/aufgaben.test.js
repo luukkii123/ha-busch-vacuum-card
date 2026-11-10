@@ -121,3 +121,184 @@ test('taskReady Go-To am Roboter: nur simuliert (ohne cruising) gesperrt (alread
   assert.equal(taskReady(simuliert, 'goto', auswahl({ goto: { x: roboter.x + 400, y: roboter.y } }), karte()).ok, true);
   assert.equal(taskReady(modell(), 'goto', nah, karte()).ok, true, 'nativ (cruising): keine Sperre');
 });
+
+// ── Task 2: Start, Sperre und Ende ─────────────────────────────────────────
+const { neueKarte, mikro } = require('./attrappe.js');
+const { ausFixture } = require('./kartendaten.js');
+const CAM = 'camera.robo_map';
+const $ = (karte, sel) => karte.shadowRoot.querySelector(sel);
+const $$ = (karte, sel) => karte.shadowRoot.querySelectorAll(sel);
+const knopf = (karte, aktion) => $$(karte, '.ctl').find((b) => b.getAttribute('data-action') === aktion) || null;
+const art = (karte, name) => $$(karte, '.task').find((b) => b.getAttribute('data-task') === name);
+const gewaehlt = (karte) => $$(karte, '.task').filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.getAttribute('data-task'));
+const ersetze = (haus, id, attribute, zustand) => {
+  const alt = haus.states[id];
+  return { [id]: Object.assign({}, alt, { state: zustand || alt.state, attributes: Object.assign({}, alt.attributes, attribute) }) };
+};
+const saugerNeu = (haus, attribute, zustand) => ersetze(haus, 'vacuum.robo', attribute, zustand);
+
+/** Karte mit Kartendaten (Datenmodus, fetch wie im Browser) und handygroßer Bühne. */
+async function kartenKarte({ config = {}, fixture: name = 'voll', vacuum, zustand, extra = {}, daten = true } = {}) {
+  const u = neueUmgebung();
+  const erzeuge = u.document.createElement.bind(u.document);
+  u.document.createElement = (tag) => {
+    const n = erzeuge(tag);
+    if (tag === 'img') { n.naturalWidth = 1444; n.naturalHeight = 1444; n.decode = () => Promise.resolve(); }
+    return n;
+  };
+  const karten = ausFixture(name, { frame_id: 1180 });
+  if (daten) u.kontext.fetch = async () => ({ ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(Object.assign({}, karten, { _zellen: undefined }))) });
+  const haus = hausAus(name);
+  if (vacuum || zustand) haus.states = Object.assign({}, haus.states, saugerNeu(haus, vacuum || {}, zustand));
+  haus.states = Object.assign({}, haus.states, extra);
+  const karte = neueKarte(u, haus, config);
+  if (karte._map) karte._map.stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 400, bottom: 400, width: 400, height: 400 });
+  await mikro(); await mikro();
+  return { u, haus, karte, karten };
+}
+/** Auswahl direkt setzen (die Wege über Karte/Chips prüfen die späteren Tasks). */
+const waehle = (karte, art, teil) => { karte._task = art; Object.assign(karte._selection, teil); karte._update(); };
+
+test('Start je Art: genau ein Dienst mit entity_id; Gesamt weiter vacuum.start', async () => {
+  const faelle = [
+    ['room', { rooms: [3, 5] }, 'vacuum_clean_segment', { segments: [3, 5], repeats: 1 }],
+    ['zone', { zones: [{ x0: -3000, y0: -3000, x1: -2000, y1: -2000 }] }, 'vacuum_clean_zone', { zone: [[-3000, -3000, -2000, -2000]], repeats: [1] }],
+    ['spot', { spots: [{ x: -3461, y: -2902 }] }, 'vacuum_clean_spot', { points: [[-3461, -2902]], repeats: [1] }],
+  ];
+  for (const [name, teil, dienst, daten] of faelle) {
+    const { haus, karte } = await kartenKarte();
+    waehle(karte, name, teil);
+    knopf(karte, 'start').click();
+    assert.deepEqual(roh(haus.rufe), [{ domain: 'dreame_vacuum', service: dienst, data: Object.assign({ entity_id: 'vacuum.robo' }, daten) }], name);
+  }
+  const { haus, karte } = await kartenKarte();
+  knopf(karte, 'start').click();
+  assert.deepEqual(roh(haus.rufe), [{ domain: 'vacuum', service: 'start', data: { entity_id: 'vacuum.robo' } }]);
+});
+
+test('Doppeltipp auf Start = ein Aufruf (R11)', async () => {
+  const { haus, karte } = await kartenKarte();
+  waehle(karte, 'room', { rooms: [3] });
+  const start = knopf(karte, 'start');
+  start.click(); start.click();
+  assert.equal(haus.rufe.length, 1);
+});
+
+test('Dienstfehler → R12-Text mit Grund, Auswahl bleibt, erneuter Start möglich', async () => {
+  const { haus, karte } = await kartenKarte();
+  haus.antwort = () => Promise.reject(new Error('Coordinate outside map'));
+  waehle(karte, 'spot', { spots: [{ x: -3461, y: -2902 }] });
+  knopf(karte, 'start').click();
+  await mikro();
+  const fehler = $(karte, '.task-error');
+  assert.ok(fehler, 'Fehlertext sichtbar');
+  assert.equal(fehler.getAttribute('role'), 'alert');
+  assert.match(fehler.textContent, /Coordinate outside map/);
+  assert.match(fehler.textContent, /Auswahl bleibt/);
+  assert.equal(karte._selection.spots.length, 1);
+  assert.deepEqual(gewaehlt(karte), ['spot']);
+  assert.equal(knopf(karte, 'start').disabled, false);
+});
+
+test('Go-To: keine Aktionsknöpfe, Shortcut-/Stationsknopf bleiben (CORE-08)', async () => {
+  const { karte } = await kartenKarte({ zustand: 'idle' });
+  art(karte, 'goto').click();
+  assert.equal(knopf(karte, 'start'), null);
+  assert.equal(knopf(karte, 'return'), null);
+  assert.ok($(karte, '[data-action="dock"]'), 'Station bleibt');
+  art(karte, 'all').click();
+  assert.ok(knopf(karte, 'start') && knopf(karte, 'return'));
+});
+
+/** Verlaufssensor mit einem Eintrag `vor` Sekunden nach dem Start. */
+const verlauf = (haus, eintrag) => ersetze(haus, 'sensor.robo_cleaning_history', Object.assign({}, haus.states['sensor.robo_cleaning_history'].attributes, { 'neu': eintrag }));
+
+test('Natürliches Ende (Verlauf completed nach Start) → Gesamt, Auswahl leer', async () => {
+  const { u, haus, karte } = await kartenKarte();
+  waehle(karte, 'room', { rooms: [3] });
+  knopf(karte, 'start').click();
+  const start = u.uhr.jetzt / 1000;
+  karte.hass = haus.setze(saugerNeu(haus, { started: true, segment_cleaning: true }, 'cleaning'));
+  karte.hass = haus.setze(saugerNeu(haus, { started: false, segment_cleaning: false }, 'returning'));
+  assert.deepEqual(gewaehlt(karte), ['room'], 'bis der Verlauf kommt, bleibt der Typ');
+  karte.hass = haus.setze(verlauf(haus, { completed: true, timestamp: start + 2 }));
+  assert.deepEqual(gewaehlt(karte), ['all']);
+  assert.deepEqual(roh(karte._selection), { rooms: [], zones: [], spots: [], goto: null });
+});
+
+test('Verlauf ohne completed (abgebrochen) → bleibt', async () => {
+  const { u, haus, karte } = await kartenKarte();
+  waehle(karte, 'room', { rooms: [3] });
+  knopf(karte, 'start').click();
+  karte.hass = haus.setze(saugerNeu(haus, { started: true }, 'cleaning'));
+  karte.hass = haus.setze(saugerNeu(haus, { started: false }, 'docked'));
+  karte.hass = haus.setze(verlauf(haus, { completed: false, timestamp: u.uhr.jetzt / 1000 + 1 }));
+  assert.deepEqual(gewaehlt(karte), ['room']);
+  assert.deepEqual(roh(karte._selection.rooms), [3]);
+});
+
+test('Eigenes Stopp → Typ und Auswahl bleiben, auch bei completed im Verlauf', async () => {
+  const { u, haus, karte } = await kartenKarte();
+  waehle(karte, 'room', { rooms: [3] });
+  knopf(karte, 'start').click();
+  karte.hass = haus.setze(saugerNeu(haus, { started: true }, 'cleaning'));
+  knopf(karte, 'stop').click();
+  karte.hass = haus.setze(saugerNeu(haus, { started: false }, 'idle'));
+  karte.hass = haus.setze(verlauf(haus, { completed: true, timestamp: u.uhr.jetzt / 1000 }));
+  assert.deepEqual(gewaehlt(karte), ['room']);
+  assert.deepEqual(roh(karte._selection.rooms), [3]);
+});
+
+test('Laden mitten in der Aufgabe (started bleibt wahr) ist kein Ende; started beim Laden auch nicht', async () => {
+  const { haus, karte } = await kartenKarte();
+  waehle(karte, 'room', { rooms: [3] });
+  knopf(karte, 'start').click();
+  karte.hass = haus.setze(saugerNeu(haus, { started: true }, 'cleaning'));
+  karte.hass = haus.setze(saugerNeu(haus, { started: true }, 'docked'));
+  assert.ok(karte._run, 'Lauf noch offen');
+  const geladen = await kartenKarte({ vacuum: { started: true }, zustand: 'cleaning' });
+  geladen.karte._task = 'zone';
+  geladen.karte.hass = geladen.haus.setze(saugerNeu(geladen.haus, { started: false }, 'docked'));
+  assert.deepEqual(gewaehlt(geladen.karte), ['zone'], 'nicht selbst gestartet: kein Rücksetzen');
+});
+
+test('Ohne Verlaufssensor: Ende ohne eigenes Stopp setzt zurück', async () => {
+  const { haus, karte } = await kartenKarte();
+  const { 'sensor.robo_cleaning_history': _weg, ...ohne } = haus.states;
+  haus.states = ohne;
+  const { 'sensor.robo_cleaning_history': _e, ...entities } = haus.entities;
+  haus.entities = entities;
+  karte.hass = haus.hass();
+  waehle(karte, 'spot', { spots: [{ x: -3461, y: -2902 }] });
+  knopf(karte, 'start').click();
+  karte.hass = haus.setze(saugerNeu(haus, { started: true }, 'cleaning'));
+  karte.hass = haus.setze(saugerNeu(haus, { started: false }, 'docked'));
+  assert.deepEqual(gewaehlt(karte), ['all']);
+});
+
+test('Laufende Aufgabe: Wahl gesperrt, Karte zeigt active_* statt Auswahl; Shortcut-Knopf bedienbar (TASK-07)', async () => {
+  const aktiv = { active_areas: [{ x0: -3000, y0: -3000, x1: -2000, y1: -3000, x2: -2000, y2: -2000, x3: -3000, y3: -2000, angle: null }],
+    active_points: [{ x: -3461, y: -2902 }], active_segments: [3, 5], active_cruise_points: { 1: { x: 100, y: 200, type: 0, completed: false } } };
+  const { haus, karte } = await kartenKarte({
+    config: { scripts: ['script.putzen'] }, vacuum: { started: true, zone_cleaning: true }, zustand: 'cleaning',
+    extra: { 'script.putzen': { entity_id: 'script.putzen', state: 'off', attributes: { friendly_name: 'Putzen' } } },
+  });
+  karte._selection.spots.push({ x: 1, y: 1 });
+  karte.hass = haus.setze(ersetze(haus, CAM, aktiv));
+  for (const b of $$(karte, '.task')) assert.equal(b.disabled, true);
+  const ebene = karte._map.svg.querySelector('[data-layer="tasks"]');
+  assert.ok(ebene, 'Ebene tasks auch während der Aufgabe');
+  const art = (k) => ebene.querySelectorAll('[data-active="' + k + '"]').length;
+  assert.equal(art('area'), 1);
+  assert.equal(art('point'), 1);
+  assert.equal(art('segment'), 2);
+  assert.equal(art('cruise'), 1);
+  assert.equal(ebene.querySelectorAll('[data-select]').length, 0, 'lokale Auswahl nicht gezeigt');
+  const shortcut = knopf(karte, 'shortcuts');
+  assert.ok(shortcut && !shortcut.disabled, 'Shortcut-Knopf nicht gesperrt');
+});
+
+test('runningTask erkennt Go-To an task_status cruising_point', async () => {
+  const { karte } = await kartenKarte({ vacuum: { started: true, task_status: 'cruising_point' }, zustand: 'cleaning' });
+  assert.deepEqual(gewaehlt(karte), ['goto']);
+});

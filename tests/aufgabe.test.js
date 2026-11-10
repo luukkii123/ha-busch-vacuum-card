@@ -41,13 +41,15 @@ test('ohne Karte oder minimal: nur Gesamt möglich, keine leere Auswahl', () => 
   assert.equal($(karteMit('minimal').karte, '.tasks'), null);
 });
 
-test('Karten-Art gewählt: klarer Hinweis, Reinigen gesperrt, kein Dienstaufruf', () => {
+test('Karten-Art ohne Auswahl: Start gesperrt mit Grund (statt „braucht die Karte“), kein Dienstaufruf', () => {
   const { karte, haus } = karteMit('voll');
   art(karte, 'room').click();
   assert.deepEqual(gewaehlt(karte), ['room']);
-  assert.match($(karte, '.task-hint').textContent, /braucht die Karte/);
+  assert.match($(karte, '.task-hint').textContent, /Noch kein Raum gewählt/);
+  assert.doesNotMatch(karte.shadowRoot.textContent, /braucht die Karte/);
   const start = knopf(karte, 'start');
   assert.equal(start.disabled, true);
+  assert.equal(start.getAttribute('aria-describedby'), 'task-hint');
   start.click();
   assert.deepEqual(haus.rufe, []);
   art(karte, 'all').click();
