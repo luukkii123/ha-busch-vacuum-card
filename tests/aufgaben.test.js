@@ -736,3 +736,28 @@ test('Wiederholungen werden nicht gemerkt (R21): neue Karte beginnt bei 1', asyn
   assert.equal(b.karte._repeats, 1);
   assert.match(notiz(b.karte, 'repeats').textContent, /1×/);
 });
+
+test('Zone klein am Handy: Ziehen in der Mitte verschiebt statt eine Ecke zu greifen (Render-Befund)', async () => {
+  const { u, karte } = await zoneKarte();
+  karte._map.stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 250, bottom: 250, width: 250, height: 250 });
+  karte._map._layout();
+  const r = raeume()['5'];
+  tippe(u, karte, bildschirm(karte, r));
+  const [vorher] = zonen(karte);
+  const h = karte._zoneHandles(0);
+  assert.ok(Math.hypot(h.corners[0].x - h.corners[2].x, h.corners[0].y - h.corners[2].y) < 60, 'Zone auf dem Bildschirm klein');
+  const mitte = { x: (vorher[0] + vorher[2]) / 2, y: (vorher[1] + vorher[3]) / 2 };
+  ziehe(u, karte, bildschirm(karte, mitte), bildschirm(karte, { x: mitte.x + 600, y: mitte.y }));
+  const [nachher] = zonen(karte);
+  assert.equal(nachher[2] - nachher[0], vorher[2] - vorher[0], 'Größe gleich');
+  assert.ok(Math.abs(nachher[0] - vorher[0] - 600) <= 60, JSON.stringify([vorher, nachher]));
+});
+
+test('Raum-Chips nur in Ansicht und Raum; Zone/Spot/Go-To ohne Chips (Render-Befund)', async () => {
+  const { karte } = await kartenKarte();
+  const chips = () => $(karte, '.room-chips');
+  assert.equal(chips().hidden, false);
+  for (const t of ['zone', 'spot', 'goto']) { art(karte, t).click(); assert.equal(chips().hidden, true, t); }
+  art(karte, 'room').click();
+  assert.equal(chips().hidden, false);
+});

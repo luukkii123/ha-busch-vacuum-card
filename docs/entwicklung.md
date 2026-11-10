@@ -79,10 +79,10 @@ umgerechnet wird nur hier.
 | `toImage(p)` / `toRobot(p)` | Roboter-mm ↔ Bild-px, `null` ohne Kalibrierung |
 | `toScreen(p)` / `fromScreen(p)` | Bild-px ↔ Client-px inkl. Zoom, Verschieben, `map_config` rotation/scale/crop |
 | `addLayer(id, { z, render(group, ctx), hit(point, ctx) })` | SVG-Gruppe in Bild-px; `render` beim Anlegen, bei neuer Kalibrierung/neuem Frame und bei `refresh(id)`; `hit` bekommt Roboter-mm und liefert `{ id, object }` oder nichts. `ctx` = `current()` plus `toImage`, `svgNode`, `data`, `model` |
-| `removeLayer(id)`, `refresh(id?)` | Ebene entfernen; neu zeichnen (ohne id: alle) |
+| `removeLayer(id)`, `refresh(id?)` | Ebene entfernen; neu zeichnen (ohne id: alle), danach auch die Raum-Chips |
 | `hitTest(clientPoint)` | `{ kind: 'room'\|'object'\|'floor'\|'outside', id, layer, object, robot, image }`; Ebenen mit `hit` von oben nach unten zuerst |
 | `roomAt(p)` / `passable(p)` | Raum-ID oder `null` (Datenmodus exakt, Bildmodus Rechteck + nächster Mittelpunkt); begehbar `true/false` nur im Datenmodus, sonst `null` (`clean-tasks` sperrt nur bei `false`) |
-| `setMode(mode, options)` | `view`, `pick-room`, `pick-point`, `draw-rect`, `drag`; unbekannt → Ausnahme |
+| `setMode(mode, options)` | `view`, `pick-room`, `pick-point`, `draw-rect`, `drag`; unbekannt → Ausnahme. `pick-room` nimmt `{ selected(), order(), fallbackRooms() }`: die eigenen Raum-Chips zeigen dann Auswahl und Reihenfolge des Moduls, ohne Kartenbild die Räume aus `fallbackRooms()` (clean-tasks: `vacuum.rooms`) |
 | `showLoupe(clientPoint)` / `hideLoupe()` | Lupe (in `draw-rect`/`drag` beim Ziehen automatisch) |
 | `selectMap(mapId)` | über core `_confirmMapChange` → `dreame_vacuum.vacuum_select_map`; `false`, wenn gesperrt (Aufgabe läuft), unbekannt oder schon aktiv |
 | `config(index)` | Kartenoptionen gemischt mit `map_config.map_<index>`; `hidden_objects` addieren sich |
@@ -91,7 +91,8 @@ umgerechnet wird nur hier.
 
 Ereignisse (`CustomEvent` auf `this._map.el`, `bubbles`): `map-tap`
 (`{ client, robot, hit, passable, mode }`), `map-room-tap` (`{ room, source,
-mode }`, in `view` und `pick-room`), `map-object-tap` (`{ id, layer, object,
+mode }`, in `view` und `pick-room`; vom Chip zusätzlich `shift`/`toggle` für
+Umschalt- bzw. Strg/Cmd-Klick, R02), `map-object-tap` (`{ id, layer, object,
 robot }`, in `view`), `map-long-press`, `map-drag` (`{ phase: start|move|end|cancel,
 mode, start, robot }`, in `draw-rect`/`drag`), `map-changed` (`{ index,
 mapId }`), `map-frame` (`{ frameId, mode }`). Gesperrt (`data-locked="true"`)
@@ -179,6 +180,50 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 - Live hat das X40 keine Shortcuts: Tests und Render mit synthetischen
   Einträgen in der Datenform der Quelle (device.py#L11076, types.py#L5099).
 
+## Aufgaben (Modul clean-tasks)
+
+- Ein Auswahlmodell `card._selection = { rooms, zones, spots, goto }` in
+  Roboter-mm (nur im Speicher, R21; Wiederholungen `card._repeats` ebenso).
+  Karte (Ebene `tasks`, z 58), Raum-Chips, Listen und Knöpfe lesen und
+  schreiben nur dieses Modell (R08). Typwechsel setzt den Kartenmodus
+  (`room` → `pick-room`, `zone` → `draw-rect`, `spot`/`goto` → `pick-point`)
+  und legt/entfernt die Ebene; `map-changed` leert die Auswahl mit Hinweis.
+- Reine Funktionen (über `__internals`): `taskPayload(model, task, selection,
+  repeats)` → `{ domain, service, data }` ohne `entity_id`; `taskReady(model,
+  task, selection, { passable, grid })` → `{ ok, reason }` (Wörterbuchschlüssel,
+  R12). Gesperrt wird nur, was die Integration ablehnen würde: Ablassen/
+  Selbstreparatur, Raum ohne gespeicherte Karte, leere Auswahl, Zonenseite
+  ≤ 2 × `grid_size` (Kartendaten, sonst 50 mm), Zone mit allen neun
+  Stichpunkten `passable === false`, Punkt `passable === false`, Go-To im
+  Umkreis 2 × `grid_size` des Roboters nur ohne Fähigkeit `cruising`.
+  `passable === null` (Bildmodus) sperrt nie; dann meldet der Dienst.
+- Start `card._startTask()`: genau ein Dienst über `_call` (optimistisch,
+  `OPTIMISTIC_HOLD_MS`), solange `_pending` läuft, kein zweiter. Fehler →
+  `.task-error` (role alert) mit dem Text der Integration, Auswahl bleibt.
+  Customized Cleaning (Attribut `customized_cleaning: true`) schickt
+  `repeats`/`suction_level`/`water_volume` als Listen aus den Raumattributen
+  der Kamera; Badges zeigen bei Fähigkeit `customized_cleaning` die
+  gespeicherte `cleaning_sequence`, sonst die Tipp-Reihenfolge.
+- Ende (`card._checkEnd`): nur für Aufgaben, die die Karte selbst gestartet
+  hat (`card._run`). Nach aktiv → nicht aktiv: eigenes Stopp/Zurück → bleibt;
+  sonst neuester Eintrag von `sensor.*_cleaning_history` seit dem Start
+  (Zeitstempel ≥ Start − 60 s); `completed: true` → Gesamt + leere Auswahl,
+  sonst bleibt; bis der Eintrag kommt, bleibt der Typ. Ohne Verlaufssensor
+  → zurücksetzen. Laufende Aufgabe: Ebene zeigt `active_segments/areas/
+  points/cruise_points` gestrichelt statt der Auswahl.
+- Zone: Griffe und × sind Bildschirmmarken (Trefferradius `HANDLE_PX` 22 =
+  44-px-Ziel); × sitzt neben der Ecke, die auf dem Bildschirm oben rechts
+  liegt. Knopf/Taste und Ziehen rasten auf dieselbe Kartenachse
+  (`card._zoneStep(dir, mm)`), daher gleiche Ergebnisse. Untergrenze
+  3 × `grid_size`. Teppich/Möbel-Tipp: kleinster sichtbarer Umriss unter dem
+  Punkt (`outlineAt`). Spot und Go-To nutzen dieselben Pfeilwege.
+- „Spot hier“ hängt über `addObstacleAction('spot', …)` im Hindernis-Dialog;
+  Go-To startet nur über die Zielblase (`.task-bubble` unten in der Karte),
+  ohne Aktionsknöpfe (CORE-08). `vacuum_follow_path` ist nicht Teil der
+  Referenz und wird nicht angeboten.
+- Wiederholungen: lokaler Stepper (`shortcut:`-Notiz), bis `clean-settings`
+  die geteilte Zeile SET-02 bringt.
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):
@@ -244,6 +289,31 @@ echten HA-Selektoren. Die Abnahme mit `karten-alle.sh` und E2E läuft einmal
 am Ende aller Module.
 
 ## Geprüft
+
+**10.11.2026 · 0.1.0, Modul clean-tasks (#882, Tasks 1–8, nicht getaggt)**
+
+1. `node --check` grün; `node --test` 374/374 (54 Tests `tests/aufgaben.test.js`,
+   core-Test „Karten-Art“ auf „Start gesperrt mit Grund“ umgestellt).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. `render.py`: 48/48, UI-Regeln 0 (Regel 1 zusätzlich je Aufgabenart mit
+   Auswahl, gemessen bei 2000 px Höhe, weil die Karte über der Sichthöhe in
+   sich scrollt, CORE-13), 0 Konsolen-/Seitenfehler, 0 Fremdanfragen,
+   0 Dienstaufrufe ohne Klick (die gewollten Starts je Art werden geprüft und
+   entfernt). Echte Mauszeiger-Ereignisse: Raum per Tipp, Zone per Tipp,
+   Ziehen, Verschieben, Eckgriff 16 px neben der Ecke, Pfeiltaste; Spot,
+   Tipp außerhalb, ×; Go-To mit Zielblase unten, Escape schließt sie;
+   Pfeiltaste in der Aufgabenwahl. Matrix 4 Arten × 360/390/800/1280 ×
+   hell/dunkel ohne Seitenüberlauf, Touchziele ≥ 44 px. Der Lauf fand zwei
+   Fehler: kleine Zone am Handy griff beim Ziehen in der Mitte eine Ecke
+   (jetzt gewinnt das Nähere), Zielblase brach die Koordinaten um (Text jetzt
+   „Ziel“); Bilder gesichtet: Raum-Chips in Zone/Spot/Go-To ausgeblendet.
+4. Live nur lesend: `get_services` hat `vacuum_clean_segment/zone/spot`
+   (`repeats`, `suction_level`, `water_volume`) und `vacuum_goto` (`x`, `y`);
+   X40 mit Fähigkeit `cruising` (Go-To nativ) und `customized_cleaning`
+   (Badges = `cleaning_sequence` [3, 5, 7, 1, 6, 9, 4]), Attribut
+   `customized_cleaning: false` (Stepper sichtbar), `predefined_points` leer,
+   Verlaufseinträge mit `timestamp`/`completed`. **Keine Starts** — jeder
+   Start fährt den Roboter und wartet auf Nutzer-OK.
 
 **10.11.2026 · 0.1.0, Module dock und shortcuts (#882, je Tasks 1–4, nicht getaggt)**
 

@@ -3382,7 +3382,8 @@ class MapView {
         if (this.chips) this.chips.remove();
         this.el.insertBefore(chips, this.notes);
         this.chips = chips;
-        chips.hidden = !chips.childNodes.length;
+        // Zone, spot and go-to place points and areas: room chips would only be in the way there.
+        chips.hidden = !chips.childNodes.length || !['view', 'pick-room'].includes(this._mode);
         const again = focusedRoom && chips.querySelector('[data-room="' + focusedRoom + '"]');
         if (again) {
             chips.querySelectorAll('.room-chip').forEach((b) => { b.tabIndex = b === again ? 0 : -1; });
@@ -8319,7 +8320,8 @@ class BuschVacuumCard extends HTMLElement {
         bubble.setAttribute('aria-label', translate(hass, 'zielblase'));
         const text = document.createElement('span');
         text.className = 'task-bubble-text';
-        text.textContent = translate(hass, 'zielName', { x: target.x, y: target.y });
+        // Short on a phone: the coordinates stand in the target entry below the map.
+        text.textContent = translate(hass, 'zielblase');
         const label = translate(hass, 'hierhinFahren');
         const busy = !!this._pending;
         const go = BuschUI.action({ label, text: busy ? translate(hass, 'wirdGestartet') : label, icon: 'mdi:navigation-variant-outline', variant: 'primary', disabled: !ready.ok || busy,
@@ -8354,7 +8356,10 @@ class BuschVacuumCard extends HTMLElement {
             const h = this._zoneHandles(i);
             if (!h) continue;
             if (near(h.remove)) return { id: 'zone-remove:' + i, object: zones[i] };
-            const j = h.corners.findIndex(near);
+            // A small zone on a phone: its centre lies within a corner's reach; the nearer of the two wins (move vs scale).
+            const centre = this._client({ x: (zones[i].x0 + zones[i].x1) / 2, y: (zones[i].y0 + zones[i].y1) / 2 });
+            const dist = (q) => Math.hypot(q.x - c.x, q.y - c.y);
+            const j = h.corners.findIndex((q) => near(q) && dist(q) < dist(centre));
             if (j >= 0) return { id: 'zone-corner:' + i + ':' + j, object: zones[i] };
         }
         for (let i = zones.length - 1; i >= 0; i--) {

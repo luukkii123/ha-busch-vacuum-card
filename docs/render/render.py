@@ -936,6 +936,189 @@ def main():
               json.dumps({k: {"title": v["title"], "kind": v["kind"], "entries": v["entries"], "rows": v["rows"]} for k, v in by.items()}))
 
         # ------------------------------------------------------------------
+        # 3f. Tasks (clean-tasks): room, zone, spot, go-to with real pointer
+        #     events (mouse) and keys; deliberate starts are recorded and
+        #     removed, so "no service call without a click" still holds
+        # ------------------------------------------------------------------
+        def task_build(task, w=390, h=844, th="light", state="docked", config=None):
+            page.set_viewport_size({"width": w, "height": h})
+            theme(th)
+            build(state, config=config)
+            page.wait_for_timeout(300)
+            page.evaluate("""(t) => { const c = window.card(); c.shadowRoot.querySelector('[data-task=' + t + ']').click();
+                c._map.el.scrollIntoView({ block: 'start' }); }""", task)
+            page.wait_for_timeout(200)
+
+        def at(x, y):
+            """Client point of a robot-mm point."""
+            return map_eval("const p = m.toScreen(m.toImage({ x: %f, y: %f })); return [p.x, p.y];" % (x, y))
+
+        def drag(a, b, steps=6):
+            page.mouse.move(a[0], a[1])
+            page.mouse.down()
+            for i in range(1, steps + 1):
+                page.mouse.move(a[0] + (b[0] - a[0]) * i / steps, a[1] + (b[1] - a[1]) * i / steps)
+            page.mouse.up()
+            page.wait_for_timeout(350)
+
+        def task_state():
+            return map_eval("""const t = (s) => Array.from(c._taskArea.querySelectorAll(s));
+                return { sel: JSON.parse(JSON.stringify(c._selection)), mode: m._mode,
+                         start: (sr.querySelector('[data-action=start]') || {}).disabled,
+                         hint: (sr.querySelector('#task-hint') || {}).textContent || '',
+                         small: window.smallTargets(sr), overflowX: document.documentElement.scrollWidth - innerWidth,
+                         chips: Array.from(sr.querySelectorAll('.room-chip[aria-pressed=true]')).map((b) => b.getAttribute('data-room')),
+                         list: t('.task-item').map((b) => b.textContent), layer: sr.querySelectorAll('[data-layer=tasks] [data-select]').length };""")
+
+        def task_calls():
+            calls = page.evaluate("() => { const c = window.__serviceCalls; window.__serviceCalls = []; return c; }")
+            report.setdefault("taskCalls", []).extend(calls)
+            return calls
+
+        rooms = cam["rooms"]
+        task_build("room")
+        page.wait_for_timeout(100)
+        for rid in ("5", "3"):
+            page.mouse.click(*at(rooms[rid]["x"], rooms[rid]["y"]))
+            page.wait_for_timeout(350)
+        room = task_state()
+        shot("aufgabe-raum-390-light.png")
+        check("tasks room: two taps on the map choose rooms 5 and 3, chips pressed, marks on the map, Start enabled",
+              room["mode"] == "pick-room" and room["sel"]["rooms"] == [5, 3] and sorted(room["chips"]) == ["3", "5"]
+              and room["layer"] == 2 and room["start"] is False and not room["small"], json.dumps(room))
+        page.evaluate("() => window.card().shadowRoot.querySelector('[data-action=start]').click()")
+        page.wait_for_timeout(100)
+        calls = task_calls()
+        check("tasks room: Start = exactly vacuum_clean_segment with segments [5, 3]",
+              len(calls) == 1 and calls[0]["service"] == "vacuum_clean_segment" and calls[0]["payload"]["segments"] == [5, 3], json.dumps(calls))
+
+        task_build("zone")
+        r5, r3 = rooms["5"], rooms["3"]
+        page.mouse.click(*at(r5["x"], r5["y"]))
+        page.wait_for_timeout(350)
+        drag(at(r3["x"] - 1500, r3["y"] - 1000), at(r3["x"] + 500, r3["y"] + 800))
+        zone_a = task_state()
+        before = zone_a["sel"]["zones"][0]
+        drag(at((before["x0"] + before["x1"]) / 2, (before["y0"] + before["y1"]) / 2), at((before["x0"] + before["x1"]) / 2 + 600, (before["y0"] + before["y1"]) / 2))
+        moved = task_state()["sel"]["zones"][0]
+        corner = map_eval("const h = c._zoneHandles(0); return [h.corners[2].x, h.corners[2].y];")
+        drag([corner[0] + 16, corner[1] + 10], at(moved["x1"] + 700, moved["y1"] + 700))
+        resized = task_state()["sel"]["zones"][0]
+        handles = map_eval("""return Array.from(sr.querySelectorAll('[data-layer=tasks] [data-handle=corner]')).map((g) => { const r = g.getBoundingClientRect(); return [r.width, r.height]; });""")
+        shot("aufgabe-zone-390-light.png")
+        page.evaluate("() => { const b = window.card()._taskArea.querySelector('[data-action=zone-0]'); b.focus(); }")
+        page.keyboard.press("ArrowRight")
+        page.wait_for_timeout(100)
+        keyed = task_state()
+        shot("aufgabe-zone-liste-390-light.png")
+        check("tasks zone: tap adds 1.5 m, drag draws a second, area drag moves +600 mm, corner handle 16 px beside the corner scales, key moves 100 mm",
+              len(zone_a["sel"]["zones"]) == 2 and abs((before["x1"] - before["x0"]) - 1500) <= 60
+              and abs(moved["x0"] - before["x0"] - 600) <= 60 and resized["x1"] > moved["x1"] + 300 and resized["x0"] == moved["x0"]
+              and abs(keyed["sel"]["zones"][0]["x0"] - resized["x0"] - 100) <= 1 and keyed["list"][0].startswith("Bereich 1")
+              and not keyed["small"] and keyed["overflowX"] <= 0 and len(handles) == 8,
+              json.dumps({"a": zone_a["sel"], "moved": moved, "resized": resized, "keyed": keyed["sel"], "list": keyed["list"], "small": keyed["small"], "handles": handles}))
+        page.evaluate("() => window.card().shadowRoot.querySelector('[data-action=start]').click()")
+        page.wait_for_timeout(100)
+        calls = task_calls()
+        check("tasks zone: Start = exactly vacuum_clean_zone with two whole-mm rectangles",
+              len(calls) == 1 and calls[0]["service"] == "vacuum_clean_zone" and len(calls[0]["payload"]["zone"]) == 2
+              and all(isinstance(v, int) for z in calls[0]["payload"]["zone"] for v in z), json.dumps(calls))
+
+        task_build("spot")
+        page.mouse.click(*at(r5["x"], r5["y"]))
+        page.wait_for_timeout(350)
+        page.mouse.click(*at(r3["x"], r3["y"]))
+        page.wait_for_timeout(350)
+        # Left edge of the map, half way down: outside the floor, inside the stage.
+        page.mouse.click(*at(grid["size"][0] + 60, grid["size"][1] + grid["size"][5] * grid["size"][6] / 2))
+        page.wait_for_timeout(350)
+        spot = task_state()
+        outside = map_eval("return (c._taskArea.querySelector('[data-note=outside]') || {}).textContent || '';")
+        shot("aufgabe-spot-390-light.png")
+        x_at = map_eval("const h = c._spotHandles(1); return [h.remove.x, h.remove.y];")
+        page.mouse.click(*x_at)
+        page.wait_for_timeout(350)
+        after_x = task_state()
+        check("tasks spot: two taps set two points with 1.5 m squares, a tap outside the floor sets none and says why, the x removes one",
+              len(spot["sel"]["spots"]) == 2 and spot["layer"] == 2 and "befahrbar" in outside and len(after_x["sel"]["spots"]) == 1 and not spot["small"],
+              json.dumps({"spot": spot["sel"], "outside": outside, "after": after_x["sel"]}))
+        page.evaluate("() => window.card().shadowRoot.querySelector('[data-action=start]').click()")
+        page.wait_for_timeout(100)
+        calls = task_calls()
+        check("tasks spot: Start = exactly vacuum_clean_spot with one point",
+              len(calls) == 1 and calls[0]["service"] == "vacuum_clean_spot" and len(calls[0]["payload"]["points"]) == 1, json.dumps(calls))
+
+        task_build("goto")
+        page.mouse.click(*at(r5["x"], r5["y"]))
+        page.wait_for_timeout(350)
+        goto = map_eval("""const b = sr.querySelector('.task-bubble'), r = b.getBoundingClientRect(), s = m.stage.getBoundingClientRect();
+            const go = sr.querySelector('[data-action=goto-start]').getBoundingClientRect();
+            return { sel: c._selection.goto, inside: r.left >= s.left - 1 && r.right <= s.right + 1 && r.bottom <= s.bottom + 1 && r.top >= s.top - 1,
+                     lowerHalf: r.top > s.top + s.height / 2, go: [go.width, go.height], text: b.textContent,
+                     controls: Array.from(sr.querySelectorAll('.ctl')).map((n) => n.getAttribute('data-action')), small: window.smallTargets(sr) };""")
+        shot("aufgabe-goto-390-light.png")
+        check("tasks go-to: tap sets the target, bubble 'Hierhin fahren' at the bottom of the map (R23), no Start/Return buttons, 44 px",
+              goto["sel"] is not None and goto["inside"] and goto["lowerHalf"] and "Hierhin fahren" in goto["text"]
+              and "start" not in goto["controls"] and "return" not in goto["controls"] and goto["go"][1] >= 44 and not goto["small"], json.dumps(goto))
+        page.evaluate("() => window.card().shadowRoot.querySelector('[data-action=goto-start]').click()")
+        page.wait_for_timeout(100)
+        calls = task_calls()
+        check("tasks go-to: 'Hierhin fahren' = exactly vacuum_goto { x, y } in whole mm",
+              len(calls) == 1 and calls[0]["service"] == "vacuum_goto" and isinstance(calls[0]["payload"]["x"], int), json.dumps(calls))
+        task_build("goto")
+        page.mouse.click(*at(r5["x"], r5["y"]))
+        page.wait_for_timeout(300)
+        page.evaluate("() => window.card().shadowRoot.querySelector('[data-action=goto-start]').focus()")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(150)
+        esc = map_eval("return { bubble: !!sr.querySelector('.task-bubble'), sel: c._selection.goto };")
+        check("tasks go-to: one Escape closes the target bubble (rule 2, R04)", not esc["bubble"] and esc["sel"] is None, json.dumps(esc))
+
+        # Keyboard: the task radio group moves with arrows; a key on the zone entry moves it (done above).
+        build("docked")
+        page.wait_for_timeout(200)
+        page.evaluate("() => window.card().shadowRoot.querySelector('[data-task=all]').focus()")
+        page.keyboard.press("ArrowRight")
+        page.wait_for_timeout(100)
+        radio = page.evaluate("""() => { const sr = window.card().shadowRoot; return { checked: sr.querySelector('.task[aria-checked=true]').getAttribute('data-task'),
+            focus: sr.activeElement && sr.activeElement.getAttribute('data-task'), mode: window.card()._map._mode }; }""")
+        check("tasks keyboard: ArrowRight in the radio group chooses Raum and keeps focus, map in pick-room",
+              radio == {"checked": "room", "focus": "room", "mode": "pick-room"}, json.dumps(radio))
+
+        # Matrix: every type with a selection at 360/390/800/1280 x light/dark.
+        task_prepare = """(t) => { const c = window.card(); c.shadowRoot.querySelector('[data-task=' + t + ']').click();
+            const r = c.hass.states['camera.robo_map'].attributes.rooms;
+            if (t === 'room') c._selection.rooms.push(5, 3);
+            if (t === 'zone') { c._selection.zones.push({ x0: r['3'].x - 900, y0: r['3'].y - 700, x1: r['3'].x + 900, y1: r['3'].y + 700 }); c._zoneActive = 0; }
+            if (t === 'spot') { c._selection.spots.push({ x: r['5'].x, y: r['5'].y }); c._spotActive = 0; }
+            if (t === 'goto') c._selection.goto = { x: r['5'].x, y: r['5'].y };
+            c._selectionChanged(); return true; }"""
+        task_geo = []
+        for w, h in ((360, 640), (390, 844), (800, 600), (1280, 800)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                for t in ("room", "zone", "spot", "goto"):
+                    build("docked")
+                    page.wait_for_timeout(200)
+                    page.evaluate(task_prepare, t)
+                    page.wait_for_timeout(150)
+                    g = page.evaluate("""() => { const c = window.card(), sr = c.shadowRoot, a = c._taskArea.getBoundingClientRect(), k = c.getBoundingClientRect();
+                        return { overflowX: document.documentElement.scrollWidth - innerWidth, small: window.smallTargets(sr),
+                                 areaInside: a.left >= k.left - 1 && a.right <= k.right + 1, layer: sr.querySelectorAll('[data-layer=tasks] [data-select]').length }; }""")
+                    if (w, th) in ((360, "light"), (1280, "dark")) or (w == 390 and th == "dark"):
+                        page.evaluate("() => window.card()._map.el.scrollIntoView({ block: 'start' })")
+                        page.screenshot(path=str(out_dir / f"aufgabe-{t}-{w}x{h}-{th}.png"), full_page=True)
+                        report["screenshots"].append(f"aufgabe-{t}-{w}x{h}-{th}.png")
+                    task_geo.append({"task": t, "w": w, "theme": th, **g})
+        report["taskMatrix"] = task_geo
+        bad = [x for x in task_geo if x["overflowX"] > 0 or x["small"] or not x["areaInside"] or x["layer"] < 1]
+        check("tasks matrix: room/zone/spot/go-to x 360/390/800/1280 x light/dark without sideways overflow, 44 px targets, selection drawn",
+              not bad, json.dumps(bad[:4]))
+        report["taskCallsTotal"] = len(report.get("taskCalls", []))
+        page.evaluate("() => { window.__serviceCalls = []; }")
+
+        # ------------------------------------------------------------------
         # 4. HACS UI rules 1 and 2 (hacs/docs/ui-regeln.md)
         # ------------------------------------------------------------------
         report["uiRegeln"] = {}
@@ -1033,6 +1216,12 @@ def main():
             r["regel1_karte_floors"] = lauf_breiten(
                 page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
                 vor_messung=lambda pg: (build("floors"), page.wait_for_timeout(200)))
+            for t in ("room", "zone", "spot", "goto"):
+                # The card scrolls inside itself past the view's height (CORE-13); measured at 2000 px
+                # like the dialogs, so the task panel is not counted as "outside".
+                r["regel1_karte_aufgabe_" + t] = lauf_breiten(
+                    page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
+                    vor_messung=lambda pg, t=t: (build("docked"), page.wait_for_timeout(200), page.evaluate(task_prepare, t), page.wait_for_timeout(150)))
             r["zaehlung"] = zaehle(r)
             report["uiRegelnVerstoesse"] = bewerte(r)
 

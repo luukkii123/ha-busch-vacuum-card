@@ -43,9 +43,9 @@ What you get with the core module:
   for its details, photo and *Ignore*. *Map info* shows size, scale and
   calibration and picks robot coordinates. With several floors, *Choose
   floor* changes the map after a confirmation.
-- **Task type:** All, Room, Zone, Spot, Go to (choosing rooms, zones and
-  points on the map follows in a later update). Locked while a task runs; the
-  card shows whether the running task is scheduled or a shortcut.
+- **Task type:** All, Room, Zone, Spot, Go to (see *Tasks* below). Locked
+  while a task runs; the map then shows the running targets, and the card
+  says whether the task is scheduled or a shortcut.
 - **Controls:** Clean, Pause, Resume, Stop, Return — depending on the state.
   The station status sits next to them and turns orange or red with a
   written reason.
@@ -159,6 +159,44 @@ not allow right now says why (for example the water temperature while smart
 mop washing chooses it). Every action goes through
 `dreame_vacuum.vacuum_call_action`, every setting through
 `vacuum_set_property`, so disabled station entities stay usable.
+
+## Tasks
+
+Choose the task type above the buttons; the map follows it.
+
+- **All** cleans every room with the saved settings and order (`vacuum.start`).
+- **Room:** tap rooms on the map or their chips below it (Ctrl/Cmd+click
+  toggles, Shift+click picks a range), *Select all* or *Clear selection*
+  (with *Undo* for 5 s). The badges show the order. Robots with Customized
+  Cleaning (e.g. X40) clean in their saved cleaning sequence, not in the
+  tapped order — the card says so and sends each room's own settings.
+- **Zone:** tap the map (1.5 × 1.5 m), drag a rectangle, tap a carpet or a
+  piece of furniture for its outline, or use *Add area*. Drag an area to move
+  it, drag a corner to resize it, × removes it. Without dragging: the area
+  list below the map with arrow buttons (100 mm, Shift 500 mm), *Width ±*,
+  *Height ±*, *Remove*, and keys (arrows move, Alt+arrows resize, Delete
+  removes, Escape deselects).
+- **Spot:** each tap sets a point cleaned 1.5 × 1.5 m around it; *Point at
+  robot position*, arrow buttons and keys as for areas. *Spot here* in an
+  obstacle's details sets a point there without starting.
+- **Go to:** tap a target or a saved target point; the bubble *Go here* at
+  the bottom of the map starts it (there is no Clean button for this type).
+  Without tapping: *Target at map centre*, arrows, Enter jumps to *Go here*.
+  Robots without native cruising reach the target as a small zone cleaning
+  with briefly switched settings; the card says so.
+- **Repeats** 1–3 for room (without Customized Cleaning), zone and spot. The
+  value is not remembered on purpose: a remembered 3× would clean three times
+  unnoticed.
+
+Start calls exactly one service: `dreame_vacuum.vacuum_clean_segment`,
+`vacuum_clean_zone`, `vacuum_clean_spot` or `vacuum_goto`, in whole robot
+millimetres. Targets the integration would refuse cannot be started, and the
+card says why (nothing chosen, outside the floor, area too small, station
+draining, rooms without a saved map, target next to the robot). A service
+error shows its reason and keeps your selection. After a task ends by
+itself the card goes back to *All*; after your own Stop it keeps the
+selection. Patrols along several points (`vacuum_follow_path`) are not part
+of the reference card and not offered.
 
 ## Shortcuts
 
