@@ -699,3 +699,135 @@ test('Starten legt den Fokus auf den Tempo-Regler (Tastatur sofort bereit)', () 
   k.starten();
   assert.equal(dialogVon(k.u).shadowRoot.activeElement, $d(k.u, '[data-axis="velocity"]'));
 });
+
+// ── Task 5: Live-Karte, Zustandsknöpfe, Layout (REM-03) ─────────────────────
+
+const KAMERA = 'camera.robo_map';
+/** Ansicht mit fertigem Kartenbild der einen MapView (Bildmodus, Größe gesetzt wie nach decode). */
+async function mitKarte(name = 'voll', sauger) {
+  const k = ansicht(name, sauger);
+  await mikro();
+  k.map = k.karte._map;
+  k.map._size = { width: 1000, height: 800 };
+  k.kamera = (attribute) => { const alt = k.haus.states[KAMERA]; k.karte.hass = k.haus.setze({ [KAMERA]: Object.assign({}, alt, { attributes: Object.assign({}, alt.attributes, attribute) }) }); };
+  k.karte.hass = k.haus.fremd();
+  return k;
+}
+const prozent = (k, pos) => { const p = k.map.toImage(pos); return 'translate(' + (p.x / 10).toFixed(2) + '%, ' + (p.y / 8).toFixed(2) + '%)'; };
+
+test('Karte: Bild der aktiven Kamera (gleiche Adresse, kein eigener Abruf) und Marker über toImage', async () => {
+  const k = await mitKarte();
+  const abrufe = k.map.stats.images;
+  const bild = $d(k.u, '.remote-map-base');
+  assert.equal(bild.tagName, 'IMG');
+  assert.equal(bild.getAttribute('src'), k.map._image.getAttribute('src'), 'dieselbe URL → Browser-Cache');
+  assert.equal(bild.getAttribute('alt'), '');
+  const pos = k.haus.states[KAMERA].attributes.vacuum_position;
+  assert.equal($d(k.u, '.remote-marker').style.transform, prozent(k, pos));
+  assert.equal($d(k.u, '.remote-map-note').hidden, true);
+  k.kamera({ vacuum_position: { x: pos.x + 500, y: pos.y, a: 0 } });
+  assert.equal($d(k.u, '.remote-marker').style.transform, prozent(k, { x: pos.x + 500, y: pos.y }), 'neue Position');
+  const p = k.map.toImage({ x: pos.x + 500, y: pos.y }), q = k.map.toImage({ x: pos.x + 600, y: pos.y });
+  assert.equal($d(k.u, '.remote-robot').style.transform, 'rotate(' + Math.round(Math.atan2(q.y - p.y, q.x - p.x) * 180 / Math.PI) + 'deg)', 'Richtung aus a');
+  assert.equal(k.map.stats.images, abrufe, 'kein zusätzliches Kartenbild geladen');
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('Karte: im Datenmodus eine Kopie des gemalten Canvas, neu bei map-frame', async () => {
+  const k = await mitKarte();
+  const quelle = k.u.document.createElement('canvas');
+  quelle.width = 1000; quelle.height = 800;
+  k.map._image = quelle;
+  const gemalt = [];
+  const orig = k.u.document.createElement;
+  k.u.document.createElement = (tag) => { const n = orig.call(k.u.document, tag); if (tag === 'canvas') n.getContext = () => ({ drawImage: (q) => gemalt.push(q) }); return n; };
+  k.karte.hass = k.haus.fremd();
+  k.map.el.dispatchEvent(new k.u.kontext.CustomEvent('map-frame', { detail: { frameId: 2, mode: 'data' } }));
+  const kopie = $d(k.u, '.remote-map-base');
+  assert.equal(kopie.tagName, 'CANVAS');
+  assert.equal(kopie.width, 1000);
+  assert.ok(gemalt.length >= 1 && gemalt.every((q) => q === quelle));
+  const vorher = gemalt.length;
+  k.karte.hass = k.haus.fremd();
+  assert.equal(gemalt.length, vorher, 'fremdes Update malt nicht neu');
+  k.map.el.dispatchEvent(new k.u.kontext.CustomEvent('map-frame', { detail: { frameId: 3, mode: 'data' } }));
+  assert.equal(gemalt.length, vorher + 1, 'neuer Frame → neu kopiert');
+  k.u.document.createElement = orig;
+});
+
+test('Karte: ohne Kartenkamera bzw. ohne Position Hinweis, Regler bleiben (R18)', async () => {
+  const k = ansicht('ohne-karte');
+  assert.equal($d(k.u, '.remote-map').hidden, true);
+  assert.match($d(k.u, '.remote-map-note').textContent, /Keine Karte/);
+  assert.ok($d(k.u, '[data-axis="velocity"]'));
+  const k2 = await mitKarte();
+  k2.kamera({ vacuum_position: undefined });
+  assert.equal($d(k2.u, '.remote-marker').hidden, true);
+  assert.match($d(k2.u, '.remote-map-note').textContent, /Position/);
+});
+
+test('Karte: verlassen entfernt den map-frame-Zuhörer', async () => {
+  const k = await mitKarte();
+  const vorher = (k.map.el.listeners['map-frame'] || []).length;
+  $d(k.u, '[data-action="back"]').click();
+  assert.equal((k.map.el.listeners['map-frame'] || []).length, vorher - 1);
+});
+
+test('Zustand: HA-Übersetzung des Zustands in der Ansicht', () => {
+  const k = ansicht();
+  assert.equal($d(k.u, '.remote-state').textContent, 'Angedockt');
+  k.sauger('cleaning', { status: 'remote_control' });
+  assert.equal($d(k.u, '.remote-state').textContent, 'Reinigt');
+});
+
+test('Fortsetzen/Zurück zur Station je Zustand über core _call (vacuum.start / return_to_base)', async () => {
+  const k = ansicht();
+  assert.equal($d(k.u, '[data-control="resume"]').hidden, true, 'angedockt: kein Fortsetzen');
+  assert.equal($d(k.u, '[data-control="return"]').hidden, true, 'angedockt: kein Zurück');
+  k.sauger('paused', { docked: false, started: true, paused: true });
+  assert.equal($d(k.u, '[data-control="resume"]').hidden, false);
+  assert.equal($d(k.u, '[data-control="return"]').hidden, false);
+  k.sauger('cleaning', { docked: false, started: true, paused: false, running: false, status: 'remote_control' });
+  assert.equal($d(k.u, '[data-control="resume"]').hidden, false, 'Aufgabe begonnen, gerade ferngesteuert');
+  k.sauger('returning', { docked: false, started: false, paused: false });
+  assert.equal($d(k.u, '[data-control="return"]').hidden, true, 'fährt schon zurück');
+  assert.equal($d(k.u, '[data-control="resume"]').hidden, true);
+  k.sauger('idle', { docked: false });
+  $d(k.u, '[data-control="return"]').click();
+  assert.deepEqual(roh(k.haus.rufe.at(-1)), { domain: 'vacuum', service: 'return_to_base', data: { entity_id: 'vacuum.robo' } });
+  k.sauger('paused', { docked: false, started: true, paused: true });
+  $d(k.u, '[data-control="resume"]').click();
+  assert.deepEqual(roh(k.haus.rufe.at(-1)), { domain: 'vacuum', service: 'start', data: { entity_id: 'vacuum.robo' } });
+});
+
+test('Fortsetzen während der Fahrt: erst Stopp, dann der core-Aufruf', async () => {
+  const k = ansicht();
+  await k.faehrt();
+  k.sauger('cleaning', { docked: false, started: true, paused: false, running: false });
+  $d(k.u, '[data-control="resume"]').click();
+  await k.antworte();
+  const namen = k.haus.rufe.map((r) => r.service);
+  assert.deepEqual(namen.slice(0, 2), [DIENST, DIENST]);
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', velocity: 0, rotation: 0 });
+  assert.ok(namen.includes('start'));
+});
+
+test('Layout: Hochformat Karte oben; Querformat am Handy Regler an den Rändern mit Safe Areas; Linkshänder gespiegelt', () => {
+  const k = ansicht('voll');
+  const kinder = $d(k.u, '.remote').childNodes.map((n) => n.className.split(' ')[0]);
+  assert.ok(kinder.indexOf('remote-map-wrap') < kinder.indexOf('remote-pad'), 'Karte vor den Reglern');
+  const css = k.I.DIALOG_STYLES;
+  const quer = css.match(/@media \(orientation: landscape\) and \(max-height: 500px\) \{([\s\S]*?)\n\}/);
+  assert.ok(quer, 'Querformat-Regel');
+  assert.match(quer[1], /\.remote-pad \{ display: contents; \}/);
+  assert.match(quer[1], /grid-template-areas: "speed info turn"/);
+  assert.match(quer[1], /safe-area-inset-left/);
+  assert.match(quer[1], /safe-area-inset-right/);
+  assert.match(css, /\.remote\[data-hand=left\]/);
+  assert.equal($d(k.u, '.remote').getAttribute('data-hand'), 'right');
+  const u = neueUmgebung(), haus = hausAus('voll');
+  const karte = neueKarte(u, haus, { left_handed: true });
+  karte.shadowRoot.querySelector('.menu-button').click();
+  eintrag(u, 'remote').click();
+  assert.equal($d(u, '.remote').getAttribute('data-hand'), 'left');
+});

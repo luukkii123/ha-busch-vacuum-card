@@ -450,6 +450,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             remoteStopp: 'Stopp',
             remotePraezision: 'Präzision',
             remoteHilfe: 'Tastatur: W/↑ vor, S/↓ zurück, A/← links, D/→ rechts, kombinierbar. Umschalt = langsamer, Strg = langsamer drehen (Strg+W und Strg+S bleiben beim Browser), Leertaste = Stopp, Escape = Stopp und zurück. Präzision halbiert Tempo und Drehen.',
+            remoteKeineKarte: 'Keine Karte — die Regler funktionieren trotzdem.',
+            remoteKeinePosition: 'Position des Roboters unbekannt — die Regler funktionieren trotzdem.',
             remoteTempo: 'Tempo',
             remoteLenken: 'Lenken',
             remoteMitte: 'Mitte',
@@ -1063,6 +1065,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             remoteStopp: 'Stop',
             remotePraezision: 'Precision',
             remoteHilfe: 'Keyboard: W/↑ forward, S/↓ back, A/← left, D/→ right, combinable. Shift = slower, Ctrl = slower turning (Ctrl+W and Ctrl+S stay with the browser), Space = stop, Escape = stop and back. Precision halves speed and turning.',
+            remoteKeineKarte: 'No map — the sticks still work.',
+            remoteKeinePosition: 'Robot position unknown — the sticks still work.',
             remoteTempo: 'Speed',
             remoteLenken: 'Steering',
             remoteMitte: 'centre',
@@ -9004,13 +9008,76 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     margin-top: var(--ha-space-1, 4px);
 }
 /* remote: sticks are thumb-sized tracks; the browser must not pan or zoom under them. */
+.remote {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ha-space-2, 8px);
+}
+.remote-info > p { margin: 0 0 var(--ha-space-1, 4px); overflow-wrap: anywhere; }
+.remote-state { font-weight: 600; }
+.remote-status { color: var(--secondary-text-color, #727272); }
+.remote[data-state=moving] .remote-status { color: var(--primary-text-color, #212121); }
+.remote-map-wrap { text-align: center; min-width: 0; }
+.remote-map {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    line-height: 0;
+    border-radius: 12px;
+    background: var(--secondary-background-color, #e5e5e5);
+}
+.remote-map-base {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 34vh;
+}
+.remote-marker {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+.remote-robot {
+    position: absolute;
+    left: -12px;
+    top: -12px;
+    width: 24px;
+    height: 24px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    background: var(--primary-color, #03a9f4);
+    border: 2px solid var(--card-background-color, #ffffff);
+}
+.remote-robot::after {
+    content: '';
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    margin-top: -5px;
+    border: 5px solid transparent;
+    border-left: 8px solid var(--primary-color, #03a9f4);
+}
 .remote-pad {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "speed turn" "holds holds";
     align-items: center;
     gap: var(--ha-space-3, 12px);
-    margin: var(--ha-space-3, 12px) 0;
+    margin: var(--ha-space-2, 8px) 0;
 }
+.remote-stick[data-axis=velocity] { grid-area: speed; }
+.remote-stick[data-axis=turn] { grid-area: turn; }
+.remote-holds { grid-area: holds; justify-self: center; }
+/* CORE-08: left-handed puts steering under the left thumb. */
+.remote[data-hand=left] .remote-pad { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "turn speed" "holds holds"; }
+.remote-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ha-space-2, 8px);
+}
+.remote-actions .busch-ui-action { min-height: 48px; }
 .remote-stick {
     position: relative;
     display: flex;
@@ -9044,7 +9111,7 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 }
 .remote-holds {
     display: grid;
-    grid-template-columns: repeat(2, 48px);
+    grid-template-columns: repeat(4, 48px);
     gap: var(--ha-space-2, 8px);
 }
 .remote-hold { min-width: 48px; min-height: 48px; touch-action: none; }
@@ -9055,6 +9122,25 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 }
 @media (prefers-reduced-motion: reduce) {
     .remote-knob { transition: none !important; }
+}
+/* Phones on their side: map in the middle, sticks at the edges under the thumbs, clear of notches. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .remote {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas: "speed info turn" "speed map turn" "speed holds turn" "speed actions turn";
+        align-items: center;
+        column-gap: var(--ha-space-4, 16px);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+    .remote[data-hand=left] { grid-template-areas: "turn info speed" "turn map speed" "turn holds speed" "turn actions speed"; }
+    .remote-pad { display: contents; }
+    .remote-info { grid-area: info; }
+    .remote-map-wrap { grid-area: map; }
+    .remote-actions { grid-area: actions; justify-content: center; }
+    .remote-map-base { max-height: 38vh; }
+    .remote-stick[data-axis=turn] { width: 168px; }
+    .remote-help { display: none; }
 }
 `;
 
@@ -11086,6 +11172,8 @@ function remoteView(card) {
         document[method]('visibilitychange', onVisibility);
         document[method]('keydown', onKey);
         document[method]('keyup', onKey);
+        if (on) ctl.mapEl = card._map ? card._map.el : null;
+        if (ctl.mapEl) ctl.mapEl[method]('map-frame', onFrame);
     };
     view.leave = () => {
         ctl.armed = false;
@@ -11112,6 +11200,7 @@ function remoteView(card) {
         p.arm.hidden = ctl.armed;
         p.arm.disabled = !!ctl.block;
         p.precision.setAttribute('aria-checked', String(ctl.precision));
+        paintControls();
         for (const one of ctl.sticks) one.show();
     };
     const line = (cls, role) => {
@@ -11205,9 +11294,70 @@ function remoteView(card) {
         ctl.holds.push(() => { pointer = null; });
         return button;
     };
+    /**
+     * The live map (REM-03): no second MapView. The picture is the one MapView's
+     * own — the same entity_picture URL (browser cache, no fetch of its own) or a
+     * copy of its painted canvas in data mode — and the marker sits at
+     * MapView.toImage(vacuum_position) in % of that picture, moved by transform only (R20).
+     */
+    const paintMap = (frameChanged) => {
+        const p = ctl.parts, m = card._map;
+        const ready = !!(m && m._showsMap() && m._image && m._imageState === 'ready' && m._size.width && m._size.height);
+        const pos = ready ? m._attrs().vacuum_position : null;
+        const at = pos ? m.toImage(pos) : null;
+        p.map.hidden = !ready;
+        p.mapNote.hidden = !!at;
+        p.mapNote.textContent = !ready ? text('remoteKeineKarte') : at ? '' : text('remoteKeinePosition');
+        if (!ready) return;
+        const source = m._image, canvas = source.tagName === 'CANVAS';
+        if (!p.base || (p.base.tagName === 'CANVAS') !== canvas) {
+            const base = document.createElement(canvas ? 'canvas' : 'img');
+            base.className = 'remote-map-base';
+            if (!canvas) base.setAttribute('alt', ''); // the state line and the sticks say what matters; the map is orientation
+            else base.setAttribute('aria-hidden', 'true');
+            if (p.base) p.base.remove();
+            p.map.insertBefore(base, p.marker);
+            p.base = base;
+            ctl.copied = null;
+        }
+        if (canvas && (frameChanged || ctl.copied !== source)) {
+            p.base.width = source.width;
+            p.base.height = source.height;
+            const ctx = typeof p.base.getContext === 'function' ? p.base.getContext('2d') : null;
+            if (ctx) ctx.drawImage(source, 0, 0);
+            ctl.copied = source;
+        } else if (!canvas && p.base.getAttribute('src') !== source.getAttribute('src')) p.base.setAttribute('src', source.getAttribute('src'));
+        p.marker.hidden = !at;
+        if (!at) return;
+        const a = (Number(pos.a) || 0) * Math.PI / 180;
+        const ahead = m.toImage({ x: pos.x + 100 * Math.cos(a), y: pos.y + 100 * Math.sin(a) });
+        p.marker.style.transform = 'translate(' + (at.x / m._size.width * 100).toFixed(2) + '%, ' + (at.y / m._size.height * 100).toFixed(2) + '%)';
+        p.robot.style.transform = 'rotate(' + Math.round(Math.atan2(ahead.y - at.y, ahead.x - at.x) * 180 / Math.PI) + 'deg)';
+    };
+    const onFrame = () => paintMap(true);
+    /** Resume / return to the station by state, with core's CONTROLS and _call (R01); a held move stops first. */
+    const control = (name) => {
+        const button = BuschUI.action({ label: text(name), text: text(name), icon: CONTROLS[name].icon, variant: name === 'resume' ? 'primary' : 'secondary', onClick: () => {
+            halt();
+            const model = card._model();
+            card._call(name, model.state);
+        } });
+        button.setAttribute('data-control', name);
+        return button;
+    };
+    const paintControls = () => {
+        const p = ctl.parts, model = card._model(), real = model.state;
+        const state = real ? real.state : null;
+        p.state.textContent = real ? formatState(hass(), real) : '';
+        const docked = model.attr('docked') !== undefined ? model.attr('docked') === true : state === 'docked';
+        const begun = model.attr('started') === true && model.attr('running') !== true && state !== 'returning';
+        p.resume.hidden = !(model.can(CONTROLS.resume.feature) && (state === 'paused' || model.attr('paused') === true || begun));
+        p.back.hidden = !(model.can(CONTROLS.return.feature) && !docked && state !== 'returning' && !UNUSABLE.includes(state));
+    };
     const build = () => {
         const root = document.createElement('div');
         root.className = 'remote';
+        root.setAttribute('data-hand', card._opts.left_handed ? 'left' : 'right');
         const p = ctl.parts;
         p.warning = line('remote-warning form-note');
         p.warning.setAttribute('data-kind', 'warning');
@@ -11228,10 +11378,10 @@ function remoteView(card) {
         const holds = document.createElement('div');
         holds.className = 'remote-holds';
         const half = REMOTE.deadzone + (1 - REMOTE.deadzone) / 2; // 50 % after the dead zone
-        holds.append(hold('forward', 'mdi:arrow-up-bold', { v: half }), hold('left', 'mdi:rotate-left', { t: half }),
-            hold('right', 'mdi:rotate-right', { t: -half }), hold('backward', 'mdi:arrow-down-bold', { v: -half }));
+        holds.append(hold('forward', 'mdi:arrow-up-bold', { v: half }), hold('backward', 'mdi:arrow-down-bold', { v: -half }),
+            hold('left', 'mdi:rotate-left', { t: half }), hold('right', 'mdi:rotate-right', { t: -half }));
         p.velocity = stick('velocity');
-        pad.append(p.velocity, holds, stick('turn'));
+        pad.append(p.velocity, stick('turn'), holds);
         p.precision = BuschUI.action({ label: text('remotePraezision'), text: text('remotePraezision'), icon: 'mdi:tortoise', variant: 'quiet', onClick: () => {
             ctl.precision = !ctl.precision;
             if (ctl.sources.size) drive();
@@ -11242,7 +11392,27 @@ function remoteView(card) {
         actions.appendChild(p.precision);
         p.help = line('remote-help');
         p.help.textContent = text('remoteHilfe');
-        root.append(p.warning, p.status, p.blocked, p.note, pad, actions, p.help);
+        const info = document.createElement('div');
+        info.className = 'remote-info';
+        p.state = line('remote-state');
+        info.append(p.state, p.warning, p.status, p.blocked, p.note);
+        const wrap = document.createElement('div');
+        wrap.className = 'remote-map-wrap';
+        p.map = document.createElement('div');
+        p.map.className = 'remote-map';
+        p.marker = document.createElement('div');
+        p.marker.className = 'remote-marker';
+        p.marker.setAttribute('aria-hidden', 'true');
+        p.robot = document.createElement('span');
+        p.robot.className = 'remote-robot';
+        p.marker.appendChild(p.robot);
+        p.map.appendChild(p.marker);
+        p.mapNote = line('remote-map-note form-note', 'status');
+        wrap.append(p.map, p.mapNote);
+        p.resume = control('resume');
+        p.back = control('return');
+        actions.append(p.resume, p.back);
+        root.append(info, wrap, pad, actions, p.help);
         ctl.root = root;
     };
 
@@ -11251,6 +11421,7 @@ function remoteView(card) {
         if (block && !ctl.block && (ctl.armed || ctl.moving)) disarm(block === 'connection' ? text('remoteVerbindung') : null);
         ctl.block = block;
         paint();
+        paintMap(false);
     };
     view.render = (body, h, dialog) => {
         ctl.dialog = dialog;
