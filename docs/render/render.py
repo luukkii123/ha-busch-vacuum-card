@@ -284,6 +284,15 @@ def scenario(fixture, name):
                           "suction_level": 2, "water_volume": 2, "options": None}],
             "maps": [{"id": 3, "index": 1, "name": "Karte 1", "custom_name": None}, {"id": 7, "index": 2, "name": "Karte 2", "custom_name": None}],
             "map_count": 2, "filter_left": 21})
+    elif name == "shortcuts":
+        # shortcuts: the X40 has none live; synthetic entries in the source's data form (device.py#L11076), one script.
+        vac["attributes"]["shortcuts"] = {
+            "32": {"id": 32, "index": 1, "name": "Gewächshaus nach dem Gießen mit sehr langem Namen 🍝", "map_id": 3, "running": False, "tasks": []},
+            "30": {"id": 30, "index": 0, "name": "Galerie", "running": True, "tasks": []},
+            "31": {"id": 31, "index": 2, "name": "Turmzimmer", "map_id": 7, "running": False, "tasks": []}}
+        vac["attributes"].update({"maps": [{"id": 3, "index": 1, "name": "Karte 1", "custom_name": None}, {"id": 7, "index": 2, "name": "Karte 2", "custom_name": None}],
+                                  "selected_map": "Karte 1"})
+        states["script.abendrunde"] = {"entity_id": "script.abendrunde", "state": "off", "attributes": {"friendly_name": "Abendrunde"}}
     elif name == "error":
         vac["state"] = "error"
         vac["attributes"].update({"has_error": True, "error": "Wheel stuck", "charging": False})
@@ -302,7 +311,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     repo_root = card_file.parent.parent
     fixture = json.loads((repo_root / "tests" / "fixtures" / "voll.json").read_text(encoding="utf-8"))
-    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings")}
+    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts")}
     cam = fixture["states"]["camera.robo_map"]["attributes"]
     grid = synthetic_map_data(cam["rooms"], frame_id=cam["frame_id"])
     svg, svg_size = synthetic_map_svg(cam, grid)
@@ -874,6 +883,59 @@ def main():
               keys == {"active": "empty", "selected": "empty", "stored": "empty"} and back == "menu", json.dumps({"keys": keys, "back": back}))
 
         # ------------------------------------------------------------------
+        # 3e. Shortcuts (shortcuts Task 4): button, menu, management, rename,
+        #     delete confirmation — synthetic shortcuts, no service call
+        # ------------------------------------------------------------------
+        short_config = {"scripts": ["script.abendrunde"]}
+        short_open = """(steps) => { window.closeDialogs();
+            const knopf = window.card().shadowRoot.querySelector('[data-action=shortcuts]'); if (!knopf) return 'missing shortcuts button'; knopf.click();
+            const sr = () => window.dialog().shadowRoot;
+            for (const sel of steps) { const n = sr().querySelector(sel); if (!n) return 'missing ' + sel; n.click(); }
+            return sr().querySelector('h1').textContent; }"""
+        short_views = [
+            ("menue", []),
+            ("verwaltung", ["[data-action=manage]"]),
+            ("umbenennen", ["[data-action=manage]", "[data-manage='32'] [data-action=rename]"]),
+            ("loeschen", ["[data-action=manage]", "[data-manage='31'] [data-action=delete]"]),
+        ]
+        build("shortcuts", config=short_config)
+        page.wait_for_timeout(150)
+        short_button = page.evaluate("""() => { const b = window.card().shadowRoot.querySelector('[data-action=shortcuts]'); if (!b) return null; const r = b.getBoundingClientRect();
+            return { popup: b.getAttribute('aria-haspopup'), text: b.textContent, h: r.height, w: r.width,
+                     beforeDock: Array.from(b.parentNode.children).indexOf(b) < Array.from(b.parentNode.children).indexOf(b.parentNode.querySelector('.dock')) }; }""")
+        check("shortcuts button: 44 px, menu popup, text, ahead of the station", bool(short_button) and short_button["popup"] == "menu"
+              and short_button["h"] >= 44 and "Shortcuts" in short_button["text"] and short_button["beforeDock"], json.dumps(short_button))
+        short_geo = []
+        for w, h in ((360, 640), (390, 844), (800, 600), (1280, 800)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                for label, steps in short_views:
+                    build("shortcuts", config=short_config)
+                    page.wait_for_timeout(150)
+                    title = page.evaluate(short_open, steps)
+                    page.wait_for_timeout(550)
+                    g = page.evaluate("""() => { const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet'), r = sheet.getBoundingClientRect();
+                        const fields = Array.from(sr.querySelectorAll('select, input')).filter((n) => n.getBoundingClientRect().height > 0 && n.getBoundingClientRect().height < 44).length;
+                        return { kind: sheet.getAttribute('data-kind'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, W: innerWidth, H: innerHeight,
+                                 overflowX: sheet.scrollWidth - sheet.clientWidth, small: window.smallTargets(sr), smallFields: fields,
+                                 entries: Array.from(sr.querySelectorAll('[data-shortcut]')).map((n) => n.getAttribute('data-shortcut')),
+                                 rows: sr.querySelectorAll('[data-manage]').length }; }""")
+                    if (w, th) in ((360, "light"), (1280, "dark")):
+                        shot(f"shortcuts-{label}-{w}x{h}-{th}.png")
+                    page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                    short_geo.append({"label": label, "w": w, "h": h, "theme": th, "title": title, **g})
+        report["shortcutDialogs"] = short_geo
+        bad = [x for x in short_geo if not inside(x) or x["small"] or x["smallFields"] or x["overflowX"] > 1 or str(x["title"]).startswith("missing")]
+        check("shortcuts: menu, management, rename and delete x 4 sizes x 2 themes inside the viewport, no sideways overflow, 44 px buttons and fields",
+              not bad, json.dumps(bad[:4]))
+        by = {x["label"]: x for x in short_geo if x["w"] == 390 and x["theme"] == "light"}
+        check("shortcuts: scripts first, shortcuts by index, management rows, rename form, delete confirmation",
+              by["menue"]["kind"] == "menu" and by["menue"]["entries"] == ["script:script.abendrunde", "device:30", "device:32", "device:31"]
+              and by["verwaltung"]["rows"] == 3 and by["umbenennen"]["kind"] == "editor" and by["loeschen"]["kind"] == "confirm",
+              json.dumps({k: {"title": v["title"], "kind": v["kind"], "entries": v["entries"], "rows": v["rows"]} for k, v in by.items()}))
+
+        # ------------------------------------------------------------------
         # 4. HACS UI rules 1 and 2 (hacs/docs/ui-regeln.md)
         # ------------------------------------------------------------------
         report["uiRegeln"] = {}
@@ -950,6 +1012,24 @@ def main():
                     messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
                     vor_messung=lambda pg: (build("docked"), page.wait_for_timeout(150)))
                 page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            for label, steps, kind in (("shortcut_menue", [], "ansicht"), ("shortcut_verwaltung", ["[data-action=manage]"], "bearbeitung"),
+                                       ("shortcut_umbenennen", ["[data-action=manage]", "[data-manage='32'] [data-action=rename]"], "bearbeitung"),
+                                       ("shortcut_loeschen", ["[data-action=manage]", "[data-manage='31'] [data-action=delete]"], "bestaetigung")):
+                opener = lambda st=steps: page.evaluate(short_open, st)
+                r["regel1_dialog_" + label] = lauf_breiten(
+                    page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, ".sheet"),
+                    vor_messung=lambda pg, o=opener: (build("shortcuts", config=short_config), page.wait_for_timeout(150), o(), page.wait_for_timeout(350)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                if steps:
+                    continue
+                r["regel2_dialog_" + label] = lauf_breiten(
+                    page, breiten=(390, 960), hoehe=900,
+                    messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
+                    vor_messung=lambda pg: (build("shortcuts", config=short_config), page.wait_for_timeout(150)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            r["regel1_karte_shortcuts"] = lauf_breiten(
+                page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
+                vor_messung=lambda pg: (build("shortcuts", config=short_config), page.wait_for_timeout(200)))
             r["regel1_karte_floors"] = lauf_breiten(
                 page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
                 vor_messung=lambda pg: (build("floors"), page.wait_for_timeout(200)))

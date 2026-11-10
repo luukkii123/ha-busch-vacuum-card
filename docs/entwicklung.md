@@ -162,6 +162,23 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 - Letzter Reiter: `localStorage` `busch-vacuum-card:dock-tab:<entity>`; ohne
   Speicher erster Reiter.
 
+## Shortcuts (Modul shortcuts)
+
+- Eine Liste `shortcutEntries(hass, model, scripts)` → `{ kind: 'script'|'device',
+  id, name, icon, running, mapId }`: Scripts der Konfiguration (fehlende
+  ausgelassen, der Editor nennt sie), dann Attribut `shortcuts` nach `index`.
+  Menü und Verwaltung lesen nur diese Liste; ein Startweg `startShortcut`
+  (`vacuum_start_shortcut { entity_id, shortcut_id }` bzw. `script.turn_on`),
+  nie `vacuum.stop`/`pause` davor (TASK-07).
+- `can('shortcuts')` = Fähigkeit + `vacuum_start_shortcut`; `can('shortcut_manage')`
+  zusätzlich `vacuum_rename_shortcut` und `vacuum_delete_shortcut`.
+- Sperren: Start bei `draining` (device.py#L5281; Selbstreparatur meldet nur
+  der Dienst), Umbenennen während einer Aufgabe (device.py#L6321), Löschen
+  solange der Shortcut läuft. Neu laden = `vacuum_call_action reload_shortcuts`,
+  auch ohne Shortcuts über Geräteeinstellungen → Sonstiges erreichbar.
+- Live hat das X40 keine Shortcuts: Tests und Render mit synthetischen
+  Einträgen in der Datenform der Quelle (device.py#L11076, types.py#L5099).
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):
@@ -227,6 +244,29 @@ echten HA-Selektoren. Die Abnahme mit `karten-alle.sh` und E2E läuft einmal
 am Ende aller Module.
 
 ## Geprüft
+
+**10.11.2026 · 0.1.0, Module dock und shortcuts (#882, je Tasks 1–4, nicht getaggt)**
+
+1. `node --check` grün; `node --test` 320/320 (25 Tests `tests/station.test.js`,
+   15 `tests/shortcuts.test.js`, Korrektur Zeitplan/DnD in `einstellungen.test.js`).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. `render.py`: 37/37 Prüfungen, UI-Regeln 0 Verstöße, 0 Konsolen-/Seitenfehler,
+   0 Fremdanfragen, 0 Dienstaufrufe ohne Klick. Gefunden und behoben: die
+   Station-Ansicht wurde mit 19 Statuswerten über 2000 px lang (Regel 1) — jetzt
+   nur Probleme offen, der Rest eingeklappt; in der Shortcut-Verwaltung stand
+   der Starten-Eintrag als Spalte und schnitt lange Namen links ab, lange Namen
+   im Menü wurden abgeschnitten (jetzt Zeile bzw. Umbruch); Symbol von „Neu
+   laden“ stand hinter dem Text. Bilder gesichtet. Grenze: Shortcuts nur
+   synthetisch (live keine).
+4. Live lesend (`GET /api/states`): echte Attribute des X40 in der Karte —
+   Station: alle `can()`-Werte, 16 Zeilen mit gleichen Werten, Sperren
+   Wassertemperatur/Selbstreinigungszeit, 19 Statuswerte in Ordnung;
+   Shortcuts: Fähigkeit da, `shortcuts: {}`, kein Knopf (richtig), Verwalten über
+   Geräteeinstellungen → Sonstiges. Keine Aktion, kein Start, keine Schreibprobe.
+5. Live-Schreibproben mit Nutzer-OK (Koordinator, 10.11.2026): Kindersicherung
+   1→0 geht; Zeitplan `1-1-14:51-0101000-1-0-0-146-0` zurückgeschrieben →
+   Attribut gleich (Wochentage positionsweise ab Sonntag belegt); zweiter
+   DnD-Zeitraum vom Gerät abgelehnt → Karte bearbeitet nur vorhandene.
 
 **10.11.2026 · 0.1.0, Modul device-settings (#882, Tasks 1–11, nicht getaggt)**
 

@@ -160,6 +160,22 @@ mop washing chooses it). Every action goes through
 `dreame_vacuum.vacuum_call_action`, every setting through
 `vacuum_set_property`, so disabled station entities stay usable.
 
+## Shortcuts
+
+The *Shortcuts* button (ahead of the station button) appears once there is
+something to start: scripts from the option `scripts` (listed first) and the
+shortcuts saved on the device (in the order of the Dreame app). A tap starts
+the entry at once — `script.turn_on` or `dreame_vacuum.vacuum_start_shortcut`
+— also while a task is running; the card never stops or pauses that task
+first, the robot decides. While the station drains water no shortcut starts.
+
+*Manage* (also under *Device settings → Other*) lists the device's shortcuts
+to start, rename and delete (with confirmation), and *Reload* fetches them
+from the device again. Shortcuts are created and edited (rooms, order,
+settings) only in the Dreame app; the integration offers no service for that.
+Hide the button with `hidden_card_objects: shortcuts`. A configured script
+that Home Assistant does not know is left out, and the editor names it.
+
 ## Theming
 
 The card follows your Home Assistant theme. These optional theme variables

@@ -5235,7 +5235,7 @@ function shortcutManageView(card) {
                 row.className = 'setting';
                 row.setAttribute('data-manage', String(entry.id));
                 const start = shortcutItem(card, model, hass, entry);
-                start[0].classList.add('setting-text');
+                start[0].classList.add('manage-start');
                 row.append(...start);
                 const rename = BuschUI.action({ label: translate(hass, 'umbenennen') + ': ' + entry.name, icon: 'mdi:pencil-outline', variant: 'icon-only',
                     onClick: () => dialog.show(shortcutRenameView(card, entry)) });
@@ -6407,6 +6407,23 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 }
 .station-values {
     margin: 0 0 var(--ha-space-3, 12px);
+}
+/* Shortcut names come from the app and can be long: they wrap instead of being cut. */
+.menu-item[data-shortcut] {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.manage-start {
+    flex: 1 1 10em;
+    min-width: 0;
+}
+.actions [data-action=reload] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-2, 8px);
+}
+.actions [data-action=reload] ha-icon {
+    order: -1;
 }
 .station-values summary {
     min-height: 44px;
