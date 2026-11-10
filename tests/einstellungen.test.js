@@ -733,3 +733,49 @@ test('Kartenwahl über MapView.selectMap mit der Bestätigung von core (CORE-20)
   $d(k.u, '[data-action="confirm"]').click();
   assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_select_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
 });
+
+// ── Task 8: Zubehör und Wartung (ALL-11, DEV-09) ────────────────────────────
+
+function zubehoer(attribute) {
+  const k = aufbau('voll', { attribute });
+  menue(k);
+  eintrag(k.u, 'consumables').click();
+  return k;
+}
+const teil = (k, name) => $d(k.u, `[data-part="${name}"]`);
+
+test('Feste Zuordnung statt Regex: dust_bag_drying_left und drying_left zählen nicht als Verbrauchsteil', () => {
+  const k = aufbau('voll', { attribute: { dust_bag_drying_left: 5, track_cleaning_left: 40 } });
+  assert.deepEqual(roh(k.model().consumables()), { main_brush_left: 84, side_brush_left: 98, filter_left: 69, sensor_dirty_left: 88, track_cleaning_left: 40 });
+  menue(k);
+  assert.equal(eintrag(k.u, 'consumables').querySelector('.badge'), null, 'kein Badge durch die Staubbeutel-Trocknung');
+});
+
+test('Zubehör: Rest-% und Restzeit je Teil (HA-Einheiten), Summen', () => {
+  const k = zubehoer();
+  assert.equal($d(k.u, 'h1').textContent, 'Zubehör');
+  assert.deepEqual($$d(k.u, '[data-part]').map((z) => z.getAttribute('data-part')), ['main_brush', 'side_brush', 'filter', 'sensor_dirty']);
+  assert.match(teil(k, 'filter').textContent, /69 %/);
+  assert.match(teil(k, 'filter').textContent, /104 h/);
+  assert.match($d(k.u, '[data-info="total_cleaned_area"]').textContent, /21901 m²/);
+  for (const key of ['total_cleaning_time', 'total_runtime', 'total_cruise_time', 'cleaning_count', 'first_cleaning_date']) assert.ok($d(k.u, `[data-info="${key}"]`), key);
+});
+
+test('Zurücksetzen nur unter 100 %, Bestätigung nennt Teil und Restwert → vacuum_reset_consumable', () => {
+  const k = zubehoer({ side_brush_left: 100 });
+  assert.equal(teil(k, 'side_brush').querySelector('[data-action="reset"]').disabled, true);
+  teil(k, 'sensor_dirty').querySelector('[data-action="reset"]').click();
+  assert.equal(dialogVon(k.u).shadowRoot.querySelector('.sheet').getAttribute('data-kind'), 'confirm');
+  assert.match($d(k.u, '.body').textContent, /Sensor dirty/);
+  assert.match($d(k.u, '.body').textContent, /88 %/);
+  assert.deepEqual(k.haus.rufe, []);
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_reset_consumable', data: { entity_id: 'vacuum.robo', consumable: 'sensor' } }]);
+});
+
+test('Spurreinigung: Zurücksetzen über vacuum_call_action reset_track_cleaning', () => {
+  const k = zubehoer({ track_cleaning_left: 40 });
+  teil(k, 'track_cleaning').querySelector('[data-action="reset"]').click();
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_call_action', data: { entity_id: 'vacuum.robo', key: 'reset_track_cleaning' } }]);
+});

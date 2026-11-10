@@ -558,6 +558,16 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             eingabenBleiben: 'Deine Eingaben bleiben erhalten.',
             taeglich: 'Täglich',
             bestaetigenTitel: '{name} ändern?',
+            rest: 'Noch {prozent} · {zeit}',
+            zuruecksetzen: 'Zurücksetzen',
+            zuruecksetzenVon: '{name} zurücksetzen',
+            zuruecksetzenTitel: '{name} zurücksetzen?',
+            zuruecksetzenFrage: '{name} zurücksetzen? Aktuell noch {prozent}; danach zählt das Gerät wieder ab 100 %. Nur nach dem Tausch oder der Reinigung des Teils.',
+            schonVoll: 'Steht schon auf 100 %.',
+            summen: 'Summen',
+            set_total_runtime: 'Gesamtlaufzeit',
+            set_total_cruise_time: 'Gesamte Cruising-Zeit',
+            set_track_cleaning_left: 'Spurreinigung',
             frage_map_rotation: 'Die gespeicherte Karte des Roboters auf {wert} drehen? Das ändert die Karte im Gerät, nicht nur die Anzeige.',
             aendern: 'Ändern',
             einmalig: 'Einmalig',
@@ -907,6 +917,16 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             eingabenBleiben: 'Your input is kept.',
             taeglich: 'Daily',
             bestaetigenTitel: 'Change {name}?',
+            rest: '{prozent} left · {zeit}',
+            zuruecksetzen: 'Reset',
+            zuruecksetzenVon: 'Reset {name}',
+            zuruecksetzenTitel: 'Reset {name}?',
+            zuruecksetzenFrage: 'Reset {name}? Currently {prozent} left; afterwards the device counts from 100 % again. Only after replacing or cleaning the part.',
+            schonVoll: 'Already at 100 %.',
+            summen: 'Totals',
+            set_total_runtime: 'Total runtime',
+            set_total_cruise_time: 'Total cruising time',
+            set_track_cleaning_left: 'Track cleaning',
             frage_map_rotation: 'Rotate the robot’s stored map to {wert}? This changes the map in the device, not only the display.',
             aendern: 'Change',
             einmalig: 'Once',
@@ -1311,6 +1331,20 @@ function findRelated(hass, entityId) {
 }
 
 /**
+ * Consumables: attribute `<name>_left` → what `vacuum_reset_consumable`
+ * takes (vacuum.py#L129, #L809); `null` = reset through the action
+ * `reset_track_cleaning` (types.py:1585). `dust_bag_drying_left` and
+ * `drying_left` are dock countdowns, no consumables (spec device-settings).
+ */
+const CONSUMABLES = {
+    main_brush: 'main_brush', side_brush: 'side_brush', filter: 'filter', tank_filter: 'tank_filter', mop_pad: 'mop_pad',
+    silver_ion: 'silver_ion', detergent: 'detergent', squeegee: 'squeegee', onboard_dirty_water_tank: 'onboard_dirty_water_tank',
+    deodorizer: 'deodorizer', scale_inhibitor: 'scale_inhibitor', washboard_cleaning: 'washboard_cleaning',
+    sensor_dirty: 'sensor', dirty_water_channel_dirty: 'dirty_water_channel', wheel_dirty: 'wheel', fluffing_roller_dirty: 'fluffing_roller',
+    roller_mop_filter_dirty: 'roller_mop_filter', water_outlet_filter_dirty: 'water_outlet_filter', track_cleaning: null
+};
+
+/**
  * What the device can do. `can()` is the ONE place every part of the card
  * asks (spec: Boundaries) — from the vacuum's `capabilities`, its feature
  * bits, the entities found and the services Home Assistant offers.
@@ -1331,12 +1365,14 @@ class VacuumModel {
         return this.related.device[key] || null;
     }
 
-    /** Consumables left in percent by attribute (`main_brush_left` …), without the `_time_left` ones. */
+    /** Consumables left in percent (`main_brush_left` …), by the fixed table CONSUMABLES. */
     consumables() {
-        const attributes = (this.state && this.state.attributes) || {};
-        return Object.fromEntries(Object.entries(attributes)
-            .filter(([name, value]) => /_left$/.test(name) && !/_time_left$|^drying_left$/.test(name) && Number.isFinite(Number(value)))
-            .map(([name, value]) => [name, Number(value)]));
+        const found = [];
+        for (const name of Object.keys(CONSUMABLES)) {
+            const value = this.attr(name + '_left');
+            if (value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value))) found.push([name + '_left', Number(value)]);
+        }
+        return Object.fromEntries(found);
     }
 
     /** A value of the vacuum itself — also for settings whose entity is disabled. */
@@ -1594,8 +1630,12 @@ function settingState(card, model, key) {
  * (`set_<key>`, only for what has no entity), else the key in words.
  */
 function settingLabel(hass, key) {
-    const def = SETTINGS[key];
-    const id = 'component.dreame_vacuum.entity.' + def.platform + '.' + key + '.name';
+    return entityLabel(hass, SETTINGS[key].platform, key);
+}
+
+/** An entity's name from the integration's HA translation, else `set_<key>` of the card, else the key in words. */
+function entityLabel(hass, platform, key) {
+    const id = 'component.dreame_vacuum.entity.' + platform + '.' + key + '.name';
     const fromHa = hass && typeof hass.localize === 'function' ? hass.localize(id) : '';
     if (fromHa && fromHa !== id) return fromHa;
     const own = translate(hass, 'set_' + key);
@@ -4144,9 +4184,83 @@ function dndDelete(card, task) {
     };
 }
 
+/** Consumable parts (DEV-09): left in % and time, reset with a confirmation naming part and value (R13). */
+function consumableParts(card, model, body, hass, dialog) {
+    const list = document.createElement('div');
+    list.className = 'settings-list';
+    for (const [attribute, left] of Object.entries(model.consumables())) {
+        const name = attribute.slice(0, -'_left'.length);
+        const label = entityLabel(hass, 'sensor', attribute);
+        const row = document.createElement('div');
+        row.className = 'setting';
+        row.setAttribute('data-part', name);
+        const text = document.createElement('div');
+        text.className = 'setting-text';
+        const caption = document.createElement('span');
+        caption.className = 'setting-name';
+        caption.textContent = label;
+        const percent = statText(hass, model, 'sensor.' + attribute, attribute, '%');
+        const time = statText(hass, model, 'sensor.' + name + '_time_left', name + '_time_left', 'h');
+        const status = document.createElement('span');
+        status.className = 'setting-status';
+        const note = card._settingNotes.get('reset:' + name);
+        status.textContent = card._settingWrites.has('reset:' + name) ? translate(hass, 'speichert') : note || translate(hass, 'rest', { prozent: percent, zeit: time || '–' });
+        row.setAttribute('data-state', note ? 'error' : left < 30 ? 'low' : 'ok');
+        text.append(caption, status);
+        const full = left >= 100;
+        // At 100 % the integration refuses the reset (ACTION_AVAILABILITY, types.py#L2308).
+        const reset = BuschUI.action({ label: translate(hass, 'zuruecksetzenVon', { name: label }), text: translate(hass, 'zuruecksetzen'), disabled: full || card._settingWrites.has('reset:' + name), onClick: () => dialog.show(resetConfirm(card, name, label, percent)) });
+        reset.setAttribute('data-action', 'reset');
+        if (full) reset.title = translate(hass, 'schonVoll');
+        row.append(text, reset);
+        list.appendChild(row);
+    }
+    body.appendChild(list);
+    const sums = document.createElement('div');
+    sums.className = 'settings-list';
+    for (const key of ['total_cleaned_area', 'total_cleaning_time', 'total_runtime', 'total_cruise_time', 'cleaning_count', 'first_cleaning_date']) {
+        const value = statText(hass, model, 'sensor.' + key, key, SUM_UNITS[key] || '');
+        if (value !== null) sums.appendChild(infoRow(entityLabel(hass, 'sensor', key), String(value).trim(), key));
+    }
+    if (sums.childNodes.length) {
+        const heading = document.createElement('h2');
+        heading.className = 'settings-heading';
+        heading.textContent = translate(hass, 'summen');
+        body.append(heading, sums);
+    }
+}
+
+/** Units of the attribute fallback; the sensors bring HA's own. */
+const SUM_UNITS = { total_cleaned_area: 'm²', total_cleaning_time: 'min' };
+
+function resetConfirm(card, name, label, percent) {
+    return {
+        title: translate(card._hass, 'zuruecksetzenTitel', { name: label }),
+        kind: 'confirm',
+        watch: () => [],
+        render: (body, hass, dialog) => {
+            body.appendChild(noteLine(translate(hass, 'zuruecksetzenFrage', { name: label, prozent: percent })));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            cancel.setAttribute('data-action', 'cancel');
+            const go = BuschUI.action({ label: translate(hass, 'zuruecksetzen'), text: translate(hass, 'zuruecksetzen'), variant: 'destructive', onClick: () => {
+                const consumable = CONSUMABLES[name];
+                if (consumable === null) callAction(card, 'reset_track_cleaning', undefined, { track: 'reset:' + name, label });
+                else trackWrite(card, 'reset:' + name, { label, call: () => card._hass.callService('dreame_vacuum', 'vacuum_reset_consumable', { entity_id: card._opts.entity, consumable }) });
+                dialog._goBack();
+            } });
+            go.setAttribute('data-action', 'confirm');
+            actions.append(cancel, go);
+            body.appendChild(actions);
+        }
+    };
+}
+
 /** What groups show above their rows. */
 const GROUP_HEAD = {
-    dnd: dndPeriods
+    dnd: dndPeriods,
+    consumables: consumableParts
 };
 
 /** What groups show beyond their rows. */
@@ -5316,6 +5430,12 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 }
 .field-label {
     overflow-wrap: anywhere;
+}
+.settings-heading {
+    margin: var(--ha-space-4, 16px) 0 0;
+    font-size: var(--ha-font-size-m, 14px);
+    font-weight: var(--ha-font-weight-medium, 500);
+    color: var(--secondary-text-color, #727272);
 }
 .floor-preview {
     flex: none;
