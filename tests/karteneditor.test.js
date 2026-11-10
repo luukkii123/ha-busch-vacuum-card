@@ -1605,3 +1605,42 @@ test('EDI-05 Zielpunkte: nur mit cruising, höchstens 20, nur auf befahrbarer Fl
   stift(k3).click();
   assert.equal(werkzeug(k3, 'points'), null);
 });
+
+// ── Fix nach Task 9: Teppich-Reinigung entfernter Teppiche, R01-Namen ───────
+
+test('EDI-05 Teppich erst in der Reinigung geändert, dann entfernt: kein vacuum_set_custom_carpet_cleaning für die alte ID, auch nicht für neue (−1)', async () => {
+  const { k, d } = await teppiche();
+  eintrag(k, 'carpets', 1).click();
+  waehle(k, feldE(k, 'carpet-cleaning'), 3);
+  assert.deepEqual(roh(k.karte._mapEdit.lists().carpet_cleanings[1]), ['1:5', 5, 1, 3, null]);
+  $d(k.u, '[data-action="edit-remove"]').click();
+  $d(k.u, '[data-action="edit-add"]').click();
+  assert.deepEqual(roh(k.karte._mapEdit.lists().carpets.map((e) => e[4])), [4, -1]);
+  $d(k.u, '[data-action="save"]').click();
+  assert.doesNotMatch(d.shadowRoot.textContent, /Reinigung/, 'keine Bestätigungszeile für den entfernten Teppich');
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_carpet_area']);
+  // Rein: ohne den Teppich in der Liste kein Aufruf; mit ihm genau seiner.
+  const base = k.I.editLists(k.karte._map.current().objects, k.I.editData(bearbeitungsdaten()));
+  const nach = roh(base);
+  nach.carpet_cleanings[1] = ['1:5', 5, 1, 3, null];
+  assert.deepEqual(roh(k.I.groupCalls('carpet_cleaning', nach, 2, base)), [{ service: 'vacuum_set_custom_carpet_cleaning', data: { id: [5], object_type: [1], carpet_cleaning: [3] } }]);
+  nach.carpets = [nach.carpets[0], [600, 600, 900, 800, -1, 1, 5]];
+  assert.deepEqual(roh(k.I.groupCalls('carpet_cleaning', nach, 2, base)), [], 'id 5 nicht mehr da (neuer Teppich −1 an ihrer Stelle)');
+});
+
+test('EDI-05 R01/R26: Wischverbotszone(n) heißen in Kartenansicht (Ebene, Farbe) und Editor gleich', () => {
+  const k = aufbau();
+  const de = k.I.TEXTE.de, en = k.I.TEXTE.en;
+  assert.equal(de.texte.mapobj_no_mopping_areas, 'Wischverbotszonen');
+  assert.equal(de.labels.no_mop, 'Wischverbotszone');
+  assert.match(de.helpers.no_mop, /Wischverbotszonen/);
+  for (const lang of [de, en]) {
+    const alles = JSON.stringify(lang);
+    assert.equal(lang.texte.kartenObj_no_mopping_areas === undefined || lang.texte.kartenObj_no_mopping_areas === lang.texte.mapobj_no_mopping_areas, true, 'Editor-Liste = Ebenenname');
+    assert.equal(lang.texte.kartenEins_no_mopping_areas, lang === de ? 'Wischverbotszone' : 'No-mop zone');
+    if (lang === de) assert.doesNotMatch(alles, /No-Mop/i, 'kein „No-Mop“ mehr im Deutschen');
+  }
+  assert.equal(en.texte.mapobj_no_mopping_areas, 'No-mop zones');
+});

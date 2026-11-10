@@ -264,7 +264,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             room: 'Raum',
             carpet: 'Teppich',
             no_go: 'No-Go-Zone',
-            no_mop: 'No-Mop-Zone',
+            no_mop: 'Wischverbotszone',
             virtual_wall: 'Virtuelle Wand',
             path: 'Reinigungspfad',
             robot: 'Roboter',
@@ -316,7 +316,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             room: 'Eine Farbe für alle Räume statt der vier Raumfarben. Vorgabe aus dem Farbschema.',
             carpet: 'Farbe, mit der Teppiche über dem Raum liegen. Vorgabe aus dem Farbschema.',
             no_go: 'Farbe der No-Go-Zonen. Vorgabe die Fehlerfarbe des Themas.',
-            no_mop: 'Farbe der No-Mop-Zonen. Vorgabe die Infofarbe des Themas.',
+            no_mop: 'Farbe der Wischverbotszonen. Vorgabe die Infofarbe des Themas.',
             virtual_wall: 'Farbe virtueller Wände und nicht passierbarer Schwellen. Vorgabe die Fehlerfarbe des Themas.',
             path: 'Farbe des Reinigungspfads. Vorgabe aus dem Farbschema.',
             robot: 'Farbe des Roboters. Vorgabe die Hauptfarbe des Themas.',
@@ -531,7 +531,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             mapobj_deleted_carpets: 'Gelöschte Teppiche',
             mapobj_furnitures: 'Möbel',
             mapobj_no_go_areas: 'No-Go-Zonen',
-            mapobj_no_mopping_areas: 'No-Mop-Zonen',
+            mapobj_no_mopping_areas: 'Wischverbotszonen',
             mapobj_virtual_walls: 'Virtuelle Wände',
             mapobj_passable_thresholds: 'Passierbare Schwellen',
             mapobj_impassable_thresholds: 'Unpassierbare Schwellen',
@@ -11257,7 +11257,6 @@ const EDIT_TEXTS = {
         zusammenWeiter: 'Zusammenführen …',
         zusammenTitel: 'Räume zusammenführen',
         zusammenZeile: 'Räume: {a} + {b} → ein Raum',
-        kartenObj_no_mopping_areas: 'Wischverbotszonen',
         kartenEins_no_go_areas: 'No-Go-Zone',
         kartenEins_no_mopping_areas: 'Wischverbotszone',
         kartenEins_ramps: 'Rampe',
@@ -11511,7 +11510,6 @@ const EDIT_TEXTS = {
         zusammenWeiter: 'Merge …',
         zusammenTitel: 'Merge rooms',
         zusammenZeile: 'Rooms: {a} + {b} → one room',
-        kartenObj_no_mopping_areas: 'No-mop zones',
         kartenEins_no_go_areas: 'No-go zone',
         kartenEins_no_mopping_areas: 'No-mop zone',
         kartenEins_ramps: 'Ramp',
@@ -12023,6 +12021,17 @@ function nextTypeIndex(types, id, type) {
     return index;
 }
 
+/**
+ * A cleaning entry may go out only for a carpet that is on both sides: an own
+ * carpet (object_type 1) removed in the same draft has no id any more on the
+ * device — no call for it, nor for a new one (−1). Detected carpets stay.
+ */
+function ownCarpetKept(entry, all, base) {
+    if (entry[2] !== 1) return true;
+    const has = (lists) => !lists || !Array.isArray(lists.carpets) || lists.carpets.some((c) => c[4] === entry[1] && c[4] >= 0);
+    return has(all) && has(base);
+}
+
 /** Entries of `list` that differ from the entry with the same id in `base`. */
 const changedEntries = (list, base) => list.filter((entry) => JSON.stringify(entry) !== JSON.stringify((base || []).find((b) => b[0] === entry[0])));
 
@@ -12042,8 +12051,8 @@ const EDIT_GROUPS = {
         const changed = changedEntries(l.carpet_types, base.carpet_types);
         return changed.length ? [{ service: 'vacuum_set_carpet_type', data: { id: changed.map((e) => e[0]), object_type: changed.map(() => 0), carpet_type: changed.map((e) => e[1]) } }] : [];
     } },
-    carpet_cleaning: { service: 'vacuum_set_custom_carpet_cleaning', lists: ['carpet_cleanings'], calls: (l, mapId, base) => {
-        const changed = changedEntries(l.carpet_cleanings, base.carpet_cleanings);
+    carpet_cleaning: { service: 'vacuum_set_custom_carpet_cleaning', lists: ['carpet_cleanings'], calls: (l, mapId, base, all) => {
+        const changed = changedEntries(l.carpet_cleanings, base.carpet_cleanings).filter((e) => ownCarpetKept(e, all, base));
         if (!changed.length) return [];
         const data = { id: changed.map((e) => e[1]), object_type: changed.map((e) => e[2]), carpet_cleaning: changed.map((e) => e[3]) };
         // Preferences only when one of them changed (only carpet_cleanset_v3 offers them): as names, like device.py reads them.
@@ -12095,7 +12104,7 @@ function payloadFor(group, lists, mapId) {
 function groupCalls(group, lists, mapId, base) {
     const def = EDIT_GROUPS[group];
     if (!def || def.lists.some((name) => !Array.isArray(lists[name]))) return [];
-    if (def.calls) return def.calls(Object.fromEntries(def.lists.map((name) => [name, cloneList(lists[name])])), mapId, base || {});
+    if (def.calls) return def.calls(Object.fromEntries(def.lists.map((name) => [name, cloneList(lists[name])])), mapId, base || {}, lists);
     const payload = payloadFor(group, lists, mapId);
     return payload ? [payload] : [];
 }
@@ -14070,7 +14079,7 @@ const OBJECT_HOOKS = {
 Object.assign(EDIT_LINES, {
     carpet_types: (hass, editor, before, after) => changedEntries(after, before)
         .map(([id, type]) => translate(hass, 'teppichZeileTyp', { name: detectedName(hass, editor, id), typ: translate(hass, 'boden_' + type) })),
-    carpet_cleanings: (hass, editor, before, after) => changedEntries(after, before)
+    carpet_cleanings: (hass, editor, before, after) => changedEntries(after, before).filter((e) => ownCarpetKept(e, editor.lists(), editor.base))
         .map(([, id, type, cleaning]) => translate(hass, 'teppichZeileReinigung', { name: type === 0 ? detectedName(hass, editor, id) : ownCarpetName(hass, editor, id), wert: carpetCleaningLabel(hass, cleaning) })),
     deleted_carpets: (hass, editor, before, after) => {
         const detected = (editor.data && editor.data.detectedCarpets) || [];
