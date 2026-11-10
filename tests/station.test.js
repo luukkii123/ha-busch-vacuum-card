@@ -356,16 +356,15 @@ test('Aktionen im Reiter: gleicher Text, gleiches Symbol, gleicher Aufruf wie im
   assert.deepEqual(aufrufe(k), [aktion('toggle_drying')]);
 });
 
-test('Wartung: Station reinigen, Nachreinigen direkt; Ablassen/Tank leeren/Selbstreparatur nach Bestätigung mit Folgetext', () => {
+test('Wartung: jede Aktion nach Bestätigung mit Folgetext; Station reinigen und Nachreinigen sagen, dass der Roboter das Dock verlässt', () => {
   const wartung = (k) => $$in(k, '.station-upkeep', '[data-station-action]').map((b) => b.getAttribute('data-station-action'));
   assert.deepEqual(wartung(station()), ['drain', 'empty_tank', 'station_cleaning', 'self_repair', 'recleaning']);
-  for (const [name, soll] of [['station_cleaning', aktion('start_station_cleaning')], ['recleaning', aktion('start_recleaning')]]) {
-    const k = station();
-    $in(k, '.station-upkeep', '[data-station-action="' + name + '"]').click();
-    assert.deepEqual(aufrufe(k), [soll], name);
-  }
   for (const [name, soll, folge] of [['drain', aktion('start_draining'), /lässt ihr Wasser ab/], ['empty_tank', aktion('start_draining', '1'), /verworfen/],
-    ['self_repair', aktion('start_self_repairing'), /repariert sich selbst/]]) {
+    ['self_repair', aktion('start_self_repairing'), /repariert sich selbst/],
+    // Live 10.11.2026: der X40 fuhr für die Stationsreinigung aus dem Dock und kam nicht selbst zurück.
+    ['station_cleaning', aktion('start_station_cleaning'), /verlässt das Dock.*Zurück zum Dock/],
+    // start_recleaning startet eine Reinigung (device.py#L5630, clean_segment/SECOND_CLEANING).
+    ['recleaning', aktion('start_recleaning'), /verlässt das Dock/]]) {
     const k = station();
     $in(k, '.station-upkeep', '[data-station-action="' + name + '"]').click();
     assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'confirm', name);
@@ -397,4 +396,15 @@ test('Sperrgründe sichtbar: Wassertemperatur, Waschmodus, Selbstreinigungsfläc
   assert.match(grund(aufbau(), 'self_clean_time'), /nach Zeit/);
   assert.match(grund(aufbau('voll', { attribute: { auto_drying: false } }), 'drying_time'), /automatisch/i);
   assert.match(grund(aufbau('voll', { attribute: { auto_dust_collecting: false, auto_empty_frequency: 1 } }), 'auto_empty_frequency'), /Auto-Entleeren/);
+});
+
+test('Roboter außerhalb des Docks im Ruhezustand: „Zurück zum Dock“ zuerst und hervorgehoben', () => {
+  const knoepfe = (k) => k.karte.shadowRoot.querySelectorAll('.ctl').map((b) => b.getAttribute('data-action') + ':' + b.getAttribute('data-variant'));
+  assert.deepEqual(knoepfe(aufbau('voll', { zustand: 'idle', attribute: { docked: false } })), ['return:primary', 'start:secondary']);
+  assert.deepEqual(knoepfe(aufbau('voll', { zustand: 'idle', attribute: { docked: true } })), ['start:primary', 'return:secondary'], 'ohne Befund bleibt Start vorn');
+  assert.deepEqual(knoepfe(aufbau('voll', { zustand: 'idle', attribute: { docked: undefined } })), ['start:primary', 'return:secondary'], 'unbekannt bleibt unbekannt');
+  const k = aufbau('voll', { zustand: 'idle', attribute: { docked: false } });
+  assert.equal(k.karte.shadowRoot.querySelectorAll('.ctl')[0].textContent, 'Zurück zum Dock');
+  k.karte.shadowRoot.querySelectorAll('.ctl')[0].click();
+  assert.deepEqual(aufrufe(k).map((c) => c.domain + '.' + c.service), ['vacuum.return_to_base']);
 });

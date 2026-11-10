@@ -355,6 +355,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             resume: 'Fortsetzen',
             stop: 'Stopp',
             return: 'Zurück',
+            zurueckZumDock: 'Zurück zum Dock',
             station: 'Station',
             frischwasserFehlt: 'Frischwassertank fehlt',
             frischwasserNiedrig: 'Frischwasser niedrig',
@@ -595,6 +596,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             folge_drain: 'Die Station lässt ihr Wasser ab. Waschen und Wischen gehen erst wieder, wenn Wasser nachgefüllt ist.',
             folge_empty_tank: 'Der Frischwassertank wird geleert; das Wasser darin wird verworfen. Danach den Tank neu füllen.',
             folge_self_repair: 'Die Station prüft und repariert sich selbst. Das dauert einige Minuten; währenddessen wäscht und trocknet sie nicht.',
+            folge_station_cleaning: 'Der Roboter verlässt das Dock, damit die Station sich reinigt. Er kehrt danach nicht immer selbst zurück; dann „Zurück zum Dock“ tippen.',
+            folge_recleaning: 'Der Roboter verlässt das Dock und reinigt die zuletzt ausgelassenen oder schmutzigen Bereiche nach.',
             starten: 'Starten',
             wirdGestartet: 'Wird gestartet …',
             aktionFehler: '{name} wurde nicht gestartet ({grund}). An der Station hat sich nichts geändert. Prüfe Station und Roboter und versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
@@ -848,6 +851,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             resume: 'Resume',
             stop: 'Stop',
             return: 'Return',
+            zurueckZumDock: 'Return to dock',
             station: 'Station',
             frischwasserFehlt: 'Clean water tank missing',
             frischwasserNiedrig: 'Clean water low',
@@ -1088,6 +1092,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             folge_drain: 'The station drains its water. Washing and mopping work again once water is refilled.',
             folge_empty_tank: 'The clean water tank is emptied; its water is discarded. Refill the tank afterwards.',
             folge_self_repair: 'The station checks and repairs itself. This takes a few minutes; it neither washes nor dries meanwhile.',
+            folge_station_cleaning: 'The robot leaves the dock so the station can clean itself. It does not always return by itself; then tap “Return to dock”.',
+            folge_recleaning: 'The robot leaves the dock and re-cleans the areas it missed or found dirty last time.',
             starten: 'Start',
             wirdGestartet: 'Starting …',
             aktionFehler: '{name} did not start ({grund}). Nothing changed at the station. Check station and robot and try again; if that does not help, check the dreame_vacuum integration.',
@@ -2367,6 +2373,8 @@ function controlsFor(model, state) {
     let names = CONTROLS_BY_STATE[state] || [];
     // Stop also ends what the dock is doing.
     if (state === 'docked' && (model.attr('washing') || model.attr('drying'))) names = names.concat('stop');
+    // Idle outside the dock (e.g. after station cleaning, which does not re-dock): return comes first.
+    if (state === 'idle' && model.attr('docked') === false) names = ['return', 'start'];
     return names.filter((name) => model.can(CONTROLS[name].feature));
 }
 
@@ -5163,9 +5171,11 @@ const STATION_ACTIONS = [
         when: (m) => m.attr('draining_available') !== false, text: () => 'aktAblassen' },
     { name: 'empty_tank', key: 'start_draining', value: '1', needs: 'empty_tank', icon: 'mdi:waves-arrow-up', confirm: true,
         when: (m) => m.attr('draining_available') !== false, text: () => 'aktTankLeeren' },
-    { name: 'station_cleaning', key: 'start_station_cleaning', needs: 'station_cleaning', icon: 'mdi:car-wash', when: () => true, text: () => 'aktStationReinigen' },
+    // Live 10.11.2026: the X40 leaves the dock for this and does not come back by itself.
+    { name: 'station_cleaning', key: 'start_station_cleaning', needs: 'station_cleaning', icon: 'mdi:car-wash', confirm: true, when: () => true, text: () => 'aktStationReinigen' },
     { name: 'self_repair', key: 'start_self_repairing', needs: 'self_repair', icon: 'mdi:wrench-cog', confirm: true, when: () => true, text: () => 'aktSelbstreparatur' },
-    { name: 'recleaning', key: 'start_recleaning', needs: 'recleaning', icon: 'mdi:refresh-circle', when: () => true, text: () => 'aktNachreinigen' }
+    // Starts a cleaning of the missed areas (device.py#L5630): the robot drives off.
+    { name: 'recleaning', key: 'start_recleaning', needs: 'recleaning', icon: 'mdi:refresh-circle', confirm: true, when: () => true, text: () => 'aktNachreinigen' }
 ];
 
 const stationActions = (model, filter) => STATION_ACTIONS.filter((a) => filter(a) && model.can(a.needs) && a.when(model));
@@ -5194,7 +5204,7 @@ function stationActionItem(card, model, hass, action, done) {
     return [button, line];
 }
 
-/** Draining, emptying the tank and self-repair ask first and say what follows (R13). */
+/** Every maintenance action asks first and says what follows (R13), incl. leaving the dock. */
 function stationConfirm(card, action) {
     const hass = card._hass;
     const view = {
@@ -7445,10 +7455,12 @@ class BuschVacuumCard extends HTMLElement {
 
         // CORE-08: Go-To has no action buttons; its target bubble is the one start.
         const names = this._hidden('action_buttons') || (!active && task === 'goto') ? [] : controlsFor(model, shown);
+        const outside = names[0] === 'return'; // idle outside the dock (controlsFor)
         const buttons = names.map((name) => {
-            const label = translate(hass, name);
+            const label = translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
             const blocked = name === 'start' && !ready.ok;
-            const button = BuschUI.action({ label, text: label, icon: CONTROLS[name].icon, variant: CONTROLS[name].variant || 'secondary', disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
+            const variant = outside ? (name === 'return' ? 'primary' : 'secondary') : CONTROLS[name].variant || 'secondary';
+            const button = BuschUI.action({ label, text: label, icon: CONTROLS[name].icon, variant, disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
             if (blocked) button.setAttribute('aria-describedby', 'task-hint');
             button.classList.add('ctl');
             button.setAttribute('data-action', name);
