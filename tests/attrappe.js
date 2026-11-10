@@ -130,6 +130,10 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
   const fenster = { customCards: [], listeners: {}, addEventListener(t, fn) { (this.listeners[t] ||= []).push(fn); }, removeEventListener(t, fn) { this.listeners[t] = (this.listeners[t] || []).filter((f) => f !== fn); } };
   // Verlauf zählt nur mit; popstate lösen Tests selbst über window.listeners aus.
   const verlauf = { laenge: 1, aufrufe: [], pushState() { this.laenge++; this.aufrufe.push('push'); }, back() { this.aufrufe.push('back'); }, go(n) { this.aufrufe.push('go ' + n); } };
+  // Steuerbare Animationsframes: laufen nur bei `bild()`.
+  const bilder = new Map();
+  let bildNr = 0;
+  const bild = () => { const jetzt = [...bilder.values()]; bilder.clear(); for (const fn of jetzt) fn(uhr.jetzt); return jetzt.length; };
   const kontext = {
     // console.error/warn der Karte landen in `fehler`, damit Tests „ohne Fehler“ prüfen können.
     console: { info() {}, warn(...a) { fehler.push(a); }, error(...a) { fehler.push(a); }, log() {} },
@@ -138,6 +142,7 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
     HTMLElement: Element, CustomEvent, Event: CustomEvent,
     customElements: { define: (k, v) => registry.set(k, v), get: (k) => registry.get(k) },
     setTimeout: uhr.setTimeout, clearTimeout: uhr.clearTimeout, Date: uhr.Date,
+    requestAnimationFrame: (fn) => { bilder.set(++bildNr, fn); return bildNr; }, cancelAnimationFrame: (id) => bilder.delete(id),
     Promise, Math, JSON, Object, Array, Map, Set, WeakMap, Number, String, Boolean, Error, Symbol, Intl, RegExp,
   };
   kontext.globalThis = kontext;
@@ -145,7 +150,7 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
   vm.runInContext(fs.readFileSync(KARTE, 'utf8'), kontext, { filename: 'busch-vacuum-card.js' });
   /** Zurück-Geste: popstate an alle Fenster-Listener. */
   const zurueck = () => { for (const fn of [...(fenster.listeners.popstate || [])]) fn({}); };
-  return { uhr, kontext, document, body, registry, fehler, neuesEreignis, verlauf, zurueck };
+  return { uhr, kontext, document, body, registry, fehler, neuesEreignis, verlauf, zurueck, bild };
 }
 
 // ---- hass ---------------------------------------------------------------

@@ -7985,6 +7985,10 @@ class BuschVacuumCard extends HTMLElement {
         }
         const g = this._drag;
         if (!g) return;
+        if (d.phase !== 'move' && this._dragFrame) {
+            cancelAnimationFrame(this._dragFrame);
+            this._dragFrame = null;
+        }
         if (d.phase === 'cancel') {
             if (g.kind === 'draw') zones.splice(g.i, 1);
             else zones[g.i] = g.origin;
@@ -8004,8 +8008,11 @@ class BuschVacuumCard extends HTMLElement {
             this._drag = null;
             return this._selectionChanged();
         }
-        // R20: while dragging only the own layer redraws.
-        this._map.refresh('tasks');
+        // R20: while dragging only the own layer redraws, at most once per animation frame.
+        if (!this._dragFrame) this._dragFrame = requestAnimationFrame(() => {
+            this._dragFrame = null;
+            if (this._map) this._map.refresh('tasks');
+        });
     }
 
     /** Zone panel: add, the list (R15/R16: name and size), edit buttons for the chosen zone, keys. */

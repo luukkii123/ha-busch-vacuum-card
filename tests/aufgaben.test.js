@@ -461,6 +461,24 @@ test('Zone: Ziehen zeichnet ein Rechteck (draw-rect) mit Lupe', async () => {
   naheGleich(zonen(karte), [[-5000, -5000, -2500, -3000]], 40, 'gezogen');
 });
 
+test('Zone: Ziehen zeichnet höchstens einmal je Animationsframe, das Ende sofort (R20)', async () => {
+  const { u, karte } = await zoneKarte();
+  const m = karte._map, echt = m.refresh.bind(m);
+  let n = 0;
+  m.refresh = (id) => { n++; return echt(id); };
+  const von = bildschirm(karte, { x: -5000, y: -5000 });
+  zeiger(u, karte, 'pointerdown', von.x, von.y);
+  for (let i = 1; i <= 5; i++) zeiger(u, karte, 'pointermove', von.x + 10 * i, von.y + 8 * i);
+  assert.equal(n, 0, 'kein Neuzeichnen je pointermove');
+  assert.equal(u.bild(), 1, 'genau ein Frame vorgemerkt');
+  assert.equal(n, 1);
+  zeiger(u, karte, 'pointermove', von.x + 80, von.y + 60);
+  zeiger(u, karte, 'pointerup', von.x + 80, von.y + 60);
+  assert.equal(n, 2, 'Ende zeichnet sofort');
+  assert.equal(u.bild(), 0, 'vorgemerkter Frame beim Ende verworfen');
+  assert.equal(n, 2);
+});
+
 test('Zone: Knopf „Bereich hinzufügen“ legt in der Mitte der sichtbaren Karte an', async () => {
   const { karte } = await zoneKarte();
   const m = karte._map, rect = m._stageRect();
