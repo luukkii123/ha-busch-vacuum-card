@@ -440,7 +440,9 @@ test('gesperrt: keine Geste wirkt, Knöpfe mit Grund deaktiviert, Seite scrollt 
     assert.equal(knopf.disabled, true, name);
     assert.equal(knopf.getAttribute('aria-describedby'), 'map-lock-reason');
   }
-  assert.match(karte.shadowRoot.querySelector('#map-lock-reason').textContent, /gesperrt/);
+  const grund = karte.shadowRoot.querySelector('#map-lock-reason');
+  assert.match(grund.textContent, /gesperrt/);
+  assert.equal(grund.hidden, true, 'unsichtbar, aber Beschreibung des Knopfs');
   const css = karte.shadowRoot.querySelector('style').textContent;
   assert.match(css, /:host\(\[data-locked=true\]\) \.map-stage \{\s*touch-action: pan-y;/);
   // Entsperren (core) gibt die Gesten frei, ohne Neuaufbau der Karte.
@@ -455,7 +457,9 @@ test('gesperrt: keine Geste wirkt, Knöpfe mit Grund deaktiviert, Seite scrollt 
 test('animiert über transform; sofort bei reduzierter Bewegung und animations ausgeblendet', async () => {
   const { karte } = await kartenKarte();
   const css = karte.shadowRoot.querySelector('style').textContent;
-  assert.match(css, /\.map-pan \{[^}]*transition: transform/);
+  assert.match(css, /\.map-view\[data-animate\] \.map-pan \{[^}]*transition: transform/);
+  karte.shadowRoot.querySelector('[data-action="map-zoom-in"]').click();
+  assert.equal(karte._map.el.hasAttribute('data-animate'), true, 'Knopf: animiert');
   assert.match(css, /prefers-reduced-motion: reduce\)[^@]*\.map-pan[^}]*transition: none/);
   assert.match(css, /\.map-view\[data-still\] \.map-pan/);
   assert.equal(karte._map.el.hasAttribute('data-still'), false);

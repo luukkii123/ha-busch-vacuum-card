@@ -17,6 +17,13 @@ Covered (plan 2026-11-09-busch-vacuum-card-core, Task 8):
   * prefers-reduced-motion and hidden_card_objects: animations
   * HACS UI rules 1 and 2 (hacs/docs/render/regeln.py, mounted at /work)
   * every request, console error and page error lands in report.json
+  * map-view (plan 2026-11-10-busch-vacuum-card-map-view, Task 12): the
+    camera endpoints are answered by Playwright routes with a SYNTHETIC map
+    image (SVG) and SYNTHETIC map data built from the anonymised fixture
+    rooms (same rule as tests/kartendaten.js) -- never a real floor plan.
+    Data mode and image fallback, overlays on the expected pixels, zoom
+    buttons/keys/wheel, lock, motion, obstacle bubble and dialog, map info,
+    floor choice, touch targets, no foreign requests, a lab timing
 
 The page is served over HTTP so that any sub-resource would show up as a
 real 404. The harness HTML is written into the output directory, which must
@@ -28,6 +35,7 @@ Usage:
 
 import http.server
 import json
+import math
 import socketserver
 import sys
 import threading
@@ -54,6 +62,92 @@ STATES = ("docked", "cleaning", "error")
 DIALOG_SIZES = ((360, 640), (360, 480), (640, 360), (800, 600), (1280, 800))
 EXPECTED_CONTROLS = {"docked": ["start"], "cleaning": ["pause", "stop", "return"],
                      "error": ["start", "return"]}
+
+
+def affine(cal):
+    """Robot mm -> image px from three calibration pairs (as the card's affineFrom)."""
+    (x0, y0), (x1, y1), (x2, y2) = [(c["vacuum"]["x"], c["vacuum"]["y"]) for c in cal[:3]]
+    xs = [c["map"]["x"] for c in cal[:3]]
+    ys = [c["map"]["y"] for c in cal[:3]]
+    det = x0 * (y1 - y2) + x1 * (y2 - y0) + x2 * (y0 - y1)
+
+    def solve(v):
+        return ((v[0] * (y1 - y2) + v[1] * (y2 - y0) + v[2] * (y0 - y1)) / det,
+                (v[0] * (x2 - x1) + v[1] * (x0 - x2) + v[2] * (x1 - x0)) / det,
+                (v[0] * (x1 * y2 - x2 * y1) + v[1] * (x2 * y0 - x0 * y2) + v[2] * (x0 * y1 - x1 * y0)) / det)
+    a, c, e = solve(xs)
+    b, d, f = solve(ys)
+    return lambda x, y: (a * x + c * y + e, b * x + d * y + f)
+
+
+def synthetic_map_data(rooms, grid_size=50, frame_id=1):
+    """Map data like /api/camera_map_data_proxy from the anonymised room rectangles:
+    each cell belongs to the nearest centre among the rectangles holding it, wall ring around."""
+    rs = [r for r in rooms.values() if "x0" in r]
+    left = (min(r["x0"] for r in rs) // grid_size) * grid_size - 2 * grid_size
+    top = (min(r["y0"] for r in rs) // grid_size) * grid_size - 2 * grid_size
+    w = math.ceil((max(r["x1"] for r in rs) - left) / grid_size) + 2
+    h = math.ceil((max(r["y1"] for r in rs) - top) / grid_size) + 2
+    cells = [0] * (w * h)
+    for gy in range(h):
+        for gx in range(w):
+            x, y = left + (gx + 0.5) * grid_size, top + (gy + 0.5) * grid_size
+            best, dist = 0, float("inf")
+            for r in rs:
+                if r["x0"] <= x <= r["x1"] and r["y0"] <= y <= r["y1"]:
+                    d = (x - r["x"]) ** 2 + (y - r["y"]) ** 2
+                    if d < dist:
+                        best, dist = r["room_id"], d
+            cells[gy * w + gx] = best
+    wall = cells[:]
+    for gy in range(h):
+        for gx in range(w):
+            if not cells[gy * w + gx] and any(0 <= gx + dx < w and 0 <= gy + dy < h and 0 < cells[(gy + dy) * w + gx + dx] < 200
+                                              for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                wall[gy * w + gx] = 255
+    data = {}
+    for y in range(h):
+        x = 0
+        while x < w:
+            v, n = wall[y * w + x], 1
+            while x + n < w and wall[y * w + x + n] == v:
+                n += 1
+            if v:
+                data.setdefault(str(v), []).extend([x, y, n])
+            x += n
+    first = rs[0]["room_id"]
+    data["512"] = [v for gy in range(h) for gx in range(0, w, 2) if wall[gy * w + gx] == first for v in (gx, gy, 1)]
+    return {"size": [left, top, left, top, w, h, grid_size, 0, [0, 0, 0, 0], None], "data": data,
+            "frame_id": frame_id, "map_id": 2, "map_index": 1, "empty_map": False, "temporary_map": False,
+            "segments": [[r["room_id"], r["x"], r["y"]] for r in rs],
+            "path": [[1] + [v for r in rs[:3] for v in (r["x"], r["y"])]],
+            "predefined_points": [[rs[1]["x"] + 300, rs[1]["y"] + 300]]}
+
+
+def synthetic_map_svg(cam_attrs, grid):
+    """The integration's map picture, imitated: the synthetic grid drawn through the calibration."""
+    to_img = affine(cam_attrs["calibration_points"])
+    left, top, _, _, w, h, g = grid["size"][:7]
+    corners = [to_img(left, top), to_img(left + w * g, top + h * g)]
+    width, height = int(max(p[0] for p in corners)) + 20, int(max(p[1] for p in corners)) + 20
+    colours = ["#b3d4f5", "#c8e6c9", "#ffe0b2", "#e1bee7", "#f8bbd0", "#d7ccc8", "#fff9c4", "#b2dfdb"]
+    rects = []
+    for key, runs in grid["data"].items():
+        if key == "512":
+            continue
+        fill = "#555555" if key == "255" else colours[int(key) % len(colours)]
+        for i in range(0, len(runs), 3):
+            x, y, n = runs[i:i + 3]
+            ax, ay = to_img(left + x * g, top + y * g)
+            bx, by = to_img(left + (x + n) * g, top + (y + 1) * g)
+            rects.append(f'<rect x="{min(ax, bx):.1f}" y="{min(ay, by):.1f}" width="{abs(bx - ax):.1f}" height="{abs(by - ay):.1f}" fill="{fill}"/>')
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
+            f'<rect width="100%" height="100%" fill="#f0f0f0"/>' + "".join(rects) + "</svg>"), (width, height)
+
+
+OBSTACLE_PHOTO = ('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="#cfd8dc"/>'
+                  '<circle cx="160" cy="120" r="60" fill="#90a4ae"/></svg>')
+CAMERA_ROUTES = ("/api/camera_proxy/", "/api/camera_map_data_proxy/", "/api/camera_map_obstacle_proxy/")
 
 
 def serve(directory, port_holder):
@@ -162,10 +256,23 @@ def scenario(fixture, name):
     data = json.loads(json.dumps({k: fixture[k] for k in ("states", "entities", "services")}))
     states = data["states"]
     vac = states["vacuum.robo"]
+    # One obstacle with a photo, so the obstacle dialog shows the picture path.
+    states["camera.robo_map"]["attributes"]["obstacles"]["2"]["picture_status"] = "Uploaded"
     if name == "cleaning":
         vac["state"] = "cleaning"
         vac["attributes"].update({"started": True, "cleaning_progress": 42, "charging": False})
         states["sensor.robo_cleaning_progress"]["state"] = "42"
+    elif name == "floors":
+        # Two floors: a second saved-map camera with its own picture (synthetic, like the first).
+        maps = [{"id": 3, "index": 1, "name": "Karte 1", "custom_name": "Erdgeschoss"},
+                {"id": 7, "index": 2, "name": "Karte 2", "custom_name": None}]
+        vac["attributes"].update({"maps": maps, "map_count": 2, "selected_map": "Erdgeschoss"})
+        second = json.loads(json.dumps(states["camera.robo_map_1"]))
+        second["entity_id"] = "camera.robo_map_2"
+        second["attributes"].update({"map_index": 2, "map_id": 7, "selected": False,
+                                     "entity_picture": "/api/camera_proxy/camera.robo_map_2?token=testtoken&v=9"})
+        states["camera.robo_map_2"] = second
+        data["entities"]["camera.robo_map_2"] = dict(data["entities"]["camera.robo_map_1"], entity_id="camera.robo_map_2", translation_key="map_2")
     elif name == "error":
         vac["state"] = "error"
         vac["attributes"].update({"has_error": True, "error": "Wheel stuck", "charging": False})
@@ -184,7 +291,11 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     repo_root = card_file.parent.parent
     fixture = json.loads((repo_root / "tests" / "fixtures" / "voll.json").read_text(encoding="utf-8"))
-    data = {name: scenario(fixture, name) for name in STATES}
+    data = {name: scenario(fixture, name) for name in STATES + ("floors",)}
+    cam = fixture["states"]["camera.robo_map"]["attributes"]
+    grid = synthetic_map_data(cam["rooms"], frame_id=cam["frame_id"])
+    svg, svg_size = synthetic_map_svg(cam, grid)
+    routing = {"data": True}
 
     ports = []
     httpd = serve(repo_root, ports)
@@ -204,6 +315,16 @@ def main():
         page.on("requestfailed", lambda r: report["requestFailures"].append({"url": r.url, "error": r.failure}))
         page.on("console", lambda m: report["consoleErrors"].append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: report["pageErrors"].append(str(e)))
+
+        def camera_route(route):
+            url = route.request.url
+            if "/api/camera_map_data_proxy/" in url:
+                body = grid if routing["data"] else {"empty_map": True, "size": [0, 0, 0, 0, 1, 1, 0, 0, [0, 0, 0, 0]]}
+                return route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+            if "/api/camera_map_obstacle_proxy/" in url:
+                return route.fulfill(status=200, content_type="image/svg+xml", body=OBSTACLE_PHOTO)
+            return route.fulfill(status=200, content_type="image/svg+xml", body=svg)
+        page.route("**/api/camera_*proxy/**", camera_route)
 
         html = PAGE.replace("__SRC__", f"/dist/{card_file.name}").replace("__THEMA__", THEMA_CSS)
         harness = out_dir / "harness.html"
@@ -256,7 +377,21 @@ def main():
                               pageOverflow: document.documentElement.scrollWidth - innerWidth,
                               cardRight: r.right, cardLeft: r.left, W: innerWidth,
                               radius: cs.borderTopLeftRadius, shadow: cs.boxShadow, border: cs.borderTopWidth,
-                              height: r.height, H: innerHeight
+                              height: r.height, H: innerHeight,
+                              map: (() => {
+                                const m = window.card()._map;
+                                if (!m) return null;
+                                const pos = window.card().hass.states['camera.robo_map'].attributes.vacuum_position;
+                                const want = m.toScreen(m.toImage(pos));
+                                const node = sr.querySelector('[data-layer=robot] [data-object]');
+                                const b = node ? node.getBoundingClientRect() : null;
+                                const stage = sr.querySelector('.map-stage').getBoundingClientRect();
+                                return { mode: m.current().mode, base: sr.querySelector('.map-base') && sr.querySelector('.map-base').tagName,
+                                         notes: Array.from(sr.querySelectorAll('.map-note')).map((n) => n.dataset.kind),
+                                         robotOff: b && want ? Math.hypot(b.left + b.width / 2 - want.x, b.top + b.height / 2 - want.y) : null,
+                                         chips: sr.querySelectorAll('.room-chip').length, stageW: stage.width, stageH: stage.height,
+                                         stageInside: stage.left >= r.left - 0.5 && stage.right <= r.right + 0.5 };
+                              })()
                             };
                         }""")
                         name = f"karte-{state}-{'panel' if panel else 'karte'}-{width}-{th}.png"
@@ -288,6 +423,14 @@ def main():
                                                    and x["shadow"] == "none" and abs(x["height"] - (x["H"] - 16)) <= 1)),
               json.dumps([(x["width"], x["radius"], x["border"], x["shadow"], x["height"], x["H"])
                           for x in matrix if x["panel"]][:3]))
+        check("map: data mode with canvas, 7 room chips, no state notes, stage inside the card (60 cases)",
+              not bad(lambda x: x["map"] and x["map"]["mode"] == "data" and x["map"]["base"] == "CANVAS" and not x["map"]["notes"]
+                      and x["map"]["chips"] == 7 and x["map"]["stageInside"] and x["map"]["stageW"] > 100 and x["map"]["stageH"] > 100),
+              json.dumps([(x["state"], x["panel"], x["width"], x["map"]) for x in matrix
+                          if not (x["map"] and x["map"]["mode"] == "data" and x["map"]["base"] == "CANVAS")][:4]))
+        check("map: robot symbol on its position (within 1.5 px, 60 cases)",
+              not bad(lambda x: x["map"] and x["map"]["robotOff"] is not None and x["map"]["robotOff"] <= 1.5),
+              json.dumps([(x["state"], x["width"], x["map"]["robotOff"]) for x in matrix if x["map"]][:6]))
         check("normal card: keeps HA's card look",
               not bad(lambda x: x["panel"] or (x["radius"] == "12px" and x["border"] != "0px")), "")
 
@@ -444,6 +587,153 @@ def main():
               editor["fields"] >= 6 and editor["label"] == "Ausgeblendete Teile", json.dumps(editor))
 
         # ------------------------------------------------------------------
+        # 3b. Map view (map-view Task 12)
+        # ------------------------------------------------------------------
+        def shot(name):
+            page.screenshot(path=str(out_dir / name))
+            report["screenshots"].append(name)
+
+        def map_eval(js):
+            return page.evaluate("() => { const c = window.card(), m = c._map, sr = c.shadowRoot; " + js + " }")
+
+        # Image fallback: overlays on the calibration's pixels.
+        routing["data"] = False
+        page.set_viewport_size({"width": 390, "height": 844})
+        theme("light")
+        image_data = json.loads(json.dumps(data["docked"]))
+        image_data["states"]["camera.robo_map"]["attributes"]["vacuum_position"] = {"x": 1000, "y": 0, "a": 0}
+        page.evaluate("(a) => window.buildCard(a)", {"data": image_data, "lang": "de", "config": {}, "panel": False})
+        page.wait_for_timeout(400)
+        cal = cam["calibration_points"][1]["map"]
+        img = map_eval("""const node = sr.querySelector('[data-layer=robot] [data-object]').getBoundingClientRect();
+            const want = m.toScreen({ x: %d, y: %d }); const base = sr.querySelector('.map-base');
+            return { mode: m.current().mode, tag: base.tagName, natural: [base.naturalWidth, base.naturalHeight],
+                     image: m.toImage({ x: 1000, y: 0 }), off: Math.hypot(node.left + node.width / 2 - want.x, node.top + node.height / 2 - want.y) };""" % (cal["x"], cal["y"]))
+        shot("karte-bildmodus-390-light.png")
+        check("map image fallback: picture of the camera, robot on calibration point (1000, 0) mm -> (%d, %d) px" % (cal["x"], cal["y"]),
+              img["mode"] == "image" and img["tag"] == "IMG" and img["natural"] == list(svg_size)
+              and abs(img["image"]["x"] - cal["x"]) < 0.01 and abs(img["image"]["y"] - cal["y"]) < 0.01 and img["off"] <= 1.5,
+              json.dumps(img))
+        routing["data"] = True
+
+        # Zoom: buttons, keyboard, wheel; lock; motion.
+        page.set_viewport_size({"width": 1280, "height": 900})
+        build("docked")
+        page.wait_for_timeout(300)
+        z = map_eval("""const k0 = m._view.a; sr.querySelector('[data-action=map-zoom-in]').click();
+            const k1 = m._view.a, z1 = m._zoom, transition = getComputedStyle(m.pan).transitionDuration; m.region.focus();
+            m.region.dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true }));
+            const z2 = m._zoom; sr.querySelector('[data-action=map-fit]').click();
+            const s = sr.querySelector('.map-stage').getBoundingClientRect();
+            m.stage.dispatchEvent(new WheelEvent('wheel', { deltaY: -300, clientX: s.left + 40, clientY: s.top + 40, bubbles: true, cancelable: true }));
+            return { ratio: k1 / k0, z1, z2, wheel: m._zoom, transition, wheelTransition: getComputedStyle(m.pan).transitionDuration };""")
+        page.wait_for_timeout(300)
+        shot("karte-zoom-1280-light.png")
+        check("map zoom: button x2 animated (transform doubles), key + x4, wheel zooms directly",
+              abs(z["ratio"] - 2) < 1e-6 and z["z1"] == 2 and z["z2"] == 4 and z["wheel"] > 1 and z["transition"] != "0s"
+              and z["wheelTransition"] == "0s", json.dumps(z))
+        build("docked", config={"locked": "always"})
+        lock = map_eval("""return { touch: getComputedStyle(sr.querySelector('.map-stage')).touchAction,
+            disabled: Array.from(sr.querySelectorAll('[data-action=map-zoom-in],[data-action=map-zoom-out],[data-action=map-fit]')).every((b) => b.disabled),
+            info: !sr.querySelector('[data-action=map-info]').disabled };""")
+        check("map locked: touch-action pan-y, zoom buttons disabled, info stays usable", lock["touch"] == "pan-y" and lock["disabled"] and lock["info"], json.dumps(lock))
+        build("docked", config={"hidden_card_objects": ["animations"]})
+        still = map_eval("sr.querySelector('[data-action=map-zoom-in]').click(); return getComputedStyle(m.pan).transitionDuration;")
+        page.emulate_media(reduced_motion="reduce")
+        build("docked")
+        reduced_map = map_eval("sr.querySelector('[data-action=map-zoom-in]').click(); return getComputedStyle(m.pan).transitionDuration;")
+        page.emulate_media(reduced_motion="no-preference")
+        check("map motion: no transition with hidden animations and reduced motion", still == "0s" and reduced_map == "0s",
+              json.dumps([still, reduced_map]))
+
+        # Colour schemes and icon sets, for the eye.
+        for label, config in (("dunkel", {"color_scheme": "dark"}), ("grau", {"color_scheme": "grey"}),
+                              ("grundriss", {"map_display": "floor_plan"}), ("material", {"icon_set": "material"})):
+            page.set_viewport_size({"width": 390, "height": 844})
+            theme("dark" if label == "dunkel" else "light")
+            build("cleaning", config=config)
+            page.wait_for_timeout(300)
+            page.screenshot(path=str(out_dir / f"karte-{label}-390.png"), full_page=True)
+            report["screenshots"].append(f"karte-{label}-390.png")
+
+        # Obstacle bubble and dialog, map info, floors.
+        def open_obstacle():
+            page.evaluate("""() => { window.closeDialogs(); const m = window.card()._map;
+                const o = window.card().hass.states['camera.robo_map'].attributes.obstacles['2'];
+                const s = m.toScreen(m.toImage(o)); m._emitTap(s);
+                window.card().shadowRoot.querySelector('[data-action=obstacle-details]').click(); }""")
+
+        def open_info():
+            page.evaluate("() => { window.closeDialogs(); window.card().shadowRoot.querySelector('[data-action=map-info]').click(); }")
+
+        def open_floors():
+            page.evaluate("() => { window.closeDialogs(); window.card().shadowRoot.querySelector('[data-action=map-floors]').click(); }")
+
+        dialogs = []
+        for w, h in ((390, 844), (1280, 800)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                build("docked")
+                page.wait_for_timeout(250)
+                bubble = map_eval("""const o = c.hass.states['camera.robo_map'].attributes.obstacles['2'];
+                    m._emitTap(m.toScreen(m.toImage(o))); const b = sr.querySelector('.map-bubble').getBoundingClientRect();
+                    const st = sr.querySelector('.map-stage').getBoundingClientRect();
+                    const tools = sr.querySelector('.map-tools').getBoundingClientRect();
+                    return { shown: !sr.querySelector('.map-bubble').hidden, inside: b.left >= st.left - 0.5 && b.right <= st.right + 0.5
+                             && (b.right <= tools.left + 0.5 || b.left >= tools.right - 0.5 || b.bottom <= tools.top || b.top >= tools.bottom),
+                             small: window.smallTargets(sr) };""")
+                shot(f"karte-blase-{w}-{th}.png")
+                for label, opener, state in (("hindernis", open_obstacle, "docked"), ("info", open_info, "docked"), ("stockwerk", open_floors, "floors")):
+                    build(state)
+                    page.wait_for_timeout(250)
+                    opener()
+                    page.wait_for_timeout(400)
+                    g = page.evaluate("""() => { const d = window.dialog(); if (!d) return null; const sr = d.shadowRoot, r = sr.querySelector('.sheet').getBoundingClientRect();
+                        return { title: sr.querySelector('h1').textContent, top: r.top, bottom: r.bottom, left: r.left, right: r.right, W: innerWidth, H: innerHeight,
+                                 photo: !!sr.querySelector('.obstacle-photo'), previews: sr.querySelectorAll('.floor-preview').length,
+                                 photoLoaded: sr.querySelector('.obstacle-photo') ? sr.querySelector('.obstacle-photo').naturalWidth : null,
+                                 small: window.smallTargets(sr) }; }""")
+                    shot(f"dialog-{label}-{w}x{h}-{th}.png")
+                    page.evaluate("() => window.closeDialogs()")
+                    page.evaluate("() => { document.documentElement.style.overflow = ''; }")
+                    dialogs.append({"label": label, "w": w, "theme": th, "bubble": bubble, **(g or {"missing": True})})
+        report["mapDialogs"] = dialogs
+        ok_geo = lambda x: not x.get("missing") and ((x["w"] < 450 and abs(x["top"]) <= 1 and abs(x["bottom"] - x["H"]) <= 1)
+                                                     or (x["w"] >= 450 and x["right"] - x["left"] <= 560.5 and x["top"] >= 12))
+        check("map dialogs obstacle/info/floor: open, full screen on a phone, centred <= 560 px above, 44 px buttons",
+              all(ok_geo(x) and not x["small"] for x in dialogs), json.dumps([x for x in dialogs if not (ok_geo(x) and not x["small"])][:3]))
+        check("obstacle dialog with photo (route answered), floor dialog with two previews, titles",
+              all((x["label"] != "hindernis" or (x["photo"] and x["photoLoaded"] == 320 and x["title"] == "Hindernis"))
+                  and (x["label"] != "stockwerk" or (x["previews"] == 2 and x["title"] == "Stockwerk wählen"))
+                  and (x["label"] != "info" or x["title"] == "Karteninfo") for x in dialogs), json.dumps(dialogs[:3]))
+        check("obstacle bubble opens inside the map, clear of the zoom buttons, 44 px buttons",
+              all(x["bubble"]["shown"] and x["bubble"]["inside"] and not x["bubble"]["small"] for x in dialogs), json.dumps([x["bubble"] for x in dialogs][:2]))
+
+        # Lab timing (not a field value, R20): update with a moved robot, phone profile with 4x CPU throttling.
+        page.set_viewport_size({"width": 390, "height": 844})
+        build("cleaning")
+        page.wait_for_timeout(300)
+        timing_js = """(n) => { const c = window.card(), base = c.hass; const t = [];
+            for (let i = 0; i < n; i++) { const st = Object.assign({}, base.states); const cam = st['camera.robo_map'];
+              st['camera.robo_map'] = Object.assign({}, cam, { attributes: Object.assign({}, cam.attributes, { vacuum_position: { x: i * 10, y: -i * 10, a: i } }) });
+              const h = Object.assign({}, base, { states: st }); const t0 = performance.now(); c.hass = h; t.push(performance.now() - t0); }
+            t.sort((a, b) => a - b); return { median: t[Math.floor(n / 2)], max: t[n - 1] }; }"""
+        desktop = page.evaluate(timing_js, 30)
+        cdp = page.context.new_cdp_session(page)
+        cdp.send("Emulation.setCPUThrottlingRate", {"rate": 4})
+        phone = page.evaluate(timing_js, 30)
+        long_tasks = page.evaluate("""async () => { const seen = []; const obs = new PerformanceObserver((l) => l.getEntries().forEach((e) => seen.push(e.duration)));
+            obs.observe({ type: 'longtask', buffered: false }); const m = window.card()._map; const s = m.stage.getBoundingClientRect();
+            for (let i = 0; i < 12; i++) { m.stage.dispatchEvent(new WheelEvent('wheel', { deltaY: i < 6 ? -120 : 120, clientX: s.left + s.width / 2, clientY: s.top + s.height / 2, bubbles: true, cancelable: true }));
+              await new Promise((r) => requestAnimationFrame(r)); }
+            await new Promise((r) => setTimeout(r, 300)); obs.disconnect(); return seen; }""")
+        cdp.send("Emulation.setCPUThrottlingRate", {"rate": 1})
+        report["timing"] = {"robotUpdateDesktopMs": desktop, "robotUpdatePhone4xMs": phone, "zoomLongTasksMs": long_tasks}
+        check("lab timing: robot update <= 16 ms script (desktop median), zoom without long tasks > 50 ms (4x CPU)",
+              desktop["median"] <= 16 and not [d for d in long_tasks if d > 50], json.dumps(report["timing"]))
+
+        # ------------------------------------------------------------------
         # 4. HACS UI rules 1 and 2 (hacs/docs/ui-regeln.md)
         # ------------------------------------------------------------------
         report["uiRegeln"] = {}
@@ -478,6 +768,19 @@ def main():
                     messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
                     vor_messung=lambda pg: build("docked"))
                 page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            for label, opener, state in (("hindernis", open_obstacle, "docked"), ("info", open_info, "docked"), ("stockwerk", open_floors, "floors")):
+                r["regel1_dialog_" + label] = lauf_breiten(
+                    page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, ".sheet"),
+                    vor_messung=lambda pg, o=opener, s=state: (build(s), page.wait_for_timeout(200), o(), page.wait_for_timeout(350)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                r["regel2_dialog_" + label] = lauf_breiten(
+                    page, breiten=(390, 960), hoehe=900,
+                    messung=lambda pg, o=opener: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ="ansicht"),
+                    vor_messung=lambda pg, s=state: (build(s), page.wait_for_timeout(200)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            r["regel1_karte_floors"] = lauf_breiten(
+                page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
+                vor_messung=lambda pg: (build("floors"), page.wait_for_timeout(200)))
             r["zaehlung"] = zaehle(r)
             report["uiRegelnVerstoesse"] = bewerte(r)
 
@@ -486,11 +789,16 @@ def main():
     httpd.shutdown()
 
     report["vendorRequests"] = [u for u in report["requests"] if "/dist/" in u and not u.endswith(".js")]
+    # Only the local harness and the three routed camera endpoints: no request leaves the page.
+    report["foreignRequests"] = [u for u in report["requests"]
+                                 if not u.startswith(f"http://127.0.0.1:{port}/")
+                                 or ("/api/" in u and not any(r in u for r in CAMERA_ROUTES))]
     report["passed"] = sum(1 for c in report["checks"] if c["pass"])
     report["failed"] = sum(1 for c in report["checks"] if not c["pass"])
     report["clean"] = (report["failed"] == 0 and not report["badResponses"] and not report["requestFailures"]
                        and not report["consoleErrors"] and not report["pageErrors"] and not report["vendorRequests"]
-                       and not report["serviceCalls"] and report.get("uiRegelnVerstoesse", 0) == 0 and REGELN_DA)
+                       and not report["serviceCalls"] and not report["foreignRequests"]
+                       and report.get("uiRegelnVerstoesse", 0) == 0 and REGELN_DA)
     (out_dir / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
 
     for entry in report["checks"]:
@@ -508,7 +816,7 @@ def main():
         print("UI-Regeln: NICHT gemessen — regeln.py fehlt (/work nicht gemountet)")
     print(f"requests={len(report['requests'])} bad={len(report['badResponses'])} failures={len(report['requestFailures'])} "
           f"consoleErrors={len(report['consoleErrors'])} pageErrors={len(report['pageErrors'])} "
-          f"serviceCalls={len(report['serviceCalls'])} screenshots={len(report['screenshots'])}")
+          f"serviceCalls={len(report['serviceCalls'])} foreign={len(report['foreignRequests'])} screenshots={len(report['screenshots'])}")
     for e in report["pageErrors"] + report["consoleErrors"]:
         print("  error: " + e)
     print(f"report: {out_dir / 'report.json'}")

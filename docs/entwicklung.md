@@ -142,7 +142,16 @@ Scrollen bis zum Ende mit bündigem Kopf, Seitensperre und Freigabe, Drehen),
 Bestätigungsdialog, Animation/`prefers-reduced-motion`/`animations`
 ausgeblendet, Editor-Verdrahtung, HACS-Regeln 1 und 2 (über
 `hacs/docs/render/regeln.py` unter `/work`) und 0 Konsolen-/Seitenfehler,
-keine Dienstaufrufe. Ergebnis: `report.json` und 77 Bilder.
+keine Dienstaufrufe. Karte (map-view): Playwright beantwortet
+`/api/camera_proxy`, `/api/camera_map_data_proxy` und
+`/api/camera_map_obstacle_proxy` mit einem **synthetischen** Kartenbild
+(SVG) und synthetischen Kartendaten aus den verfremdeten Raumrechtecken
+(gleiche Regel wie `tests/kartendaten.js`); geprüft werden Datenmodus und
+Bild-Rückfall, Roboter auf seiner Position (±1,5 px) bzw. auf dem
+Kalibrierpunkt, Zoom-Knöpfe/Taste/Mausrad, Sperre (`pan-y`), Bewegung,
+Hindernis-Blase und -Dialog, Karteninfo, Stockwerkswahl (Regeln 1/2),
+keine Fremdanfragen und eine Labor-Zeitmessung. Ergebnis: `report.json`
+und 99 Bilder.
 
 Grenzen: `ha-card`, `ha-icon` und `ha-form` sind Attrappen; belegt sind
 Verdrahtung, Maße und erzeugte Konfiguration, nicht die Darstellung der
@@ -150,6 +159,32 @@ echten HA-Selektoren. Die Abnahme mit `karten-alle.sh` und E2E läuft einmal
 am Ende aller Module.
 
 ## Geprüft
+
+**10.11.2026 · 0.1.0, Modul map-view (#882, Tasks 1–12, nicht getaggt)**
+
+1. `node --check dist/busch-vacuum-card.js` grün; `node --test` 205/205
+   (71 neue Tests, davon 64 in `tests/karte.test.js`).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. `render.py`: 28/28 Prüfungen, UI-Regeln 0 Verstöße (1990 Textelemente),
+   0 Konsolen-/Seitenfehler, 0 Fremdanfragen, 0 Dienstaufrufe. Gefunden und
+   behoben: Roboter lag während des Übergangs bis 40 px neben seiner Position
+   (Übergang jetzt nur bei Knopf/Taste/Chip), Karte wurde in langen
+   Fehlerzuständen auf 84 px gequetscht, unsichtbare Begründungstexte zählten
+   als Überlauf (jetzt `hidden` als `aria-describedby`-Ziel), reduzierte
+   Bewegung verlor gegen die spezifischere Übergangsregel, Hindernis-Blase
+   deckte die Zoom-Knöpfe. Bilder gesichtet.
+   Labor (keine Feldwerte, R20): Roboter-Update Median 1,1 ms (Desktop),
+   5,2 ms bei 4-facher CPU-Drossel; Zoom per Rad ohne lange Tasks > 50 ms.
+4. Live lesend (Nutzerfreigabe 10.11.: `GET /api/states/camera.*_map`,
+   Kartenbild, `camera_map_data_proxy`; keine Dienstaufrufe): Kartendaten
+   25 461 B gzip, Gitter 333 × 295 à 50 mm; mit den Funktionen der Karte
+   treffen alle 7 Raum-Mittelpunkte ihre Raum-ID (Gitter und Rechteck),
+   Gitter × 4 + Versatz = `calibration_points` mit 0 px Abweichung, Roboter
+   hin/zurück 0 mm, Hindernisse nur Typ 200 (gesperrte Räume),
+   `picture_status` „Disabled“; Browserlauf mit echten Attributen, Bild und
+   Daten: Overlays deckungsgleich in Daten- und Bildmodus, 0 Fehler.
+   Screenshots und Rohdaten nur privat (Grundriss), nicht im Repo.
+
 
 **09.11.2026 · 0.1.0, Modul core (#882, Tasks 1–8, nicht getaggt)**
 

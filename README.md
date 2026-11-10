@@ -35,8 +35,16 @@ What you get with the core module:
 
 - **Head:** name and state (in Home Assistant's language), cleaned area,
   cleaning time and battery (charging, low, charging to resume).
-- **Task type:** All, Room, Zone, Spot, Go to (the map types need the map
-  view, which follows in a later update). Locked while a task runs; the
+- **Live map** (when the device has a map camera): the current map with
+  robot, station, room names with cleaning order, carpets, no-go and no-mop
+  zones, virtual walls, thresholds, obstacles and more. Zoom and move with
+  fingers, mouse wheel, keys (`+`, `-`, `0`, arrows) or the buttons on the
+  map; a room chip below the map brings its room into view. Tap an obstacle
+  for its details, photo and *Ignore*. *Map info* shows size, scale and
+  calibration and picks robot coordinates. With several floors, *Choose
+  floor* changes the map after a confirmation.
+- **Task type:** All, Room, Zone, Spot, Go to (choosing rooms, zones and
+  points on the map follows in a later update). Locked while a task runs; the
   card shows whether the running task is scheduled or a shortcut.
 - **Controls:** Clean, Pause, Resume, Stop, Return — depending on the state.
   The station status sits next to them and turns orange or red with a
@@ -73,6 +81,35 @@ entity: vacuum.my_robot
 | `hidden_card_objects` | none | Parts to hide: `title`, `state`, `menu`, `status`, `task_type`, `controls`, `action_buttons`, `animations`, `shortcuts`, `cruising_history`, `error_message`, `warning_message`, `info_message`, `low_water_message`, `map_change_confirmation`, `progress_bar`, `dock_status_indicator`. |
 
 Hiding `map_change_confirmation` changes maps without asking first.
+
+### Map
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `map_display` | `standard` | `standard` (rooms in their own colours) or `floor_plan` (one tone with outlines). |
+| `color_scheme` | `auto` | `auto` (follows the light/dark theme), `light`, `dark`, `grey`. |
+| `icon_set` | `busch` | `busch` (own icons) or `material` (`mdi:` icons). |
+| `hidden_objects` | none | Map objects to hide: `rooms`, `cleaning_settings`, `blocked_rooms`, `robot`, `charger`, `station_status`, `router`, `path`, `carpets`, `detected_carpets`, `deleted_carpets`, `furnitures`, `no_go_areas`, `no_mopping_areas`, `virtual_walls`, `passable_thresholds`, `impassable_thresholds`, `ramps`, `curtains`, `predefined_points`, `obstacles`, `stains`, `pets`. |
+| `override_colors` | none | Own colours for `floor`, `wall`, `room`, `carpet`, `no_go`, `no_mop`, `virtual_wall`, `path`, `robot`, `charger`; the same keys under `dark:` apply in the dark scheme. |
+| `map_config` | none | Per floor, keyed `map_<index>` (the floor's index in `maps`): `rotation` (0/90/180/270, display only), `scale`, `opacity`, `object_scale`, `object_opacity`, `font_size` (12), `crop` (`top`/`right`/`bottom`/`left` in percent), `background_image` and `overlay_image` (`url`, `x0`, `y0`, `x1`, `y1` in robot millimetres from *Map info*), `hidden_objects`. |
+
+```yaml
+type: custom:busch-vacuum-card
+entity: vacuum.my_robot
+color_scheme: grey
+override_colors:
+  robot: "#2e7d32"
+  dark:
+    floor: "#1f2a33"
+map_config:
+  map_1:
+    rotation: 90
+    font_size: 14
+```
+
+The map uses the integration's map data when available (exact room taps,
+own colours); otherwise it shows the integration's map picture, where only
+`grey` changes its colours and objects drawn into the picture stay visible.
 
 ## Theming
 

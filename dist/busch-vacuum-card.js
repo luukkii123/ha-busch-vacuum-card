@@ -1939,13 +1939,14 @@ class MapView {
         this.tools.className = 'map-tools';
         this.lockReason = document.createElement('span');
         this.lockReason.id = 'map-lock-reason';
-        this.lockReason.className = 'visually-hidden';
+        // Hidden, yet a valid aria-describedby target (the description survives display: none).
+        this.lockReason.hidden = true;
         this.tools.appendChild(this.lockReason);
         this._tool = {};
         for (const [name, icon, key, act] of [
             ['zoom-in', 'mdi:plus', 'zoomIn', () => this._zoomAt(this._zoom * MAP_ZOOM.step)],
             ['zoom-out', 'mdi:minus', 'zoomOut', () => this._zoomAt(this._zoom / MAP_ZOOM.step)],
-            ['fit', 'mdi:fit-to-screen-outline', 'zoomFit', () => this._setView(1, 0, 0)],
+            ['fit', 'mdi:fit-to-screen-outline', 'zoomFit', () => this._setView(1, 0, 0, true)],
             ['info', 'mdi:information-outline', 'karteninfo', () => this.card._openDialog(this._infoView())]
         ]) {
             const button = BuschUI.action({ label: translate(null, key), icon, variant: 'secondary', onClick: act });
@@ -2110,7 +2111,7 @@ class MapView {
             const h = Math.max(...pts.map((p) => p.y)) - Math.min(...pts.map((p) => p.y));
             const zoom = Math.min(MAP_ZOOM.max, Math.max(MAP_ZOOM.min, 0.8 * Math.min(rect.width / (w || 1), rect.height / (h || 1))));
             const centre = applyAffine(viewMatrix(Object.assign({ width: this._size.width, height: this._size.height, stageWidth: rect.width, stageHeight: rect.height, zoom }, this._display)), this.toImage(room));
-            this._setView(zoom, rect.width / 2 - centre.x, rect.height / 2 - centre.y);
+            this._setView(zoom, rect.width / 2 - centre.x, rect.height / 2 - centre.y, true);
         }
         this._renderLayers();
         this._renderChips();
@@ -2241,7 +2242,7 @@ class MapView {
     _wheel(e) {
         if (this._locked() || !this._view) return;
         e.preventDefault();
-        this._zoomAt(this._zoom * Math.exp(-e.deltaY * MAP_ZOOM.wheel), { x: e.clientX, y: e.clientY });
+        this._zoomAt(this._zoom * Math.exp(-e.deltaY * MAP_ZOOM.wheel), { x: e.clientX, y: e.clientY }, false);
     }
 
     _onKey(e) {
@@ -2260,11 +2261,11 @@ class MapView {
         const stepX = rect.width / 10, stepY = rect.height / 10;
         const act = {
             '+': () => this._zoomAt(this._zoom * MAP_ZOOM.step), '=': () => this._zoomAt(this._zoom * MAP_ZOOM.step),
-            '-': () => this._zoomAt(this._zoom / MAP_ZOOM.step), '0': () => this._setView(1, 0, 0),
-            ArrowLeft: () => this._setView(this._zoom, this._panX + stepX, this._panY),
-            ArrowRight: () => this._setView(this._zoom, this._panX - stepX, this._panY),
-            ArrowUp: () => this._setView(this._zoom, this._panX, this._panY + stepY),
-            ArrowDown: () => this._setView(this._zoom, this._panX, this._panY - stepY)
+            '-': () => this._zoomAt(this._zoom / MAP_ZOOM.step), '0': () => this._setView(1, 0, 0, true),
+            ArrowLeft: () => this._setView(this._zoom, this._panX + stepX, this._panY, true),
+            ArrowRight: () => this._setView(this._zoom, this._panX - stepX, this._panY, true),
+            ArrowUp: () => this._setView(this._zoom, this._panX, this._panY + stepY, true),
+            ArrowDown: () => this._setView(this._zoom, this._panX, this._panY - stepY, true)
         }[e.key];
         if (!act) return;
         e.preventDefault();
@@ -2281,13 +2282,14 @@ class MapView {
         return { zoom: z, panX: sx * (1 - f) + from.panX * f, panY: sy * (1 - f) + from.panY * f };
     }
 
-    _zoomAt(zoom, client) {
+    _zoomAt(zoom, client, animate = true) {
         const view = this._zoomed({ zoom: this._zoom, panX: this._panX, panY: this._panY }, zoom, client);
-        this._setView(view.zoom, view.panX, view.panY);
+        this._setView(view.zoom, view.panX, view.panY, animate);
     }
 
     /** New zoom and pan within limits: 1×–8×, the map's centre never leaves the stage, 1× is centred. */
-    _setView(zoom, panX, panY) {
+    _setView(zoom, panX, panY, animate = false) {
+        this.el.toggleAttribute('data-animate', animate);
         this._zoom = Math.min(MAP_ZOOM.max, Math.max(MAP_ZOOM.min, zoom));
         const rect = this._stageRect();
         const fitted = this._fitted(rect);
@@ -2317,7 +2319,7 @@ class MapView {
         if (many && !this._floorButton) {
             this._floorReason = document.createElement('span');
             this._floorReason.id = 'map-floor-reason';
-            this._floorReason.className = 'visually-hidden';
+            this._floorReason.hidden = true;
             this._floorButton = BuschUI.action({ label: translate(this.hass, 'stockwerkWaehlen'), icon: 'mdi:layers-triple-outline', variant: 'secondary', onClick: () => this.card._openDialog(this._floorsView()) });
             this._floorButton.setAttribute('data-action', 'map-floors');
             this._floorButton.setAttribute('aria-haspopup', 'dialog');
@@ -2800,10 +2802,8 @@ class MapView {
         this.bubble.replaceChildren(text, details, close);
         this.bubble.setAttribute('aria-label', translate(hass, 'hindernis'));
         this.bubble.setAttribute('data-obstacle', String(id));
-        // Above the symbol, kept inside the stage.
-        const x = s ? Math.min(Math.max(8, s.x - rect.left), Math.max(8, rect.width - 8)) : 8;
+        // Above the symbol (below it in the upper half), kept inside the stage.
         const y = s ? s.y - rect.top : 8;
-        this.bubble.style.setProperty('--bvc-bubble-x', x + 'px');
         this.bubble.style.setProperty('--bvc-bubble-y', y + 'px');
         this.bubble.toggleAttribute('data-below', y < rect.height / 2);
         this.bubble.hidden = false;
@@ -3150,6 +3150,10 @@ const CARD_STYLES = BuschUI.cardStyles + `
 .map {
     border-radius: var(--ha-card-border-radius, 12px);
 }
+/* A normal card scrolls; the map keeps its size instead of being squeezed by long messages. */
+.map-slot {
+    flex-shrink: 0;
+}
 .map:focus-visible {
     outline: 2px solid var(--primary-color, #03a9f4);
     outline-offset: 2px;
@@ -3194,15 +3198,19 @@ const CARD_STYLES = BuschUI.cardStyles + `
     top: 0;
     transform-origin: 0 0;
     will-change: transform;
+}
+/* Buttons, keys, double tap and room chips tween; fingers, wheel and new map data move it directly. */
+.map-view[data-animate] .map-pan {
     transition: transform 0.2s ease-out;
 }
-/* Fingers move the map directly; animations hidden (CORE-18) or reduced motion: no tween. */
+/* Animations hidden (CORE-18) or reduced motion: no tween. */
 .map-view[data-gesture] .map-pan,
 .map-view[data-still] .map-pan {
     transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
-    .map-pan { transition: none; }
+    /* As specific as the animate rule, or it would lose (found in the browser run). */
+    .map-view[data-animate] .map-pan { transition: none; }
 }
 .map-tools {
     position: absolute;
@@ -3211,6 +3219,10 @@ const CARD_STYLES = BuschUI.cardStyles + `
     display: flex;
     flex-direction: column;
     gap: var(--ha-space-1, 4px);
+}
+:host([data-hand=left]) .map-bubble {
+    left: 68px;
+    right: var(--ha-space-2, 8px);
 }
 :host([data-hand=left]) .map-tools {
     right: auto;
@@ -3221,34 +3233,26 @@ const CARD_STYLES = BuschUI.cardStyles + `
     background: var(--ha-card-background, var(--card-background-color, #ffffff));
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
-.visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
 .map-bubble {
     position: absolute;
-    left: 0;
+    /* Across the map left of the zoom buttons' column; only its height follows the symbol. */
+    left: var(--ha-space-2, 8px);
+    right: 68px;
     top: 0;
     z-index: 3;
     display: flex;
     align-items: center;
     gap: var(--ha-space-1, 4px);
-    max-width: min(280px, calc(100% - 16px));
     padding: var(--ha-space-1, 4px) var(--ha-space-1, 4px) var(--ha-space-1, 4px) var(--ha-space-3, 12px);
     box-sizing: border-box;
     border-radius: var(--ha-card-border-radius, 12px);
     background: var(--ha-card-background, var(--card-background-color, #ffffff));
     color: var(--primary-text-color, #212121);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transform: translate(clamp(8px, calc(var(--bvc-bubble-x, 0px) - 50%), calc(100% - 8px)), calc(var(--bvc-bubble-y, 0px) - 100% - 16px));
+    transform: translateY(calc(var(--bvc-bubble-y, 0px) - 100% - 16px));
 }
 .map-bubble[data-below] {
-    transform: translate(clamp(8px, calc(var(--bvc-bubble-x, 0px) - 50%), calc(100% - 8px)), calc(var(--bvc-bubble-y, 0px) + 16px));
+    transform: translateY(calc(var(--bvc-bubble-y, 0px) + 16px));
 }
 .map-bubble-text {
     display: flex;
