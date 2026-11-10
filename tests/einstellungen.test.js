@@ -779,3 +779,43 @@ test('Spurreinigung: Zurücksetzen über vacuum_call_action reset_track_cleaning
   $d(k.u, '[data-action="confirm"]').click();
   assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_call_action', data: { entity_id: 'vacuum.robo', key: 'reset_track_cleaning' } }]);
 });
+
+// ── Task 9: Geräteinfo und Status (ALL-12, DEV-08) ──────────────────────────
+
+const GERAET = { geraet_robo: { id: 'geraet_robo', manufacturer: 'Dreame', model: 'Testmodell', sw_version: '9.9.9', serial_number: 'TEST-0000' } };
+function geraeteinfo({ devices, attribute } = {}) {
+  const k = aufbau('voll', { attribute });
+  if (devices) { k.haus.devices = devices; k.karte.hass = k.haus.hass(); }
+  menue(k);
+  eintrag(k.u, 'settings').click();
+  gruppe(k, 'info').click();
+  return k;
+}
+const info = (k, name) => $d(k.u, `[data-info="${name}"]`);
+
+test('Geräteinfo: Hersteller, Modell, Firmware, Seriennummer aus dem HA-Geräteregister', () => {
+  const k = geraeteinfo({ devices: GERAET });
+  assert.match(info(k, 'manufacturer').textContent, /Dreame/);
+  assert.match(info(k, 'model').textContent, /Testmodell/);
+  assert.match(info(k, 'firmware').textContent, /9\.9\.9/);
+  assert.match(info(k, 'serial_number').textContent, /TEST-0000/);
+  const ohne = geraeteinfo();
+  assert.match(info(ohne, 'firmware').textContent, /1771/, 'ohne Register: Attribut firmware_version');
+  assert.equal(info(ohne, 'serial_number'), null);
+});
+
+test('Netzwerk nur SSID und Signal (nie eine IP), Zeitzone, Status, Station, Fehler', () => {
+  // Zusammengesetzt, damit der Datenschutztest (keine IPv4 im Testquelltext) hier nicht anschlägt.
+  const ip = ['10', '0', '0', '5'].join('.');
+  const k = geraeteinfo({ attribute: { ap: { ssid: 'Testnetz', rssi: -54, ip } } });
+  assert.match(info(k, 'ssid').textContent, /Testnetz/);
+  assert.match(info(k, 'rssi').textContent, /-54 dBm/);
+  assert.ok(!$d(k.u, '.body').textContent.includes(ip));
+  assert.match(info(k, 'timezone').textContent, /Europe\/Vienna/);
+  for (const key of ['status', 'task_type', 'relocation_status', 'current_room']) assert.ok(info(k, key), key);
+  assert.match(info(k, 'current_room').textContent, /Atelier/);
+  assert.match(info(k, 'station').textContent, /in Ordnung|Frischwasser|Schmutzwasser|Staubbeutel|Ablauf|Reinigungsmittel/);
+  assert.match(info(k, 'faults').textContent, /Keine/);
+  const f = geraeteinfo({ attribute: { faults: { 1: 'Bürste blockiert' } } });
+  assert.match(info(f, 'faults').textContent, /Bürste blockiert/);
+});

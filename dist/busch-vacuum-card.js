@@ -565,6 +565,17 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zuruecksetzenFrage: '{name} zurücksetzen? Aktuell noch {prozent}; danach zählt das Gerät wieder ab 100 %. Nur nach dem Tausch oder der Reinigung des Teils.',
             schonVoll: 'Steht schon auf 100 %.',
             summen: 'Summen',
+            hersteller: 'Hersteller',
+            modell: 'Modell',
+            firmware: 'Firmware',
+            seriennummer: 'Seriennummer',
+            wlan: 'WLAN',
+            signal: 'Signal',
+            zeitzone: 'Zeitzone',
+            stationOk: 'in Ordnung',
+            stoerungen: 'Störungen',
+            keine: 'Keine',
+            set_task_status: 'Aufgabenstatus',
             set_total_runtime: 'Gesamtlaufzeit',
             set_total_cruise_time: 'Gesamte Cruising-Zeit',
             set_track_cleaning_left: 'Spurreinigung',
@@ -924,6 +935,17 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zuruecksetzenFrage: 'Reset {name}? Currently {prozent} left; afterwards the device counts from 100 % again. Only after replacing or cleaning the part.',
             schonVoll: 'Already at 100 %.',
             summen: 'Totals',
+            hersteller: 'Manufacturer',
+            modell: 'Model',
+            firmware: 'Firmware',
+            seriennummer: 'Serial number',
+            wlan: 'Wi-Fi',
+            signal: 'Signal',
+            zeitzone: 'Time zone',
+            stationOk: 'all right',
+            stoerungen: 'Faults',
+            keine: 'None',
+            set_task_status: 'Task status',
             set_total_runtime: 'Total runtime',
             set_total_cruise_time: 'Total cruising time',
             set_track_cleaning_left: 'Track cleaning',
@@ -4257,10 +4279,50 @@ function resetConfirm(card, name, label, percent) {
     };
 }
 
+/**
+ * Device info and status (DEV-08), display only: HA's device registry first
+ * (`hass.devices`), then the vacuum's attributes and sensors. Network shows
+ * SSID and signal, never an address.
+ */
+function deviceInfo(card, model, body, hass) {
+    const own = hass.entities && hass.entities[card._opts.entity];
+    const device = (own && own.device_id && hass.devices && hass.devices[own.device_id]) || {};
+    const rows = [];
+    const add = (name, label, value) => {
+        if (value !== undefined && value !== null && value !== '') rows.push(infoRow(label, String(value), name));
+    };
+    add('manufacturer', translate(hass, 'hersteller'), device.manufacturer);
+    add('model', translate(hass, 'modell'), device.model);
+    add('firmware', translate(hass, 'firmware'), device.sw_version || statText(hass, model, 'sensor.firmware_version', 'firmware_version', '').trim());
+    add('serial_number', translate(hass, 'seriennummer'), device.serial_number);
+    const ap = model.attr('ap') || {};
+    add('ssid', translate(hass, 'wlan'), ap.ssid);
+    add('rssi', translate(hass, 'signal'), ap.rssi !== undefined && ap.rssi !== null ? ap.rssi + ' dBm' : null);
+    add('timezone', translate(hass, 'zeitzone'), model.attr('timezone'));
+    for (const key of ['status', 'state', 'task_status', 'task_type', 'relocation_status', 'current_room']) {
+        const value = statText(hass, model, 'sensor.' + key, key, '');
+        add(key, entityLabel(hass, 'sensor', key), value === null ? null : String(value).trim());
+    }
+    if (model.can('dock')) {
+        const status = dockStatus(model);
+        add('station', translate(hass, 'station'), translate(hass, status.key || 'stationOk'));
+    }
+    const faults = model.attr('faults');
+    if (faults !== undefined) {
+        const list = faults && typeof faults === 'object' ? Object.values(faults).filter(Boolean) : [faults].filter(Boolean);
+        add('faults', translate(hass, 'stoerungen'), list.length ? list.join(', ') : translate(hass, 'keine'));
+    }
+    const list = document.createElement('div');
+    list.className = 'settings-list';
+    list.append(...rows);
+    body.appendChild(list);
+}
+
 /** What groups show above their rows. */
 const GROUP_HEAD = {
     dnd: dndPeriods,
-    consumables: consumableParts
+    consumables: consumableParts,
+    info: deviceInfo
 };
 
 /** What groups show beyond their rows. */

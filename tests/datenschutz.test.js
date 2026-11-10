@@ -49,6 +49,13 @@ for (const datei of ERWARTET) {
   });
 }
 
+// Testquelltexte (Plan device-settings Task 9): Geräteinfo nur synthetisch.
+for (const datei of fs.readdirSync(__dirname).filter((f) => f.endsWith('.js') && f !== 'datenschutz.test.js')) {
+  test(`${datei}: keine privaten Werte`, () => {
+    assert.deepEqual(privateFunde(fs.readFileSync(path.join(__dirname, datei), 'utf8')), []);
+  });
+}
+
 // Grundriss: die echten Raumrechtecke (x0,y0,x1,y1) stehen nur privat; hier
 // liegen ihre scrypt-Werte — langsam, damit sich kleine Zahlen nicht durchprobieren lassen.
 const ECHTE_RAEUME = new Set([

@@ -162,12 +162,12 @@ const ZUSTAND = { docked: 'Angedockt', cleaning: 'Reinigt', paused: 'Pausiert', 
  * callService-Aufruf; `antwort` bestimmt, was callService zurückgibt (Vorgabe:
  * offenes Versprechen wie ein langsamer Roboter).
  */
-function neuesHaus({ states, entities = {}, services = {}, sprache = 'de' } = {}) {
+function neuesHaus({ states, entities = {}, services = {}, devices, sprache = 'de' } = {}) {
   states = Object.assign({ 'vacuum.robo': einfacherSauger() }, states);
   for (let i = 0; i < 50; i++) states['sensor.fremd_' + i] = { entity_id: 'sensor.fremd_' + i, state: String(i), attributes: {} };
-  const haus = { rufe: [], antwort: () => new Promise(() => {}), sprache, entities, services };
+  const haus = { rufe: [], antwort: () => new Promise(() => {}), sprache, entities, services, devices };
   haus.hass = () => ({
-    states: haus.states, entities: haus.entities, services: haus.services,
+    states: haus.states, entities: haus.entities, services: haus.services, devices: haus.devices,
     language: haus.sprache, locale: { language: haus.sprache }, themes: {}, config: { unit_system: { length: 'km' } },
     // Wie HAs Formatierer: Zustände übersetzt, Zahl mit der Einheit der Entität.
     formatEntityState: (s, zustand = s.state) => (ZUSTAND[zustand] || zustand) + (s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : ''),
