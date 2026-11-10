@@ -550,3 +550,152 @@ test('Halte-Knöpfe ▲▼◀▶ fahren mit 50 % über dieselbe Sende-Logik; Sto
   await k.antworte();
   letzterIstStopp(k.haus);
 });
+
+// ── Task 4: Tastatur (REM-02) ───────────────────────────────────────────────
+
+/** Freigegeben; jeder Schritt wird sofort beantwortet und der Abstand abgewartet. */
+async function tastatur() {
+  const k = ansicht();
+  k.starten();
+  k.schritt = async () => { while (k.offen.length) await k.antworte(); k.u.uhr.vor(200); };
+  k.runter = (key, extra) => { const e = k.u.neuesEreignis('keydown', Object.assign({ key }, extra)); k.u.document.dispatchEvent(e); return e; };
+  k.hoch = (key, extra) => { const e = k.u.neuesEreignis('keyup', Object.assign({ key }, extra)); k.u.document.dispatchEvent(e); return e; };
+  return k;
+}
+
+test('Tastatur: W/S/↑/↓ und A/D/←/→ kombinierbar, letzte keyup = Stopp', async () => {
+  const k = await tastatur();
+  const e = k.runter('w');
+  assert.equal(e.defaultPrevented, true);
+  assert.deepEqual(schritte(k.haus), [[100, 0]]);
+  k.runter('d');
+  await k.schritt();
+  assert.deepEqual(schritte(k.haus).at(-1), [100, -128]);
+  k.hoch('w');
+  await k.schritt();
+  assert.deepEqual(schritte(k.haus).at(-1), [0, -128], 'D hält noch');
+  k.hoch('d');
+  await k.schritt();
+  letzterIstStopp(k.haus);
+  for (const [key, soll] of [['ArrowUp', [100, 0]], ['ArrowDown', [-100, 0]], ['ArrowLeft', [0, 128]], ['ArrowRight', [0, -128]], ['S', [-100, 0]], ['A', [0, 128]]]) {
+    k.u.uhr.vor(1000);
+    await k.schritt();
+    k.runter(key);
+    await k.schritt();
+    assert.deepEqual(schritte(k.haus).filter(([v, r]) => v || r).at(-1), soll, key);
+    k.hoch(key);
+    await k.schritt();
+  }
+});
+
+test('Tastatur: Auto-Repeat ignoriert, auch nach Fokusverlust kein Wiederanfahren', async () => {
+  const k = await tastatur();
+  k.runter('w');
+  for (let i = 0; i < 20; i++) k.runter('w', { repeat: true });
+  assert.equal(schritte(k.haus).length, 1);
+  for (const fn of k.u.kontext.window.listeners.blur || []) fn({});
+  await k.schritt();
+  const vorher = schritte(k.haus).length;
+  k.runter('w', { repeat: true });
+  k.u.uhr.vor(1000);
+  await k.schritt();
+  assert.ok(schritte(k.haus).slice(vorher).every(([v, r]) => !v && !r), 'gehaltene Taste nach blur fährt nicht wieder an');
+  k.hoch('w');
+  k.runter('w');
+  await k.schritt();
+  assert.deepEqual(schritte(k.haus).at(-1), [100, 0], 'neuer Tastendruck fährt');
+});
+
+test('Tastatur: Umschalt langsamer, Strg nur aufs Drehen, Strg+W/S nicht belegt', async () => {
+  const k = await tastatur();
+  k.runter('W', { shiftKey: true });
+  assert.deepEqual(schritte(k.haus), [[50, 0]]);
+  k.hoch('Shift', { shiftKey: false });
+  await k.schritt();
+  assert.deepEqual(schritte(k.haus).at(-1), [100, 0], 'Umschalt losgelassen → voll');
+  k.hoch('w');
+  await k.schritt();
+  k.u.uhr.vor(1000);
+  await k.schritt();
+  k.runter('a', { ctrlKey: true });
+  await k.schritt();
+  assert.deepEqual(schritte(k.haus).filter(([v, r]) => v || r).at(-1), [0, 64]);
+  k.hoch('a', { ctrlKey: true });
+  await k.schritt();
+  k.u.uhr.vor(1000);
+  await k.schritt();
+  const vorher = k.haus.rufe.length;
+  for (const key of ['w', 's', 'W']) {
+    const e = k.runter(key, { ctrlKey: true });
+    assert.equal(e.defaultPrevented, false, 'Strg+' + key + ' bleibt beim Browser');
+    k.hoch(key, { ctrlKey: true });
+  }
+  k.u.uhr.vor(1000);
+  assert.equal(k.haus.rufe.length, vorher);
+});
+
+test('Tastatur: Leertaste = Stopp, Escape = Stopp und Ansicht verlassen', async () => {
+  const k = await tastatur();
+  k.runter('w');
+  k.runter('a');
+  await k.antworte();
+  const e = k.runter(' ');
+  assert.equal(e.defaultPrevented, true);
+  letzterIstStopp(k.haus);
+  k.hoch('w'); k.hoch('a');
+  await k.schritt();
+  k.u.uhr.vor(1000);
+  await k.schritt();
+  k.runter('ArrowUp');
+  await k.antworte();
+  k.runter('Escape');
+  letzterIstStopp(k.haus);
+  k.u.zurueck();
+  assert.equal($d(k.u, '.remote'), null, 'zurück im Menü');
+});
+
+test('Tastatur: nur freigegeben, nicht in Textfeldern, nicht wenn eine andere Ansicht oben liegt', async () => {
+  const k = ansicht();
+  taste(k.u, 'w');
+  assert.deepEqual(k.haus.rufe, [], 'unscharf');
+  k.starten();
+  const feld = k.u.document.createElement('input');
+  dialogVon(k.u).shadowRoot.appendChild(feld);
+  feld.focus();
+  taste(k.u, 'w');
+  assert.deepEqual(k.haus.rufe, [], 'Textfeld hat den Fokus');
+  feld.remove();
+  $d(k.u, '[data-axis="velocity"]').focus();
+  dialogVon(k.u)._views.push({ title: 'x', kind: 'editor', render: () => {} });
+  taste(k.u, 'w');
+  assert.deepEqual(k.haus.rufe, [], 'andere Ansicht oben');
+  dialogVon(k.u)._views.pop();
+  taste(k.u, 'w');
+  assert.deepEqual(schritte(k.haus), [[100, 0]]);
+});
+
+test('Präzision: sichtbarer Schalter, halbiert Tempo und Drehen, je Öffnen aus', async () => {
+  const k = await tastatur();
+  const p = $d(k.u, '[data-action="precision"]');
+  assert.equal(p.getAttribute('role'), 'switch');
+  assert.equal(p.getAttribute('aria-checked'), 'false');
+  assert.match(p.textContent, /Präzision/);
+  p.click();
+  assert.equal(p.getAttribute('aria-checked'), 'true');
+  k.runter('w'); k.runter('d');
+  await k.schritt();
+  assert.deepEqual(schritte(k.haus).at(-1), [50, -64]);
+  assert.equal($d(k.u, '[data-axis="velocity"]').getAttribute('aria-valuetext'), 'Mitte', 'Tasten bewegen den Regler nicht');
+});
+
+test('Hilfe nennt die Tastenbelegung und dass Strg+W/S beim Browser bleibt (R03)', () => {
+  const k = ansicht();
+  const hilfe = $d(k.u, '.remote-help').textContent;
+  for (const t of ['W', 'S', 'A', 'D', 'Umschalt', 'Strg', 'Leertaste', 'Escape', 'Strg+W']) assert.ok(hilfe.includes(t), t);
+});
+
+test('Starten legt den Fokus auf den Tempo-Regler (Tastatur sofort bereit)', () => {
+  const k = ansicht();
+  k.starten();
+  assert.equal(dialogVon(k.u).shadowRoot.activeElement, $d(k.u, '[data-axis="velocity"]'));
+});

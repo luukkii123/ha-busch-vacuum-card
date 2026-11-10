@@ -448,6 +448,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             remoteWarnung: 'Rückwärts fährt ohne Kollisionsschutz. Loslassen hält sofort an.',
             remoteStarten: 'Steuerung starten',
             remoteStopp: 'Stopp',
+            remotePraezision: 'Präzision',
+            remoteHilfe: 'Tastatur: W/↑ vor, S/↓ zurück, A/← links, D/→ rechts, kombinierbar. Umschalt = langsamer, Strg = langsamer drehen (Strg+W und Strg+S bleiben beim Browser), Leertaste = Stopp, Escape = Stopp und zurück. Präzision halbiert Tempo und Drehen.',
             remoteTempo: 'Tempo',
             remoteLenken: 'Lenken',
             remoteMitte: 'Mitte',
@@ -1059,6 +1061,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             remoteWarnung: 'Reversing has no collision guard. Letting go stops at once.',
             remoteStarten: 'Start control',
             remoteStopp: 'Stop',
+            remotePraezision: 'Precision',
+            remoteHilfe: 'Keyboard: W/↑ forward, S/↓ back, A/← left, D/→ right, combinable. Shift = slower, Ctrl = slower turning (Ctrl+W and Ctrl+S stay with the browser), Space = stop, Escape = stop and back. Precision halves speed and turning.',
             remoteTempo: 'Speed',
             remoteLenken: 'Steering',
             remoteMitte: 'centre',
@@ -9044,6 +9048,11 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     gap: var(--ha-space-2, 8px);
 }
 .remote-hold { min-width: 48px; min-height: 48px; touch-action: none; }
+.remote-help {
+    margin: var(--ha-space-2, 8px) 0 0;
+    color: var(--secondary-text-color, #727272);
+    overflow-wrap: anywhere;
+}
 @media (prefers-reduced-motion: reduce) {
     .remote-knob { transition: none !important; }
 }
@@ -10978,7 +10987,7 @@ function remoteBlock(model, hass) {
 function remoteView(card) {
     const view = { title: translate(card._hass, 'entryRemote'), kind: 'editor', watch: () => [] };
     // R21 on purpose: arming lives only while the view is open; a remembered arming would let a stray touch move the robot.
-    const ctl = view.remote = { armed: false, note: null, block: null, moving: false, sources: new Map(), mods: {}, precision: false, root: null, parts: {}, listening: false, sticks: [], holds: [] };
+    const ctl = view.remote = { armed: false, note: null, block: null, moving: false, sources: new Map(), mods: {}, precision: false, root: null, parts: {}, listening: false, sticks: [], holds: [], keys: new Set(), dialog: null };
     const hass = () => card._hass;
     const text = (key, vars) => translate(hass(), key, vars);
     ctl.sender = new RemoteSender(hass, card._opts.entity, () => {
@@ -11012,6 +11021,7 @@ function remoteView(card) {
     /** Auto-stop: all input released at once. */
     const halt = () => {
         ctl.sources.clear();
+        ctl.keys.clear();
         for (const one of ctl.sticks) one.reset();
         for (const reset of ctl.holds) reset();
         if (ctl.moving) card._haptic();
@@ -11032,8 +11042,40 @@ function remoteView(card) {
         ctl.note = null;
         ctl.armed = true;
         paint();
+        // The start button hides now: the focus goes to the speed stick, the keys work at once.
+        if (ctl.parts.velocity) ctl.parts.velocity.focus();
     };
 
+    /** Keys (REM-02): a set, so auto-repeat changes nothing; Ctrl+W/S stay with the browser (tab close, save). */
+    const KEYS = { w: ['v', 1], arrowup: ['v', 1], s: ['v', -1], arrowdown: ['v', -1], a: ['t', 1], arrowleft: ['t', 1], d: ['t', -1], arrowright: ['t', -1] };
+    const keyAxes = () => {
+        const axes = { v: 0, t: 0 };
+        for (const key of ctl.keys) axes[KEYS[key][0]] += KEYS[key][1];
+        return ctl.keys.size ? axes : null;
+    };
+    const onKey = (event) => {
+        const dialog = ctl.dialog;
+        if (!ctl.armed || !dialog || dialog._views[dialog._views.length - 1] !== view) return;
+        const active = dialog.shadowRoot && dialog.shadowRoot.activeElement;
+        if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
+        const key = String(event.key || '').toLowerCase();
+        const down = event.type === 'keydown';
+        ctl.mods = { shift: !!event.shiftKey, ctrl: !!event.ctrlKey };
+        if (key === ' ') {
+            if (down) { event.preventDefault(); halt(); }
+            return;
+        }
+        if (!KEYS[key]) {
+            if (ctl.sources.size) drive(); // Shift/Ctrl pressed or let go while moving
+            return;
+        }
+        if ((event.ctrlKey || event.metaKey) && (key === 'w' || key === 's')) return;
+        event.preventDefault();
+        if (down && (event.repeat || ctl.keys.has(key))) return;
+        if (down) ctl.keys.add(key);
+        else ctl.keys.delete(key);
+        ctl.input('keys', keyAxes());
+    };
     const onBlur = () => halt();
     const onVisibility = () => { if (document.hidden) halt(); };
     const listen = (on) => {
@@ -11042,6 +11084,8 @@ function remoteView(card) {
         const method = on ? 'addEventListener' : 'removeEventListener';
         window[method]('blur', onBlur);
         document[method]('visibilitychange', onVisibility);
+        document[method]('keydown', onKey);
+        document[method]('keyup', onKey);
     };
     view.leave = () => {
         ctl.armed = false;
@@ -11067,6 +11111,8 @@ function remoteView(card) {
         p.note.textContent = ctl.note || '';
         p.arm.hidden = ctl.armed;
         p.arm.disabled = !!ctl.block;
+        p.precision.setAttribute('aria-checked', String(ctl.precision));
+        for (const one of ctl.sticks) one.show();
     };
     const line = (cls, role) => {
         const node = document.createElement('p');
@@ -11184,8 +11230,19 @@ function remoteView(card) {
         const half = REMOTE.deadzone + (1 - REMOTE.deadzone) / 2; // 50 % after the dead zone
         holds.append(hold('forward', 'mdi:arrow-up-bold', { v: half }), hold('left', 'mdi:rotate-left', { t: half }),
             hold('right', 'mdi:rotate-right', { t: -half }), hold('backward', 'mdi:arrow-down-bold', { v: -half }));
-        pad.append(stick('velocity'), holds, stick('turn'));
-        root.append(p.warning, p.status, p.blocked, p.note, pad, actions);
+        p.velocity = stick('velocity');
+        pad.append(p.velocity, holds, stick('turn'));
+        p.precision = BuschUI.action({ label: text('remotePraezision'), text: text('remotePraezision'), icon: 'mdi:tortoise', variant: 'quiet', onClick: () => {
+            ctl.precision = !ctl.precision;
+            if (ctl.sources.size) drive();
+            paint();
+        } });
+        p.precision.setAttribute('data-action', 'precision');
+        p.precision.setAttribute('role', 'switch');
+        actions.appendChild(p.precision);
+        p.help = line('remote-help');
+        p.help.textContent = text('remoteHilfe');
+        root.append(p.warning, p.status, p.blocked, p.note, pad, actions, p.help);
         ctl.root = root;
     };
 
@@ -11195,7 +11252,8 @@ function remoteView(card) {
         ctl.block = block;
         paint();
     };
-    view.render = (body, h) => {
+    view.render = (body, h, dialog) => {
+        ctl.dialog = dialog;
         if (!ctl.root) build();
         listen(true);
         body.appendChild(ctl.root);
