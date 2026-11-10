@@ -30,12 +30,24 @@ function editor(config = { type: 'custom:busch-vacuum-card', entity: 'vacuum.rob
   return { u, ed, form, aenderungen, aendere };
 }
 
-const OPTIONEN = ['entity', 'title', 'scripts', 'locked', 'touch_lock', 'disable_haptic', 'left_handed', 'full_height', 'aspect_ratio', 'max_height_offset', 'hidden_card_objects'];
+const OPTIONEN = ['entity', 'title', 'scripts', 'locked', 'touch_lock', 'disable_haptic', 'left_handed', 'full_height', 'aspect_ratio', 'max_height_offset', 'hidden_card_objects',
+  'map_display', 'color_scheme', 'icon_set', 'hidden_objects'];
+// override_colors (hell und dunkel) und map_config sind eigene, nicht flache Abschnitte.
+const FARBEN = ['floor', 'wall', 'room', 'carpet', 'no_go', 'no_mop', 'virtual_wall', 'path', 'robot', 'charger'];
 
 // ── Editor (CORE-18) ───────────────────────────────────────────────────────
+/** Felder der flachen Abschnitte; verschachtelte Abschnitte (override_colors, map_config) als eigener Name. */
+function flach(schema) {
+  return schema.flatMap((f) => (f.type === 'expandable' ? (f.flatten ? flach(f.schema) : [f]) : [f]));
+}
+
 test('Schema: jede Option der Karte hat ein Feld', () => {
   const { SCHEMA } = intern(neueUmgebung());
-  assert.deepEqual(felder(SCHEMA).map((f) => f.name).sort(), [...OPTIONEN].sort());
+  assert.deepEqual(flach(SCHEMA).map((f) => f.name).sort(), [...OPTIONEN, 'override_colors', 'map_config'].sort());
+  const farben = flach(SCHEMA).find((f) => f.name === 'override_colors');
+  assert.deepEqual(farben.schema.filter((f) => f.name !== 'dark').map((f) => f.name), FARBEN);
+  assert.deepEqual(farben.schema.find((f) => f.name === 'dark').schema.map((f) => f.name), FARBEN, 'dunkel getrennt (MAP-09)');
+  assert.ok(farben.schema.every((f) => f.type === 'expandable' || f.selector.color_rgb), 'Farbwähler');
 });
 
 test('Entität nur vacuum.*, Skripte nur script.* (mehrere)', () => {
@@ -58,7 +70,8 @@ test('hidden_card_objects: alle Namen aus dem Inventar CORE-18', () => {
 
 test('Labels und Helfer DE/EN für jedes Feld und jeden Abschnitt (HACS-Regel 3)', () => {
   const { SCHEMA, TEXTE } = intern(neueUmgebung());
-  const namen = [...SCHEMA.filter((f) => f.type === 'expandable').map((f) => f.name), ...OPTIONEN];
+  const { MAP_CONFIG_FIELDS } = intern(neueUmgebung());
+  const namen = [...SCHEMA.filter((f) => f.type === 'expandable').map((f) => f.name), ...OPTIONEN, 'override_colors', 'map_config', 'dark', ...FARBEN, ...felder(MAP_CONFIG_FIELDS).map((f) => f.name), ...MAP_CONFIG_FIELDS.filter((f) => f.type === 'expandable').map((f) => f.name)];
   for (const sprache of ['de', 'en']) {
     for (const name of namen) {
       const label = TEXTE[sprache].labels[name], helfer = TEXTE[sprache].helpers[name];
@@ -254,4 +267,74 @@ test('--bvc-*-Haken mit HA-Rückfall, nie auf :host gesetzt', () => {
     assert.doesNotMatch(css, new RegExp(`--bvc-${haken}-color\\s*:`), `${haken} nicht definiert (Theme setzt es)`);
   }
   assert.doesNotMatch(css.replace(/var\(--bvc-[\w-]+, var\(--(warning|error|success|primary)-color/g, ''), /var\(--(warning|error|success)-color/, 'jede Statusfarbe über einen Haken');
+});
+
+// ── map-view Task 11: Abschnitt Karte ──────────────────────────────────────
+function kartenEditor(config = {}, sprache = 'de') {
+  const u = neueUmgebung();
+  const ed = u.document.createElement('busch-vacuum-card-editor');
+  const aenderungen = [];
+  ed.addEventListener('config-changed', (e) => aenderungen.push(roh(e.detail.config)));
+  ed.setConfig(Object.assign({ type: 'custom:busch-vacuum-card', entity: 'vacuum.robo' }, config));
+  const haus = hausAus('voll', { sprache });
+  ed.hass = haus.hass();
+  u.body.appendChild(ed);
+  const form = ed.shadowRoot.querySelector('ha-form');
+  const aendere = (patch) => form.dispatchEvent({ type: 'value-changed', detail: { value: Object.assign({}, roh(form.data), patch) }, stopPropagation() {} });
+  return { u, ed, form, haus, aenderungen, aendere };
+}
+const abschnitt = (schema, name) => flach(schema).find((f) => f.name === name);
+
+test('Karte: je Stockwerk aus maps ein aufklappbarer Block map_config', () => {
+  const { form } = kartenEditor();
+  const bloecke = abschnitt(form.schema, 'map_config').schema;
+  assert.deepEqual(bloecke.map((b) => b.name), ['map_1']);
+  assert.equal(bloecke[0].type, 'expandable');
+  assert.deepEqual(felder(bloecke[0].schema).map((f) => f.name), ['rotation', 'scale', 'opacity', 'object_scale', 'object_opacity', 'font_size',
+    'top', 'right', 'bottom', 'left', 'url', 'x0', 'y0', 'x1', 'y1', 'url', 'x0', 'y0', 'x1', 'y1', 'hidden_objects']);
+  assert.equal(form.computeLabel({ name: 'map_1' }), 'Stockwerk Karte 1');
+  assert.match(form.computeHelper({ name: 'map_1' }), /\.$/);
+  const drehung = felder(bloecke[0].schema).find((f) => f.name === 'rotation');
+  assert.deepEqual(roh(drehung.selector.select.options), [{ value: '0', label: '0°' }, { value: '90', label: '90°' }, { value: '180', label: '180°' }, { value: '270', label: '270°' }]);
+  assert.equal(form.data.map_config.map_1.font_size, 12, 'Vorgaben sichtbar');
+});
+
+test('Karte: Auswahlwerte übersetzt, Helfer nennen die Vorgabe', () => {
+  const { form } = kartenEditor();
+  const optionen = (name) => abschnitt(form.schema, name).selector.select.options.map((o) => o.label);
+  assert.deepEqual(optionen('map_display'), ['Standard', 'Grundriss']);
+  assert.deepEqual(optionen('color_scheme'), ['Automatisch', 'Hell', 'Dunkel', 'Grau']);
+  assert.deepEqual(optionen('icon_set'), ['Busch', 'Material Design']);
+  assert.equal(optionen('hidden_objects')[0], 'Raumnamen');
+  for (const name of ['map_display', 'color_scheme', 'icon_set', 'hidden_objects', 'rotation', 'scale', 'opacity', 'object_scale', 'object_opacity', 'font_size']) {
+    assert.match(form.computeHelper({ name }), /Vorgabe/, name);
+  }
+  const en = kartenEditor({}, 'en').form;
+  assert.deepEqual(abschnitt(en.schema, 'color_scheme').selector.select.options.map((o) => o.label), ['Automatic', 'Light', 'Dark', 'Grey']);
+});
+
+test('Karte: schreibt nur Abweichungen, auch verschachtelt', () => {
+  const { form, aenderungen, aendere } = kartenEditor();
+  aendere({});
+  assert.deepEqual(aenderungen.at(-1), { type: 'custom:busch-vacuum-card', entity: 'vacuum.robo' }, 'Vorgaben schreiben nichts');
+  const map_config = roh(form.data.map_config);
+  map_config.map_1.rotation = '90';
+  map_config.map_1.crop = { top: 0, right: 10, bottom: 0, left: 0 };
+  map_config.map_1.background_image = { url: '', x0: 0 };
+  aendere({ map_display: 'floor_plan', color_scheme: 'dark', override_colors: { floor: [10, 20, 30], wall: [], dark: { floor: [1, 2, 3] } }, map_config });
+  assert.deepEqual(aenderungen.at(-1), {
+    type: 'custom:busch-vacuum-card', entity: 'vacuum.robo', map_display: 'floor_plan', color_scheme: 'dark',
+    override_colors: { floor: [10, 20, 30], dark: { floor: [1, 2, 3] } },
+    map_config: { map_1: { rotation: 90, crop: { right: 10 } } },
+  });
+  map_config.map_1.rotation = '0';
+  map_config.map_1.crop = { top: 0, right: 0, bottom: 0, left: 0 };
+  aendere({ map_display: 'standard', color_scheme: 'auto', override_colors: { floor: [], dark: {} }, map_config });
+  assert.deepEqual(aenderungen.at(-1), { type: 'custom:busch-vacuum-card', entity: 'vacuum.robo' }, 'zurück auf Vorgabe entfernt alles');
+});
+
+test('override_colors aus dem Farbwähler ([r, g, b]) wirkt in der Karte', () => {
+  const { normalizeConfig } = intern(neueUmgebung());
+  const n = normalizeConfig({ entity: 'vacuum.robo', override_colors: { floor: [10, 20, 30], dark: { wall: [300, -1, 5] } } });
+  assert.deepEqual(roh(n.override_colors), { floor: 'rgb(10, 20, 30)', dark: { wall: 'rgb(255, 0, 5)' } });
 });

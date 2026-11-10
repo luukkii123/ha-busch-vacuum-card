@@ -250,7 +250,43 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             touch_lock: 'Haltezeit zum Entsperren',
             disable_haptic: 'Vibration aus',
             display_section: 'Anzeige',
-            hidden_card_objects: 'Ausgeblendete Teile'
+            hidden_card_objects: 'Ausgeblendete Teile',
+            map_section: 'Karte',
+            map_display: 'Kartenansicht',
+            color_scheme: 'Farbschema',
+            icon_set: 'Symbolsatz',
+            hidden_objects: 'Ausgeblendete Kartenobjekte',
+            override_colors: 'Eigene Farben',
+            map_config: 'Je Stockwerk',
+            dark: 'Im dunklen Thema',
+            floor: 'Boden',
+            wall: 'Wand',
+            room: 'Raum',
+            carpet: 'Teppich',
+            no_go: 'No-Go-Zone',
+            no_mop: 'No-Mop-Zone',
+            virtual_wall: 'Virtuelle Wand',
+            path: 'Reinigungspfad',
+            robot: 'Roboter',
+            charger: 'Station',
+            rotation: 'Drehung',
+            scale: 'Kartengröße',
+            opacity: 'Deckkraft der Karte',
+            object_scale: 'Symbolgröße',
+            object_opacity: 'Deckkraft der Symbole',
+            font_size: 'Schriftgröße',
+            crop: 'Ausschnitt',
+            top: 'Oben',
+            right: 'Rechts',
+            bottom: 'Unten',
+            left: 'Links',
+            background_image: 'Hintergrundbild',
+            overlay_image: 'Überlagerungsbild',
+            url: 'Bildadresse',
+            x0: 'Linke Kante',
+            y0: 'Untere Kante',
+            x1: 'Rechte Kante',
+            y1: 'Obere Kante'
         },
         helpers: {
             entity: 'Der Saugroboter, den die Karte zeigt; zugehörige Entitäten findet sie über das Gerät. Pflichtfeld ohne Vorgabe.',
@@ -266,7 +302,43 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             touch_lock: 'So lange hältst du das Schloss, um die Sperre umzuschalten, 100 bis 400 Millisekunden. Vorgabe 200.',
             disable_haptic: 'Schaltet die kurze Vibration beim Tippen am Handy ab. Vorgabe aus.',
             display_section: 'Welche Teile die Karte zeigt.',
-            hidden_card_objects: 'Gewählte Teile zeigt die Karte nicht; ohne „Bestätigung beim Kartenwechsel“ wechselt sie die Karte ohne Rückfrage. Vorgabe keine.'
+            hidden_card_objects: 'Gewählte Teile zeigt die Karte nicht; ohne „Bestätigung beim Kartenwechsel“ wechselt sie die Karte ohne Rückfrage. Vorgabe keine.',
+            map_section: 'Darstellung der Live-Karte: Ansicht, Farben, Symbole und was sie zeigt.',
+            map_display: 'Standard zeigt Räume in eigenen Farben, Grundriss alle Räume in einem Ton mit Konturen (nur mit Kartendaten). Vorgabe Standard.',
+            color_scheme: 'Farben der Karte; Automatisch folgt hellem oder dunklem Thema von Home Assistant. Vorgabe Automatisch.',
+            icon_set: 'Busch zeichnet eigene Symbole, Material Design nutzt mdi-Symbole. Vorgabe Busch.',
+            hidden_objects: 'Gewählte Kartenobjekte zeigt die Karte nicht, auf jedem Stockwerk. Vorgabe keine.',
+            override_colors: 'Ersetzt einzelne Kartenfarben; leer bleibt die Farbe des Schemas.',
+            map_config: 'Eigene Einstellungen für einzelne Stockwerke; sie gelten zusätzlich zu den Werten oben.',
+            dark: 'Farben, die nur im dunklen Farbschema gelten. Vorgabe wie oben.',
+            floor: 'Farbe der begehbaren Fläche ohne Raum. Vorgabe aus dem Farbschema.',
+            wall: 'Farbe von Wänden und Raumkonturen. Vorgabe aus dem Farbschema.',
+            room: 'Eine Farbe für alle Räume statt der vier Raumfarben. Vorgabe aus dem Farbschema.',
+            carpet: 'Farbe, mit der Teppiche über dem Raum liegen. Vorgabe aus dem Farbschema.',
+            no_go: 'Farbe der No-Go-Zonen. Vorgabe die Fehlerfarbe des Themas.',
+            no_mop: 'Farbe der No-Mop-Zonen. Vorgabe die Infofarbe des Themas.',
+            virtual_wall: 'Farbe virtueller Wände und nicht passierbarer Schwellen. Vorgabe die Fehlerfarbe des Themas.',
+            path: 'Farbe des Reinigungspfads. Vorgabe aus dem Farbschema.',
+            robot: 'Farbe des Roboters. Vorgabe die Hauptfarbe des Themas.',
+            charger: 'Farbe der Station. Vorgabe die Erfolgsfarbe des Themas.',
+            rotation: 'Dreht nur die Anzeige im Uhrzeigersinn, nicht die Karte des Roboters. Vorgabe 0°.',
+            scale: 'Vergrößert oder verkleinert die eingepasste Karte, 0,25 bis 4. Vorgabe 1.',
+            opacity: 'Deckkraft von Kartenbild oder Kartenfläche, 0 bis 1. Vorgabe 1.',
+            object_scale: 'Größe von Roboter, Station und anderen Symbolen, 0,25 bis 4; der Zoom ändert sie nicht. Vorgabe 1.',
+            object_opacity: 'Deckkraft aller eingezeichneten Objekte, 0 bis 1. Vorgabe 1.',
+            font_size: 'Schriftgröße der Raumnamen in Pixeln, 6 bis 40. Vorgabe 12.',
+            crop: 'Schneidet Ränder der Karte ab, in Prozent je Seite. Vorgabe kein Ausschnitt.',
+            top: 'So viel Prozent schneidet die Karte oben ab. Vorgabe 0.',
+            right: 'So viel Prozent schneidet die Karte rechts ab. Vorgabe 0.',
+            bottom: 'So viel Prozent schneidet die Karte unten ab. Vorgabe 0.',
+            left: 'So viel Prozent schneidet die Karte links ab. Vorgabe 0.',
+            background_image: 'Eigenes Bild unter der Karte, etwa ein Grundriss; Ecken in Roboter-Millimetern aus der Karteninfo. Vorgabe keines.',
+            overlay_image: 'Eigenes Bild über der Karte, unter den Symbolen; Ecken wie beim Hintergrundbild. Vorgabe keines.',
+            url: 'Adresse des Bilds, etwa /local/grundriss.png. Vorgabe leer.',
+            x0: 'Linke Bildkante in Roboter-Millimetern. Vorgabe leer.',
+            y0: 'Untere Bildkante in Roboter-Millimetern. Vorgabe leer.',
+            x1: 'Rechte Bildkante in Roboter-Millimetern. Vorgabe leer.',
+            y1: 'Obere Bildkante in Roboter-Millimetern. Vorgabe leer.'
         },
         texte: {
             fehlerKeineEntitaet: 'Bitte einen Saugroboter (vacuum.*) als Entität wählen.',
@@ -349,6 +421,39 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             kartenWechselFrage: 'Zur Karte „{karte}“ wechseln? Der Roboter arbeitet danach mit dieser Karte.',
             wechseln: 'Wechseln',
             abbrechen: 'Abbrechen',
+            display_standard: 'Standard',
+            display_floor_plan: 'Grundriss',
+            scheme_auto: 'Automatisch',
+            scheme_light: 'Hell',
+            scheme_dark: 'Dunkel',
+            scheme_grey: 'Grau',
+            icons_busch: 'Busch',
+            icons_material: 'Material Design',
+            stockwerkLabel: 'Stockwerk {name}',
+            stockwerkHelfer: 'Einstellungen nur für dieses Stockwerk; leere Werte gelten wie für die ganze Karte.',
+            mapobj_rooms: 'Raumnamen',
+            mapobj_cleaning_settings: 'Raumeinstellungen',
+            mapobj_blocked_rooms: 'Gesperrte Räume',
+            mapobj_robot: 'Roboter',
+            mapobj_charger: 'Station',
+            mapobj_station_status: 'Stationsstatus',
+            mapobj_router: 'Router',
+            mapobj_path: 'Reinigungspfad',
+            mapobj_carpets: 'Teppiche',
+            mapobj_detected_carpets: 'Erkannte Teppiche',
+            mapobj_deleted_carpets: 'Gelöschte Teppiche',
+            mapobj_furnitures: 'Möbel',
+            mapobj_no_go_areas: 'No-Go-Zonen',
+            mapobj_no_mopping_areas: 'No-Mop-Zonen',
+            mapobj_virtual_walls: 'Virtuelle Wände',
+            mapobj_passable_thresholds: 'Passierbare Schwellen',
+            mapobj_impassable_thresholds: 'Unpassierbare Schwellen',
+            mapobj_ramps: 'Rampen',
+            mapobj_curtains: 'Vorhänge',
+            mapobj_predefined_points: 'Zielpunkte',
+            mapobj_obstacles: 'Hindernisse',
+            mapobj_stains: 'Flecken',
+            mapobj_pets: 'Haustiere',
             karte: 'Karte',
             karteAlt: 'Karte „{karte}“ des Saugroboters',
             karteLaedt: 'Karte lädt …',
@@ -423,7 +528,43 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             touch_lock: 'Hold time to unlock',
             disable_haptic: 'Vibration off',
             display_section: 'Display',
-            hidden_card_objects: 'Hidden parts'
+            hidden_card_objects: 'Hidden parts',
+            map_section: 'Map',
+            map_display: 'Map view',
+            color_scheme: 'Colour scheme',
+            icon_set: 'Icon set',
+            hidden_objects: 'Hidden map objects',
+            override_colors: 'Own colours',
+            map_config: 'Per floor',
+            dark: 'In the dark theme',
+            floor: 'Floor',
+            wall: 'Wall',
+            room: 'Room',
+            carpet: 'Carpet',
+            no_go: 'No-go zone',
+            no_mop: 'No-mop zone',
+            virtual_wall: 'Virtual wall',
+            path: 'Cleaning path',
+            robot: 'Robot',
+            charger: 'Station',
+            rotation: 'Rotation',
+            scale: 'Map size',
+            opacity: 'Map opacity',
+            object_scale: 'Icon size',
+            object_opacity: 'Icon opacity',
+            font_size: 'Font size',
+            crop: 'Crop',
+            top: 'Top',
+            right: 'Right',
+            bottom: 'Bottom',
+            left: 'Left',
+            background_image: 'Background image',
+            overlay_image: 'Overlay image',
+            url: 'Image address',
+            x0: 'Left edge',
+            y0: 'Bottom edge',
+            x1: 'Right edge',
+            y1: 'Top edge'
         },
         helpers: {
             entity: 'The robot vacuum this card shows; it finds the related entities through the device. Required, no default.',
@@ -439,7 +580,43 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             touch_lock: 'How long you hold the lock to toggle it, 100 to 400 milliseconds. Default 200.',
             disable_haptic: 'Turns off the short vibration on taps on phones. Default off.',
             display_section: 'Which parts the card shows.',
-            hidden_card_objects: 'The card does not show the chosen parts; without “Map change confirmation” it changes maps without asking. Default none.'
+            hidden_card_objects: 'The card does not show the chosen parts; without “Map change confirmation” it changes maps without asking. Default none.',
+            map_section: 'How the live map looks: view, colours, icons and what it shows.',
+            map_display: 'Standard shows rooms in their own colours, floor plan all rooms in one tone with outlines (map data only). Default Standard.',
+            color_scheme: 'Map colours; Automatic follows the light or dark Home Assistant theme. Default Automatic.',
+            icon_set: 'Busch draws its own icons, Material Design uses mdi icons. Default Busch.',
+            hidden_objects: 'The map does not show the chosen objects, on every floor. Default none.',
+            override_colors: 'Replaces single map colours; empty keeps the colour of the scheme.',
+            map_config: 'Own settings for single floors; they apply on top of the values above.',
+            dark: 'Colours that apply only in the dark colour scheme. Default as above.',
+            floor: 'Colour of the reachable area outside rooms. Default from the colour scheme.',
+            wall: 'Colour of walls and room outlines. Default from the colour scheme.',
+            room: 'One colour for all rooms instead of the four room colours. Default from the colour scheme.',
+            carpet: 'Colour carpets lay over the room. Default from the colour scheme.',
+            no_go: 'Colour of no-go zones. Default the theme error colour.',
+            no_mop: 'Colour of no-mop zones. Default the theme info colour.',
+            virtual_wall: 'Colour of virtual walls and impassable thresholds. Default the theme error colour.',
+            path: 'Colour of the cleaning path. Default from the colour scheme.',
+            robot: 'Colour of the robot. Default the theme primary colour.',
+            charger: 'Colour of the station. Default the theme success colour.',
+            rotation: 'Turns only the display clockwise, not the robot map. Default 0°.',
+            scale: 'Makes the fitted map larger or smaller, 0.25 to 4. Default 1.',
+            opacity: 'Opacity of the map image or area, 0 to 1. Default 1.',
+            object_scale: 'Size of robot, station and other icons, 0.25 to 4; zooming does not change it. Default 1.',
+            object_opacity: 'Opacity of all drawn objects, 0 to 1. Default 1.',
+            font_size: 'Font size of room names in pixels, 6 to 40. Default 12.',
+            crop: 'Cuts off map edges, in percent per side. Default no crop.',
+            top: 'Percent the map cuts off at the top. Default 0.',
+            right: 'Percent the map cuts off on the right. Default 0.',
+            bottom: 'Percent the map cuts off at the bottom. Default 0.',
+            left: 'Percent the map cuts off on the left. Default 0.',
+            background_image: 'Own picture below the map, such as a floor plan; corners in robot millimetres from the map info. Default none.',
+            overlay_image: 'Own picture above the map, below the icons; corners as for the background image. Default none.',
+            url: 'Address of the picture, such as /local/floorplan.png. Default empty.',
+            x0: 'Left picture edge in robot millimetres. Default empty.',
+            y0: 'Bottom picture edge in robot millimetres. Default empty.',
+            x1: 'Right picture edge in robot millimetres. Default empty.',
+            y1: 'Top picture edge in robot millimetres. Default empty.'
         },
         texte: {
             fehlerKeineEntitaet: 'Please choose a robot vacuum (vacuum.*) as entity.',
@@ -522,6 +699,39 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             kartenWechselFrage: 'Change to the map “{karte}”? The robot then works with this map.',
             wechseln: 'Change',
             abbrechen: 'Cancel',
+            display_standard: 'Standard',
+            display_floor_plan: 'Floor plan',
+            scheme_auto: 'Automatic',
+            scheme_light: 'Light',
+            scheme_dark: 'Dark',
+            scheme_grey: 'Grey',
+            icons_busch: 'Busch',
+            icons_material: 'Material Design',
+            stockwerkLabel: 'Floor {name}',
+            stockwerkHelfer: 'Settings for this floor only; empty values apply as for the whole map.',
+            mapobj_rooms: 'Room names',
+            mapobj_cleaning_settings: 'Room settings',
+            mapobj_blocked_rooms: 'Blocked rooms',
+            mapobj_robot: 'Robot',
+            mapobj_charger: 'Station',
+            mapobj_station_status: 'Station status',
+            mapobj_router: 'Router',
+            mapobj_path: 'Cleaning path',
+            mapobj_carpets: 'Carpets',
+            mapobj_detected_carpets: 'Detected carpets',
+            mapobj_deleted_carpets: 'Deleted carpets',
+            mapobj_furnitures: 'Furniture',
+            mapobj_no_go_areas: 'No-go zones',
+            mapobj_no_mopping_areas: 'No-mop zones',
+            mapobj_virtual_walls: 'Virtual walls',
+            mapobj_passable_thresholds: 'Passable thresholds',
+            mapobj_impassable_thresholds: 'Impassable thresholds',
+            mapobj_ramps: 'Ramps',
+            mapobj_curtains: 'Curtains',
+            mapobj_predefined_points: 'Target points',
+            mapobj_obstacles: 'Obstacles',
+            mapobj_stains: 'Stains',
+            mapobj_pets: 'Pets',
             karte: 'Map',
             karteAlt: 'Map “{karte}” of the robot vacuum',
             karteLaedt: 'Map loading …',
@@ -642,9 +852,12 @@ const OVERRIDE_KEYS = ['floor', 'wall', 'room', 'carpet', 'no_go', 'no_mop', 'vi
 const SAFE_COLOR = /^(?:#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla)\([\d\s.,%]+\)|[a-z]+)$/i;
 
 function normalizeColors(raw) {
+    // A string as in YAML, or [r, g, b] from the editor's colour picker (color_rgb).
+    const color = (v) => Array.isArray(v) && v.length === 3 && v.every((n) => Number.isFinite(Number(n)))
+        ? 'rgb(' + v.map((n) => Math.min(255, Math.max(0, Math.round(Number(n))))).join(', ') + ')'
+        : typeof v === 'string' && SAFE_COLOR.test(v.trim()) ? v.trim() : null;
     const pick = (source) => Object.fromEntries(OVERRIDE_KEYS
-        .filter((key) => typeof (source || {})[key] === 'string' && SAFE_COLOR.test(source[key].trim()))
-        .map((key) => [key, source[key].trim()]));
+        .map((key) => [key, color((source || {})[key])]).filter(([, v]) => v));
     if (!raw || typeof raw !== 'object') return {};
     const out = pick(raw);
     const dark = pick(raw.dark);
@@ -700,6 +913,30 @@ function normalizeMapConfig(raw) {
     return out;
 }
 
+const COLOR_FIELDS = OVERRIDE_KEYS.map((name) => ({ name, selector: { color_rgb: {} } }));
+const MAP_NUMBER = (min, max, step, unit) => ({ number: Object.assign({ min, max, step, mode: 'box' }, unit ? { unit_of_measurement: unit } : {}) });
+const PICTURE_FIELDS = [
+    { name: 'url', selector: { text: {} } },
+    ...['x0', 'y0', 'x1', 'y1'].map((name) => ({ name, selector: MAP_NUMBER(-100000, 100000, 1, 'mm') }))
+];
+
+/** The fields of one `map_config.map_<index>` block (MAP-06). */
+const MAP_CONFIG_FIELDS = [
+    { name: 'rotation', selector: { select: { mode: 'dropdown', options: MAP_ROTATIONS.map(String) } } },
+    { name: 'scale', selector: MAP_NUMBER(0.25, 4, 0.05) },
+    { name: 'opacity', selector: MAP_NUMBER(0, 1, 0.05) },
+    { name: 'object_scale', selector: MAP_NUMBER(0.25, 4, 0.05) },
+    { name: 'object_opacity', selector: MAP_NUMBER(0, 1, 0.05) },
+    { name: 'font_size', selector: MAP_NUMBER(6, 40, 1, 'px') },
+    { name: 'crop', type: 'expandable', icon: 'mdi:crop', schema: ['top', 'right', 'bottom', 'left'].map((name) => ({ name, selector: MAP_NUMBER(0, 45, 1, '%') })) },
+    { name: 'background_image', type: 'expandable', icon: 'mdi:image-outline', schema: PICTURE_FIELDS },
+    { name: 'overlay_image', type: 'expandable', icon: 'mdi:image-multiple-outline', schema: PICTURE_FIELDS },
+    { name: 'hidden_objects', selector: { select: { multiple: true, mode: 'list', options: MAP_OBJECTS } } }
+];
+
+/** What one floor block shows for unset values; equal values are never written. */
+const MAP_EDITOR_DEFAULTS = { rotation: '0', scale: 1, opacity: 1, object_scale: 1, object_opacity: 1, font_size: 12, hidden_objects: [] };
+
 /** Every option the card reads; the editor translates the select options (localSchema). */
 const SCHEMA_BUSCH_VACUUM_CARD = [
     { name: 'entity', required: true, selector: { entity: { domain: 'vacuum' } } },
@@ -718,14 +955,65 @@ const SCHEMA_BUSCH_VACUUM_CARD = [
     ] },
     { name: 'display_section', type: 'expandable', flatten: true, icon: 'mdi:eye-off-outline', schema: [
         { name: 'hidden_card_objects', selector: { select: { multiple: true, mode: 'list', options: HIDDEN_OBJECTS } } }
+    ] },
+    { name: 'map_section', type: 'expandable', flatten: true, icon: 'mdi:map-outline', schema: [
+        { name: 'map_display', selector: { select: { mode: 'dropdown', options: MAP_DISPLAYS } } },
+        { name: 'color_scheme', selector: { select: { mode: 'dropdown', options: COLOR_SCHEMES } } },
+        { name: 'icon_set', selector: { select: { mode: 'dropdown', options: ICON_SETS } } },
+        { name: 'hidden_objects', selector: { select: { multiple: true, mode: 'list', options: MAP_OBJECTS } } },
+        { name: 'override_colors', type: 'expandable', icon: 'mdi:palette-outline', schema: [
+            ...COLOR_FIELDS,
+            { name: 'dark', type: 'expandable', icon: 'mdi:weather-night', schema: COLOR_FIELDS }
+        ] },
+        // One block per floor of the vacuum's `maps`, filled in by the editor (editorSchema).
+        { name: 'map_config', type: 'expandable', icon: 'mdi:layers-outline', schema: [] }
     ] }
 ];
 
 /** What the editor shows for an unset option; equal values are never written. */
 const EDITOR_DEFAULTS = {
     title: '', scripts: [], full_height: false, aspect_ratio: '', max_height_offset: 0, left_handed: false,
-    locked: 'auto', touch_lock: TOUCH_LOCK_MS.standard, disable_haptic: false, hidden_card_objects: []
+    locked: 'auto', touch_lock: TOUCH_LOCK_MS.standard, disable_haptic: false, hidden_card_objects: [],
+    map_display: 'standard', color_scheme: 'auto', icon_set: 'busch', hidden_objects: [], override_colors: {}, map_config: {}
 };
+
+/** Drops what equals the defaults from the nested map options, so the YAML stays minimal. */
+function pruneMapOptions(config) {
+    const filled = (v) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length);
+    const colors = (source) => Object.fromEntries(Object.entries(source || {}).filter(([k, v]) => k !== 'dark' && filled(v)));
+    if (config.override_colors) {
+        const out = colors(config.override_colors);
+        const dark = colors(config.override_colors.dark);
+        if (Object.keys(dark).length) out.dark = dark;
+        if (Object.keys(out).length) config.override_colors = out;
+        else delete config.override_colors;
+    }
+    if (config.map_config) {
+        const out = {};
+        for (const [key, raw] of Object.entries(config.map_config)) {
+            const entry = {};
+            for (const [name, value] of Object.entries(raw || {})) {
+                if (!filled(value)) continue;
+                if (name === 'rotation') { if (Number(value) !== 0) entry.rotation = Number(value); continue; }
+                if (name === 'crop') {
+                    const crop = Object.fromEntries(Object.entries(value).filter(([, v]) => Number(v) > 0).map(([k, v]) => [k, Number(v)]));
+                    if (Object.keys(crop).length) entry.crop = crop;
+                    continue;
+                }
+                if (name === 'background_image' || name === 'overlay_image') {
+                    if (value && typeof value.url === 'string' && value.url.trim()) entry[name] = value;
+                    continue;
+                }
+                if (BuschUI.configsEqual(value, MAP_EDITOR_DEFAULTS[name])) continue;
+                entry[name] = value;
+            }
+            if (Object.keys(entry).length) out[key] = entry;
+        }
+        if (Object.keys(out).length) config.map_config = out;
+        else delete config.map_config;
+    }
+    return config;
+}
 
 const numberOf = (value) => (value === undefined || value === null || value === '' ? NaN : Number(value));
 
@@ -4513,15 +4801,23 @@ class BuschVacuumCard extends HTMLElement {
 const EDITOR_STYLES = BuschUI.editorStyles;
 
 /** The schema with the select options named in the user's language. */
+const OPTION_PREFIX = { locked: 'lock_', hidden_card_objects: 'obj_', map_display: 'display_', color_scheme: 'scheme_', icon_set: 'icons_', hidden_objects: 'mapobj_' };
+
 function localSchema(hass, schema = SCHEMA_BUSCH_VACUUM_CARD) {
     return schema.map((field) => {
         if (field.schema) return Object.assign({}, field, { schema: localSchema(hass, field.schema) });
         const select = field.selector && field.selector.select;
         if (!select) return field;
-        const prefix = field.name === 'locked' ? 'lock_' : 'obj_';
-        const options = select.options.map((value) => ({ value, label: translate(hass, prefix + value) }));
+        const options = select.options.map((value) => ({ value, label: field.name === 'rotation' ? value + '°' : translate(hass, OPTION_PREFIX[field.name] + value) }));
         return Object.assign({}, field, { selector: { select: Object.assign({}, select, { options }) } });
     });
+}
+
+/** The schema with one map_config block per floor of the vacuum's `maps` (MAP-06/07). */
+function editorSchema(hass, maps) {
+    const floors = maps.map((m) => ({ name: 'map_' + m.index, type: 'expandable', icon: 'mdi:layers-outline', schema: MAP_CONFIG_FIELDS }));
+    const fill = (schema) => schema.map((f) => (f.name === 'map_config' ? Object.assign({}, f, { schema: floors }) : f.schema ? Object.assign({}, f, { schema: fill(f.schema) }) : f));
+    return localSchema(hass, fill(SCHEMA_BUSCH_VACUUM_CARD));
 }
 
 class BuschVacuumCardEditor extends BuschUI.EditorBase {
@@ -4541,15 +4837,25 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
 
     set hass(hass) {
         const language = BuschUI.language(hass, { legacy: true });
-        const relabel = language !== this._language;
+        const floors = JSON.stringify(this._maps(hass));
+        const relabel = language !== this._language || floors !== this._floors;
         this._hass = hass;
         this._language = language;
+        this._floors = floors;
         if (!this._form) this._render();
         else {
             this._form.hass = hass;
-            // Option names are part of the schema; a new hass each state change must not rebuild it.
-            if (relabel) this._form.schema = localSchema(hass);
+            // Option names and floors are part of the schema; a new hass each state change must not rebuild it.
+            if (relabel) this._render();
         }
+    }
+
+    /** Floors of the chosen vacuum (`maps`: id, index, name, custom_name). */
+    _maps(hass = this._hass) {
+        const id = this._config && this._config.entity;
+        const state = hass && hass.states && id ? hass.states[id] : null;
+        const maps = state && state.attributes.maps;
+        return Array.isArray(maps) ? maps.filter((m) => m && m.index !== undefined).map((m) => ({ index: m.index, name: m.custom_name || m.name || String(m.index) })) : [];
     }
 
     get hass() {
@@ -4567,12 +4873,21 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
             style.textContent = EDITOR_STYLES;
             this.shadowRoot.appendChild(style);
             const form = BuschUI.ha.form();
-            form.computeLabel = (item) => (item.name ? fieldLabel(this._hass, item.name) : '');
-            form.computeHelper = (item) => (item.name ? fieldHelper(this._hass, item.name) : '');
+            const floor = (name) => this._maps().find((m) => 'map_' + m.index === name);
+            form.computeLabel = (item) => {
+                const f = item.name && floor(item.name);
+                if (f) return translate(this._hass, 'stockwerkLabel', { name: f.name });
+                return item.name ? fieldLabel(this._hass, item.name) : '';
+            };
+            form.computeHelper = (item) => {
+                if (item.name && floor(item.name)) return translate(this._hass, 'stockwerkHelfer');
+                return item.name ? fieldHelper(this._hass, item.name) : '';
+            };
             form.addEventListener('value-changed', (event) => {
                 event.stopPropagation();
                 const next = BuschUI.updateConfig(this._config, event.detail.value || {});
                 // Only what differs from the defaults: the YAML stays as short as a hand-written one.
+                pruneMapOptions(next);
                 for (const [key, standard] of Object.entries(EDITOR_DEFAULTS)) {
                     if (next[key] === undefined || next[key] === null || BuschUI.configsEqual(next[key], standard)) delete next[key];
                 }
@@ -4583,8 +4898,12 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
             this._form = form;
         }
         this._form.hass = this._hass;
-        this._form.schema = localSchema(this._hass);
-        this._form.data = Object.assign(BuschUI.cloneConfig(EDITOR_DEFAULTS), BuschUI.cloneConfig(this._config));
+        const maps = this._maps();
+        this._form.schema = editorSchema(this._hass, maps);
+        const data = Object.assign(BuschUI.cloneConfig(EDITOR_DEFAULTS), BuschUI.cloneConfig(this._config));
+        // Each floor shows its defaults; unchanged ones are pruned on write.
+        data.map_config = Object.fromEntries(maps.map((m) => ['map_' + m.index, Object.assign(BuschUI.cloneConfig(MAP_EDITOR_DEFAULTS), BuschUI.cloneConfig((this._config.map_config || {})['map_' + m.index] || {}))]));
+        this._form.data = data;
     }
 }
 
@@ -4596,6 +4915,7 @@ BuschVacuumCard.__internals = {
     TEXTE: TEXTE_BUSCH_VACUUM_CARD,
     SCHEMA: SCHEMA_BUSCH_VACUUM_CARD,
     normalizeConfig,
+    MAP_CONFIG_FIELDS,
     findRelated,
     VacuumModel,
     DIALOG_STYLES,
