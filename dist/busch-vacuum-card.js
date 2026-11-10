@@ -11152,7 +11152,47 @@ const EDIT_TEXTS = {
         kartenAbgeglichen: 'Abgeglichen mit dem neuen Stand des Geräts: nicht bearbeitete Objektarten gehen so mit, wie sie jetzt sind.',
         kartenDatenLaden: 'Bearbeitungsdaten werden geladen …',
         kartenKeineWerkzeuge: 'Für diese Karte gibt es noch keine Bearbeitungswerkzeuge.',
-        obj_map_editor: 'Kartenbearbeitung (Stift und Kartenverwaltung)'
+        obj_map_editor: 'Kartenbearbeitung (Stift und Kartenverwaltung)',
+        raumWaehlenHinweis: 'Raum auf der Karte antippen oder als Chip wählen.',
+        raumGewaehltZeile: 'Raum: {raum}',
+        raumAusgeblendetListe: 'Ausgeblendete Räume',
+        raumTyp: 'Raumtyp',
+        feld_room_name: 'Raumname',
+        raumNameLeer: 'Der Name darf nicht leer sein.',
+        raumSichtbar: 'Sichtbar',
+        raumDockSichtbar: 'Der Raum mit der Station bleibt sichtbar (das Gerät braucht ihn).',
+        raumBoden: 'Boden',
+        raumRichtung: 'Holzrichtung',
+        raumBodenUnbekannt: 'Boden gesperrt: Die Holzrichtung eines Raums ist nicht bekannt; Speichern würde sie überschreiben.',
+        raumTyp_0: 'Eigener Name',
+        raumTyp_1: 'Wohnzimmer',
+        raumTyp_2: 'Schlafzimmer',
+        raumTyp_3: 'Arbeitszimmer',
+        raumTyp_4: 'Küche',
+        raumTyp_5: 'Esszimmer',
+        raumTyp_6: 'Bad',
+        raumTyp_7: 'Balkon',
+        raumTyp_8: 'Flur',
+        raumTyp_9: 'Hauswirtschaftsraum',
+        raumTyp_10: 'Ankleide',
+        raumTyp_11: 'Besprechungsraum',
+        raumTyp_12: 'Büro',
+        raumTyp_13: 'Fitnessraum',
+        raumTyp_14: 'Freizeitraum',
+        raumTyp_15: 'Kinderzimmer',
+        boden_0: 'Keiner',
+        boden_1: 'Holz',
+        boden_2: 'Fliese',
+        boden_5: 'Teppich mittelflorig',
+        boden_6: 'Teppich kurzflorig',
+        boden_7: 'Teppich',
+        richtung_0: 'waagerecht',
+        richtung_90: 'senkrecht',
+        raumZeileName: '{raum}: Name „{name}“',
+        raumZeileTyp: '{raum}: Typ {typ}',
+        raumZeileVersteckt: '{raum}: ausgeblendet',
+        raumZeileSichtbar: '{raum}: eingeblendet',
+        raumZeileBoden: '{raum}: Boden {boden}'
     },
     en: {
         kartenSicherungTitel: 'Save map',
@@ -11230,14 +11270,54 @@ const EDIT_TEXTS = {
         kartenAbgeglichen: 'Reconciled with the device’s new state: object kinds you did not edit go along as they are now.',
         kartenDatenLaden: 'Loading edit data …',
         kartenKeineWerkzeuge: 'There are no edit tools for this map yet.',
-        obj_map_editor: 'Map editing (pen and map management)'
+        obj_map_editor: 'Map editing (pen and map management)',
+        raumWaehlenHinweis: 'Tap a room on the map or pick it as a chip.',
+        raumGewaehltZeile: 'Room: {raum}',
+        raumAusgeblendetListe: 'Hidden rooms',
+        raumTyp: 'Room type',
+        feld_room_name: 'Room name',
+        raumNameLeer: 'The name must not be empty.',
+        raumSichtbar: 'Visible',
+        raumDockSichtbar: 'The room with the station stays visible (the device needs it).',
+        raumBoden: 'Floor',
+        raumRichtung: 'Wood direction',
+        raumBodenUnbekannt: 'Floor locked: the wood direction of a room is not known; saving would overwrite it.',
+        raumTyp_0: 'Custom name',
+        raumTyp_1: 'Living room',
+        raumTyp_2: 'Primary bedroom',
+        raumTyp_3: 'Study',
+        raumTyp_4: 'Kitchen',
+        raumTyp_5: 'Dining hall',
+        raumTyp_6: 'Bathroom',
+        raumTyp_7: 'Balcony',
+        raumTyp_8: 'Corridor',
+        raumTyp_9: 'Utility room',
+        raumTyp_10: 'Closet',
+        raumTyp_11: 'Meeting room',
+        raumTyp_12: 'Office',
+        raumTyp_13: 'Fitness area',
+        raumTyp_14: 'Recreation area',
+        raumTyp_15: 'Secondary bedroom',
+        boden_0: 'None',
+        boden_1: 'Wood',
+        boden_2: 'Tile',
+        boden_5: 'Medium pile carpet',
+        boden_6: 'Low pile carpet',
+        boden_7: 'Carpet',
+        richtung_0: 'horizontal',
+        richtung_90: 'vertical',
+        raumZeileName: '{raum}: name “{name}”',
+        raumZeileTyp: '{raum}: type {typ}',
+        raumZeileVersteckt: '{raum}: hidden',
+        raumZeileSichtbar: '{raum}: shown',
+        raumZeileBoden: '{raum}: floor {boden}'
     }
 };
 for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
 
 const BACKUP_TIMEOUT_MS = 60000;
-/** Services that refuse while a task runs (device.py: carpets, points, walls, router, visibility, deleting a map). */
-const EDIT_TASK_LOCKED = new Set(['vacuum_set_carpet_area', 'vacuum_set_carpet_type', 'vacuum_set_custom_carpet_cleaning', 'vacuum_set_predefined_points', 'vacuum_set_walls', 'vacuum_set_router_position', 'vacuum_set_hidden_segments', 'vacuum_delete_map', 'vacuum_split_segments', 'vacuum_merge_segments']);
+/** Services that refuse while a task runs (device.py: carpets, points, walls, router, visibility, floor, deleting a map). */
+const EDIT_TASK_LOCKED = new Set(['vacuum_set_carpet_area', 'vacuum_set_carpet_type', 'vacuum_set_custom_carpet_cleaning', 'vacuum_set_predefined_points', 'vacuum_set_walls', 'vacuum_set_router_position', 'vacuum_set_hidden_segments', 'vacuum_set_floor_material', 'vacuum_delete_map', 'vacuum_split_segments', 'vacuum_merge_segments']);
 /** What a temporary map still allows: its own management and new mapping. */
 const EDIT_TEMPORARY_OK = new Set(['vacuum_save_temporary_map', 'vacuum_discard_temporary_map', 'vacuum_replace_temporary_map', 'vacuum_backup_map', 'vacuum_request_map']);
 
@@ -11557,9 +11637,77 @@ function editLists(attrs, data) {
         deleted_carpets: data && data.deletedCarpets ? data.deletedCarpets.map((c) => c.rect.slice()) : null,
         furnitures: data && data.furnitures ? data.furnitures.map((f) => furnitureEntry(f)) : null,
         walls: data && data.walls ? data.walls.map((w) => [w.room].concat(WALL_FIELDS.map((k) => w[k]))) : null,
-        doors: data && data.doors ? data.doors.map((d) => DOOR_FIELDS.map((k) => d[k])) : null
+        doors: data && data.doors ? data.doors.map((d) => DOOR_FIELDS.map((k) => d[k])) : null,
+        ...roomLists(editRooms(a, data))
     };
 }
+
+const FLOOR_CODES = { none: 0, wood: 1, tile: 2, medium_pile_carpet: 5, low_pile_carpet: 6, carpet: 7 };
+const first = (...values) => values.find((v) => v !== undefined && v !== null);
+
+/** A floor material as its code (number or the attribute's name "Medium_Pile_Carpet"), undefined when unknown. */
+function floorCode(value) {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (Number.isFinite(Number(value))) return Number(value);
+    const code = FLOOR_CODES[enumName(value)];
+    return code === undefined ? undefined : code;
+}
+
+/**
+ * The rooms of the active map for the editor: edit data segments first (raw
+ * values), else the camera's rooms. The attribute's wood direction is the
+ * ROTATED one (types.py Segment.as_dict); the service wants the raw one, so a
+ * map turned by 90/270° swaps it back (map.py set_floor_material).
+ */
+function editRooms(attrs, data) {
+    const rooms = attrs.rooms || {};
+    const segments = data && data.segments ? data.segments : [];
+    const ids = [...new Set(Object.keys(rooms).concat(segments.map((s) => String(s.id))))].map(Number).filter(Number.isInteger).sort((x, y) => x - y);
+    const turned = [90, 270].includes(Number(attrs.rotation));
+    return ids.map((id) => {
+        const r = rooms[id] || {};
+        const s = segments.find((x) => Number(x.id) === id);
+        const type = s ? s.type : first(r.type);
+        const fromAttr = { horizontal: 0, vertical: 90 }[enumName(r.floor_material_direction)];
+        const direction = s ? s.floorDirection : fromAttr === undefined || attrs.rotation === undefined ? undefined : turned ? 90 - fromAttr : fromAttr;
+        return {
+            id, type: type === undefined ? null : type,
+            index: first(s && s.index, r.index, 0),
+            customName: type === 0 ? first(s && s.name, r.custom_name, null) : null,
+            label: first(r.custom_name, r.name, s && s.name, String(id)),
+            hidden: s && s.visibility !== null ? Number(s.visibility) === 0 : enumName(r.visibility) === 'hidden',
+            material: s && s.floorMaterial !== null ? s.floorMaterial : floorCode(r.floor_material),
+            direction: direction === undefined ? undefined : direction
+        };
+    });
+}
+
+/**
+ * The four room lists, one entry per room in the services' terms:
+ * room_names [id, own name|null], room_types [id, type, index],
+ * hidden_segments [id…], floor_materials [id, material, direction|null]
+ * (null = not wood; undefined direction of wood = unknown, see editCaps).
+ */
+function roomLists(rooms) {
+    return {
+        room_names: rooms.map((r) => [r.id, r.customName]),
+        room_types: rooms.map((r) => [r.id, r.type, r.index]),
+        hidden_segments: rooms.filter((r) => r.hidden).map((r) => r.id),
+        floor_materials: rooms.map((r) => [r.id, r.material === undefined ? 0 : r.material, r.material === 1 && r.direction !== undefined ? r.direction : null])
+    };
+}
+
+/** Running number of a room type (Segment.next_type_index): the first index no other room of that type has. */
+function nextTypeIndex(types, id, type) {
+    let index = 0;
+    if (type > 0) {
+        for (const [other, t, i] of types.slice().sort((x, y) => x[2] - y[2])) if (other !== id && t === type && i === index) index++;
+    }
+    return index;
+}
+
+/** Entries of `list` that differ from the entry with the same id in `base`. */
+const changedEntries = (list, base) => list.filter((entry) => JSON.stringify(entry) !== JSON.stringify((base || []).find((b) => b[0] === entry[0])));
 
 /**
  * Write groups: one service each, always with its COMPLETE lists (spec:
@@ -11580,19 +11728,45 @@ const EDIT_GROUPS = {
         return { walls, doors: l.doors, map_id: mapId };
     } },
     // One position, not a list; without one there is nothing to send.
-    router: { service: 'vacuum_set_router_position', lists: ['router'], data: (l) => (l.router.length ? { x: l.router[0][0], y: l.router[0][1] } : null) }
+    router: { service: 'vacuum_set_router_position', lists: ['router'], data: (l) => (l.router.length ? { x: l.router[0][0], y: l.router[0][1] } : null) },
+    // Rooms (EDI-03): a name is one call per room (no list service, device.py#L7725 sets type 0);
+    // a type only for the changed rooms (map.py#L3086 leaves the others alone), its own name is the rename's.
+    segment_name: { service: 'vacuum_rename_segment', lists: ['room_names'], calls: (l, mapId, base) => changedEntries(l.room_names, base.room_names)
+        .filter(([, name]) => typeof name === 'string' && name.trim()).map(([id, name]) => ({ service: 'vacuum_rename_segment', data: { segment_id: id, segment_name: name } })) },
+    segment_type: { service: 'vacuum_set_segment_type', lists: ['room_types'], calls: (l, mapId, base) => {
+        const type = {};
+        for (const [id, t, index] of changedEntries(l.room_types, base.room_types)) if (t > 0) type[String(id)] = [t, index, null];
+        return Object.keys(type).length ? [{ service: 'vacuum_set_segment_type', data: { type, map_id: mapId } }] : [];
+    } },
+    hidden_segments: { service: 'vacuum_set_hidden_segments', lists: ['hidden_segments'], data: (l, mapId) => ({ segments: l.hidden_segments.slice().sort((x, y) => x - y), map_id: mapId }) },
+    // All rooms of the map: a missing one becomes 0 (device.py#L7551); the direction only counts for wood.
+    floor_material: { service: 'vacuum_set_floor_material', lists: ['floor_materials'], data: (l, mapId) => ({
+        material: Object.fromEntries(l.floor_materials.map(([id, material, direction]) => [String(id), [material, material === 1 && direction !== null ? direction : 0]])), map_id: mapId
+    }) }
 };
 
 /** The group a list belongs to (one list, one group). */
 const editGroupOf = (list) => Object.keys(EDIT_GROUPS).find((g) => EDIT_GROUPS[g].lists.includes(list)) || null;
 
-/** { service, data } of a group from the lists (copied), or null when a list is unknown. */
+/** { service, data } of a list group from the lists (copied), or null when a list is unknown or the group sends single calls (groupCalls). */
 function payloadFor(group, lists, mapId) {
     const def = EDIT_GROUPS[group];
-    if (!def || def.lists.some((name) => !Array.isArray(lists[name]))) return null;
+    if (!def || !def.data || def.lists.some((name) => !Array.isArray(lists[name]))) return null;
     const copy = Object.fromEntries(def.lists.map((name) => [name, cloneList(lists[name])]));
     const data = def.data(copy, mapId);
     return data ? { service: def.service, data } : null;
+}
+
+/**
+ * The calls of a group: list groups one complete payload; groups with `calls`
+ * (room names and types) one per changed room against `base`. [] when nothing.
+ */
+function groupCalls(group, lists, mapId, base) {
+    const def = EDIT_GROUPS[group];
+    if (!def || def.lists.some((name) => !Array.isArray(lists[name]))) return [];
+    if (def.calls) return def.calls(Object.fromEntries(def.lists.map((name) => [name, cloneList(lists[name])])), mapId, base || {});
+    const payload = payloadFor(group, lists, mapId);
+    return payload ? [payload] : [];
 }
 
 /** Services that edit objects of the stored map (VacuumModel `map_edit`); map management is not among them. */
@@ -12007,7 +12181,8 @@ const EDIT_SHOWN_OBJECTS = new Set(['rooms', 'router', 'carpets', 'detected_carp
  * Edits go through `editor.edit(group)` (the group's draft lists) and then `editor.changed()`.
  */
 const EDIT_TOOLS = {
-    rooms: { icon: 'mdi:floor-plan', lists: [], panel: null },
+    rooms: { icon: 'mdi:floor-plan', lists: ['room_names', 'room_types', 'hidden_segments', 'floor_materials'], panel: (...a) => roomsPanel(...a),
+        enter: (card, editor) => card._map.setMode('pick-room', { selected: () => roomsPicked(editor) }), onMap: (...a) => roomsOnMap(...a) },
     walls: { icon: 'mdi:wall', lists: ['walls', 'doors'], panel: null },
     zones: { icon: 'mdi:vector-rectangle', lists: ['no_go_areas', 'no_mopping_areas', 'ramps'], panel: null },
     lines: { icon: 'mdi:vector-line', lists: ['virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'virtual_thresholds', 'curtains'], panel: null },
@@ -12177,7 +12352,7 @@ class MapEditor {
         const merged = this.lists();
         const mapId = card._map.current().mapId;
         const groups = Object.keys(this.draft);
-        const lines = this.counts().map((c) => editCountLine(hass, editListLabel(hass, c.list), c));
+        const lines = this.counts().flatMap((c) => (EDIT_LINES[c.list] ? EDIT_LINES[c.list](hass, this, this.base[c.list], merged[c.list]) : [editCountLine(hass, editListLabel(hass, c.list), c)]));
         const undoText = lines.join('; ');
         if (this.foreign) lines.push(translate(hass, 'kartenAbgeglichen'));
         const before = cloneList(this.base);
@@ -12185,8 +12360,8 @@ class MapEditor {
             title: translate(hass, 'kartenSicherungTitel'),
             lines,
             action: translate(hass, 'speichern'),
-            calls: groups.map((g) => payloadFor(g, merged, mapId)).filter(Boolean),
-            undo: { text: undoText, calls: groups.map((g) => payloadFor(g, before, mapId)).filter(Boolean), base: before },
+            calls: groups.flatMap((g) => groupCalls(g, merged, mapId, before)),
+            undo: { text: undoText, calls: groups.flatMap((g) => groupCalls(g, before, mapId, merged)), base: before },
             done: (dialog) => {
                 this.base = cloneList(merged);
                 this.draft = {};
@@ -12395,6 +12570,158 @@ function editRender(card, editor, body, hass, dialog) {
     done.setAttribute('data-action', 'done');
     actions.append(drop, done, save);
     body.appendChild(actions);
+}
+
+
+// ── Rooms (map-editor Task 5: EDI-03) ────────────────────────────────────────
+
+/** Confirmation lines per room instead of counts (R13: "Atelier: Name „…“"). */
+const EDIT_LINES = {
+    room_names: (hass, editor, before, after) => changedEntries(after, before).filter(([, name]) => name)
+        .map(([id, name]) => translate(hass, 'raumZeileName', { raum: roomLabel(editor, id), name })),
+    room_types: (hass, editor, before, after) => changedEntries(after, before).filter(([, t]) => t > 0)
+        .map(([id, t, index]) => translate(hass, 'raumZeileTyp', { raum: roomLabel(editor, id), typ: roomTypeName(hass, t, index) })),
+    hidden_segments: (hass, editor, before, after) => after.filter((id) => !before.includes(id)).map((id) => translate(hass, 'raumZeileVersteckt', { raum: roomLabel(editor, id) }))
+        .concat(before.filter((id) => !after.includes(id)).map((id) => translate(hass, 'raumZeileSichtbar', { raum: roomLabel(editor, id) }))),
+    floor_materials: (hass, editor, before, after) => changedEntries(after, before)
+        .map(([id, material, direction]) => translate(hass, 'raumZeileBoden', { raum: roomLabel(editor, id), boden: floorText(hass, material, direction) }))
+};
+
+/** The device's name of a room (as on the map), for lines and the form. */
+function roomLabel(editor, id) {
+    const room = editRooms(editor.card._map.current().objects, editor.data).find((r) => r.id === Number(id));
+    return room ? room.label : String(id);
+}
+
+const roomTypeName = (hass, type, index) => translate(hass, 'raumTyp_' + type) + (type > 0 && index > 0 ? ' ' + (index + 1) : '');
+const floorText = (hass, material, direction) => translate(hass, 'boden_' + material) + (material === 1 && direction !== null && direction !== undefined ? ' · ' + translate(hass, 'richtung_' + direction) : '');
+
+/** Room ids on the chips (pick-room selected). */
+const roomsPicked = (editor) => (editor.room !== null && editor.room !== undefined ? [editor.room] : []);
+
+/** The dock's room: station_segment of the edit data (0 = none found), else the room under the charger. */
+function dockRoom(card, editor) {
+    const station = editor.data ? editor.data.stationSegment : null;
+    if (station) return Number(station);
+    const charger = card._map.current().objects.charger_position;
+    return charger ? card._map.roomAt(charger) : null;
+}
+
+/** One room's entry in a draft list (replaced by id, kept sorted). */
+function setRoomEntry(editor, group, list, entry) {
+    const entries = editor.edit(group)[list];
+    const i = entries.findIndex((e) => e[0] === entry[0]);
+    if (i >= 0) entries[i] = entry;
+    else entries.push(entry);
+    editor.changed();
+}
+
+function roomsOnMap(card, editor, e) {
+    if (e.type !== 'map-room-tap') return;
+    editor.room = Number(e.detail.room);
+    editor.roomError = '';
+    editor.changed();
+}
+
+/** The room form (EDI-03): ROOM_KEYS['map-editor'] in order, each with its capability; rows as in clean-settings (roomFieldRow, R08). */
+function roomsPanel(card, editor, body, hass) {
+    const lists = editor.lists();
+    const rooms = editRooms(card._map.current().objects, editor.data);
+    const features = editor.toolCaps.rooms.features;
+    const hidden = rooms.filter((r) => lists.hidden_segments.includes(r.id));
+    if (hidden.length) {
+        const list = document.createElement('div');
+        list.className = 'edit-hidden-rooms';
+        list.setAttribute('role', 'group');
+        list.setAttribute('aria-label', translate(hass, 'raumAusgeblendetListe'));
+        for (const r of hidden) {
+            const pick = BuschUI.action({ label: r.label, text: r.label, icon: 'mdi:eye-off-outline', variant: 'secondary', onClick: () => roomsOnMap(card, editor, { type: 'map-room-tap', detail: { room: r.id } }) });
+            pick.setAttribute('data-room-pick', String(r.id));
+            pick.setAttribute('aria-pressed', String(editor.room === r.id));
+            list.appendChild(pick);
+        }
+        body.appendChild(list);
+    }
+    const room = rooms.find((r) => r.id === editor.room);
+    if (!room) {
+        body.appendChild(noteLine(translate(hass, 'raumWaehlenHinweis')));
+        return;
+    }
+    const id = room.id;
+    body.appendChild(noteLine(translate(hass, 'raumGewaehltZeile', { raum: room.label })));
+    const [, type, index] = lists.room_types.find((e) => e[0] === id) || [id, null, 0];
+    const [, ownName] = lists.room_names.find((e) => e[0] === id) || [id, null];
+    const [, material, direction] = lists.floor_materials.find((e) => e[0] === id) || [id, 0, null];
+    const form = document.createElement('div');
+    form.className = 'settings-list';
+    for (const key of ROOM_KEYS['map-editor']) {
+        if (key === 'name') {
+            const options = [[String(0), translate(hass, 'raumTyp_0')]];
+            for (let t = 1; t <= 15; t++) options.push([String(t), roomTypeName(hass, t, t === type ? index : nextTypeIndex(lists.room_types, id, t))]);
+            form.appendChild(roomFieldRow(hass, { key: 'type', label: translate(hass, 'raumTyp'), value: type === null ? undefined : String(type), options, state: 'ok', words: '', onChange: (value) => {
+                const t = Number(value);
+                editor.roomError = '';
+                if (t === 0) {
+                    // Own name: starts from the room's current name, never empty.
+                    setRoomEntry(editor, 'segment_name', 'room_names', [id, ownName || room.label]);
+                    setRoomEntry(editor, 'segment_type', 'room_types', [id, 0, 0]);
+                } else {
+                    setRoomEntry(editor, 'segment_name', 'room_names', [id, null]);
+                    setRoomEntry(editor, 'segment_type', 'room_types', [id, t, nextTypeIndex(editor.lists().room_types, id, t)]);
+                }
+            } }));
+            if (type === 0) {
+                const input = document.createElement('input');
+                input.setAttribute('type', 'text');
+                input.setAttribute('autocomplete', 'off');
+                input.value = editor.roomError ? editor.roomDraft : ownName || '';
+                const field = formField('room-name', translate(hass, 'feld_room_name'), input, editor.roomError ? translate(hass, editor.roomError) : '');
+                input.addEventListener('change', () => {
+                    const name = input.value.trim();
+                    if (!name) {
+                        editor.roomError = 'raumNameLeer';
+                        editor.roomDraft = input.value;
+                        return rerender(card);
+                    }
+                    editor.roomError = '';
+                    return setRoomEntry(editor, 'segment_name', 'room_names', [id, name]);
+                });
+                form.appendChild(field.wrap);
+            }
+        } else if (key === 'visibility' && features.visibility) {
+            const dock = dockRoom(card, editor) === id;
+            const on = !lists.hidden_segments.includes(id);
+            const row = document.createElement('div');
+            row.className = 'setting';
+            row.setAttribute('data-setting', 'room-visibility');
+            const label = document.createElement('span');
+            label.className = 'setting-name';
+            label.textContent = translate(hass, 'raumSichtbar');
+            const toggle = entrySwitch(hass, translate(hass, 'raumSichtbar'), on, false, () => {
+                const ids = editor.edit('hidden_segments').hidden_segments;
+                if (on) ids.push(id);
+                else ids.splice(ids.indexOf(id), 1);
+                ids.sort((x, y) => x - y);
+                editor.changed();
+            });
+            toggle.setAttribute('data-field', 'room-visible');
+            if (dock && on) toggle.disabled = true;
+            row.append(label, toggle);
+            form.appendChild(row);
+            if (dock && on) form.appendChild(noteLine(translate(hass, 'raumDockSichtbar'), 'locked'));
+        } else if (key === 'floor_material' && features.floor) {
+            const unknown = features.direction && lists.floor_materials.some(([, m, d]) => m === 1 && d === null);
+            const options = Object.values(FLOOR_CODES).map((c) => [String(c), translate(hass, 'boden_' + c)]);
+            form.appendChild(roomFieldRow(hass, { key: 'floor_material', label: translate(hass, 'raumBoden'), value: String(material), options, state: unknown ? 'locked' : 'ok', words: '', disabled: unknown,
+                onChange: (value) => setRoomEntry(editor, 'floor_material', 'floor_materials', [id, Number(value), Number(value) === 1 ? (direction === null ? 0 : direction) : null]) }));
+            if (unknown) form.appendChild(noteLine(translate(hass, 'raumBodenUnbekannt'), 'locked'));
+        } else if (key === 'floor_material_direction' && features.direction && material === 1) {
+            form.appendChild(roomFieldRow(hass, { key: 'floor_material_direction', label: translate(hass, 'raumRichtung'), value: direction === null ? undefined : String(direction),
+                options: [0, 90].map((d) => [String(d), translate(hass, 'richtung_' + d)]), state: 'ok', words: '',
+                onChange: (value) => setRoomEntry(editor, 'floor_material', 'floor_materials', [id, 1, Number(value)]) }));
+        }
+    }
+    body.appendChild(form);
 }
 
 // ---------------------------------------------------------------------------
@@ -12995,6 +13322,9 @@ BuschVacuumCard.__internals = {
     MapEditor,
     mapEditView,
     editCount,
+    editRooms,
+    nextTypeIndex,
+    groupCalls,
     REMOTE,
     remoteValue,
     RemoteSender,

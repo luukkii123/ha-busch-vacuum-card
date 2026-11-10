@@ -616,7 +616,7 @@ test('EDI-02 Werkzeugleiste je editCaps (nur gebaute Werkzeuge), Zähler, Sammel
   const d = bearbeiten(k);
   await mikro(); await mikro();
   assert.ok(werkzeug(k, 'zones') && werkzeug(k, 'lines') && werkzeug(k, 'walls'));
-  assert.equal(werkzeug(k, 'rooms'), null, 'ohne Panel kein Werkzeug');
+  assert.equal(werkzeug(k, 'furniture'), null, 'ohne Panel kein Werkzeug');
   assert.equal(werkzeug(k, 'walls').disabled, true, 'ohne Bearbeitungsdaten gesperrt');
   assert.match(d.shadowRoot.textContent, /Bearbeitungsdaten der Karte fehlen/);
   assert.equal($d(k.u, '[data-action="save"]').disabled, true, 'nichts offen');
@@ -749,4 +749,165 @@ test('EDI-02 Bearbeitungsdaten beim Betreten; fremdes neues frame_id → Hinweis
   await mikro(); await mikro(); await mikro();
   assert.equal(gespeichert(), 3, 'nach eigener Speicherung neu geladen');
   assert.doesNotMatch(dialogVon(k.u).shadowRoot.textContent, /Karte hat sich auf dem Gerät geändert/, 'eigene Speicherung: kein Hinweis');
+});
+
+// ── Task 5: Räume — Name, Typ, Sichtbarkeit, Boden (EDI-03) ────────────────
+
+const b64 = (text) => Buffer.from(text, 'utf8').toString('base64');
+/** Bearbeitungsdaten mit den Raum-IDs der Fixture (verfremdete Namen), Nachbarn frei erfunden. */
+function raumdaten(mehr = {}) {
+  return bearbeitungsdaten(Object.assign({
+    station_segment: 9,
+    segments: [
+      [1, 1229, -981, 4, null, 0, 1, [9, 7], 1, 90, 1],
+      [3, -3461, -2902, 1, null, 0, 2, [7], 1, 90, 1],
+      [4, 2585, -6349, 0, b64('Galerie'), 0, 3, [9], 2, null, 1],
+      [5, -4252, -8496, 2, null, 0, 1, [7], 1, 0, 1],
+      [6, 1003, -10134, 0, b64('Werkstatt'), 2, 2, [], 1, 90, 1],
+      [7, -410, -5049, 8, null, 0, 0, [1, 3, 5], 2, null, 0],
+      [9, 2472, -3806, 6, null, 0, 2, [1, 4], 2, null, 1],
+    ],
+  }, mehr));
+}
+const raumFeldE = (k, key) => { const zeile = $d(k.u, '[data-setting="room-' + key + '"]'); return zeile ? zeile.querySelector('select') : null; };
+const waehle = (k, node, wert) => { node.value = String(wert); node.dispatchEvent(k.u.neuesEreignis('change')); };
+const raumChip = (k, id) => Array.from($$d(k.u, '.room-chip')).find((b) => b.getAttribute('data-room') === String(id)) || null;
+function raeumeOffen(k) {
+  const d = bearbeiten(k);
+  werkzeug(k, 'rooms').click();
+  return d;
+}
+
+test('EDI-03 Raumlisten und Dienstformen: Name je Raum ein Aufruf, Typ nur geänderte [typ, index, name], Sichtbarkeit alle versteckten, Boden alle Räume', () => {
+  const k = aufbau();
+  const base = k.I.editLists(k.karte._map.current().objects, null);
+  assert.deepEqual(roh(base.room_names), [[1, null], [3, null], [4, 'Galerie'], [5, null], [6, 'Werkstatt'], [7, null], [9, null]]);
+  assert.deepEqual(roh(base.room_types), [[1, 4, 0], [3, 1, 0], [4, 0, 1], [5, 2, 0], [6, 0, 2], [7, 8, 0], [9, 6, 0]]);
+  assert.deepEqual(roh(base.hidden_segments), []);
+  assert.deepEqual(roh(base.floor_materials), [[1, 1, 0], [3, 1, 90], [4, 2, null], [5, 1, 0], [6, 1, 90], [7, 2, null], [9, 2, null]]);
+  const nach = roh(base);
+  nach.room_names[0] = [1, 'Atelier Neu'];
+  nach.room_types[0] = [1, 0, 0];
+  nach.room_types[6] = [9, 1, k.I.nextTypeIndex(nach.room_types, 9, 1)];
+  nach.hidden_segments = [7, 3];
+  nach.floor_materials[2] = [4, 1, 90];
+  assert.deepEqual(roh(nach.room_types[6]), [9, 1, 1], 'laufende Nummer: Salon hat Typ 1 mit Index 0');
+  assert.equal(k.I.nextTypeIndex(base.room_types, 4, 4), 1);
+  assert.deepEqual(roh(k.I.groupCalls('segment_name', nach, 2, base)), [{ service: 'vacuum_rename_segment', data: { segment_id: 1, segment_name: 'Atelier Neu' } }]);
+  assert.deepEqual(roh(k.I.groupCalls('segment_type', nach, 2, base)), [{ service: 'vacuum_set_segment_type', data: { type: { 9: [1, 1, null] }, map_id: 2 } }], 'Raum 1 wird über den Namen zum eigenen Namen');
+  assert.deepEqual(roh(k.I.groupCalls('hidden_segments', nach, 2, base)), [{ service: 'vacuum_set_hidden_segments', data: { segments: [3, 7], map_id: 2 } }]);
+  assert.deepEqual(roh(k.I.groupCalls('floor_material', nach, 2, base)), [{ service: 'vacuum_set_floor_material', data: { material: { 1: [1, 0], 3: [1, 90], 4: [1, 90], 5: [1, 0], 6: [1, 90], 7: [2, 0], 9: [2, 0] }, map_id: 2 } }], 'alle Räume der Karte');
+  // Rückweg: dieselben Gruppen mit der Ausgangsliste.
+  assert.deepEqual(roh(k.I.groupCalls('segment_name', base, 2, nach)), [], 'kein leerer Name');
+  assert.deepEqual(roh(k.I.groupCalls('segment_type', base, 2, nach)), [{ service: 'vacuum_set_segment_type', data: { type: { 1: [4, 0, null], 9: [6, 0, null] }, map_id: 2 } }]);
+  // Bearbeitungsdaten gehen vor: Sichtbarkeit 0, Richtung roh.
+  const mit = k.I.editLists(k.karte._map.current().objects, k.I.editData(raumdaten()));
+  assert.deepEqual(roh(mit.hidden_segments), [7]);
+  assert.deepEqual(roh(mit.floor_materials[0]), [1, 1, 90]);
+  // Nur Attribute, Karte um 90° gedreht: angezeigte Richtung → Geräterichtung.
+  const k2 = aufbau({ cam: { rotation: 90 } });
+  assert.deepEqual(roh(k2.I.editLists(k2.karte._map.current().objects, null).floor_materials[0]), [1, 1, 90]);
+  assert.equal(k.I.payloadFor('segment_name', nach, 2), null, 'Gruppen mit Einzelaufrufen gehen nur über groupCalls');
+});
+
+test('EDI-03 Räume: Wahl per Fläche (pick-room) und Chip, Formular Name/Typ/Sichtbarkeit/Boden, Sammel-Speichern mit Zeilen je Raum; Rückgängig', async () => {
+  const k = aufbau();
+  const d = raeumeOffen(k);
+  await mikro(); await mikro();
+  const m = k.karte._map;
+  assert.equal(m._mode, 'pick-room');
+  assert.match(d.shadowRoot.textContent, /Raum auf der Karte antippen oder als Chip wählen/);
+  m._roomTap(5, 'map');
+  assert.match($d(k.u, '[data-panel="rooms"]').textContent, /Bibliothek/);
+  assert.equal(raumChip(k, 5).getAttribute('aria-pressed'), 'true', 'Fläche und Chip zeigen dieselbe Wahl');
+  raumChip(k, 1).click();
+  assert.match($d(k.u, '[data-panel="rooms"]').textContent, /Atelier/);
+  // Typ „Eigener Name“: Namensfeld mit dem bisherigen Namen, dann umbenennen.
+  assert.equal(raumFeldE(k, 'type').value, '4');
+  waehle(k, raumFeldE(k, 'type'), 0);
+  const name = $d(k.u, '[data-field="room-name"]');
+  assert.equal(name.value, 'Atelier');
+  name.value = 'Atelier Neu';
+  name.dispatchEvent(k.u.neuesEreignis('change'));
+  // Raum 5: ausblenden, Boden Fliese; Raum 4: Holz mit Richtung.
+  raumChip(k, 5).click();
+  $d(k.u, '[data-field="room-visible"]').click();
+  waehle(k, raumFeldE(k, 'floor_material'), 2);
+  assert.equal(raumFeldE(k, 'floor_material_direction'), null, 'Richtung nur bei Holz');
+  raumChip(k, 4).click();
+  waehle(k, raumFeldE(k, 'floor_material'), 1);
+  waehle(k, raumFeldE(k, 'floor_material_direction'), 90);
+  assert.deepEqual(k.haus.rufe, [], 'nichts gesendet vor dem Speichern');
+  $d(k.u, '[data-action="save"]').click();
+  const text = d.shadowRoot.textContent;
+  assert.match(text, /Atelier: Name „Atelier Neu“/);
+  assert.match(text, /Bibliothek: ausgeblendet/);
+  assert.match(text, /Bibliothek: Boden Fliese/);
+  assert.match(text, /Galerie: Boden Holz · senkrecht/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_rename_segment', 'vacuum_set_hidden_segments', 'vacuum_set_floor_material']);
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', segment_id: 1, segment_name: 'Atelier Neu' });
+  assert.deepEqual(roh(k.haus.rufe[2].data), { entity_id: 'vacuum.robo', segments: [5], map_id: 2 });
+  assert.deepEqual(roh(k.haus.rufe[3].data), { entity_id: 'vacuum.robo', material: { 1: [1, 0], 3: [1, 90], 4: [1, 90], 5: [2, 0], 6: [1, 90], 7: [2, 0], 9: [2, 0] }, map_id: 2 });
+  k.u.zurueck();
+  $d(k.u, '[data-action="undo"]').click();
+  $d(k.u, '[data-action="confirm"]').click();
+  await mikro(); await mikro();
+  assert.deepEqual(dienste(k.haus).slice(4), ['vacuum_set_segment_type', 'vacuum_set_hidden_segments', 'vacuum_set_floor_material'], 'Rückgängig: Typ zurück statt leerem Namen');
+  assert.deepEqual(roh(k.haus.rufe[4].data), { entity_id: 'vacuum.robo', type: { 1: [4, 0, null] }, map_id: 2 });
+  assert.deepEqual(roh(k.haus.rufe[5].data), { entity_id: 'vacuum.robo', segments: [], map_id: 2 });
+});
+
+test('EDI-03 Prüfungen: leerer Name abgelehnt (R10), Typ mit laufender Nummer, Dock-Raum aus roomAt(charger_position) bzw. station_segment nicht versteckbar', async () => {
+  const k = aufbau();
+  raeumeOffen(k);
+  await mikro(); await mikro();
+  const m = k.karte._map;
+  m._roomTap(1, 'map');
+  assert.equal($d(k.u, '[data-field="room-visible"]').disabled, true, 'ohne Daten: Raum der Station über roomAt(charger_position)');
+  assert.match($d(k.u, '[data-panel="rooms"]').textContent, /Raum mit der Station bleibt sichtbar/);
+  m._roomTap(9, 'map');
+  assert.equal($d(k.u, '[data-field="room-visible"]').disabled, false);
+  waehle(k, raumFeldE(k, 'type'), 1);
+  assert.deepEqual(roh(k.karte._mapEdit.lists().room_types.find((e) => e[0] === 9)), [9, 1, 1]);
+  assert.equal($d(k.u, '[data-field="room-name"]'), null, 'Typname statt eigenem Namen');
+  m._roomTap(4, 'map');
+  const name = $d(k.u, '[data-field="room-name"]');
+  name.value = '   ';
+  name.dispatchEvent(k.u.neuesEreignis('change'));
+  assert.match($d(k.u, '[data-panel="rooms"]').textContent, /Der Name darf nicht leer sein/);
+  assert.equal($d(k.u, '[data-field="room-name"]').getAttribute('aria-invalid'), 'true');
+  assert.deepEqual(roh(k.karte._mapEdit.lists().room_names.find((e) => e[0] === 4)), [4, 'Galerie'], 'leer nicht übernommen');
+  // Mit Bearbeitungsdaten entscheidet station_segment; ausgeblendete Räume bleiben wählbar.
+  const k2 = aufbau({ abruf: (url) => (/saved=1/.test(url) ? { json: raumdaten() } : { status: 404 }) });
+  await mikro();
+  raeumeOffen(k2);
+  await mikro(); await mikro(); await mikro();
+  k2.karte._map._roomTap(9, 'map');
+  assert.equal($d(k2.u, '[data-field="room-visible"]').disabled, true, 'station_segment 9');
+  k2.karte._map._roomTap(1, 'map');
+  assert.equal($d(k2.u, '[data-field="room-visible"]').disabled, false);
+  $d(k2.u, '[data-room-pick="7"]').click();
+  assert.equal($d(k2.u, '[data-field="room-visible"]').getAttribute('aria-checked'), 'false', 'ausgeblendeter Raum über die Liste wählbar');
+  $d(k2.u, '[data-field="room-visible"]').click();
+  assert.deepEqual(roh(k2.karte._mapEdit.lists().hidden_segments), []);
+});
+
+test('EDI-03 Boden: Richtung nur bei Holz und floor_direction_cleaning; ohne Fähigkeiten keine Felder', async () => {
+  const { fixture } = require('./kartendaten.js');
+  const alle = fixture('voll').states['vacuum.robo'].attributes.capabilities;
+  const k = aufbau({ vac: { capabilities: alle.filter((c) => c !== 'floor_direction_cleaning') } });
+  raeumeOffen(k);
+  await mikro(); await mikro();
+  k.karte._map._roomTap(1, 'map');
+  assert.ok(raumFeldE(k, 'floor_material'));
+  assert.equal(raumFeldE(k, 'floor_material_direction'), null, 'ohne floor_direction_cleaning keine Richtung');
+  const k2 = aufbau({ vac: { capabilities: alle.filter((c) => !['floor_material', 'segment_visibility'].includes(c)) } });
+  raeumeOffen(k2);
+  await mikro(); await mikro();
+  k2.karte._map._roomTap(1, 'map');
+  assert.equal(raumFeldE(k2, 'floor_material'), null);
+  assert.equal($d(k2.u, '[data-field="room-visible"]'), null);
+  assert.ok(raumFeldE(k2, 'type'), 'Name/Typ bleiben');
 });
