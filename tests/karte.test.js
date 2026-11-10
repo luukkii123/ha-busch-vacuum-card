@@ -594,4 +594,187 @@ test('Objekte nicht nur über Farbe unterscheidbar (R17)', async () => {
   assert.ok(new Set(muster).size >= 6, 'Strichart/-stärke unterscheidet: ' + muster.join(' | '));
 });
 
+// ── Task 6: Treffertest, Modi, Raum-Chips ──────────────────────────────────
+/** Karte mit Kartendaten-Abruf (fetch wie im Browser); `antwort` steuert die Antwort. */
+async function datenKarte({ config = {}, antwort, fixture = 'voll' } = {}) {
+  const u = bildUmgebung();
+  const daten = ausFixture(fixture, { frame_id: 1180 });
+  u.abrufe = [];
+  u.kontext.fetch = async (url) => {
+    u.abrufe.push(url);
+    if (antwort) return antwort(url);
+    return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(Object.assign({}, daten, { _zellen: undefined }))) };
+  };
+  const haus = hausAus(fixture);
+  const karte = neueKarte(u, haus, config);
+  // Eine handygroße Bühne statt der 200×100 der Attrappe: Trefferradien in Bildschirm-px werden realistisch.
+  karte._map.stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 2000, bottom: 2000, width: 2000, height: 2000 });
+  await mikro(); await mikro();
+  return { u, haus, karte, daten };
+}
+const ereignisse = (karte, ...typen) => {
+  const liste = [];
+  for (const typ of typen) karte._map.el.addEventListener(typ, (e) => liste.push([typ, e.detail]));
+  return liste;
+};
+const tippe = (u, karte, client) => { zeiger(u, karte, 'pointerdown', client.x, client.y); zeiger(u, karte, 'pointerup', client.x, client.y); u.uhr.vor(400); };
+const bildschirm = (karte, robot) => karte._map.toScreen(karte._map.toImage(robot));
+
+test('Datenmodus: Kartendaten nur bei neuem frame_id, URL mit &v=<frame_id>', async () => {
+  const { u, haus, karte } = await datenKarte();
+  assert.equal(u.abrufe.length, 1);
+  assert.equal(u.abrufe[0], '/api/camera_map_data_proxy/camera.robo_map?token=testtoken&v=1180');
+  assert.equal(karte._map.current().mode, 'data');
+  karte.hass = haus.fremd();
+  karte.hass = haus.setze(kamera(haus, { vacuum_position: { x: 1, y: 2, a: 0 } }));
+  await mikro();
+  assert.equal(u.abrufe.length, 1, 'gleicher Frame: kein Abruf');
+  karte.hass = haus.setze(kamera(haus, { frame_id: 1181 }));
+  await mikro(); await mikro();
+  assert.deepEqual(u.abrufe.slice(1), ['/api/camera_map_data_proxy/camera.robo_map?token=testtoken&v=1181']);
+  assert.equal(karte._map.stats.data, 2);
+});
+
+test('Datenmodus nicht verfügbar → Bildmodus, Treffertest Rechteck+Mittelpunkt', async () => {
+  const { karte } = await datenKarte({ antwort: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
+  const m = karte._map;
+  assert.equal(m.current().mode, 'image');
+  for (const r of Object.values(raeume())) assert.equal(m.roomAt({ x: r.x, y: r.y }), r.room_id, r.name);
+  assert.equal(m.passable({ x: 0, y: 0 }), null, 'unbekannt ohne Daten');
+  const { karte: ohneFetch } = await kartenKarte();
+  assert.equal(ohneFetch._map.current().mode, 'image');
+});
+
+test('roomAt/passable im Datenmodus exakt; unbekannte Raum-ID → null', async () => {
+  const { karte, daten } = await datenKarte();
+  const m = karte._map;
+  for (const r of Object.values(raeume())) assert.equal(m.roomAt({ x: r.x, y: r.y }), r.room_id, r.name);
+  const [left, top] = daten.size;
+  assert.equal(m.roomAt({ x: left + 1, y: top + 1 }), null);
+  assert.equal(m.passable({ x: left + 1, y: top + 1 }), false);
+  const r = Object.values(raeume())[0];
+  assert.equal(m.passable({ x: r.x, y: r.y }), true);
+});
+
+test('hitTest: Raum, Objekt (Hindernis), außerhalb', async () => {
+  const { haus, karte } = await datenKarte();
+  const m = karte._map;
+  const r = raeume()['3'];
+  const raum = m.hitTest(bildschirm(karte, r));
+  assert.equal(raum.kind, 'room');
+  assert.equal(raum.id, 3);
+  assert.ok(Math.abs(raum.robot.x - r.x) < 1 && Math.abs(raum.robot.y - r.y) < 1, 'Roboter-mm');
+  const hindernis = haus.states[CAM].attributes.obstacles['2'];
+  const h = m.hitTest(bildschirm(karte, hindernis));
+  assert.equal(h.kind, 'object');
+  assert.equal(h.id, '2');
+  assert.equal(h.layer, 'obstacles');
+  assert.equal(h.object.reason, hindernis.reason);
+  const aussen = m.hitTest(m.toScreen({ x: 1, y: 1 }));
+  assert.equal(aussen.kind, 'outside');
+});
+
+test('Modi erzeugen die Vertragsereignisse; gesperrt keine', async () => {
+  const { u, karte } = await datenKarte();
+  const m = karte._map;
+  const liste = ereignisse(karte, 'map-tap', 'map-room-tap', 'map-object-tap', 'map-long-press', 'map-drag');
+  const r = raeume()['5'];
+  tippe(u, karte, bildschirm(karte, r));
+  assert.deepEqual(liste.map((e) => e[0]), ['map-tap', 'map-room-tap'], 'view: Tipp + Raum');
+  assert.equal(liste[1][1].room, 5);
+  assert.equal(liste[1][1].source, 'map');
+  liste.length = 0;
+  m.setMode('pick-point');
+  tippe(u, karte, bildschirm(karte, r));
+  assert.deepEqual(liste.map((e) => e[0]), ['map-tap']);
+  assert.ok(Math.abs(liste[0][1].robot.x - r.x) < 1);
+  assert.equal(liste[0][1].passable, true);
+  liste.length = 0;
+  m.setMode('pick-room');
+  tippe(u, karte, bildschirm(karte, r));
+  assert.deepEqual(liste.map((e) => e[0]), ['map-tap', 'map-room-tap']);
+  liste.length = 0;
+  // Halten ohne Bewegung.
+  const p = bildschirm(karte, r);
+  zeiger(u, karte, 'pointerdown', p.x, p.y); u.uhr.vor(600); zeiger(u, karte, 'pointerup', p.x, p.y);
+  assert.deepEqual(liste.map((e) => e[0]), ['map-long-press']);
+  liste.length = 0;
+  // draw-rect: Ziehen verschiebt nicht, sondern meldet start/move/end mit Lupe.
+  m.setMode('draw-rect');
+  const vorher = ansichtZustand(karte);
+  zeiger(u, karte, 'pointerdown', p.x, p.y); zeiger(u, karte, 'pointermove', p.x + 30, p.y + 20);
+  assert.equal(karte.shadowRoot.querySelector('.map-loupe').hidden, false, 'Lupe beim Ziehen');
+  zeiger(u, karte, 'pointerup', p.x + 30, p.y + 20);
+  assert.deepEqual(liste.map((e) => e[1].phase), ['start', 'move', 'end']);
+  assert.equal(liste[0][1].mode, 'draw-rect');
+  assert.ok(liste[2][1].robot && liste[2][1].start, 'Roboter-mm von Start und Ende');
+  assert.deepEqual(ansichtZustand(karte), vorher, 'kein Verschieben');
+  assert.equal(karte.shadowRoot.querySelector('.map-loupe').hidden, true);
+  liste.length = 0;
+  m.setMode('view');
+  karte._toggleLock();
+  assert.equal(karte.getAttribute('data-locked'), 'true');
+  tippe(u, karte, bildschirm(karte, r));
+  assert.deepEqual(liste, [], 'gesperrt: keine Kartenereignisse');
+  assert.throws(() => m.setMode('unsinn'), /mode/);
+});
+
+test('Hindernis antippen → map-object-tap', async () => {
+  const { u, haus, karte } = await datenKarte();
+  const liste = ereignisse(karte, 'map-object-tap');
+  tippe(u, karte, bildschirm(karte, haus.states[CAM].attributes.obstacles['1']));
+  assert.equal(liste.length, 1);
+  assert.equal(liste[0][1].id, '1');
+  assert.equal(liste[0][1].layer, 'obstacles');
+});
+
+test('Raum-Chips: Liste mit Namen, Symbol, Reihenfolge, Tastatur; Chip = Fläche (R08/R15/R16)', async () => {
+  const { u, karte } = await datenKarte();
+  const m = karte._map;
+  const chips = karte.shadowRoot.querySelector('.room-chips');
+  assert.ok(chips, 'Raum-Chips unter der Karte');
+  assert.equal(chips.getAttribute('role'), 'group');
+  assert.equal(chips.getAttribute('aria-label'), 'Räume');
+  const knoepfe = chips.querySelectorAll('.room-chip');
+  assert.equal(knoepfe.length, Object.keys(raeume()).length);
+  assert.ok(knoepfe.every((k) => k.querySelector('ha-icon')), 'Symbol je Raum (R01: wie auf der Karte)');
+  assert.deepEqual(knoepfe.map((k) => k.tabIndex), knoepfe.map((_, i) => (i === 0 ? 0 : -1)), 'ein Tabstopp');
+  const liste = ereignisse(karte, 'map-room-tap');
+  knoepfe[1].click();
+  assert.equal(liste.length, 1);
+  assert.equal(liste[0][1].room, Number(knoepfe[1].getAttribute('data-room')));
+  assert.equal(liste[0][1].source, 'chip');
+  // Pfeile wandern, Leertaste wählt (Button-Standard); gesperrt bleiben Chips bedienbar.
+  karte._toggleLock();
+  knoepfe[0].dispatchEvent(ev(u, 'keydown', { key: 'ArrowRight' }));
+  assert.equal(chips.querySelectorAll('.room-chip')[1].tabIndex, 0);
+  chips.querySelectorAll('.room-chip')[2].click();
+  assert.equal(liste.length, 2, 'Chip wirkt auch gesperrt');
+  // Eigene Chips eines Moduls: Auswahl, Reihenfolge-Badge, onToggle.
+  const gewaehlt = [];
+  const eigene = m.roomChips({ rooms: raeume(), selected: [3, 5], order: [5, 3], onToggle: (id) => gewaehlt.push(id) });
+  const drei = eigene.querySelectorAll('.room-chip').find((k) => k.getAttribute('data-room') === '3');
+  assert.equal(drei.getAttribute('aria-pressed'), 'true');
+  assert.equal(drei.querySelector('.room-order').textContent, '2');
+  assert.match(drei.getAttribute('aria-label'), /Salon.*2/);
+  drei.click();
+  assert.deepEqual(gewaehlt, [3]);
+});
+
+test('Beispiel späteres Modul: Ebene anlegen, pick-room, map-room-tap, Ebene entfernen', async () => {
+  const { u, karte } = await datenKarte();
+  const m = karte._map;
+  const gezeichnet = [];
+  m.addLayer('beispiel-auswahl', { z: 55, render: (g, ctx) => { for (const id of Object.keys(ctx.rooms)) gezeichnet.push(id); } });
+  m.setMode('pick-room');
+  const erhalten = [];
+  m.el.addEventListener('map-room-tap', (e) => { erhalten.push(e.detail.room); m.refresh('beispiel-auswahl'); });
+  tippe(u, karte, bildschirm(karte, raeume()['7']));
+  assert.deepEqual(erhalten, [7]);
+  assert.equal(gezeichnet.length, 2 * Object.keys(raeume()).length, 'angelegt + refresh');
+  m.removeLayer('beispiel-auswahl');
+  m.setMode('view');
+  assert.equal(ebene(karte, 'beispiel-auswahl'), null);
+});
+
 module.exports = { intern, raeume };

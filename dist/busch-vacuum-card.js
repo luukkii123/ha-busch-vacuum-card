@@ -362,7 +362,9 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zoomIn: 'Vergrößern',
             zoomOut: 'Verkleinern',
             zoomFit: 'Einpassen',
-            zoomGesperrt: 'Karte gesperrt – das Schloss oben halten, um Zoomen und Verschieben freizugeben.'
+            zoomGesperrt: 'Karte gesperrt – das Schloss oben halten, um Zoomen und Verschieben freizugeben.',
+            raeume: 'Räume',
+            raumPosition: '{name}, Position {n}'
         }
     },
     en: {
@@ -494,7 +496,9 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zoomIn: 'Zoom in',
             zoomOut: 'Zoom out',
             zoomFit: 'Fit',
-            zoomGesperrt: 'Map locked – hold the lock at the top to allow zooming and moving.'
+            zoomGesperrt: 'Map locked – hold the lock at the top to allow zooming and moving.',
+            raeume: 'Rooms',
+            raumPosition: '{name}, position {n}'
         }
     }
 };
@@ -1163,7 +1167,8 @@ const MAP_VACUUM_KEYS = ['maps', 'map_count', 'selected_map', 'has_saved_map', '
 
 /** MAP-02: zoom limits, button/key step, wheel speed, tap and double tap tolerances. */
 const MAP_ZOOM = { min: 1, max: 8, step: 2, wheel: 0.0015 };
-const TAP = { slop: 6, doubleMs: 300, doubleSlop: 24 };
+const TAP = { slop: 6, doubleMs: 300, doubleSlop: 24, longMs: 500, hitPx: 22 };
+const MAP_MODES = ['view', 'pick-room', 'pick-point', 'draw-rect', 'drag'];
 const LOUPE = { size: 120, magnify: 2 };
 
 /** Built-in layers: hidden_objects name, z order, how it draws. Modules add theirs with addLayer. */
@@ -1258,12 +1263,13 @@ const MAP_DRAW = {
         })
     },
     rooms: {
-        source: (view, name, ctx) => [ctx.rooms, view.model.attr('cleaning_sequence')],
+        source: (view, name, ctx) => [ctx.rooms, view.model.attr('cleaning_sequence'), view._highlight],
         render: (view, name, group, ctx) => {
             const size = view.config(ctx.index).font_size;
             for (const [id, room] of Object.entries(ctx.rooms)) {
                 if (!room || room.x === undefined || room.visibility === 'Hidden') continue;
                 const g = view._symbol(room, 'label', id);
+                if (String(view._highlight) === String(id)) g.setAttribute('data-highlight', '');
                 g.appendChild(view.svgNode('text', { 'data-role': 'name', 'font-size': size, 'text-anchor': 'middle', y: size * 0.35 })).textContent = room.custom_name || room.name || '';
                 if (Number(room.order) > 0) {
                     const badge = view.svgNode('g', { class: 'badge', transform: 'translate(0 ' + (-size * 1.4) + ')' });
@@ -1292,6 +1298,7 @@ const MAP_DRAW = {
         }
     },
     blocked: {
+        hit: (view, name, point, ctx) => MAP_DRAW.obstacles.hit(view, name, point, ctx),
         // Blocked rooms of the last run (obstacle type 200, with reason) and skipped rooms at their centre.
         source: (view, name, ctx) => [view.model.attr('skipped_segments'), obstacleList(view, ctx).filter((o) => o[2] === name), ctx.rooms],
         render: (view, name, group, ctx) => {
@@ -1309,6 +1316,15 @@ const MAP_DRAW = {
         })
     },
     obstacles: {
+        // The nearest obstacle symbol within a finger's reach on screen.
+        hit: (view, name, point, ctx) => {
+            let best = null, distance = TAP.hitPx * view.config(ctx.index).object_scale;
+            for (const [id, item] of obstacleList(view, ctx).filter((o) => o[2] === name)) {
+                const d = view._screenDistance(item, point);
+                if (d <= distance) { distance = d; best = { id, object: item }; }
+            }
+            return best;
+        },
         source: (view, name, ctx) => obstacleList(view, ctx).filter((o) => o[2] === name),
         render: (view, name, group, ctx) => {
             const kind = { stains: 'stain', pets: 'pet' }[name] || 'obstacle';
@@ -1460,8 +1476,17 @@ class MapView {
         try { this.stage.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
         this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         const base = { zoom: this._zoom, panX: this._panX, panY: this._panY };
-        if (this._pointers.size === 1) this._gesture = Object.assign({ kind: 'press', start: { x: e.clientX, y: e.clientY } }, base);
-        else if (this._pointers.size === 2) {
+        clearTimeout(this._longTimer);
+        if (this._pointers.size === 1) {
+            const g = Object.assign({ kind: 'press', start: { x: e.clientX, y: e.clientY } }, base);
+            this._gesture = g;
+            this._longTimer = setTimeout(() => {
+                if (this._gesture !== g || g.kind !== 'press') return;
+                g.kind = 'long';
+                const robot = this.toRobot(this.fromScreen(g.start));
+                if (robot) this._emit('map-long-press', { client: g.start, robot, hit: this.hitTest(g.start), mode: this._mode });
+            }, TAP.longMs);
+        } else if (this._pointers.size === 2) {
             const [a, b] = Array.from(this._pointers.values());
             this._gesture = Object.assign({ kind: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } }, base);
         }
@@ -1483,7 +1508,21 @@ class MapView {
             return;
         }
         const dx = e.clientX - g.start.x, dy = e.clientY - g.start.y;
+        if (g.kind === 'long') return;
         if (g.kind === 'press' && Math.hypot(dx, dy) < TAP.slop) return;
+        clearTimeout(this._longTimer);
+        const client = { x: e.clientX, y: e.clientY };
+        // draw-rect and drag: one finger draws for the module, two fingers still zoom.
+        if (g.kind === 'drag' || (g.kind === 'press' && ['draw-rect', 'drag'].includes(this._mode))) {
+            if (g.kind === 'press') {
+                g.kind = 'drag';
+                g.robot = this.toRobot(this.fromScreen(g.start));
+                this._emit('map-drag', { phase: 'start', mode: this._mode, start: g.robot, robot: g.robot, client: g.start });
+            }
+            this.showLoupe(client);
+            this._emit('map-drag', { phase: 'move', mode: this._mode, start: g.robot, robot: this.toRobot(this.fromScreen(client)), client });
+            return;
+        }
         g.kind = 'pan';
         this._setView(g.zoom, g.panX + dx, g.panY + dy);
     }
@@ -1498,8 +1537,14 @@ class MapView {
             return;
         }
         if (this._pointers.size) return;
+        clearTimeout(this._longTimer);
         this._gesture = null;
         this.el.removeAttribute('data-gesture');
+        if (g && g.kind === 'drag') {
+            this.hideLoupe();
+            const client = { x: e.clientX, y: e.clientY };
+            this._emit('map-drag', { phase: cancelled ? 'cancel' : 'end', mode: this._mode, start: g.robot, robot: this.toRobot(this.fromScreen(client)), client });
+        }
         if (g && g.kind === 'press' && !cancelled) this._tap({ x: e.clientX, y: e.clientY });
     }
 
@@ -1508,10 +1553,171 @@ class MapView {
         const last = this._lastTap;
         if (last && now - last.t < TAP.doubleMs && Math.hypot(client.x - last.x, client.y - last.y) < TAP.doubleSlop) {
             this._lastTap = null;
-            if (this._mode === 'view') this._zoomAt(this._zoom * MAP_ZOOM.step, client);
-            return;
+            if (this._mode === 'view') {
+                this._zoomAt(this._zoom * MAP_ZOOM.step, client);
+                return;
+            }
         }
         this._lastTap = { t: now, x: client.x, y: client.y };
+        this._emitTap(client);
+    }
+
+    /** A tap becomes contract events: always map-tap, then object or room by mode. */
+    _emitTap(client) {
+        if (this._locked()) return;
+        const hit = this.hitTest(client);
+        if (!hit) return;
+        this._emit('map-tap', { client, robot: hit.robot, hit, passable: this.passable(hit.robot), mode: this._mode });
+        if (hit.kind === 'object' && this._mode === 'view') this._emit('map-object-tap', { id: hit.id, layer: hit.layer, object: hit.object, robot: hit.robot, client });
+        else if (hit.kind === 'room' && ['view', 'pick-room'].includes(this._mode)) this._roomTap(hit.id, 'map');
+    }
+
+    /** Area and chip lead here alike (R08): one event, the chips' onToggle, the highlight. */
+    _roomTap(id, source) {
+        this._emit('map-room-tap', { room: id, source, mode: this._mode });
+        if (this._chipToggle) this._chipToggle(id);
+        if (this._mode === 'view' && source === 'chip') this._showRoom(id);
+    }
+
+    /** View mode: a room chip brings its room into view (unlocked) and marks it. */
+    _showRoom(id) {
+        this._highlight = this._highlight === id ? null : id;
+        const room = this.current().rooms[id];
+        if (this._highlight !== null && room && room.x0 !== undefined && this._view && !this._locked()) {
+            const corners = areaCorners(room).map((c) => this.toImage(c)).filter(Boolean);
+            const rect = this._stageRect();
+            const base = viewMatrix(Object.assign({ width: this._size.width, height: this._size.height, stageWidth: rect.width, stageHeight: rect.height }, this._display));
+            const pts = corners.map((c) => applyAffine(base, c));
+            const w = Math.max(...pts.map((p) => p.x)) - Math.min(...pts.map((p) => p.x));
+            const h = Math.max(...pts.map((p) => p.y)) - Math.min(...pts.map((p) => p.y));
+            const zoom = Math.min(MAP_ZOOM.max, Math.max(MAP_ZOOM.min, 0.8 * Math.min(rect.width / (w || 1), rect.height / (h || 1))));
+            const centre = applyAffine(viewMatrix(Object.assign({ width: this._size.width, height: this._size.height, stageWidth: rect.width, stageHeight: rect.height, zoom }, this._display)), this.toImage(room));
+            this._setView(zoom, rect.width / 2 - centre.x, rect.height / 2 - centre.y);
+        }
+        this._renderLayers();
+        this._renderChips();
+    }
+
+    // ── Hit test and modes (MAP-08, contract) ─────────────────────────────
+
+    setMode(mode, options) {
+        if (!MAP_MODES.includes(mode)) throw new Error('Unknown map mode: ' + mode);
+        this._mode = mode;
+        this._modeOptions = options || {};
+        this.hideLoupe();
+        this.el.setAttribute('data-mode', mode);
+    }
+
+    /** Room under a robot point: exact from the map data, else rectangle and nearest centre. */
+    roomAt(p) {
+        if (!p) return null;
+        const rooms = this.current().rooms;
+        const id = this._data ? roomAtGrid(this._data.grid, p) : roomAtRects(rooms, p);
+        return id !== null && rooms[id] ? Number(id) : null;
+    }
+
+    /** Whether the robot can reach a point: data mode only, null when unknown (clean-tasks blocks only on false). */
+    passable(p) {
+        return this._data && p ? passableGrid(this._data.grid, p) : null;
+    }
+
+    hitTest(client) {
+        const image = this.fromScreen(client);
+        const robot = image && this.toRobot(image);
+        if (!robot) return null;
+        const ctx = this._ctx();
+        const layers = Array.from(this._layers.entries()).filter(([, l]) => l.hit && !l.group.hidden).sort((x, y) => y[1].z - x[1].z);
+        for (const [layer, l] of layers) {
+            const found = l.hit(robot, ctx);
+            if (found) return { kind: 'object', id: found.id !== undefined ? found.id : found, layer, object: found.object !== undefined ? found.object : found, robot, image };
+        }
+        const room = this.roomAt(robot);
+        if (room !== null) return { kind: 'room', id: room, robot, image, object: null };
+        return { kind: this.passable(robot) ? 'floor' : 'outside', id: null, robot, image, object: null };
+    }
+
+    /** Screen distance between two robot points, for symbol hits. */
+    _screenDistance(a, b) {
+        const p = this.toScreen(this.toImage(a)), q = this.toScreen(this.toImage(b));
+        return p && q ? Math.hypot(p.x - q.x, p.y - q.y) : Infinity;
+    }
+
+    // ── Room chips (MAP-08 base solution, R15/R16/R22) ────────────────────
+
+    /**
+     * The one room chip list for all modules (R08): a toggle button per room
+     * with name, icon and order badge; arrows move, Space/Enter acts. A chip
+     * tap is the same event as a tap on the room's area.
+     */
+    roomChips({ rooms, selected = [], order = [], onToggle } = {}) {
+        const hass = this.hass;
+        const list = document.createElement('div');
+        list.className = 'room-chips';
+        list.setAttribute('role', 'group');
+        list.setAttribute('aria-label', translate(hass, 'raeume'));
+        const entries = Object.entries(rooms || {}).filter(([, r]) => r && r.visibility !== 'Hidden');
+        const chosen = new Set(selected.map(String));
+        const buttons = entries.map(([id, room], index) => {
+            const name = room.custom_name || room.name || id;
+            const position = order.map(String).indexOf(String(id)) + 1;
+            const button = BuschUI.action({
+                label: position ? translate(hass, 'raumPosition', { name, n: position }) : name,
+                text: name,
+                icon: room.icon || 'mdi:floor-plan',
+                variant: 'secondary',
+                onClick: () => {
+                    if (onToggle) onToggle(Number(id));
+                    if (list === this.chips) this._roomTap(Number(id), 'chip');
+                    else this._emit('map-room-tap', { room: Number(id), source: 'chip', mode: this._mode });
+                }
+            });
+            button.classList.add('room-chip');
+            button.setAttribute('data-room', id);
+            button.setAttribute('aria-pressed', String(chosen.has(String(id))));
+            button.tabIndex = index === 0 ? 0 : -1;
+            if (position) {
+                const badge = document.createElement('span');
+                badge.className = 'room-order';
+                badge.setAttribute('aria-hidden', 'true');
+                badge.textContent = String(position);
+                button.appendChild(badge);
+            }
+            button.addEventListener('keydown', (event) => {
+                const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1, Home: -Infinity, End: Infinity }[event.key];
+                if (!step) return;
+                event.preventDefault();
+                const next = Number.isFinite(step) ? (index + step + buttons.length) % buttons.length : step < 0 ? 0 : buttons.length - 1;
+                buttons.forEach((b, i) => { b.tabIndex = i === next ? 0 : -1; });
+                buttons[next].focus();
+            });
+            return button;
+        });
+        list.append(...buttons);
+        return list;
+    }
+
+    _renderChips() {
+        if (!this.model) return;
+        const rooms = this._showsMap() ? this.current().rooms : {};
+        const key = JSON.stringify([rooms, this._highlight, BuschUI.language(this.hass, { legacy: true })]);
+        if (key === this._chipsKey) return;
+        this._chipsKey = key;
+        const root = this.card.shadowRoot;
+        const active = root && root.activeElement;
+        const focusedRoom = active && active.getAttribute ? active.getAttribute('data-room') : null;
+        // The cleaning sequence as on the map's badges (R01).
+        const order = Object.entries(rooms).filter(([, r]) => Number(r && r.order) > 0).sort((x, y) => x[1].order - y[1].order).map(([id]) => id);
+        const highlight = this._highlight !== null && this._highlight !== undefined ? [this._highlight] : [];
+        const chips = this.roomChips({ rooms, selected: highlight, order });
+        if (this.chips) this.chips.remove();
+        this.el.insertBefore(chips, this.notes);
+        this.chips = chips;
+        chips.hidden = !chips.childNodes.length;
+        const again = focusedRoom && chips.querySelector('[data-room="' + focusedRoom + '"]');
+        if (again) {
+            chips.querySelectorAll('.room-chip').forEach((b) => { b.tabIndex = b === again ? 0 : -1; });
+            again.focus();
+        }
     }
 
     _wheel(e) {
@@ -1653,9 +1859,39 @@ class MapView {
         const a = this._attrs();
         this._matrix = affineFrom(a.calibration_points);
         this.region.setAttribute('aria-label', translate(hass, 'karteAlt', { karte: this._mapName() }));
-        if (this._showsMap()) this._loadImage(a.entity_picture);
+        if (this._showsMap()) {
+            this._loadImage(a.entity_picture);
+            this._loadData(a);
+        }
         this._render();
         this._renderLayers();
+        this._renderChips();
+    }
+
+    /**
+     * Data mode (spec: Entscheidung Spike): the map data of the active camera,
+     * only for a new frame_id; `&v=` because the answer is cached as immutable.
+     * Without fetch, on failure or for an empty map the card stays in image mode.
+     */
+    _loadData(a) {
+        const frame = a.frame_id;
+        if (frame === undefined || frame === this._dataFrame || typeof fetch !== 'function' || !a.access_token) return;
+        this._dataFrame = frame;
+        this.stats.data++;
+        const url = '/api/camera_map_data_proxy/' + this._cameraId + '?token=' + encodeURIComponent(a.access_token) + '&v=' + encodeURIComponent(frame);
+        Promise.resolve().then(() => fetch(this._url(url))).then((res) => (res && res.ok ? res.json() : null)).then((raw) => {
+            if (this._dataFrame !== frame) return;
+            const grid = decodeMapData(raw);
+            this._data = grid ? { raw, grid } : null;
+            this._emit('map-frame', { frameId: frame, mode: this._data ? 'data' : 'image' });
+            this._renderLayers();
+        }).catch(() => {
+            if (this._dataFrame === frame) this._data = null;
+        });
+    }
+
+    _emit(type, detail) {
+        this.el.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: false }));
     }
 
     /** Whether there is a map to show at all (R18: empty and failed states replace it). */
@@ -1846,7 +2082,8 @@ class MapView {
         this.addLayer(name, {
             z, name, builtIn: true,
             source: (ctx) => draw.source(this, name, ctx),
-            render: (group, ctx) => draw.render(this, name, group, ctx)
+            render: (group, ctx) => draw.render(this, name, group, ctx),
+            hit: draw.hit ? (point, ctx) => draw.hit(this, name, point, ctx) : undefined
         });
     }
 
@@ -1891,7 +2128,7 @@ class MapView {
             objects: a,
             frameId: a.frame_id !== undefined ? a.frame_id : null,
             updatedAt: a.updated_at || null,
-            mode: 'image'
+            mode: this._data ? 'data' : 'image'
         };
     }
 
@@ -2206,6 +2443,50 @@ const CARD_STYLES = BuschUI.cardStyles + `
 }
 .map-layers [data-ignored=true] {
     opacity: 0.45;
+}
+.room-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ha-space-1, 4px);
+    min-width: 0;
+}
+.room-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.room-chip ha-icon {
+    order: -1;
+    flex: none;
+    --mdc-icon-size: 18px;
+}
+.room-chip[aria-pressed=true] {
+    background: var(--bvc-accent-color, var(--primary-color, #03a9f4));
+    color: var(--text-primary-color, #ffffff);
+}
+.room-order {
+    flex: none;
+    min-width: 20px;
+    padding: 0 var(--ha-space-1, 4px);
+    box-sizing: border-box;
+    border-radius: 999px;
+    background: var(--bvc-accent-color, var(--primary-color, #03a9f4));
+    color: var(--text-primary-color, #ffffff);
+    font-size: var(--ha-font-size-s, 12px);
+    text-align: center;
+}
+.room-chip[aria-pressed=true] .room-order {
+    background: var(--text-primary-color, #ffffff);
+    color: var(--bvc-accent-color, var(--primary-color, #03a9f4));
+}
+.map-layers [data-highlight] text[data-role=name] {
+    font-weight: var(--ha-font-weight-bold, 700);
+    text-decoration: underline;
 }
 .map-notes {
     display: flex;
