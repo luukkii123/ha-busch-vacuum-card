@@ -565,6 +565,18 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zuruecksetzenFrage: '{name} zurücksetzen? Aktuell noch {prozent}; danach zählt das Gerät wieder ab 100 %. Nur nach dem Tausch oder der Reinigung des Teils.',
             schonVoll: 'Steht schon auf 100 %.',
             summen: 'Summen',
+            planHinweis: 'Die Integration liefert Zeitpläne nur ausgewertet. Beim Speichern schreibt die Karte alle Zeitpläne neu aus diesen Werten; Zusatzangaben der Dreame-App, die die Integration nicht weitergibt, gehen dabei verloren.',
+            keinePlaene: 'Keine Zeitpläne. Lege den ersten in der Dreame-App an; danach lassen sich hier weitere mit dessen Reinigungseinstellungen anlegen.',
+            planNeu: 'Zeitplan hinzufügen',
+            planBearbeiten: 'Zeitplan bearbeiten',
+            zeitplan: 'Zeitplan',
+            ungueltig: 'Ungültig',
+            karteNr: 'Karte {id}',
+            planReinigung: '{karte} · Saugstufe {saugen} · Wasser {wasser}',
+            feld_time: 'Uhrzeit',
+            feld_days_plan: 'Tage (keiner = einmalig)',
+            planLoeschenTitel: 'Zeitplan löschen?',
+            planLoeschenFrage: 'Zeitplan um {zeit} ({tage}) endgültig löschen?',
             hersteller: 'Hersteller',
             modell: 'Modell',
             firmware: 'Firmware',
@@ -935,6 +947,18 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zuruecksetzenFrage: 'Reset {name}? Currently {prozent} left; afterwards the device counts from 100 % again. Only after replacing or cleaning the part.',
             schonVoll: 'Already at 100 %.',
             summen: 'Totals',
+            planHinweis: 'The integration provides schedules only parsed. Saving rewrites all schedules from these values; extra details of the Dreame app that the integration does not pass on are lost.',
+            keinePlaene: 'No schedules. Create the first one in the Dreame app; afterwards more can be added here with its cleaning settings.',
+            planNeu: 'Add schedule',
+            planBearbeiten: 'Edit schedule',
+            zeitplan: 'Schedule',
+            ungueltig: 'Invalid',
+            karteNr: 'Map {id}',
+            planReinigung: '{karte} · suction {saugen} · water {wasser}',
+            feld_time: 'Time',
+            feld_days_plan: 'Days (none = once)',
+            planLoeschenTitel: 'Delete schedule?',
+            planLoeschenFrage: 'Permanently delete the schedule at {zeit} ({tage})?',
             hersteller: 'Manufacturer',
             modell: 'Model',
             firmware: 'Firmware',
@@ -4318,11 +4342,177 @@ function deviceInfo(card, model, body, hass) {
     body.appendChild(list);
 }
 
+/**
+ * Schedules (DEV-01). The integration offers them only parsed (attribute
+ * `schedule`, device.py#L1729ff) and takes them back only as one raw string
+ * of all entries `id-flag-HH:MM-repeats-once-map-suction-water-options`
+ * (`vacuum_set_property { key: 'schedule' }`, check device.py#L2780).
+ * The parse loses the raw flag (1 and 2 are both enabled), everything after
+ * the ninth field and the raw "repeat" marker (only `== "0"` = once is kept):
+ * writing rebuilds every entry from what is shown — the view says so.
+ */
+const scheduleList = (model) => (Array.isArray(model.attr('schedule')) ? model.attr('schedule').filter((t) => t && t.id !== undefined) : []);
+
+function scheduleRaw(t) {
+    const flag = t.invalid ? '3' : t.enabled ? '1' : '0';
+    const options = Array.isArray(t.options) && t.options.length ? t.options.join(',') : '0';
+    // shortcut: a repeating entry's raw marker is lost in the attribute; '1' is assumed. Confirm with an app example.
+    return [t.id, flag, t.time, t.repeats || '0000000', t.once ? '0' : '1', t.map_id, t.suction_level, t.water_volume, options].join('-');
+}
+
+const scheduleValue = (list) => list.slice().sort((a, b) => Number(a.id) - Number(b.id)).map(scheduleRaw).join(';');
+
+function writeSchedule(card, list) {
+    const value = scheduleValue(list);
+    return trackWrite(card, 'schedule', {
+        label: translate(card._hass, 'gruppe_schedule'),
+        check: (m) => scheduleValue(scheduleList(m)) === value,
+        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_property', { entity_id: card._opts.entity, key: 'schedule', value })
+    });
+}
+
+const scheduleDays = (hass, t) => (t.once ? translate(hass, 'einmalig') : daysText(hass, maskOfRepeats(t.repeats)));
+
+function scheduleMap(model, hass, mapId) {
+    const entry = (model.attr('maps') || []).find((m) => String(m.id) === String(mapId));
+    return entry ? entry.custom_name || entry.name : translate(hass, 'karteNr', { id: mapId });
+}
+
+/** What the entry cleans, as the integration gives it (codes, not guessed names). */
+const scheduleCleaning = (model, hass, t) => translate(hass, 'planReinigung', { karte: scheduleMap(model, hass, t.map_id), saugen: t.suction_level, wasser: t.water_volume });
+
+function scheduleEntries(card, model, body, hass, dialog) {
+    const list = scheduleList(model).slice().sort((a, b) => String(a.time).localeCompare(String(b.time)) || b.id - a.id);
+    const busy = card._settingWrites.has('schedule');
+    body.appendChild(noteLine(translate(hass, 'planHinweis'), 'hint')).classList.add('schedule-hint');
+    body.appendChild(writeStatus(card, hass, 'schedule', 'schedule-status'));
+    const rows = document.createElement('div');
+    rows.className = 'settings-list';
+    for (const t of list) {
+        const row = document.createElement('div');
+        row.className = 'setting';
+        row.setAttribute('data-schedule', String(t.id));
+        const text = document.createElement('div');
+        text.className = 'setting-text';
+        const name = document.createElement('span');
+        name.className = 'setting-name';
+        name.textContent = timeText(hass, t.time) + ' · ' + scheduleDays(hass, t);
+        const detail = document.createElement('span');
+        detail.className = 'setting-status';
+        detail.textContent = (t.invalid ? translate(hass, 'ungueltig') + ' · ' : '') + scheduleCleaning(model, hass, t);
+        text.append(name, detail);
+        const label = translate(hass, 'zeitplan') + ' ' + timeText(hass, t.time);
+        const toggle = entrySwitch(hass, label, t.enabled && !t.invalid, busy || t.invalid,
+            () => writeSchedule(card, scheduleList(model).map((x) => (x.id === t.id ? Object.assign({}, x, { enabled: !x.enabled }) : x))));
+        const edit = BuschUI.action({ label: translate(hass, 'bearbeitenVon', { name: label }), icon: 'mdi:pencil-outline', variant: 'icon-only', onClick: () => dialog.show(scheduleForm(card, t.id)) });
+        edit.setAttribute('data-action', 'schedule-edit');
+        row.append(text, toggle, edit);
+        rows.appendChild(row);
+    }
+    if (!list.length) body.appendChild(noteLine(translate(hass, 'keinePlaene'))).classList.add('schedule-empty');
+    body.appendChild(rows);
+    const add = viewLink(translate(hass, 'planNeu'), 'schedule-add', 'mdi:plus', () => dialog.show(scheduleForm(card, null)));
+    // A new entry copies map, suction and water of an existing one: their codes are not documented.
+    if (!list.length) add.disabled = true;
+    body.appendChild(add);
+}
+
+function scheduleForm(card, id) {
+    const draftKey = 'schedule:' + (id === null ? 'new' : id);
+    const original = id === null ? null : scheduleList(card._model()).find((t) => t.id === id);
+    const template = original || scheduleList(card._model())[0];
+    const initial = () => ({ time: original ? original.time : '09:00', mask: original && !original.once ? maskOfRepeats(original.repeats) : 0, enabled: original ? !!original.enabled : true });
+    if (!card._drafts.has(draftKey)) card._drafts.set(draftKey, initial());
+    let checked = false;
+    return {
+        title: translate(card._hass, id === null ? 'planNeu' : 'planBearbeiten'),
+        kind: 'editor',
+        watch: () => [],
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const draft = card._drafts.get(draftKey) || initial();
+            card._drafts.set(draftKey, draft);
+            const dirty = JSON.stringify(draft) !== JSON.stringify(initial());
+            if (dirty) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
+            const redraw = () => dialog._render();
+            const input = document.createElement('input');
+            input.setAttribute('type', 'time');
+            input.setAttribute('aria-required', 'true');
+            input.value = draft.time;
+            const bad = checked && !TIME_PATTERN.test(draft.time);
+            const field = formField('time', translate(hass, 'feld_time'), input, bad ? translate(hass, 'fehlerZeit') : '');
+            input.addEventListener('input', () => {
+                const was = JSON.stringify(draft) !== JSON.stringify(initial());
+                draft.time = input.value;
+                if (checked) field.update(TIME_PATTERN.test(draft.time) ? '' : translate(hass, 'fehlerZeit'));
+                if (was !== (JSON.stringify(draft) !== JSON.stringify(initial()))) redraw();
+            });
+            body.appendChild(field.wrap);
+            body.appendChild(fieldGroup('field-days', translate(hass, 'feld_days_plan'), dayPicker(hass, draft, redraw), ''));
+            if (template) body.appendChild(noteLine(scheduleCleaning(model, hass, template)));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            if (original) {
+                const remove = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'destructive', onClick: () => dialog.show(scheduleDelete(card, original)) });
+                remove.setAttribute('data-action', 'delete');
+                actions.appendChild(remove);
+            }
+            if (dirty) {
+                const discard = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), onClick: () => { card._drafts.set(draftKey, initial()); checked = false; redraw(); } });
+                discard.setAttribute('data-action', 'discard');
+                actions.appendChild(discard);
+            }
+            const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', disabled: !template || card._settingWrites.has('schedule'), onClick: () => {
+                checked = true;
+                if (!TIME_PATTERN.test(draft.time)) return redraw();
+                const list = scheduleList(card._model());
+                const nextId = list.reduce((max, t) => Math.max(max, Number(t.id)), 0) + 1;
+                const timing = { time: draft.time, repeats: repeatsOfMask(draft.mask), once: !draft.mask };
+                const entry = original ? Object.assign({}, original, timing)
+                    : Object.assign({ id: nextId, enabled: true, invalid: false, map_id: template.map_id, suction_level: template.suction_level, water_volume: template.water_volume, options: template.options }, timing);
+                const next = original ? list.map((t) => (t.id === original.id ? entry : t)) : list.concat(entry);
+                if (!writeSchedule(card, next)) return undefined;
+                card._drafts.delete(draftKey);
+                dialog.back(1);
+                return undefined;
+            } });
+            save.setAttribute('data-action', 'save');
+            actions.appendChild(save);
+            body.appendChild(actions);
+        }
+    };
+}
+
+/** R13. The integration deletes one entry by id — the last one too (delete_scheduled_task, device.py#L4394). */
+function scheduleDelete(card, task) {
+    return {
+        title: translate(card._hass, 'planLoeschenTitel'),
+        kind: 'confirm',
+        watch: () => [],
+        render: (body, hass, dialog) => {
+            body.appendChild(noteLine(translate(hass, 'planLoeschenFrage', { zeit: timeText(hass, task.time), tage: scheduleDays(hass, task) })));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            cancel.setAttribute('data-action', 'cancel');
+            const go = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'destructive', onClick: () => {
+                callAction(card, 'delete_scheduled_task', String(task.id), { track: 'schedule', label: translate(hass, 'gruppe_schedule') });
+                card._drafts.delete('schedule:' + task.id);
+                dialog.back(2);
+            } });
+            go.setAttribute('data-action', 'confirm');
+            actions.append(cancel, go);
+            body.appendChild(actions);
+        }
+    };
+}
+
 /** What groups show above their rows. */
 const GROUP_HEAD = {
     dnd: dndPeriods,
     consumables: consumableParts,
-    info: deviceInfo
+    info: deviceInfo,
+    schedule: scheduleEntries
 };
 
 /** What groups show beyond their rows. */
@@ -6411,6 +6601,7 @@ BuschVacuumCard.__internals = {
     maskOfDays,
     maskOfRepeats,
     repeatsOfMask,
+    scheduleValue,
     writeSetting,
     callAction,
     DIALOG_STYLES,

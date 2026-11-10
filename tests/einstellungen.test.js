@@ -819,3 +819,95 @@ test('Netzwerk nur SSID und Signal (nie eine IP), Zeitzone, Status, Station, Feh
   const f = geraeteinfo({ attribute: { faults: { 1: 'Bürste blockiert' } } });
   assert.match(info(f, 'faults').textContent, /Bürste blockiert/);
 });
+
+// ── Task 10: Zeitpläne (DEV-01) ─────────────────────────────────────────────
+
+/** Nachbau von _schedule_changed (dreame_vacuum v2.0.3, device.py#L1729–L1760): Rohzeichenkette → Attribut. */
+function integrationParst(roh) {
+  const liste = [];
+  for (const task of String(roh).split(';')) {
+    if (!task.includes('-')) continue;
+    const p = task.split('-');
+    if (p.length < 9) continue;
+    liste.push({ id: parseInt(p[0], 10), enabled: ['1', '2'].includes(p[1]), invalid: p[1] === '3', time: p[2], repeats: p[3].padStart(7, '0'), once: p[4] === '0',
+      map_id: p[5], suction_level: parseInt(p[6], 10), water_volume: parseInt(p[7], 10), options: p[8] !== '0' ? p[8].split(',') : null });
+  }
+  return liste.sort((a, b) => Number(a.time.replace(':', '')) - Number(b.time.replace(':', '')) || b.id - a.id);
+}
+// Form wie das App-Beispiel vom 10.11.2026 (Feldnamen und Typen gleich, Werte synthetisch).
+const PLAN = [
+  { id: 1, enabled: true, invalid: false, time: '09:30', repeats: '0000000', once: true, map_id: '0', suction_level: 0, water_volume: 146, options: null },
+  { id: 4, enabled: false, invalid: false, time: '18:00', repeats: '0111110', once: false, map_id: '3', suction_level: 2, water_volume: 2, options: ['1', '5'] },
+  { id: 6, enabled: false, invalid: true, time: '07:15', repeats: '1000001', once: false, map_id: '3', suction_level: 1, water_volume: 3, options: null },
+];
+function zeitplaene(schedule) {
+  const k = einstellungen('voll', { attribute: { schedule } });
+  gruppe(k, 'schedule').click();
+  return k;
+}
+const plan = (k, id) => $d(k.u, `[data-schedule="${id}"]`);
+const rohAufruf = (k) => { const r = aufrufe(k); assert.equal(r.length, 1); assert.equal(r[0].data.key, 'schedule'); return r[0].data.value; };
+
+test('Zeitplan-Rohzeichenkette: verlustfrei hin und zurück für das App-Beispiel und alle Feldarten', () => {
+  const { I } = aufbau();
+  const kette = I.scheduleValue(PLAN);
+  assert.equal(kette, '1-1-09:30-0000000-0-0-0-146-0;4-0-18:00-0111110-1-3-2-2-1,5;6-3-07:15-1000001-1-3-1-3-0');
+  assert.equal(I.scheduleValue(integrationParst(kette)), kette, 'Attribut → Rohwert → Attribut gleich');
+  for (const t of PLAN) assert.deepEqual(integrationParst(kette).find((x) => x.id === t.id), t);
+});
+
+test('Liste aus schedule: Zeit, Tage/einmalig, an/aus, ungültig, Karte, Saugstufe/Wasser; Hinweis auf verlustbehaftetes Rückschreiben', () => {
+  const k = zeitplaene(PLAN);
+  assert.deepEqual($$d(k.u, '[data-schedule]').map((z) => z.getAttribute('data-schedule')), ['6', '1', '4'], 'nach Uhrzeit');
+  assert.match(plan(k, '1').textContent, /09:30/);
+  assert.match(plan(k, '1').textContent, /Einmalig/);
+  assert.match(plan(k, '6').textContent, /Ungültig/);
+  assert.equal(plan(k, '6').querySelector('[role="switch"]').disabled, true);
+  assert.match(plan(k, '4').textContent, /Karte 1/, 'Karte über ihre id');
+  assert.match(plan(k, '1').textContent, /146/);
+  assert.equal(plan(k, '4').querySelector('[role="switch"]').getAttribute('aria-checked'), 'false');
+  assert.match($d(k.u, '.schedule-hint').textContent, /neu/);
+  const leer = zeitplaene([]);
+  assert.match($d(leer.u, '.schedule-empty').textContent, /Keine Zeitpläne/);
+});
+
+test('Ein/Aus schreibt alle Einträge als Rohzeichenkette, nur das Flag ändert sich', () => {
+  const k = zeitplaene(PLAN);
+  plan(k, '4').querySelector('[role="switch"]').click();
+  plan(k, '4').querySelector('[role="switch"]').click();
+  assert.equal(rohAufruf(k), '1-1-09:30-0000000-0-0-0-146-0;4-1-18:00-0111110-1-3-2-2-1,5;6-3-07:15-1000001-1-3-1-3-0');
+});
+
+test('Bearbeiten: Uhrzeit und Tage; ohne Tag = einmalig', () => {
+  const k = zeitplaene(PLAN);
+  plan(k, '1').querySelector('[data-action="schedule-edit"]').click();
+  assert.equal($d(k.u, 'h1').textContent, 'Zeitplan bearbeiten');
+  assert.equal(feld(k, 'time').value, '09:30');
+  assert.match($d(k.u, '.body').textContent, /146/, 'Reinigungswerte des Eintrags sichtbar');
+  feld(k, 'time').value = '10:00'; feld(k, 'time').dispatchEvent(k.u.neuesEreignis('input'));
+  tag(k, 1); tag(k, 3);
+  $d(k.u, '[data-action="save"]').click();
+  assert.equal(rohAufruf(k).split(';')[0], '1-1-10:00-0001010-1-0-0-146-0');
+});
+
+test('Neu: id = höchste + 1, Reinigungswerte vom vorhandenen Zeitplan; ohne Vorlage gesperrt mit Grund', () => {
+  const k = zeitplaene(PLAN.slice(0, 1));
+  $d(k.u, '[data-action="schedule-add"]').click();
+  assert.equal($d(k.u, 'h1').textContent, 'Zeitplan hinzufügen');
+  feld(k, 'time').value = '20:15'; feld(k, 'time').dispatchEvent(k.u.neuesEreignis('input'));
+  $d(k.u, '[data-action="save"]').click();
+  assert.equal(rohAufruf(k), '1-1-09:30-0000000-0-0-0-146-0;2-1-20:15-0000000-0-0-0-146-0');
+  const leer = zeitplaene([]);
+  assert.equal($d(leer.u, '[data-action="schedule-add"]').disabled, true);
+  assert.match($d(leer.u, '.schedule-empty').textContent, /Dreame-App/);
+});
+
+test('Löschen nach Bestätigung über delete_scheduled_task — auch der letzte Zeitplan (device.py#L4394)', () => {
+  const k = zeitplaene(PLAN.slice(0, 1));
+  plan(k, '1').querySelector('[data-action="schedule-edit"]').click();
+  $d(k.u, '[data-action="delete"]').click();
+  assert.match($d(k.u, '.body').textContent, /09:30/);
+  assert.deepEqual(k.haus.rufe, []);
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_call_action', data: { entity_id: 'vacuum.robo', key: 'delete_scheduled_task', value: '1' } }]);
+});
