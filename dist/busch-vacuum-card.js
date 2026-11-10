@@ -545,6 +545,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             wirdGestartet: 'Wird gestartet …',
             aktionFehler: '{name} wurde nicht gestartet ({grund}). An der Station hat sich nichts geändert. Prüfe Station und Roboter und versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
             stationEinstellungen: 'Station-Einstellungen',
+            shortcuts: 'Shortcuts',
+            skripte: 'Skripte',
+            laeuft: 'läuft',
+            skripteFehlen: 'Nicht gefunden: {liste}.',
             stationStatus: 'Stationsstatus',
             alleWerte: 'Alle Stationswerte ({n})',
             reiter_wash: 'Waschen',
@@ -967,6 +971,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             wirdGestartet: 'Starting …',
             aktionFehler: '{name} did not start ({grund}). Nothing changed at the station. Check station and robot and try again; if that does not help, check the dreame_vacuum integration.',
             stationEinstellungen: 'Station settings',
+            shortcuts: 'Shortcuts',
+            skripte: 'Scripts',
+            laeuft: 'running',
+            skripteFehlen: 'Not found: {liste}.',
             stationStatus: 'Station status',
             alleWerte: 'All station values ({n})',
             reiter_wash: 'Washing',
@@ -1531,6 +1539,8 @@ class VacuumModel {
             case 'consumables': return Object.keys(this.consumables()).length > 0;
             case 'remote': return this.can('dreame_vacuum.vacuum_remote_control_move_step');
             case 'settings': return this.can('dreame_vacuum.vacuum_set_property');
+            case 'shortcuts': return this.caps.has('shortcuts') && this.can('dreame_vacuum.vacuum_start_shortcut');
+            case 'shortcut_manage': return this.can('shortcuts') && this.can('dreame_vacuum.vacuum_rename_shortcut') && this.can('dreame_vacuum.vacuum_delete_shortcut');
             default:
                 if (VACUUM_FEATURES[name]) return (this.features & VACUUM_FEATURES[name]) !== 0;
                 return this.caps.has(name);
@@ -5069,6 +5079,77 @@ function stationView(card) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// Shortcuts (shortcuts): scripts and device shortcuts, start, manage (SHO-01/02)
+// ---------------------------------------------------------------------------
+
+/**
+ * The one list menu and management read (R08): configured scripts first
+ * (missing ones left out, the editor names them), then the device's shortcuts
+ * by `index` (attribute `shortcuts`, device.py#L11076, types.py#L5099).
+ */
+function shortcutEntries(hass, model, scripts) {
+    const list = scripts.filter((id) => hass.states[id]).map((id) => {
+        const state = hass.states[id];
+        return { kind: 'script', id, name: String(state.attributes.friendly_name || objectIdOf(id)), icon: state.attributes.icon || 'mdi:script-text-outline', running: state.state === 'on', mapId: null };
+    });
+    const raw = model.can('shortcuts') ? model.attr('shortcuts') : null;
+    const device = raw && typeof raw === 'object' ? Object.values(raw).filter((s) => s && s.id !== undefined && s.id !== null) : [];
+    device.sort((a, b) => Number(a.index) - Number(b.index));
+    for (const s of device) {
+        list.push({ kind: 'device', id: Number(s.id), name: String(s.name === undefined || s.name === null ? s.id : s.name), icon: 'mdi:star-four-points-outline',
+            running: !!s.running, mapId: s.map_id === undefined || s.map_id === null ? null : s.map_id });
+    }
+    return list;
+}
+
+/** The floor's name when a shortcut belongs to another map than the current one, else ''. */
+function shortcutFloor(model, entry) {
+    if (entry.mapId === null) return '';
+    const maps = Array.isArray(model.attr('maps')) ? model.attr('maps') : [];
+    const name = (m) => m.custom_name || m.name || String(m.id);
+    const current = maps.find((m) => name(m) === model.attr('selected_map'));
+    const own = maps.find((m) => m.id === entry.mapId);
+    return own && (!current || current.id !== own.id) ? name(own) : '';
+}
+
+/** Menu text of an entry: name, floor if another, running as a word (R17). */
+function shortcutText(hass, model, entry) {
+    const floor = shortcutFloor(model, entry);
+    return entry.name + (floor ? ' · ' + floor : '') + (entry.running ? ' · ' + translate(hass, 'laeuft') : '');
+}
+
+/** The shortcut button's menu (SHO-01): scripts, then shortcuts; fleeting (R04). */
+function shortcutMenu(card) {
+    return {
+        title: translate(card._hass, 'shortcuts'),
+        kind: 'menu',
+        watch: () => [card._opts.entity, ...card._opts.scripts],
+        render: (body, hass) => {
+            const model = card._model();
+            const entries = shortcutEntries(hass, model, card._opts.scripts);
+            for (const kind of ['script', 'device']) {
+                const part = entries.filter((e) => e.kind === kind);
+                if (!part.length) continue;
+                const heading = document.createElement('h2');
+                heading.className = 'settings-heading';
+                heading.textContent = translate(hass, kind === 'script' ? 'skripte' : 'shortcuts');
+                const list = document.createElement('div');
+                list.className = 'menu';
+                for (const entry of part) {
+                    const text = shortcutText(hass, model, entry);
+                    const item = BuschUI.action({ label: text, text, icon: entry.icon, variant: 'quiet' });
+                    item.classList.add('menu-item');
+                    item.setAttribute('data-shortcut', entry.kind + ':' + entry.id);
+                    list.appendChild(item);
+                }
+                body.append(heading, list);
+            }
+        }
+    };
+}
+
+
 const CARD_STYLES = BuschUI.cardStyles + `
 :host {
     display: block;
@@ -6637,7 +6718,8 @@ class BuschVacuumCard extends HTMLElement {
         if (this._pending && (!real || real.state === this._pending.state || real.state !== this._pending.from)) this._endPending();
         const mapCamera = model.can('map') ? model.related.maps.map[0] : null;
         // The active map camera carries the robot's position: watched like the vacuum.
-        this._seen = watchSnapshot(hass, [this._opts.entity, ...(mapCamera ? [mapCamera] : []), ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state', 'sensor.error', 'sensor.cleaning_progress'].map((k) => model.entity(k)).filter(Boolean)]);
+        // Scripts of the shortcut menu are watched too: name and running state (shortcuts).
+        this._seen = watchSnapshot(hass, [this._opts.entity, ...this._opts.scripts, ...(mapCamera ? [mapCamera] : []), ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state', 'sensor.error', 'sensor.cleaning_progress'].map((k) => model.entity(k)).filter(Boolean)]);
         const shown = this._pending ? this._pending.state : real ? real.state : 'unavailable';
 
         this._title.textContent = this._opts.title || (real && real.attributes.friendly_name) || this._opts.entity;
@@ -6688,6 +6770,14 @@ class BuschVacuumCard extends HTMLElement {
             button.setAttribute('data-action', name);
             return button;
         });
+        if (!this._hidden('shortcuts') && shortcutEntries(hass, model, this._opts.scripts).length) {
+            const label = translate(hass, 'shortcuts');
+            const button = BuschUI.action({ label, text: label, icon: 'mdi:star-four-points-outline', onClick: () => this._openDialog(shortcutMenu(this)) });
+            button.classList.add('ctl');
+            button.setAttribute('data-action', 'shortcuts');
+            button.setAttribute('aria-haspopup', 'menu');
+            buttons.push(button);
+        }
         if (model.can('dock') && !this._hidden('dock_status_indicator')) buttons.push(this._dock(hass, model));
         this._controls.replaceChildren(...buttons);
     }
@@ -6981,7 +7071,8 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
 
     set hass(hass) {
         const language = BuschUI.language(hass, { legacy: true });
-        const floors = JSON.stringify(this._maps(hass));
+        // Missing scripts are part of a helper text: a change rebuilds the form like the floors.
+        const floors = JSON.stringify(this._maps(hass)) + this._missingScripts(hass);
         const relabel = language !== this._language || floors !== this._floors;
         this._hass = hass;
         this._language = language;
@@ -6992,6 +7083,12 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
             // Option names and floors are part of the schema; a new hass each state change must not rebuild it.
             if (relabel) this._render();
         }
+    }
+
+    /** Configured scripts Home Assistant does not know (left out of the menu), as text. */
+    _missingScripts(hass = this._hass) {
+        const scripts = Array.isArray(this._config && this._config.scripts) ? this._config.scripts : [];
+        return hass && hass.states ? scripts.filter((id) => !hass.states[id]).join(', ') : '';
     }
 
     /** Floors of the chosen vacuum (`maps`: id, index, name, custom_name). */
@@ -7025,6 +7122,7 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
             };
             form.computeHelper = (item) => {
                 if (item.name && floor(item.name)) return translate(this._hass, 'stockwerkHelfer');
+                if (item.name === 'scripts' && this._missingScripts()) return fieldHelper(this._hass, 'scripts') + ' ' + translate(this._hass, 'skripteFehlen', { liste: this._missingScripts() });
                 return item.name ? fieldHelper(this._hass, item.name) : '';
             };
             form.addEventListener('value-changed', (event) => {
@@ -7066,6 +7164,7 @@ BuschVacuumCard.__internals = {
     SETTING_GROUPS,
     STATION_TABS,
     stationStatus,
+    shortcutEntries,
     dockStatus,
     settingState,
     settingRow,
