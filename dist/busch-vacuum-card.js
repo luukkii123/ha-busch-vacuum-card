@@ -818,6 +818,97 @@ function roomAtRects(rooms, p) {
     return best;
 }
 
+/*
+ * Affine maps as CSS matrix(a, b, c, d, e, f): (x, y) → (a·x + c·y + e, b·x + d·y + f).
+ * Robot mm → image px comes from the camera's calibration_points (or the data
+ * grid), image px → stage px from zoom, pan and the map's display settings.
+ */
+const IDENTITY = Object.freeze({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+
+function applyAffine(m, p) {
+    return { x: m.a * p.x + m.c * p.y + m.e, y: m.b * p.x + m.d * p.y + m.f };
+}
+
+/** m ∘ n: n first, then m. */
+function multiplyAffine(m, n) {
+    return {
+        a: m.a * n.a + m.c * n.b, b: m.b * n.a + m.d * n.b,
+        c: m.a * n.c + m.c * n.d, d: m.b * n.c + m.d * n.d,
+        e: m.a * n.e + m.c * n.f + m.e, f: m.b * n.e + m.d * n.f + m.f
+    };
+}
+
+function invertAffine(m) {
+    const det = m ? m.a * m.d - m.b * m.c : 0;
+    if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
+    return { a: m.d / det, b: -m.b / det, c: -m.c / det, d: m.a / det, e: (m.c * m.f - m.d * m.e) / det, f: (m.b * m.e - m.a * m.f) / det };
+}
+
+/**
+ * Robot mm → image px from three calibration pairs (map.py L7916): solved as
+ * an equation system, so any device rotation and any three points work.
+ */
+function affineFrom(points) {
+    if (!Array.isArray(points) || points.length < 3) return null;
+    const pts = points.slice(0, 3).map((p) => p && p.vacuum && p.map ? [p.vacuum.x, p.vacuum.y, p.map.x, p.map.y].map(Number) : [NaN]);
+    if (!pts.every((p) => p.length === 4 && p.every(Number.isFinite))) return null;
+    const [[x0, y0], [x1, y1], [x2, y2]] = pts;
+    const det = x0 * (y1 - y2) + x1 * (y2 - y0) + x2 * (y0 - y1);
+    if (Math.abs(det) < 1e-9) return null;
+    const solve = (v0, v1, v2) => [
+        (v0 * (y1 - y2) + v1 * (y2 - y0) + v2 * (y0 - y1)) / det,
+        (v0 * (x2 - x1) + v1 * (x0 - x2) + v2 * (x1 - x0)) / det,
+        (v0 * (x1 * y2 - x2 * y1) + v1 * (x2 * y0 - x0 * y2) + v2 * (x0 * y1 - x1 * y0)) / det
+    ];
+    const [a, c, e] = solve(pts[0][2], pts[1][2], pts[2][2]);
+    const [b, d, f] = solve(pts[0][3], pts[1][3], pts[2][3]);
+    const m = { a, b, c, d, e, f };
+    return invertAffine(m) ? m : null;
+}
+
+/** Clockwise quarter turns as (x, y) → rotated frame of a w × h box, with the new size. */
+function quarterTurn(rotation, w, h) {
+    switch (((Number(rotation) % 360) + 360) % 360) {
+        case 90: return { m: { a: 0, b: 1, c: -1, d: 0, e: h, f: 0 }, w: h, h: w };
+        case 180: return { m: { a: -1, b: 0, c: 0, d: -1, e: w, f: h }, w, h };
+        case 270: return { m: { a: 0, b: -1, c: 1, d: 0, e: 0, f: w }, w: h, h: w };
+        default: return { m: IDENTITY, w, h };
+    }
+}
+
+/**
+ * Data mode: robot mm → canvas px, one px per grid cell, y flipped, minus the
+ * crop of get_data, turned like types.py Point.rotated ((x, y) → (y, w − x) per 90°).
+ */
+function gridAffine(map) {
+    const crop = Array.isArray(map.crop) ? map.crop.map((v) => Number(v) || 0) : [0, 0, 0, 0];
+    let w = map.width - crop[0] - crop[2];
+    let h = map.height - crop[1] - crop[3];
+    let matrix = { a: 1 / map.grid, b: 0, c: 0, d: -1 / map.grid, e: -map.left / map.grid - crop[0], f: map.height + map.top / map.grid - crop[1] };
+    for (let turn = ((map.rotation % 360) + 360) % 360; turn > 0; turn -= 90) {
+        matrix = multiplyAffine({ a: 0, b: -1, c: 1, d: 0, e: 0, f: w }, matrix);
+        [w, h] = [h, w];
+    }
+    return { matrix, width: w, height: h };
+}
+
+/**
+ * Image px → stage px: the map turned clockwise by `rotation` (map_config),
+ * cut to `crop` (percent of the turned frame), fitted into the stage, times
+ * `scale` and `zoom`, centred, then moved by the pan.
+ */
+function viewMatrix({ width, height, stageWidth, stageHeight, rotation = 0, scale = 1, zoom = 1, panX = 0, panY = 0, crop }) {
+    const turn = quarterTurn(rotation, width, height);
+    const cut = crop || {};
+    const pct = (v) => Math.min(95, Math.max(0, Number(v) || 0)) / 100;
+    const x0 = turn.w * pct(cut.left), x1 = turn.w * (1 - pct(cut.right));
+    const y0 = turn.h * pct(cut.top), y1 = turn.h * (1 - pct(cut.bottom));
+    const fit = stageWidth > 0 && stageHeight > 0 && x1 > x0 && y1 > y0 ? Math.min(stageWidth / (x1 - x0), stageHeight / (y1 - y0)) : 1;
+    const k = fit * (Number(scale) > 0 ? Number(scale) : 1) * zoom;
+    const place = { a: k, b: 0, c: 0, d: k, e: stageWidth / 2 + panX - k * (x0 + x1) / 2, f: stageHeight / 2 + panY - k * (y0 + y1) / 2 };
+    return multiplyAffine(place, turn.m);
+}
+
 // ---------------------------------------------------------------------------
 // Status and control (CORE-03/04/07/11)
 // ---------------------------------------------------------------------------
@@ -2262,6 +2353,12 @@ BuschVacuumCard.__internals = {
     roomAtGrid,
     roomAtRects,
     passableGrid,
+    affineFrom,
+    invertAffine,
+    applyAffine,
+    multiplyAffine,
+    gridAffine,
+    viewMatrix,
     version: CARD_VERSION
 };
 
