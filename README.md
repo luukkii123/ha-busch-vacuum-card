@@ -111,6 +111,34 @@ The map uses the integration's map data when available (exact room taps,
 own colours); otherwise it shows the integration's map picture, where only
 `grey` changes its colours and objects drawn into the picture stay visible.
 
+## Device settings
+
+The menu entry *Device settings* opens every setting of the device in groups
+— cleaning, mopping, carpet, station, camera and AI, audio, do not disturb,
+schedules, battery, consumables, device info, other — with a search over all
+of them. Each row reads the vacuum's attribute or, where the integration
+offers none, the entity's state (also for entities that stay disabled, as
+long as the vacuum reports the value); a value the device does not report is
+shown as *unknown*, never guessed. Changes go through the integration's
+services (`dreame_vacuum.vacuum_set_property`, `vacuum_call_action`,
+`vacuum_reset_consumable`, `vacuum_install_voice_pack`) and count as done
+only once the device reports the new value.
+
+- **Do not disturb:** periods with start, end and days; add, edit, switch
+  and delete (with confirmation).
+- **Schedules:** time, days (none = once), on/off, delete with confirmation.
+  The integration hands schedules out only parsed, so saving rewrites all of
+  them from what it reports; details of the Dreame app beyond that are lost.
+  New schedules copy the cleaning settings of an existing one — create the
+  first schedule in the Dreame app.
+- **Consumables** (also its own menu entry): remaining percent and time per
+  part, reset with confirmation (only below 100 %), totals.
+- **Voice pack:** install a pack from its URL, MD5 checksum and size (the
+  integration has no catalogue).
+- **Camera light, automatic:** set through the brightness setting the way the
+  integration's own switch describes it (brightness 101).
+- Map rotation and map selection ask before they change the robot's map.
+
 ## Theming
 
 The card follows your Home Assistant theme. These optional theme variables

@@ -99,6 +99,43 @@ löst die Karte keine Ereignisse aus und bewegt sich nicht; Raum-Chips bleiben
 bedienbar. Ein Modul entfernt seine Ebene und setzt `view` zurück, wenn es
 seinen Modus verlässt.
 
+## Einstellungen (Modul device-settings)
+
+Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
+`clean-settings` (R08):
+
+| Teil | Vertrag |
+| --- | --- |
+| `SETTINGS[key]` | aus `SETTING_KEYS` (Gruppe → Steuerung → Schlüssel, alle switch/select/number/time von v2.0.3; `station` = dock, `clean` = clean-settings) plus `SETTING_EXTRA` (Grenzen, `wire`, `confirm`, `pick`, `replacedBy`) und `SETTING_NEEDS` (Sperren aus `PROPERTY_AVAILABILITY`) |
+| `settingState(card, model, key)` | `{ present, value, known, source: 'attr'\|'entity', options, min, max, locked, reason, busy, note }`; Wert: Attribut → aktivierte Entität → unbekannt |
+| `settingRow(card, model, key)` | Zeile oder `null`; Schalter `role=switch` mit Wort, unbekannt = Ein/Aus, Auswahl, Zahl (Grenzen inline), Zeit `HH:MM` |
+| `writeSetting(card, key, value)` | genau ein `vacuum_set_property`; optimistisch, bestätigt nur über den Gerätewert, sonst nach `OPTIMISTIC_HOLD_MS` Hinweis; Dienstfehler R12; Doppeltipp ignoriert |
+| `callAction(card, key, value, { track, label, done })` | `vacuum_call_action`; belegt bis zur Antwort des Dienstes |
+| `MODULE_VIEWS` | Menü-Einträge mit eigener Ansicht; ein Modul trägt sich hier ein |
+| `GROUP_HEAD`/`GROUP_EXTRAS` | Inhalt einer Gruppe vor/nach ihren Zeilen (DnD, Zeitpläne, Zubehör, Geräteinfo, Audio, Verweis Station) |
+
+- Texte: `hass.localize('component.dreame_vacuum.entity.<plattform>.<key>.name')`
+  nach `loadBackendTranslation('entity', 'dreame_vacuum')`, sonst `set_<key>`
+  im Wörterbuch, sonst der Schlüssel in Worten.
+- **Wochentage:** `WEEKDAY_BIT(d) = 1 << d` mit d = `Date#getDay` (0 = Sonntag)
+  für DnD-`wk` und Zeitplan-`repeats` (als Binärzahl, höchstes Bit links,
+  `zfill(7)` device.py#L1745). v2.0.3 dekodiert beides nirgends (device.py#L1717,
+  #L1745, #L4263 reichen durch) — **Annahme, live mit einem App-Beispiel mit
+  Wochentag bestätigen**; Korrektur = eine Zeile. Die Zuordnung ist umkehrbar:
+  unberührte Einträge gehen unverändert zurück.
+- **Zeitpläne:** nur die Rohzeichenkette aller Einträge ist schreibbar
+  (`scheduleValue`); verlustbehaftet (Flag 2 → 1, Felder nach dem neunten,
+  Wiederholungs-Kennung `1` angenommen) — die Ansicht sagt das. Löschen über
+  `vacuum_call_action delete_scheduled_task` (device.py#L4394), das auch den
+  letzten Eintrag löscht. Neue Einträge übernehmen Karte/Saugstufe/Wasser
+  eines vorhandenen (Codes undokumentiert, nichts geraten).
+- **Kameralicht automatisch:** `vacuum_set_property { key:
+  camera_light_brightness, value: 40, params: [101] }` (an) bzw. `value: 40`
+  (aus); der Schalter der Integration selbst hat keinen Schreibweg
+  (switch.py#L612–L629).
+- Entwürfe (DnD, Zeitplan, Sprachpaket) liegen in `card._drafts` und überleben
+  Verlassen und Dienstfehler.
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):
@@ -151,7 +188,12 @@ Bild-Rückfall, Roboter auf seiner Position (±1,5 px) bzw. auf dem
 Kalibrierpunkt, Zoom-Knöpfe/Taste/Mausrad, Sperre (`pan-y`), Bewegung,
 Hindernis-Blase und -Dialog, Karteninfo, Stockwerkswahl (Regeln 1/2),
 keine Fremdanfragen und eine Labor-Zeitmessung. Ergebnis: `report.json`
-und 99 Bilder.
+und 143 Bilder. Einstellungen (device-settings): Übersicht, alle 12 Gruppen, Suche
+(Treffer/leer), DnD- und Zeitplan-Formular, Inline-Fehler (DnD, Sprachpaket), drei
+Bestätigungen bei 360×640, 390×844, 800×600, 1280×800 hell/dunkel (Lage, kein
+Seitenüberlauf, Knöpfe und Felder ≥ 44 px), Regel 1 für vier Einstellungsansichten,
+Regel 2 für die erste Ebene (tiefere Ebenen gehen mit Escape/Zurück eine Ebene
+zurück, Node-Test).
 
 Grenzen: `ha-card`, `ha-icon` und `ha-form` sind Attrappen; belegt sind
 Verdrahtung, Maße und erzeugte Konfiguration, nicht die Darstellung der
@@ -159,6 +201,24 @@ echten HA-Selektoren. Die Abnahme mit `karten-alle.sh` und E2E läuft einmal
 am Ende aller Module.
 
 ## Geprüft
+
+**10.11.2026 · 0.1.0, Modul device-settings (#882, Tasks 1–11, nicht getaggt)**
+
+1. `node --check` grün; `node --test` 277/277 (72 neue Tests, davon 63 in
+   `tests/einstellungen.test.js`, 9 Datenschutzprüfungen der Testquelltexte).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. `render.py`: 30/30 Prüfungen, UI-Regeln 0 Verstöße (2780 Textelemente),
+   0 Konsolen-/Seitenfehler, 0 Fremdanfragen, 0 Dienstaufrufe ohne Klick.
+   Gefunden und behoben: Sonntag brach bei 360 px allein in eine zweite Zeile
+   (Tage jetzt gleich breit in einer Zeile ab 320 px). Bilder gesichtet.
+   Grenze: ohne echtes HA zeigen die Bilder die Rückfallnamen (Schlüssel in
+   Worten); in HA kommen die Namen aus der Übersetzung der Integration.
+4. Live lesend (`GET /api/states`, `config/entity_registry/list`,
+   `get_services`; 215 Registereinträge, 38 deaktiviert): 65 von 65 lesbaren
+   Einstellungszeilen zeigen den Wert des Geräts; 9 live „unbekannt“, weil die
+   Entität nicht verfügbar ist (KI-Unterpunkte bei ausgeschalteter
+   KI-Erkennung, Kameralicht) — die Karte zeigt dort ebenfalls „unbekannt“.
+   Keine Schreibprobe ausgeführt (warten auf Nutzer-OK).
 
 **10.11.2026 · 0.1.0, Modul map-view (#882, Tasks 1–12, nicht getaggt)**
 

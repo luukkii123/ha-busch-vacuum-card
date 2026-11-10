@@ -5674,11 +5674,13 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 .day-picker {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--ha-space-1, 4px);
+    gap: 2px;
 }
+/* Seven equal days in one row from 320 px on (7 x 44 px + gaps); narrower wraps evenly. */
 .day-picker .busch-ui-action {
-    flex: 1 0 44px;
-    padding-inline: var(--ha-space-1, 4px);
+    flex: 1 1 0;
+    min-width: 44px;
+    padding-inline: 0;
 }
 .field-label {
     overflow-wrap: anywhere;

@@ -273,6 +273,17 @@ def scenario(fixture, name):
                                      "entity_picture": "/api/camera_proxy/camera.robo_map_2?token=testtoken&v=9"})
         states["camera.robo_map_2"] = second
         data["entities"]["camera.robo_map_2"] = dict(data["entities"]["camera.robo_map_1"], entity_id="camera.robo_map_2", translation_key="map_2")
+    elif name == "settings":
+        # device-settings: synthetic periods, schedules, two maps and a worn part, so every list has content.
+        vac["attributes"].update({
+            "dnd": [{"id": 0, "enabled": True, "start": "20:00", "end": "09:00", "repeats": 127, "ss": 0},
+                    {"id": 3, "enabled": False, "start": "12:00", "end": "13:00", "repeats": 62, "ss": 5}],
+            "schedule": [{"id": 1, "enabled": True, "invalid": False, "time": "09:30", "repeats": "0000000", "once": True, "map_id": "3",
+                          "suction_level": 0, "water_volume": 146, "options": None},
+                         {"id": 4, "enabled": False, "invalid": False, "time": "18:00", "repeats": "0111110", "once": False, "map_id": "3",
+                          "suction_level": 2, "water_volume": 2, "options": None}],
+            "maps": [{"id": 3, "index": 1, "name": "Karte 1", "custom_name": None}, {"id": 7, "index": 2, "name": "Karte 2", "custom_name": None}],
+            "map_count": 2, "filter_left": 21})
     elif name == "error":
         vac["state"] = "error"
         vac["attributes"].update({"has_error": True, "error": "Wheel stuck", "charging": False})
@@ -291,7 +302,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     repo_root = card_file.parent.parent
     fixture = json.loads((repo_root / "tests" / "fixtures" / "voll.json").read_text(encoding="utf-8"))
-    data = {name: scenario(fixture, name) for name in STATES + ("floors",)}
+    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings")}
     cam = fixture["states"]["camera.robo_map"]["attributes"]
     grid = synthetic_map_data(cam["rooms"], frame_id=cam["frame_id"])
     svg, svg_size = synthetic_map_svg(cam, grid)
@@ -734,6 +745,63 @@ def main():
               desktop["median"] <= 16 and not [d for d in long_tasks if d > 50], json.dumps(report["timing"]))
 
         # ------------------------------------------------------------------
+        # 3c. Device settings (device-settings Task 11): overview, every group,
+        #     search, forms, confirmations — geometry, touch targets, overflow
+        # ------------------------------------------------------------------
+        settings_open = """(steps) => { window.closeDialogs(); const c = window.card(); const I = customElements.get('busch-vacuum-card').__internals;
+            c._openDialog(I.MODULE_VIEWS.settings(c)); const sr = () => window.dialog().shadowRoot;
+            for (const [sel, value] of steps) { const n = sr().querySelector(sel); if (!n) return 'missing ' + sel;
+              if (value == null) n.click(); else { n.value = value; n.dispatchEvent(new Event(n.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true })); } }
+            return sr().querySelector('h1').textContent; }"""
+        settings_views = [("uebersicht", [])]
+        settings_views += [("gruppe-" + g, [(f"[data-group={g}]", None)]) for g in
+                           ("cleaning", "mopping", "carpet", "station", "camera", "audio", "dnd", "schedule", "battery", "consumables", "info", "other")]
+        settings_views += [
+            ("suche", [(".settings-search", "carpet")]),
+            ("suche-leer", [(".settings-search", "xyz")]),
+            ("dnd-formular", [("[data-group=dnd]", None), ("[data-action=dnd-edit]", None)]),
+            ("dnd-fehler", [("[data-group=dnd]", None), ("[data-action=dnd-add]", None), ("[data-day='1']", None), ("[data-day='2']", None),
+                            ("[data-day='3']", None), ("[data-day='4']", None), ("[data-day='5']", None), ("[data-day='6']", None), ("[data-day='0']", None), ("[data-action=save]", None)]),
+            ("dnd-loeschen", [("[data-group=dnd]", None), ("[data-action=dnd-edit]", None), ("[data-action=delete]", None)]),
+            ("zeitplan-formular", [("[data-group=schedule]", None), ("[data-action=schedule-edit]", None)]),
+            ("sprachpaket-fehler", [("[data-group=audio]", None), ("[data-action=voice-pack]", None), ("[data-action=submit]", None)]),
+            ("zubehoer-zuruecksetzen", [("[data-group=consumables]", None), ("[data-part=filter] [data-action=reset]", None)]),
+            ("rotation-bestaetigen", [("[data-group=other]", None), ("[data-setting=map_rotation] select", "90")]),
+        ]
+        settings_geo = []
+        for w, h in ((360, 640), (390, 844), (800, 600), (1280, 800)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                for label, steps in settings_views:
+                    build("settings")
+                    page.wait_for_timeout(150)
+                    title = page.evaluate(settings_open, steps)
+                    # The opening animation runs 0.3 s; measure after it settled.
+                    page.wait_for_timeout(550)
+                    g = page.evaluate("""() => { const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet'), r = sheet.getBoundingClientRect();
+                        const fields = Array.from(sr.querySelectorAll('select, input')).filter((n) => n.getBoundingClientRect().height > 0 && n.getBoundingClientRect().height < 44).length;
+                        return { kind: sheet.getAttribute('data-kind'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, W: innerWidth, H: innerHeight,
+                                 overflowX: sheet.scrollWidth - sheet.clientWidth, small: window.smallTargets(sr), smallFields: fields,
+                                 rows: sr.querySelectorAll('.setting').length, errors: Array.from(sr.querySelectorAll('.field-error')).filter((e) => e.textContent).length }; }""")
+                    if (w, th) in ((360, "light"), (1280, "dark")):
+                        shot(f"einstellungen-{label}-{w}x{h}-{th}.png")
+                    page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                    settings_geo.append({"label": label, "w": w, "h": h, "theme": th, "title": title, **g})
+        report["settingsDialogs"] = settings_geo
+        inside = lambda x: x["top"] >= -0.5 and x["bottom"] <= x["H"] + 0.5 and x["left"] >= -0.5 and x["right"] <= x["W"] + 0.5
+        bad = [x for x in settings_geo if not inside(x) or x["small"] or x["smallFields"] or x["overflowX"] > 1 or str(x["title"]).startswith("missing")]
+        check("device settings: 23 views x 4 sizes x 2 themes inside the viewport, no sideways overflow, 44 px buttons and fields",
+              not bad, json.dumps(bad[:4]))
+        by = {x["label"]: x for x in settings_geo if x["w"] == 390 and x["theme"] == "light"}
+        check("device settings: titles, rows and states as expected (search hits, inline errors, confirmations narrow)",
+              by["uebersicht"]["title"] == "Geräteeinstellungen" and by["gruppe-carpet"]["rows"] == 7 and by["suche"]["rows"] >= 7
+              and by["suche-leer"]["rows"] == 0 and by["dnd-fehler"]["errors"] == 1 and by["sprachpaket-fehler"]["errors"] == 4
+              and all(by[k]["kind"] == "confirm" for k in ("dnd-loeschen", "zubehoer-zuruecksetzen", "rotation-bestaetigen"))
+              and by["gruppe-station"]["title"] == "Station" and by["gruppe-info"]["rows"] >= 8,
+              json.dumps({k: {"title": v["title"], "rows": v["rows"], "errors": v["errors"], "kind": v["kind"]} for k, v in by.items()}))
+
+        # ------------------------------------------------------------------
         # 4. HACS UI rules 1 and 2 (hacs/docs/ui-regeln.md)
         # ------------------------------------------------------------------
         report["uiRegeln"] = {}
@@ -777,6 +845,23 @@ def main():
                     page, breiten=(390, 960), hoehe=900,
                     messung=lambda pg, o=opener: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ="ansicht"),
                     vor_messung=lambda pg, s=state: (build(s), page.wait_for_timeout(200)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            for label, steps, kind in (("einstellungen", [], "bearbeitung"), ("einstellungen_kamera", [("[data-group=camera]", None)], "bearbeitung"),
+                                       ("einstellungen_dnd_formular", [("[data-group=dnd]", None), ("[data-action=dnd-edit]", None)], "bearbeitung"),
+                                       ("einstellungen_loeschen", [("[data-group=dnd]", None), ("[data-action=dnd-edit]", None), ("[data-action=delete]", None)], "bestaetigung")):
+                opener = lambda st=steps: page.evaluate(settings_open, st)
+                r["regel1_dialog_" + label] = lauf_breiten(
+                    page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, ".sheet"),
+                    vor_messung=lambda pg, o=opener: (build("settings"), page.wait_for_timeout(150), o(), page.wait_for_timeout(350)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                # Rule 2 (one Escape/back closes the popup) applies to the dialog's first view; deeper
+                # views go back one level on Escape/back by design (R03/R25), tested in einstellungen.test.js.
+                if steps:
+                    continue
+                r["regel2_dialog_" + label] = lauf_breiten(
+                    page, breiten=(390, 960), hoehe=900,
+                    messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
+                    vor_messung=lambda pg: (build("settings"), page.wait_for_timeout(150)))
                 page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
             r["regel1_karte_floors"] = lauf_breiten(
                 page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
