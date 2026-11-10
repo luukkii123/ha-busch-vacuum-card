@@ -698,3 +698,41 @@ test('Go-To simuliert: Hinweis „kleine Zonenreinigung“, Ziel am Roboter gesp
   tippe(nativ.u, nativ.karte, bildschirm(nativ.karte, { x: r.x + 50, y: r.y }));
   assert.ok(nativ.karte._selection.goto, 'nativ darf neben dem Roboter');
 });
+
+// ── Task 7: Wiederholungen ─────────────────────────────────────────────────
+test('Wiederholungen 1–3 bei Zone: Stepper begrenzt, Start sendet den Wert je Zone', async () => {
+  const { haus, karte } = await zoneKarte();
+  assert.equal(notiz(karte, 'repeats').textContent.includes('1×'), true);
+  assert.equal(aktion(karte, 'repeats-minus').disabled, true);
+  aktion(karte, 'repeats-plus').click();
+  aktion(karte, 'repeats-plus').click();
+  assert.equal(aktion(karte, 'repeats-plus').disabled, true, 'höchstens 3');
+  assert.match(notiz(karte, 'repeats').textContent, /3×/);
+  aktion(karte, 'zone-add').click();
+  knopf(karte, 'start').click();
+  assert.deepEqual(roh(haus.rufe[0].data.repeats), [3]);
+});
+
+test('Wiederholungen: Raum ohne Customized Cleaning ja (Zahl), mit Customized Cleaning und bei Go-To ausgeblendet', async () => {
+  const { haus, karte } = await kartenKarte();
+  art(karte, 'room').click();
+  aktion(karte, 'repeats-plus').click();
+  chip(karte, 3).click();
+  knopf(karte, 'start').click();
+  assert.equal(haus.rufe[0].data.repeats, 2);
+  const cc = await kartenKarte({ vacuum: { customized_cleaning: true } });
+  art(cc.karte, 'room').click();
+  assert.equal(aktion(cc.karte, 'repeats-plus'), null, 'Raumwerte gelten');
+  art(cc.karte, 'goto').click();
+  assert.equal(aktion(cc.karte, 'repeats-plus'), null);
+  art(cc.karte, 'spot').click();
+  assert.ok(aktion(cc.karte, 'repeats-plus'), 'Spot ja');
+});
+
+test('Wiederholungen werden nicht gemerkt (R21): neue Karte beginnt bei 1', async () => {
+  const a = await zoneKarte();
+  aktion(a.karte, 'repeats-plus').click();
+  const b = await zoneKarte();
+  assert.equal(b.karte._repeats, 1);
+  assert.match(notiz(b.karte, 'repeats').textContent, /1×/);
+});

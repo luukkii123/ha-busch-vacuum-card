@@ -370,6 +370,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskSpot: 'Spot',
             taskGoto: 'Hinfahren',
             aufgabeLaeuft: 'Aufgabe läuft',
+            wiederholungen: 'Wiederholungen',
+            wiederholungenWert: 'Wiederholungen: {n}×',
+            wenigerWiederholungen: 'Weniger Wiederholungen',
+            mehrWiederholungen: 'Mehr Wiederholungen',
             gotoSimuliert: 'Dieser Roboter fährt Ziele als kleine Zonenreinigung an: Die Integration stellt Modus, Saugstufe und Wasser dafür kurz um und danach zurück.',
             zielMitte: 'Ziel in Kartenmitte',
             zielpunkte: 'Gespeicherte Zielpunkte',
@@ -859,6 +863,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskSpot: 'Spot',
             taskGoto: 'Go to',
             aufgabeLaeuft: 'Task running',
+            wiederholungen: 'Repeats',
+            wiederholungenWert: 'Repeats: {n}×',
+            wenigerWiederholungen: 'Fewer repeats',
+            mehrWiederholungen: 'More repeats',
             gotoSimuliert: 'This robot reaches targets as a small zone cleaning: the integration briefly switches mode, suction and water and restores them afterwards.',
             zielMitte: 'Target at map centre',
             zielpunkte: 'Saved target points',
@@ -6415,6 +6423,9 @@ ha-card {
     color: var(--secondary-text-color, #727272);
     font-size: var(--ha-font-size-s, 14px);
 }
+.task-repeats .task-count {
+    flex: 1 1 auto;
+}
 .task-tools .busch-ui-action {
     display: inline-flex;
     align-items: center;
@@ -7606,6 +7617,8 @@ class BuschVacuumCard extends HTMLElement {
             if (task === 'zone') nodes.push(...this._zonePanel(hass, model));
             if (task === 'spot') nodes.push(...this._spotPanel(hass, model));
             if (task === 'goto') nodes.push(...this._gotoPanel(hass, model));
+            // TASK-06: room without Customized Cleaning (else the rooms' own values go), zone, spot.
+            if (task === 'zone' || task === 'spot' || (task === 'room' && model.attr('customized_cleaning') !== true)) nodes.push(this._repeatsRow(hass));
             if (this._undo) {
                 const note = this._note('task-note', 'mdi:undo-variant', translate(hass, 'auswahlGeleert'));
                 note.appendChild(this._panelButton(hass, 'rueckgaengig', 'mdi:undo', 'undo', () => this._undoClear()));
@@ -7801,6 +7814,32 @@ class BuschVacuumCard extends HTMLElement {
             nodes.push(note);
         }
         return nodes;
+    }
+
+    /**
+     * Repeats 1–3 (range of Customized Cleaning, device.py#L7244).
+     * shortcut: local stepper until clean-settings brings the shared row (SET-02, R08); replace it then.
+     */
+    _repeatsRow(hass) {
+        const row = document.createElement('div');
+        row.className = 'task-tools task-repeats';
+        row.setAttribute('role', 'group');
+        row.setAttribute('aria-label', translate(hass, 'wiederholungen'));
+        const value = document.createElement('span');
+        value.className = 'task-count';
+        value.setAttribute('role', 'status');
+        value.setAttribute('data-note', 'repeats');
+        value.textContent = translate(hass, 'wiederholungenWert', { n: this._repeats });
+        const step = (d) => {
+            this._repeats = Math.min(3, Math.max(1, this._repeats + d));
+            this._update();
+        };
+        const minus = BuschUI.action({ label: translate(hass, 'wenigerWiederholungen'), icon: 'mdi:minus', variant: 'secondary', disabled: this._repeats <= 1, onClick: () => step(-1) });
+        minus.setAttribute('data-action', 'repeats-minus');
+        const plus = BuschUI.action({ label: translate(hass, 'mehrWiederholungen'), icon: 'mdi:plus', variant: 'secondary', disabled: this._repeats >= 3, onClick: () => step(1) });
+        plus.setAttribute('data-action', 'repeats-plus');
+        row.append(value, minus, plus);
+        return row;
     }
 
     /** A labelled panel button with a stable data-action (focus survives the redraw). */
