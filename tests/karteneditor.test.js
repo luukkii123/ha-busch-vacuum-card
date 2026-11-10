@@ -1973,3 +1973,59 @@ test('EDI-02 Checkpoint C: jede Zeile der Schreibweg-Tabellen hat einen Test mit
   const gedeckt = new Set(SCHREIBWEGE.map(([, d]) => (d.startsWith('key:') ? (d.includes('multi_floor') ? 'vacuum_set_property' : 'vacuum_call_action') : d)));
   for (const d of KARTENDIENSTE) assert.ok(gedeckt.has(d), 'Kartendienst ohne Tabellenzeile: ' + d);
 });
+
+// ── Task 13: Befunde der Browserprüfung (render.py) ─────────────────────────
+
+test('EDI-02 Dialog-Stile: [hidden] bleibt im Dialog verborgen (leere Kartenblase im Bearbeitungsmodus), Symbole vor dem Text, gewählter Eintrag sichtbar', () => {
+  const { DIALOG_STYLES } = aufbau().I;
+  assert.match(DIALOG_STYLES, /\[hidden\] \{\s*display: none !important;/, 'die Karte bringt ihre Blase mit hidden in den Dialog');
+  assert.match(DIALOG_STYLES, /\.edit-tools \.busch-ui-action ha-icon,[^{]*\.map-entry \.busch-ui-action ha-icon[^{]*\{\s*order: -1;/, 'Symbol vor dem Text');
+  assert.match(DIALOG_STYLES, /\.edit-item\[aria-pressed=true\] \{[^}]*outline/, 'gewählter Eintrag nicht nur über aria-pressed');
+});
+
+test('EDI-04 lange Wandlisten: mehr als 12 Wände → Liste startet beim ersten Raum; eine gewählte Wand schaltet auf ihren Raum; „Alle Räume“ bleibt wählbar', async () => {
+  const wand = (x) => [x, 0, x + 500, 0, x, 0, x + 500, 0, 1, x + 250, 0];
+  const k = await mitDaten('walls', {}, { walls: { 1: [0, 1, 2, 3, 4, 5, 6].map((i) => wand(i * 600)), 3: [0, 1, 2, 3, 4, 5].map((i) => wand(-5000 - i * 600)) } });
+  assert.equal(feldE(k, 'wall-room').value, '1', 'erster Raum statt aller 13 Wände');
+  assert.ok(eintrag(k, 'walls', 0));
+  assert.equal(eintrag(k, 'walls', 7), null, 'Wände von Raum 3 nicht gelistet');
+  const editor = k.karte._mapEdit;
+  editor.pick = { list: 'walls', i: 8 };
+  editor.changed();
+  assert.equal(feldE(k, 'wall-room').value, '3', 'gewählte Wand (Karte) zeigt ihren Raum');
+  assert.ok(eintrag(k, 'walls', 8));
+  waehle(k, feldE(k, 'wall-room'), 1);
+  assert.equal(feldE(k, 'wall-room').value, '1', 'Raumwahl bleibt, auch wenn die gewählte Wand woanders liegt');
+  waehle(k, feldE(k, 'wall-room'), '');
+  assert.ok(eintrag(k, 'walls', 0) && eintrag(k, 'walls', 12), 'alle Räume auf Wunsch');
+  const kurz = await mitDaten('walls');
+  assert.equal(feldE(kurz, 'wall-room').value, '', 'bis 12 Wände alle (wie bisher)');
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('EDI-07 Router-Formular nennt den Router in der Tastenhilfe, nicht Wand oder Tür', async () => {
+  const k = await mitDaten('wifi');
+  eintrag(k, 'router', 0).click();
+  const text = $d(k.u, '[data-panel="wifi"]').textContent;
+  assert.doesNotMatch(text, /Wand oder Tür/);
+  assert.match(text, /verschieben die Pfeiltasten den Router/);
+  assert.match(k.I.TEXTE.en.texte.routerTasten, /move the router/);
+});
+
+test('EDI-01 Kartenzeile: Wählen und Symbolknöpfe als eine Gruppe (bricht nur als Ganzes um)', () => {
+  const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
+  verwaltung(k);
+  const gruppe = (id) => karteZeile(k, id).querySelector('.map-actions');
+  assert.deepEqual(Array.from(gruppe(7).childNodes, (n) => n.getAttribute('data-action')), ['select', 'edit', 'rename', 'delete']);
+  assert.deepEqual(Array.from(gruppe(3).childNodes, (n) => n.getAttribute('data-action')), ['edit', 'rename', 'delete']);
+});
+
+test('EDI-02 Dirty-Dialog: eine Änderung in der Einzahl (DE/EN)', () => {
+  const k = aufbau();
+  const d = bearbeiten(k);
+  werkzeug(k, 'zones').click();
+  $d(k.u, '[data-action="add-zone"]').click();
+  k.u.document.dispatchEvent(k.u.neuesEreignis('keydown', { key: 'Escape' }));
+  assert.match(d.shadowRoot.textContent, /Es gibt 1 ungespeicherte Änderung\./);
+  assert.match(k.I.TEXTE.en.texte.kartenOffenFrageEins, /There is 1 unsaved change\./);
+});

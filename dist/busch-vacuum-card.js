@@ -7736,6 +7736,12 @@ const MAP_STYLES = `
 }
 .map-bubble .busch-ui-action {
     flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+}
+.map-bubble .busch-ui-action ha-icon {
+    order: -1;
 }
 .map-loupe {
     position: absolute;
@@ -9384,7 +9390,19 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 .map-entry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ha-space-2, 8px); padding: var(--ha-space-2, 8px) 0; border-bottom: 1px solid var(--divider-color, #e0e0e0); }
 .map-entry img { width: 64px; height: 48px; object-fit: contain; flex: 0 0 auto; }
 .map-entry > span { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
-.wifi-legend { display: flex; flex-wrap: wrap; gap: var(--ha-space-2, 8px); font-size: 0.9em; }
+.wifi-legend { display: flex; flex-wrap: wrap; gap: var(--ha-space-2, 8px); font-size: 0.9em; margin: 0 0 var(--ha-space-3, 12px); }
+/* Browser check (Task 13): the map's own parts keep [hidden] in the dialog too (the empty bubble showed above the map). */
+[hidden] {
+    display: none !important;
+}
+/* Symbol before the text, like the other modules; the chosen entry shows it, not only aria-pressed (R17). */
+.edit-tools .busch-ui-action, .edit-row .busch-ui-action, .edit-panel .busch-ui-action, .form-note .busch-ui-action,
+.map-entry .busch-ui-action, .map-new .busch-ui-action, .temporary-map .busch-ui-action { display: inline-flex; align-items: center; justify-content: center; gap: var(--ha-space-2, 8px); }
+.edit-tools .busch-ui-action ha-icon, .edit-row .busch-ui-action ha-icon, .edit-panel .busch-ui-action ha-icon, .form-note .busch-ui-action ha-icon,
+.map-entry .busch-ui-action ha-icon, .map-new .busch-ui-action ha-icon, .temporary-map .busch-ui-action ha-icon { order: -1; }
+.edit-list .edit-item { justify-content: flex-start; text-align: start; }
+.edit-item[aria-pressed=true] { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 1px; font-weight: 500; }
+.map-actions { display: flex; flex-wrap: wrap; gap: var(--ha-space-2, 8px); margin-inline-start: auto; }
 .wifi-legend i { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-inline-end: 4px; }
 
 `;
@@ -11484,7 +11502,9 @@ const EDIT_TEXTS = {
         waendeRaumZuruecksetzen: 'Wände von {raum} zurücksetzen',
         waendeAlleZuruecksetzen: 'Alle Wände und Türen zurücksetzen',
         waendeAnzahl: 'Die Anzahl der Wände je Raum und der Türen muss gleich bleiben (sonst verwirft das Gerät die Änderung). Verwirf die Änderung, um zu speichern.',
-        waendeTasten: 'Pfeiltasten in den Feldern: 50 mm, mit Umschalt 10 mm. Auf einem Eintrag der Liste verschieben die Pfeiltasten die Wand oder Tür.'
+        waendeTasten: 'Pfeiltasten in den Feldern: 50 mm, mit Umschalt 10 mm. Auf einem Eintrag der Liste verschieben die Pfeiltasten die Wand oder Tür.',
+        routerTasten: 'Pfeiltasten in den Feldern: 50 mm, mit Umschalt 10 mm. Auf dem Eintrag der Liste verschieben die Pfeiltasten den Router.',
+        kartenOffenFrageEins: 'Es gibt 1 ungespeicherte Änderung. Speichern, verwerfen oder weiter bearbeiten?'
     },
     en: {
         kartenSicherungTitel: 'Save map',
@@ -11766,7 +11786,9 @@ const EDIT_TEXTS = {
         waendeRaumZuruecksetzen: 'Reset walls of {raum}',
         waendeAlleZuruecksetzen: 'Reset all walls and doors',
         waendeAnzahl: 'The number of walls per room and of doors must stay the same (otherwise the device drops the change). Discard the change to save.',
-        waendeTasten: 'Arrow keys in the fields: 50 mm, with Shift 10 mm. On an entry of the list the arrow keys move the wall or door.'
+        waendeTasten: 'Arrow keys in the fields: 50 mm, with Shift 10 mm. On an entry of the list the arrow keys move the wall or door.',
+        routerTasten: 'Arrow keys in the fields: 50 mm, with Shift 10 mm. On the entry of the list the arrow keys move the router.',
+        kartenOffenFrageEins: 'There is 1 unsaved change. Save, discard or keep editing?'
     }
 };
 for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
@@ -11973,7 +11995,8 @@ function dirtyChoice(card, { count, save, discard, blocked = null }) {
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
-            body.appendChild(noteLine(translate(hass, 'kartenOffenFrage', { n: count() })));
+            const n = count();
+            body.appendChild(noteLine(translate(hass, n === 1 ? 'kartenOffenFrageEins' : 'kartenOffenFrage', { n })));
             const stop = blocked ? blocked() : '';
             if (stop) body.appendChild(noteLine(translate(hass, stop), 'error'));
             const actions = document.createElement('div');
@@ -12454,7 +12477,10 @@ function mapsView(card) {
             for (const { entry, name, active: current } of entries) list.appendChild(mapRow(card, model, hass, dialog, view, sessions, entry, name, current));
             if (entries.length) body.appendChild(list);
             const fresh = viewSection(hass, 'kartenNeu', newMapActions(card, model, hass, dialog, view, sessions, active));
-            if (fresh) body.appendChild(fresh);
+            if (fresh) {
+                fresh.classList.add('map-new');
+                body.appendChild(fresh);
+            }
         }
     };
     return view;
@@ -12483,29 +12509,33 @@ function mapRow(card, model, hass, dialog, home, sessions, entry, name, current)
     const session = sessions.get(String(entry.id));
     const temporary = model.attr('has_temporary_map') === true;
     const busy = taskActive(model, model.state ? model.state.state : 'unavailable');
+    // Choose and the symbol buttons as one group: it wraps as a whole, never one symbol alone (browser check, Task 13).
+    const group = document.createElement('span');
+    group.className = 'map-actions';
     if (!current) {
         const select = BuschUI.action({ label: translate(hass, 'kartenWaehlen') + ': ' + name, text: translate(hass, 'kartenWaehlen'), disabled: busy,
             onClick: () => (card._map ? card._map.selectMap(entry.id) : pickMap(card, model, name)) });
         select.setAttribute('data-action', 'select');
-        row.appendChild(select);
+        group.appendChild(select);
     }
     if (model.can('map_edit') && !card._hidden('map_editor')) {
         const edit = BuschUI.action({ label: translate(hass, 'kartenBearbeiten') + ': ' + name, icon: 'mdi:draw', variant: 'icon-only', onClick: () => dialog.show(mapEditView(card, entry.id)) });
         edit.setAttribute('data-action', 'edit');
-        row.appendChild(edit);
+        group.appendChild(edit);
     }
     if (model.can('dreame_vacuum.vacuum_rename_map')) {
         const rename = BuschUI.action({ label: translate(hass, 'umbenennen') + ': ' + name, icon: 'mdi:pencil-outline', variant: 'icon-only', disabled: temporary,
             onClick: () => dialog.show(renameMapView(card, home, mapSessionFor(card, sessions, entry), entry)) });
         rename.setAttribute('data-action', 'rename');
-        row.appendChild(rename);
+        group.appendChild(rename);
     }
     if (model.can('dreame_vacuum.vacuum_delete_map')) {
         const remove = BuschUI.action({ label: translate(hass, 'loeschen') + ': ' + name, icon: 'mdi:delete-outline', variant: 'icon-only', disabled: temporary || busy,
             onClick: () => dialog.show(deleteMapConfirm(card, home, mapSessionFor(card, sessions, entry), entry, model)) });
         remove.setAttribute('data-action', 'delete');
-        row.appendChild(remove);
+        group.appendChild(remove);
     }
+    if (group.childNodes.length) row.appendChild(group);
     if (temporary || busy) row.appendChild(noteLine(translate(hass, temporary ? 'kartenSperreTemporaer' : 'kartenSperreAufgabe'), 'locked'));
     if (session && session.error) row.appendChild(noteLine(session.error.text, 'error'));
     return row;
@@ -13948,7 +13978,7 @@ function objectForm(card, editor, body, hass, tool, pick, entry, lock) {
     }
     form.appendChild(fields);
     if (kind.shape !== 'point') form.appendChild(noteLine(translate(hass, 'kartenMindest', { mm: editMin(card) })));
-    form.appendChild(noteLine(translate(hass, kind.fixed ? 'waendeTasten' : 'kartenObjTasten')));
+    form.appendChild(noteLine(translate(hass, pick.list === 'router' ? 'routerTasten' : kind.fixed ? 'waendeTasten' : 'kartenObjTasten')));
     const hooks = OBJECT_HOOKS[tool];
     if (hooks && hooks.form) hooks.form(card, editor, form, hass, pick, entry, lock);
     if (editor.objError) form.appendChild(noteLine(translate(hass, editor.objError), 'error'));
@@ -14419,10 +14449,20 @@ function resetObjects(editor, list, which) {
     });
 }
 
-/** Before the lists: the room whose walls are listed (doors always), all by default. */
+/** Up to this many walls the list shows every room at first. */
+const WALLS_ALL_MAX = 12;
+
+/** Before the lists: the room whose walls are listed (doors always); all up to WALLS_ALL_MAX walls, else the first room. */
 function wallsAddRow(card, editor, row, hass) {
-    const rooms = [...new Set((editor.lists().walls || []).map((e) => e[0]))].sort((x, y) => Number(x) - Number(y));
-    if (!rooms.includes(editor.wallRoom)) editor.wallRoom = '';
+    const walls = editor.lists().walls || [];
+    const rooms = [...new Set(walls.map((e) => e[0]))].sort((x, y) => Number(x) - Number(y));
+    // A long list (live 56 walls in 7 rooms) starts with one room; a wall chosen on the map shows its room once.
+    if (editor.wallRoom === undefined || editor.wallRoom === null) editor.wallRoom = walls.length > WALLS_ALL_MAX ? rooms[0] || '' : '';
+    const pick = editor.pick && editor.pick.list === 'walls' ? walls[editor.pick.i] : null;
+    const seen = pick ? 'walls:' + editor.pick.i : '';
+    if (pick && seen !== editor.wallPickSeen && editor.wallRoom !== '') editor.wallRoom = pick[0];
+    editor.wallPickSeen = seen;
+    if (editor.wallRoom !== '' && !rooms.includes(editor.wallRoom)) editor.wallRoom = '';
     row.appendChild(editSelect('wall-room', translate(hass, 'waendeRaum'), editor.wallRoom, [['', translate(hass, 'waendeAlle')]].concat(rooms.map((r) => [r, roomLabel(editor, r)])), false, (v) => {
         editor.wallRoom = v;
         rerender(card);
