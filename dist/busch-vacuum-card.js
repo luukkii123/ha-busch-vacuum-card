@@ -546,6 +546,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             aktionFehler: '{name} wurde nicht gestartet ({grund}). An der Station hat sich nichts geändert. Prüfe Station und Roboter und versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
             stationEinstellungen: 'Station-Einstellungen',
             stationStatus: 'Stationsstatus',
+            alleWerte: 'Alle Stationswerte ({n})',
             reiter_wash: 'Waschen',
             reiter_dry: 'Trocknen',
             reiter_empty: 'Entleeren',
@@ -969,6 +970,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             aktionFehler: '{name} did not start ({grund}). Nothing changed at the station. Check station and robot and try again; if that does not help, check the dreame_vacuum integration.',
             stationEinstellungen: 'Station settings',
             stationStatus: 'Station status',
+            alleWerte: 'All station values ({n})',
             reiter_wash: 'Washing',
             reiter_dry: 'Drying',
             reiter_empty: 'Emptying',
@@ -4969,25 +4971,37 @@ function stationView(card) {
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
             const model = card._model();
-            const status = document.createElement('ul');
-            status.className = 'station-status';
-            status.setAttribute('aria-label', translate(hass, 'stationStatus'));
-            for (const item of stationStatus(model)) {
-                const line = document.createElement('li');
-                line.setAttribute('data-status', item.key);
-                line.setAttribute('data-level', item.level);
-                const symbol = BuschUI.ha.icon(item.icon);
-                symbol.setAttribute('aria-hidden', 'true');
-                const label = document.createElement('span');
-                label.className = 'setting-name';
-                label.textContent = item.label;
-                const value = document.createElement('span');
-                value.className = 'setting-value';
-                value.textContent = item.text;
-                line.append(symbol, label, value);
-                status.appendChild(line);
+            // Problems and running work open on top; the values that are fine fold away (R25).
+            const items = stationStatus(model);
+            const list = (part) => {
+                const status = document.createElement('ul');
+                status.className = 'station-status';
+                status.setAttribute('aria-label', translate(hass, 'stationStatus'));
+                for (const item of part) {
+                    const line = document.createElement('li');
+                    line.setAttribute('data-status', item.key);
+                    line.setAttribute('data-level', item.level);
+                    const symbol = BuschUI.ha.icon(item.icon);
+                    symbol.setAttribute('aria-hidden', 'true');
+                    const label = document.createElement('span');
+                    label.className = 'setting-name';
+                    label.textContent = item.label;
+                    const value = document.createElement('span');
+                    value.className = 'setting-value';
+                    value.textContent = item.text;
+                    line.append(symbol, label, value);
+                    status.appendChild(line);
+                }
+                return status;
+            };
+            const open = items.filter((item) => item.level !== 'ok');
+            const fine = items.filter((item) => item.level === 'ok');
+            if (items.length) body.appendChild(list(open.length ? open : [{ key: 'station', level: 'ok', label: translate(hass, 'station'), text: translate(hass, 'stationOk'), icon: LEVEL_ICON.ok }]));
+            if (fine.length) {
+                const all = BuschUI.section({ title: translate(hass, 'alleWerte', { n: fine.length }), content: list(fine) });
+                all.classList.add('station-values');
+                body.appendChild(all);
             }
-            if (status.childNodes.length) body.appendChild(status);
 
             const tabs = STATION_TABS.filter((name) => STATION_TAB_NEEDS[name].some((need) => model.can(need))
                 && (groupKeys('station').some((key) => SETTINGS[key].tab === name && settingState(card, model, key).present) || stationActions(model, (a) => a.tab === name).length));
@@ -6111,6 +6125,16 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 }
 .station-status [data-level=error] ha-icon {
     color: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.station-values {
+    margin: 0 0 var(--ha-space-3, 12px);
+}
+.station-values summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    color: var(--secondary-text-color, #727272);
 }
 .station-tabs {
     display: flex;

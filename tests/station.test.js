@@ -293,8 +293,13 @@ test('Letzter Reiter je Sauger aus localStorage; fehlender oder defekter Speiche
 
 test('Statusliste oben mit Symbol und Text, Probleme zuerst', () => {
   const k = station('voll', { attribute: { dust_bag_status: 'Check' } });
-  const punkte = $$in(k, '.station-status', '[data-status]');
-  assert.ok(punkte.length >= 15);
+  const punkte = $$d(k.u, '[data-status]');
+  assert.ok(punkte.length >= 15, 'alle Werte vorhanden');
+  assert.deepEqual($$in(k, '.station-status', '[data-status]').map((p) => p.getAttribute('data-status')), ['dust_bag_status'], 'offen nur die Probleme');
+  assert.match($d(k.u, '.station-values').textContent, /Alle Stationswerte/, 'der Rest eingeklappt (R25)');
+  assert.equal($d(k.u, '.station-values').open, false);
+  const ok = station();
+  assert.match($in(ok, '.station-status', '[data-status]').textContent, /in Ordnung/, 'ohne Problem: eine Zeile „in Ordnung“');
   assert.equal(punkte[0].getAttribute('data-status'), 'dust_bag_status');
   assert.equal(punkte[0].getAttribute('data-level'), 'warning');
   assert.match(punkte[0].textContent, /Check/);

@@ -136,6 +136,29 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 - Entwürfe (DnD, Zeitplan, Sprachpaket) liegen in `card._drafts` und überleben
   Verlassen und Dienstfehler.
 
+## Station (Modul dock)
+
+- Dock-Schlüssel stehen in `SETTINGS` (Gruppe `station`) mit `tab`
+  (`STATION_TABS` wash/dry/empty, `STATION_TAB_OF`); Zeilen nur über
+  `settingRow`, Sperrgründe über `SETTING_NEEDS`/`SETTING_LOCKS`
+  (types.py#L2101–L2245: `selfClean`, `smartWash`, `cleanGenius`,
+  `notByTime`, `byTime`, `notDrying`, `autoDrying`, `autoEmpty`).
+- Aktionen: eine Tabelle `STATION_ACTIONS` (`key`, `value`, `needs`, `when`,
+  `tab`, `menu`, `confirm`), ein Knopf `stationActionItem` für Dock-Menü und
+  Station-Ansicht (R01), ein Aufruf `runStationAction` → `callAction`
+  (`vacuum_call_action`, Fehlertext `aktionFehler`). `start_draining` ohne
+  `value` lässt ab, mit `'1'` leert es den Frischwassertank (device.py#L5567).
+- `can()`: `wash`/`dry`/`self_repair` = `self_wash_base`, `dust_bag_dry`,
+  `empty` = `auto_empty_base`, `drain` = `drainage`, `empty_tank` =
+  `water_tank_draining`, `station_cleaning`, `recleaning` = `auto_recleaning`
+  + `map` (wie die `exists_fn` der Knöpfe, button.py#L196–L296), jeweils plus
+  `vacuum_call_action`; nie die Knopf-Entität (kann deaktiviert sein).
+- `stationStatus(model)` → `[{ key, level, label, text, icon }]`, Probleme
+  zuerst; Stufe wie `dockStatus` (Attribut vor Sensor), Text in HA-Worten,
+  wenn der Sensor dasselbe sagt. Geräteinfo (ALL-12) nennt daraus die Probleme.
+- Letzter Reiter: `localStorage` `busch-vacuum-card:dock-tab:<entity>`; ohne
+  Speicher erster Reiter.
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):

@@ -802,6 +802,78 @@ def main():
               json.dumps({k: {"title": v["title"], "rows": v["rows"], "errors": v["errors"], "kind": v["kind"]} for k, v in by.items()}))
 
         # ------------------------------------------------------------------
+        # 3d. Station (dock Task 4): dock button, menu, every tab, confirmation,
+        #     keyboard — geometry, touch targets, overflow, no service call
+        # ------------------------------------------------------------------
+        dock_open = """(steps) => { window.closeDialogs(); try { localStorage.clear(); } catch (e) {}
+            const knopf = window.card().shadowRoot.querySelector('.dock'); if (!knopf) return 'missing .dock'; knopf.click();
+            const sr = () => window.dialog().shadowRoot;
+            for (const sel of steps) { const n = sr().querySelector(sel); if (!n) return 'missing ' + sel; n.click(); }
+            return sr().querySelector('h1').textContent; }"""
+        einstellungen = "[data-station-action=settings]"
+        dock_views = [
+            ("menue", []),
+            ("waschen", [einstellungen]),
+            ("trocknen", [einstellungen, "[data-tab=dry]"]),
+            ("entleeren", [einstellungen, "[data-tab=empty]"]),
+            ("ablassen-bestaetigen", [einstellungen, "[data-station-action=drain]"]),
+        ]
+        build("docked")
+        page.wait_for_timeout(150)
+        dock_button = page.evaluate("""() => { const b = window.card().shadowRoot.querySelector('.dock'), r = b.getBoundingClientRect();
+            return { tag: b.tagName, popup: b.getAttribute('aria-haspopup'), level: b.getAttribute('data-dock'), text: b.textContent, w: r.width, h: r.height }; }""")
+        check("dock button: a 44 px button with menu popup, text and level", dock_button["tag"] == "BUTTON" and dock_button["popup"] == "menu"
+              and dock_button["h"] >= 44 and dock_button["w"] >= 44 and "Station" in dock_button["text"], json.dumps(dock_button))
+        dock_geo = []
+        for w, h in ((360, 640), (390, 844), (800, 600), (1280, 800)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                for label, steps in dock_views:
+                    build("docked")
+                    page.wait_for_timeout(150)
+                    title = page.evaluate(dock_open, steps)
+                    page.wait_for_timeout(550)
+                    g = page.evaluate("""() => { const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet'), r = sheet.getBoundingClientRect();
+                        const fields = Array.from(sr.querySelectorAll('select, input')).filter((n) => n.getBoundingClientRect().height > 0 && n.getBoundingClientRect().height < 44).length;
+                        const tab = sr.querySelector('[role=tab][aria-selected=true]');
+                        return { kind: sheet.getAttribute('data-kind'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, W: innerWidth, H: innerHeight,
+                                 overflowX: sheet.scrollWidth - sheet.clientWidth, small: window.smallTargets(sr), smallFields: fields,
+                                 rows: sr.querySelectorAll('.setting').length, tabs: sr.querySelectorAll('[role=tab]').length, tab: tab ? tab.getAttribute('data-tab') : null,
+                                 status: sr.querySelectorAll('[data-status]').length, actions: Array.from(sr.querySelectorAll('[data-station-action]')).map((n) => n.getAttribute('data-station-action')) }; }""")
+                    if (w, th) in ((360, "light"), (1280, "dark")):
+                        shot(f"station-{label}-{w}x{h}-{th}.png")
+                    page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                    dock_geo.append({"label": label, "w": w, "h": h, "theme": th, "title": title, **g})
+        report["dockDialogs"] = dock_geo
+        bad = [x for x in dock_geo if not inside(x) or x["small"] or x["smallFields"] or x["overflowX"] > 1 or str(x["title"]).startswith("missing")]
+        check("station: menu, three tabs and a confirmation x 4 sizes x 2 themes inside the viewport, no sideways overflow, 44 px buttons and fields",
+              not bad, json.dumps(bad[:4]))
+        by = {x["label"]: x for x in dock_geo if x["w"] == 390 and x["theme"] == "light"}
+        check("station: menu entries, tabs, rows, status list and confirmation as expected",
+              by["menue"]["kind"] == "menu" and by["menue"]["actions"] == ["wash", "dry", "empty", "settings"]
+              and by["waschen"]["tab"] == "wash" and by["waschen"]["tabs"] == 3 and by["waschen"]["rows"] == 12 and by["waschen"]["status"] >= 15
+              and by["trocknen"]["tab"] == "dry" and by["trocknen"]["rows"] == 2 and by["entleeren"]["tab"] == "empty" and by["entleeren"]["rows"] == 2
+              and by["ablassen-bestaetigen"]["kind"] == "confirm",
+              json.dumps({k: {"title": v["title"], "rows": v["rows"], "tab": v["tab"], "kind": v["kind"], "actions": v["actions"]} for k, v in by.items()}))
+        page.set_viewport_size({"width": 390, "height": 844})
+        build("docked")
+        page.wait_for_timeout(150)
+        page.evaluate(dock_open, [einstellungen])
+        page.wait_for_timeout(400)
+        page.evaluate("() => window.dialog().shadowRoot.querySelector('[role=tab]').focus()")
+        page.keyboard.press("ArrowRight")
+        page.keyboard.press("End")
+        keys = page.evaluate("""() => { const sr = window.dialog().shadowRoot; return { active: sr.activeElement ? sr.activeElement.getAttribute('data-tab') : null,
+            selected: sr.querySelector('[role=tab][aria-selected=true]').getAttribute('data-tab'), stored: localStorage.getItem('busch-vacuum-card:dock-tab:vacuum.robo') }; }""")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(400)
+        back = page.evaluate("() => window.dialog() ? window.dialog().shadowRoot.querySelector('.sheet').getAttribute('data-kind') : null")
+        page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+        check("station keyboard: arrows/End move tab and focus, tab remembered, Escape goes back to the menu",
+              keys == {"active": "empty", "selected": "empty", "stored": "empty"} and back == "menu", json.dumps({"keys": keys, "back": back}))
+
+        # ------------------------------------------------------------------
         # 4. HACS UI rules 1 and 2 (hacs/docs/ui-regeln.md)
         # ------------------------------------------------------------------
         report["uiRegeln"] = {}
@@ -862,6 +934,21 @@ def main():
                     page, breiten=(390, 960), hoehe=900,
                     messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
                     vor_messung=lambda pg: (build("settings"), page.wait_for_timeout(150)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            for label, steps, kind in (("dock_menue", [], "ansicht"), ("station", [einstellungen], "bearbeitung"),
+                                       ("station_trocknen", [einstellungen, "[data-tab=dry]"], "bearbeitung"),
+                                       ("station_bestaetigung", [einstellungen, "[data-station-action=drain]"], "bestaetigung")):
+                opener = lambda st=steps: page.evaluate(dock_open, st)
+                r["regel1_dialog_" + label] = lauf_breiten(
+                    page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, ".sheet"),
+                    vor_messung=lambda pg, o=opener: (build("docked"), page.wait_for_timeout(150), o(), page.wait_for_timeout(350)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                if steps:
+                    continue
+                r["regel2_dialog_" + label] = lauf_breiten(
+                    page, breiten=(390, 960), hoehe=900,
+                    messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
+                    vor_messung=lambda pg: (build("docked"), page.wait_for_timeout(150)))
                 page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
             r["regel1_karte_floors"] = lauf_breiten(
                 page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),

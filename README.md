@@ -139,6 +139,26 @@ only once the device reports the new value.
   integration's own switch describes it (brightness 101).
 - Map rotation and map selection ask before they change the robot's map.
 
+## Station
+
+The station button next to the controls shows the station's state (colour
+and text) and opens a menu with what the station can do right now: wash the
+mop (pause/resume while washing), start or stop drying, dry the dust bag (if
+the station has it), empty now, return to the station (only while away) and
+*Station settings*. Hide the button with `hidden_card_objects:
+dock_status_indicator`; the settings stay reachable through *Device settings
+→ Station*.
+
+*Station settings* lists every station value (problems open on top, the rest
+folded away), the settings in the tabs *Washing*, *Drying* and *Emptying*
+(only the tabs the station has; the last tab is remembered per browser) and
+*Maintenance*: drain water, empty the water tank, self-repair (these three
+ask first), clean the station and re-clean. A setting the integration does
+not allow right now says why (for example the water temperature while smart
+mop washing chooses it). Every action goes through
+`dreame_vacuum.vacuum_call_action`, every setting through
+`vacuum_set_property`, so disabled station entities stay usable.
+
 ## Theming
 
 The card follows your Home Assistant theme. These optional theme variables
