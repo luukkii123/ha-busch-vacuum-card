@@ -10708,6 +10708,139 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
 }
 
 // ---------------------------------------------------------------------------
+// Remote control (remote): one sender, sliders, hold buttons and keys feed it (R08)
+// ---------------------------------------------------------------------------
+
+/**
+ * Limits and timing in one place. The integration documents forward 100,
+ * backward −300 and rotation ±128; backward stays at −100 (no collision
+ * guard reversing) until the first live run calibrates (spec open question 1).
+ */
+const REMOTE = { forward: 100, backward: -100, rotation: 128, deadzone: 0.15, stepMs: 200, stopRepeatMs: 300, timeoutMs: 2000 };
+
+/** A stick or key value −1…1 → service value: dead zone, linear to the limit; Shift halves speed, Ctrl turning, precision both. */
+function remoteValue(axis, raw, mods = {}) {
+    const x = Math.max(-1, Math.min(1, Number(raw) || 0));
+    if (Math.abs(x) <= REMOTE.deadzone) return 0;
+    const share = (Math.abs(x) - REMOTE.deadzone) / (1 - REMOTE.deadzone);
+    const limit = axis === 'velocity' ? (x > 0 ? REMOTE.forward : -REMOTE.backward) : REMOTE.rotation;
+    const half = mods.precision || (axis === 'velocity' ? mods.shift : mods.ctrl);
+    return Math.sign(x) * Math.round(share * limit * (half ? 0.5 : 1)) || 0;
+}
+
+/**
+ * The only way a move reaches the robot. The integration neither queues nor
+ * drops, so parallel calls would overtake each other at the device: one call
+ * at a time, the next after its answer and ≥ stepMs after the previous, always
+ * the newest value. Stop goes next without spacing and once more after
+ * stopRepeatMs. An error or no answer within timeoutMs ends moving (state
+ * `error`) and tries to stop. `state`: idle, moving, stopping, stopped, error.
+ */
+class RemoteSender {
+    constructor(hass, entityId, onChange) {
+        this._hass = hass;
+        this._entity = entityId;
+        this._onChange = onChange || (() => {});
+        this.state = 'idle';
+        this.error = null;
+        this._want = null; // { v, r } held now
+        this._stop = false; // a stop is due
+        this._round = 0; // stops sent in this stop sequence
+        this._dirty = false; // a move went out since the last complete stop
+        this._busy = null; // { seq, timer } of the call in flight
+        this._seq = 0;
+        this._last = -Infinity;
+        this._timer = null; // spacing or the stop repeat
+    }
+
+    set({ v, r }) {
+        if (!v && !r) return this.stop('release');
+        if (this.state === 'error') return;
+        this._want = { v, r };
+        this._stop = false;
+        this._round = 0;
+        this._to('moving');
+        this._pump();
+    }
+
+    stop() {
+        this._want = null;
+        if (!this._dirty) {
+            clearTimeout(this._timer);
+            if (this.state === 'moving') this._to('stopped');
+            return;
+        }
+        this._stop = true;
+        this._pump();
+    }
+
+    /** After an error: arming again starts clean. */
+    reset() {
+        this.error = null;
+        if (this.state === 'error') this._to('idle');
+    }
+
+    _to(state) {
+        if (this.state === state) return;
+        this.state = state;
+        this._onChange(state);
+    }
+
+    _pump() {
+        if (this._busy) return;
+        clearTimeout(this._timer);
+        this._timer = null;
+        if (this._stop) return this._send(0, 0, true);
+        if (!this._want || this.state === 'error') return;
+        const wait = this._last + REMOTE.stepMs - Date.now();
+        if (wait > 0) this._timer = setTimeout(() => this._pump(), wait);
+        else this._send(this._want.v, this._want.r, false);
+    }
+
+    _send(v, r, stop) {
+        const seq = ++this._seq, at = Date.now();
+        this._last = at;
+        if (stop) {
+            this._stop = false;
+            this._round += 1;
+            if (this.state !== 'error') this._to('stopping');
+        } else this._dirty = true;
+        const done = (error) => {
+            if (!this._busy || this._busy.seq !== seq) return;
+            clearTimeout(this._busy.timer);
+            this._busy = null;
+            if (error) {
+                this.error = error;
+                this._want = null;
+                this._to('error');
+                if (!stop) this._stop = true;
+            }
+            if (stop && !this._want && !this._stop) {
+                if (this._round === 1) {
+                    // A lost stop is the worst case: once more, a little later.
+                    this._timer = setTimeout(() => { this._stop = true; this._pump(); }, Math.max(0, at + REMOTE.stopRepeatMs - Date.now()));
+                    return;
+                }
+                this._dirty = false;
+                this._round = 0;
+                if (this.state !== 'error') this._to('stopped');
+                return;
+            }
+            this._pump();
+        };
+        // No answer in time counts as lost: the stop attempt then goes out although the call still hangs.
+        this._busy = { seq, timer: setTimeout(() => done('timeout'), REMOTE.timeoutMs) };
+        let call;
+        try {
+            call = Promise.resolve(this._hass().callService('dreame_vacuum', 'vacuum_remote_control_move_step', { entity_id: this._entity, velocity: v, rotation: r }));
+        } catch (e) {
+            call = Promise.reject(e);
+        }
+        call.then(() => done(null), (e) => done(errorText(e)));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
@@ -10760,6 +10893,9 @@ BuschVacuumCard.__internals = {
     historySums,
     historyUrl,
     recleanState,
+    REMOTE,
+    remoteValue,
+    RemoteSender,
     version: CARD_VERSION
 };
 
