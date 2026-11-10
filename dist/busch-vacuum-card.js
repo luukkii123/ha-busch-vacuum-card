@@ -556,6 +556,25 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sprachpaketFrage: 'Paket „{id}“ ({groesse} Bytes) von {url} installieren? Der Roboter lädt es herunter und ersetzt damit seine Sprachausgabe.',
             sprachpaketGesendet: 'Installation von „{id}“ angefragt. Sobald das Gerät fertig ist, zeigt „Sprachpaket“ die neue ID.',
             eingabenBleiben: 'Deine Eingaben bleiben erhalten.',
+            taeglich: 'Täglich',
+            einmalig: 'Einmalig',
+            zeitraum: 'Zeitraum',
+            bearbeitenVon: '{name} bearbeiten',
+            keineZeitraeume: 'Keine Zeiträume. Lege einen an, damit der Roboter in dieser Zeit leise bleibt.',
+            zeitraumNeu: 'Zeitraum hinzufügen',
+            zeitraumBearbeiten: 'Zeitraum bearbeiten',
+            feld_start: 'Beginn',
+            feld_end: 'Ende',
+            feld_days: 'Tage',
+            fehlerZeit: 'Pflichtfeld: Uhrzeit im Format HH:MM.',
+            fehlerGleich: 'Ende muss sich vom Beginn unterscheiden.',
+            fehlerTage: 'Mindestens einen Tag wählen.',
+            ungespeichert: 'Änderungen sind noch nicht gespeichert.',
+            verwerfen: 'Verwerfen',
+            speichern: 'Speichern',
+            loeschen: 'Löschen',
+            zeitraumLoeschenTitel: 'Zeitraum löschen?',
+            zeitraumLoeschenFrage: 'Zeitraum {zeitraum} ({tage}) endgültig löschen?',
             treffer: '{n} Treffer',
             keineTreffer: 'Keine Einstellung gefunden. Versuche einen anderen Begriff.'
         }
@@ -883,6 +902,25 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sprachpaketFrage: 'Install pack “{id}” ({groesse} bytes) from {url}? The robot downloads it and replaces its voice with it.',
             sprachpaketGesendet: 'Installation of “{id}” requested. Once the device is done, “Voice pack” shows the new ID.',
             eingabenBleiben: 'Your input is kept.',
+            taeglich: 'Daily',
+            einmalig: 'Once',
+            zeitraum: 'Period',
+            bearbeitenVon: 'Edit {name}',
+            keineZeitraeume: 'No periods. Create one to keep the robot quiet during that time.',
+            zeitraumNeu: 'Add period',
+            zeitraumBearbeiten: 'Edit period',
+            feld_start: 'Start',
+            feld_end: 'End',
+            feld_days: 'Days',
+            fehlerZeit: 'Required: time as HH:MM.',
+            fehlerGleich: 'End must differ from start.',
+            fehlerTage: 'Choose at least one day.',
+            ungespeichert: 'Changes are not saved yet.',
+            verwerfen: 'Discard',
+            speichern: 'Save',
+            loeschen: 'Delete',
+            zeitraumLoeschenTitel: 'Delete period?',
+            zeitraumLoeschenFrage: 'Permanently delete period {zeitraum} ({tage})?',
             treffer: '{n} results',
             keineTreffer: 'No setting found. Try another term.'
         }
@@ -1419,6 +1457,10 @@ const SETTING_EXTRA = {
     wetness_level: { min: 1, max: 32 },
     auto_empty_area: { min: 5, max: 15 },
     map_rotation: { options: ['0', '90', '180', '270'] },
+    // With `dnd_task` the periods replace the single window (attribute `dnd` is then a list).
+    dnd: { replacedBy: 'dnd_task' },
+    dnd_start: { replacedBy: 'dnd_task' },
+    dnd_end: { replacedBy: 'dnd_task' },
     // Automatic camera light = brightness 101 (switch.py#L548), but its own switch has no
     // write path and `value` 101 fails the 40–100 check (device.py#L2936); the setter gets
     // `params` instead (device.py#L2958). Off writes 40, as the integration's format_fn does.
@@ -1523,7 +1565,7 @@ function settingState(card, model, key) {
     return {
         key, def, entityId, options,
         label: settingLabel(hass, key),
-        present: current.source !== null,
+        present: current.source !== null && !(def.replacedBy && model.can(def.replacedBy)),
         source: current.source,
         value,
         known: value !== undefined,
@@ -3655,6 +3697,7 @@ function groupShown(model, name) {
         case 'consumables': return model.can('consumables');
         case 'info': return !!model.state;
         case 'schedule': return Array.isArray(model.attr('schedule'));
+        case 'dnd': return model.can('dnd_task') || groupKeys(name).some((key) => settingValue(model, key).source !== null);
         case 'audio': return model.attr('voice_packet_id') !== undefined || groupKeys(name).some((key) => settingValue(model, key).source !== null);
         default: return groupKeys(name).some((key) => settingValue(model, key).source !== null);
     }
@@ -3750,6 +3793,7 @@ function groupView(card, name) {
                 body.appendChild(note);
                 return;
             }
+            if (GROUP_HEAD[name]) GROUP_HEAD[name](card, model, body, hass, dialog);
             const list = document.createElement('div');
             list.className = 'settings-list';
             for (const key of groupKeys(name)) {
@@ -3787,6 +3831,276 @@ function infoRow(label, value, name) {
     row.append(text, shown);
     return row;
 }
+
+/**
+ * Weekday order of DnD `wk` (bit mask 1–127) and schedule `repeats` ("0000000").
+ * dreame_vacuum v2.0.3 decodes neither (device.py#L1717, #L1745, #L4263 pass
+ * them through); `repeats` is left-padded (`zfill(7)`, device.py#L1745), so it
+ * is read as a binary number, highest bit first.
+ * shortcut: bit d = Date#getDay d (0 = Sunday) is an assumption until a weekday
+ * example from the Dreame app confirms it; every conversion goes through
+ * WEEKDAY_BIT, so a correction is one line. The mapping is a bijection: an
+ * entry the user does not touch is written back unchanged either way.
+ */
+const WEEKDAY_BIT = (day) => 1 << day;
+const daysOfMask = (mask) => [0, 1, 2, 3, 4, 5, 6].filter((day) => (Number(mask) & WEEKDAY_BIT(day)) !== 0);
+const maskOfDays = (days) => days.reduce((mask, day) => mask | WEEKDAY_BIT(day), 0);
+const maskOfRepeats = (text) => (/^[01]{1,7}$/.test(String(text)) ? parseInt(String(text), 2) : 0);
+const repeatsOfMask = (mask) => Number(mask).toString(2).padStart(7, '0');
+
+/** Weekdays from HA's first day of the week (CORE-16), as getDay numbers. */
+const weekOrder = (hass) => [0, 1, 2, 3, 4, 5, 6].map((i) => (firstWeekday(hass) + i) % 7);
+const dayName = (hass, day, style = 'short') => new Intl.DateTimeFormat(localeOf(hass).language, { weekday: style }).format(new Date(2023, 0, 1 + day));
+
+function daysText(hass, mask) {
+    if (Number(mask) === 127) return translate(hass, 'taeglich');
+    const days = daysOfMask(mask);
+    if (!days.length) return translate(hass, 'einmalig');
+    return weekOrder(hass).filter((day) => days.includes(day)).map((day) => dayName(hass, day)).join(', ');
+}
+
+/** Clock text of an `HH:MM` value in HA's 12/24 h setting. */
+const timeText = (hass, value) => (/^\d{1,2}:\d{2}$/.test(String(value)) ? clockText(hass, Number(value.split(':')[0]), Number(value.split(':')[1])) : String(value || '?'));
+
+const dndTasks = (model) => (Array.isArray(model.attr('dnd')) ? model.attr('dnd').filter((t) => t && t.id !== undefined) : []);
+
+/** The integration's own wire form of a period (set_dnd_tasks, device.py#L4255ff); `ss` passes unchanged. */
+const dndWire = (t) => ({ id: Number(t.id), en: t.enabled ? 1 : 0, st: t.start, et: t.end, wk: Number(t.repeats), ss: t.ss === undefined || t.ss === null ? 0 : Number(t.ss) });
+const dndJson = (list) => JSON.stringify(list.map(dndWire).sort((a, b) => a.id - b.id));
+
+/**
+ * DnD periods change only as the whole list (`vacuum_set_property { key:
+ * 'dnd_task', value: <JSON> }`, check device.py#L2799): always built from the
+ * current attribute, so other periods stay as they are.
+ */
+function writeDnd(card, model, list) {
+    const value = dndJson(list);
+    return trackWrite(card, 'dnd_task', {
+        label: translate(card._hass, 'gruppe_dnd'),
+        check: (m) => dndJson(dndTasks(m)) === value,
+        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_property', { entity_id: card._opts.entity, key: 'dnd_task', value })
+    });
+}
+
+const periodText = (hass, t) => timeText(hass, t.start) + ' – ' + timeText(hass, t.end);
+
+/** A switch button for list entries (period, schedule): role switch, state as a word (R16/R17). */
+function entrySwitch(hass, label, on, busy, onClick) {
+    const toggle = BuschUI.action({ label, text: translate(hass, on ? 'an' : 'aus'), variant: on ? 'primary' : 'secondary', disabled: busy, onClick });
+    toggle.classList.add('setting-switch');
+    toggle.setAttribute('role', 'switch');
+    toggle.setAttribute('aria-checked', String(!!on));
+    if (busy) toggle.setAttribute('aria-busy', 'true');
+    return toggle;
+}
+
+/** Busy or failed state of a list write (dnd_task, schedule), in words. */
+function writeStatus(card, hass, key, className) {
+    const line = document.createElement('p');
+    line.className = 'form-note ' + className;
+    line.setAttribute('role', 'status');
+    const note = card._settingNotes.get(key);
+    if (card._settingWrites.has(key)) line.textContent = translate(hass, 'speichert');
+    else if (note) {
+        line.setAttribute('data-kind', 'error');
+        line.textContent = note + (card._drafts.has(key + ':failed') ? ' ' + translate(hass, 'eingabenBleiben') : '');
+    }
+    return line;
+}
+
+/** Periods (DEV-06): list with on/off, edit, add; options follow as rows. */
+function dndPeriods(card, model, body, hass, dialog) {
+    if (!model.can('dnd_task')) return;
+    const tasks = dndTasks(model).slice().sort((a, b) => String(a.start).localeCompare(String(b.start)));
+    const busy = card._settingWrites.has('dnd_task');
+    const sent = card._drafts.get('dnd_task:failed');
+    if (sent && !busy) {
+        // Confirmed: the input is done. Failed: it goes back into its form for the retry (R12).
+        if (!card._settingNotes.has('dnd_task')) card._drafts.delete('dnd_task:failed');
+        else if (!sent.restored) {
+            sent.restored = true;
+            card._drafts.set(sent.key, sent.draft);
+        }
+    }
+    body.appendChild(writeStatus(card, hass, 'dnd_task', 'dnd-status'));
+    const list = document.createElement('div');
+    list.className = 'settings-list';
+    for (const t of tasks) {
+        const row = document.createElement('div');
+        row.className = 'setting';
+        row.setAttribute('data-dnd', String(t.id));
+        const text = document.createElement('div');
+        text.className = 'setting-text';
+        const name = document.createElement('span');
+        name.className = 'setting-name';
+        name.textContent = periodText(hass, t);
+        const days = document.createElement('span');
+        days.className = 'setting-status';
+        days.textContent = daysText(hass, t.repeats);
+        text.append(name, days);
+        const label = translate(hass, 'zeitraum') + ' ' + periodText(hass, t);
+        const toggle = entrySwitch(hass, label, t.enabled, busy, () => writeDnd(card, model, dndTasks(model).map((x) => (x.id === t.id ? Object.assign({}, x, { enabled: !x.enabled }) : x))));
+        const edit = BuschUI.action({ label: translate(hass, 'bearbeitenVon', { name: label }), icon: 'mdi:pencil-outline', variant: 'icon-only', onClick: () => dialog.show(dndForm(card, t.id)) });
+        edit.setAttribute('data-action', 'dnd-edit');
+        row.append(text, toggle, edit);
+        list.appendChild(row);
+    }
+    if (!tasks.length) {
+        const empty = document.createElement('p');
+        empty.className = 'form-note dnd-empty';
+        empty.textContent = translate(hass, 'keineZeitraeume');
+        body.appendChild(empty);
+    }
+    body.appendChild(list);
+    body.appendChild(viewLink(translate(hass, 'zeitraumNeu'), 'dnd-add', 'mdi:plus', () => dialog.show(dndForm(card, null))));
+}
+
+/** Day toggles in HA's week order: one button per day, `aria-pressed` (R16). */
+function dayPicker(hass, draft, onChange) {
+    const group = document.createElement('div');
+    group.className = 'day-picker';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-labelledby', 'field-days-label');
+    for (const day of weekOrder(hass)) {
+        const pressed = daysOfMask(draft.mask).includes(day);
+        const button = BuschUI.action({ label: dayName(hass, day, 'long'), text: dayName(hass, day), variant: pressed ? 'primary' : 'secondary', onClick: () => {
+            draft.mask ^= WEEKDAY_BIT(day);
+            onChange();
+        } });
+        button.setAttribute('aria-pressed', String(pressed));
+        button.setAttribute('data-day', String(day));
+        group.appendChild(button);
+    }
+    return group;
+}
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function dndErrors(draft) {
+    const errors = {};
+    if (!TIME_PATTERN.test(draft.start)) errors.start = 'fehlerZeit';
+    if (!TIME_PATTERN.test(draft.end)) errors.end = 'fehlerZeit';
+    else if (draft.start === draft.end) errors.end = 'fehlerGleich';
+    if (!draft.mask) errors.days = 'fehlerTage';
+    return errors;
+}
+
+/** Labelled heading for a group of toggles (days), with its inline error. */
+function fieldGroup(id, label, control, error) {
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    const caption = document.createElement('span');
+    caption.className = 'field-label';
+    caption.id = id + '-label';
+    caption.textContent = label;
+    const message = document.createElement('span');
+    message.className = 'field-error';
+    message.textContent = error || '';
+    wrap.append(caption, control, message);
+    return wrap;
+}
+
+/**
+ * Add or edit one period (level three, R25). The draft stays on the card when
+ * the form is left (R04/R10) and is marked unsaved; „Verwerfen“ restores it.
+ */
+function dndForm(card, id) {
+    const hass0 = card._hass;
+    const draftKey = 'dnd:' + (id === null ? 'new' : id);
+    const model0 = card._model();
+    const original = id === null ? null : dndTasks(model0).find((t) => t.id === id);
+    const initial = () => (original ? { start: original.start, end: original.end, mask: Number(original.repeats), enabled: !!original.enabled }
+        : { start: '22:00', end: '08:00', mask: 127, enabled: true });
+    if (!card._drafts.has(draftKey)) card._drafts.set(draftKey, initial());
+    let checked = false;
+    return {
+        title: translate(hass0, id === null ? 'zeitraumNeu' : 'zeitraumBearbeiten'),
+        kind: 'editor',
+        watch: () => [],
+        render: (body, hass, dialog) => {
+            const draft = card._drafts.get(draftKey) || initial();
+            card._drafts.set(draftKey, draft);
+            const dirty = JSON.stringify(draft) !== JSON.stringify(initial());
+            if (dirty) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
+            const errors = checked ? dndErrors(draft) : {};
+            const redraw = () => dialog._render();
+            for (const name of ['start', 'end']) {
+                const input = document.createElement('input');
+                input.setAttribute('type', 'time');
+                input.setAttribute('aria-required', 'true');
+                input.value = draft[name];
+                const field = formField(name, translate(hass, 'feld_' + name), input, errors[name] ? translate(hass, errors[name]) : '');
+                input.addEventListener('input', () => {
+                    const was = JSON.stringify(draft) !== JSON.stringify(initial());
+                    draft[name] = input.value;
+                    if (checked) field.update(dndErrors(draft)[name] ? translate(hass, dndErrors(draft)[name]) : '');
+                    if (was !== (JSON.stringify(draft) !== JSON.stringify(initial()))) redraw();
+                });
+                body.appendChild(field.wrap);
+            }
+            body.appendChild(fieldGroup('field-days', translate(hass, 'feld_days'), dayPicker(hass, draft, redraw), errors.days ? translate(hass, errors.days) : ''));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            if (original) {
+                const remove = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'destructive', onClick: () => dialog.show(dndDelete(card, original)) });
+                remove.setAttribute('data-action', 'delete');
+                actions.appendChild(remove);
+            }
+            if (dirty) {
+                const discard = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), onClick: () => { card._drafts.set(draftKey, initial()); checked = false; redraw(); } });
+                discard.setAttribute('data-action', 'discard');
+                actions.appendChild(discard);
+            }
+            const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', disabled: card._settingWrites.has('dnd_task'), onClick: () => {
+                checked = true;
+                if (Object.keys(dndErrors(draft)).length) return redraw();
+                const model = card._model();
+                const tasks = dndTasks(model);
+                const nextId = tasks.reduce((max, t) => Math.max(max, Number(t.id)), 0) + 1;
+                const entry = { id: original ? original.id : nextId, enabled: draft.enabled, start: draft.start, end: draft.end, repeats: draft.mask, ss: original ? original.ss : 0 };
+                const list = original ? tasks.map((t) => (t.id === original.id ? Object.assign({}, t, entry) : t)) : tasks.concat(entry);
+                if (!writeDnd(card, model, list)) return undefined;
+                // Kept until the device confirms: a failed write leaves the input to retry (R12).
+                card._drafts.delete(draftKey);
+                card._drafts.set('dnd_task:failed', { key: draftKey, draft });
+                dialog.back(1);
+                return undefined;
+            } });
+            save.setAttribute('data-action', 'save');
+            actions.appendChild(save);
+            body.appendChild(actions);
+        }
+    };
+}
+
+/** R13: deleting a period names it; the integration deletes it by id (device.py#L4433). */
+function dndDelete(card, task) {
+    return {
+        title: translate(card._hass, 'zeitraumLoeschenTitel'),
+        kind: 'confirm',
+        watch: () => [],
+        render: (body, hass, dialog) => {
+            body.appendChild(noteLine(translate(hass, 'zeitraumLoeschenFrage', { zeitraum: periodText(hass, task), tage: daysText(hass, task.repeats) })));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            cancel.setAttribute('data-action', 'cancel');
+            const go = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'destructive', onClick: () => {
+                callAction(card, 'delete_dnd_task', String(task.id), { track: 'dnd_task', label: translate(hass, 'gruppe_dnd') });
+                card._drafts.delete('dnd:' + task.id);
+                dialog.back(2);
+            } });
+            go.setAttribute('data-action', 'confirm');
+            actions.append(cancel, go);
+            body.appendChild(actions);
+        }
+    };
+}
+
+/** What groups show above their rows. */
+const GROUP_HEAD = {
+    dnd: dndPeriods
+};
 
 /** What groups show beyond their rows. */
 const GROUP_EXTRAS = {
@@ -4944,6 +5258,18 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     text-align: end;
     overflow-wrap: anywhere;
 }
+.day-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ha-space-1, 4px);
+}
+.day-picker .busch-ui-action {
+    flex: 1 0 44px;
+    padding-inline: var(--ha-space-1, 4px);
+}
+.field-label {
+    overflow-wrap: anywhere;
+}
 .floor-preview {
     flex: none;
     width: 56px;
@@ -5009,8 +5335,10 @@ class BuschVacuumDialog extends HTMLElement {
                 return;
             }
             if (this._views.length > 1) {
-                this._depth = Math.max(0, this._depth - 1);
-                this._views.pop();
+                const steps = Math.min(this._popSteps || 1, this._views.length - 1);
+                this._popSteps = 0;
+                this._depth = Math.max(0, this._depth - steps);
+                this._views.splice(-steps);
                 this._render();
                 return;
             }
@@ -5083,6 +5411,19 @@ class BuschVacuumDialog extends HTMLElement {
             return;
         }
         this.close();
+    }
+
+    /** Several views back at once (a saved form and its confirmation), through history like _goBack. */
+    back(steps) {
+        const n = Math.min(steps, this._views.length - 1);
+        if (n < 1) return;
+        if (this._depth > n) {
+            this._popSteps = n;
+            history.go(-n); // one popstate returns n views
+            return;
+        }
+        this._views.splice(-n);
+        this._render();
     }
 
     close() {
@@ -5837,6 +6178,10 @@ BuschVacuumCard.__internals = {
     settingState,
     settingRow,
     MODULE_VIEWS,
+    daysOfMask,
+    maskOfDays,
+    maskOfRepeats,
+    repeatsOfMask,
     writeSetting,
     callAction,
     DIALOG_STYLES,

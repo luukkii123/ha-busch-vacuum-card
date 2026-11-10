@@ -28,7 +28,7 @@ const zeile = (k, key) => k.I.settingRow(k.karte, k.model(), key);
 /** Neuer Sauger-Zustand wie von HA (Karte und Dialog bekommen ihn). */
 function neu(k, attribute) { k.karte.hass = k.haus.setze(sauger(k.haus, attribute)); }
 const aufrufe = (k) => roh(k.haus.rufe);
-const setze = (k, key, value) => ({ domain: 'dreame_vacuum', service: 'vacuum_set_property', data: { entity_id: 'vacuum.robo', key, value } });
+const setze = (_k, key, value) => ({ domain: 'dreame_vacuum', service: 'vacuum_set_property', data: { entity_id: 'vacuum.robo', key, value } });
 
 // Dialog
 const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
@@ -508,4 +508,163 @@ test('Sprachpaket: Erfolg schließt den Dialog und meldet die Anfrage in „Audi
   eintrag(k.u, 'settings').click();
   gruppe(k, 'audio').click();
   assert.match($d(k.u, '.form-note').textContent, /angefragt/);
+});
+
+// ── Task 6: Nicht stören (ALL-08, DEV-06) ────────────────────────────────────
+
+const DREI = [
+  { id: 0, enabled: true, start: '20:00', end: '09:00', repeats: 127, ss: 0 },
+  { id: 3, enabled: false, start: '12:00', end: '13:00', repeats: 62, ss: 5 },
+  { id: 7, enabled: true, start: '06:00', end: '07:00', repeats: 65, ss: -1 },
+];
+function nichtStoeren(dnd, extra = {}) {
+  const k = einstellungen('voll', { attribute: Object.assign(dnd ? { dnd } : {}, extra) });
+  gruppe(k, 'dnd').click();
+  return k;
+}
+const zeitraum = (k, id) => $d(k.u, `[data-dnd="${id}"]`);
+const dndAufruf = (liste) => setze(null, 'dnd_task', JSON.stringify(liste));
+function tag(k, d) { $d(k.u, `[data-day="${d}"]`).click(); }
+
+test('Wochentage: eine Zuordnung für DnD-Bitfeld und Zeitplan-Zeichenkette, verlustfrei hin und zurück', () => {
+  const { I } = aufbau();
+  for (let m = 0; m < 128; m++) {
+    assert.equal(I.maskOfDays(I.daysOfMask(m)), m);
+    assert.equal(I.maskOfRepeats(I.repeatsOfMask(m)), m);
+  }
+  assert.equal(I.repeatsOfMask(0), '0000000', 'App-Beispiel 10.11.2026: einmaliger Zeitplan');
+  assert.equal(I.repeatsOfMask(127), '1111111');
+  assert.deepEqual(roh(I.daysOfMask(127)), [0, 1, 2, 3, 4, 5, 6]);
+  // Annahme bis zum App-Beispiel mit Wochentag: Bit d = Date#getDay d (0 = Sonntag).
+  assert.deepEqual(roh(I.daysOfMask(2)), [1]);
+});
+
+test('Liste der Zeiträume aus dnd (Start–Ende, Tage, an/aus); leer → Leerzustand mit Hinzufügen', () => {
+  const k = nichtStoeren();
+  const z = zeitraum(k, '0');
+  assert.match(z.textContent, /20:00/);
+  assert.match(z.textContent, /09:00/);
+  assert.match(z.textContent, /Täglich/);
+  assert.equal(z.querySelector('[role="switch"]').getAttribute('aria-checked'), 'true');
+  assert.equal($d(k.u, '[data-setting="dnd"]'), null, 'Gerät mit dnd_task: kein einfacher Schalter');
+  const leer = nichtStoeren([]);
+  assert.match($d(leer.u, '.dnd-empty').textContent, /Keine Zeiträume/);
+  assert.ok($d(leer.u, '[data-action="dnd-add"]'));
+});
+
+test('Anlegen schreibt die ganze Liste als dnd_task-JSON; neue id = höchste + 1', () => {
+  const k = nichtStoeren(DREI);
+  $d(k.u, '[data-action="dnd-add"]').click();
+  assert.equal($d(k.u, 'h1').textContent, 'Zeitraum hinzufügen');
+  feld(k, 'start').value = '08:00'; feld(k, 'start').dispatchEvent(k.u.neuesEreignis('input'));
+  feld(k, 'end').value = '10:00'; feld(k, 'end').dispatchEvent(k.u.neuesEreignis('input'));
+  assert.equal($d(k.u, '[data-day="1"]').getAttribute('aria-pressed'), 'true', 'Vorgabe täglich (R10)');
+  $d(k.u, '[data-action="save"]').click();
+  const soll = [{ id: 0, en: 1, st: '20:00', et: '09:00', wk: 127, ss: 0 }, { id: 3, en: 0, st: '12:00', et: '13:00', wk: 62, ss: 5 },
+    { id: 7, en: 1, st: '06:00', et: '07:00', wk: 65, ss: -1 }, { id: 8, en: 1, st: '08:00', et: '10:00', wk: 127, ss: 0 }];
+  const r = aufrufe(k);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].data.key, 'dnd_task');
+  assert.deepEqual(JSON.parse(r[0].data.value), soll);
+});
+
+test('Bearbeiten eines von drei Zeiträumen lässt die anderen und ss unverändert', () => {
+  const k = nichtStoeren(DREI);
+  zeitraum(k, '3').querySelector('[data-action="dnd-edit"]').click();
+  assert.equal($d(k.u, 'h1').textContent, 'Zeitraum bearbeiten');
+  assert.equal(feld(k, 'start').value, '12:00');
+  assert.equal($d(k.u, '[data-day="1"]').getAttribute('aria-pressed'), 'true');
+  feld(k, 'end').value = '14:30'; feld(k, 'end').dispatchEvent(k.u.neuesEreignis('input'));
+  tag(k, 0);
+  $d(k.u, '[data-action="save"]').click();
+  const liste = JSON.parse(aufrufe(k)[0].data.value);
+  assert.deepEqual(liste[1], { id: 3, en: 0, st: '12:00', et: '14:30', wk: 63, ss: 5 });
+  assert.deepEqual(liste[0], { id: 0, en: 1, st: '20:00', et: '09:00', wk: 127, ss: 0 });
+  assert.deepEqual(liste[2], { id: 7, en: 1, st: '06:00', et: '07:00', wk: 65, ss: -1 });
+});
+
+test('Ein/Aus in der Liste: ganze Liste mit geändertem en, Doppeltipp = ein Aufruf', () => {
+  const k = nichtStoeren(DREI);
+  zeitraum(k, '7').querySelector('[role="switch"]').click();
+  zeitraum(k, '7').querySelector('[role="switch"]').click();
+  const r = aufrufe(k);
+  assert.equal(r.length, 1);
+  assert.deepEqual(JSON.parse(r[0].data.value).map((t) => t.en), [1, 0, 0]);
+  assert.match($d(k.u, '.dnd-status').textContent, /Speichert/);
+});
+
+test('Validierung: Start ≠ Ende, mindestens ein Tag; kein Aufruf (R10)', () => {
+  const k = nichtStoeren([]);
+  $d(k.u, '[data-action="dnd-add"]').click();
+  feld(k, 'start').value = '10:00'; feld(k, 'start').dispatchEvent(k.u.neuesEreignis('input'));
+  feld(k, 'end').value = '10:00'; feld(k, 'end').dispatchEvent(k.u.neuesEreignis('input'));
+  for (let d = 0; d < 7; d++) tag(k, d);
+  $d(k.u, '[data-action="save"]').click();
+  const fehler = $$d(k.u, '.field-error').map((e) => e.textContent).filter(Boolean).join(' ');
+  assert.match(fehler, /Ende/);
+  assert.match(fehler, /Tag/);
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('Löschen nur nach Bestätigung mit Objekt → vacuum_call_action delete_dnd_task (R13)', () => {
+  const k = nichtStoeren(DREI);
+  zeitraum(k, '3').querySelector('[data-action="dnd-edit"]').click();
+  $d(k.u, '[data-action="delete"]').click();
+  assert.equal(dialogVon(k.u).shadowRoot.querySelector('.sheet').getAttribute('data-kind'), 'confirm');
+  assert.match($d(k.u, '.body').textContent, /12:00/);
+  $d(k.u, '[data-action="cancel"]').click();
+  assert.deepEqual(k.haus.rufe, []);
+  k.u.zurueck();
+  $d(k.u, '[data-action="delete"]').click();
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_call_action', data: { entity_id: 'vacuum.robo', key: 'delete_dnd_task', value: '3' } }]);
+});
+
+test('Optionen nur bei aktivem DnD; ohne aktiven Zeitraum gesperrt mit Grund', () => {
+  const k = nichtStoeren();
+  assert.deepEqual(zeilen(k), ['dnd_disable_auto_empty', 'dnd_disable_resume_cleaning', 'dnd_reduce_volume']);
+  assert.equal($d(k.u, '[data-setting="dnd_reduce_volume"]').getAttribute('data-state'), 'ok');
+  const aus = nichtStoeren([{ id: 0, enabled: false, start: '20:00', end: '09:00', repeats: 127, ss: 0 }]);
+  assert.match($d(aus.u, '[data-setting="dnd_reduce_volume"]').querySelector('.setting-status').textContent, /Nicht stören/);
+});
+
+test('Geräte ohne dnd_task: Schalter dnd und Zeiten dnd_start/dnd_end (HH:MM)', () => {
+  const caps = hausAus('voll').states['vacuum.robo'].attributes.capabilities.filter((c) => c !== 'dnd_task');
+  const k = nichtStoeren(true, { capabilities: caps, dnd_start: '22:00', dnd_end: '07:00' });
+  assert.deepEqual(zeilen(k), ['dnd', 'dnd_disable_auto_empty', 'dnd_disable_resume_cleaning', 'dnd_reduce_volume', 'dnd_start', 'dnd_end']);
+  assert.equal($d(k.u, '[data-dnd]'), null);
+  const ende = $d(k.u, '[data-setting="dnd_end"]').querySelector('input');
+  ende.value = '06:30';
+  ende.dispatchEvent(k.u.neuesEreignis('change'));
+  assert.deepEqual(aufrufe(k), [setze(k, 'dnd_end', '06:30')]);
+});
+
+test('Ungespeichertes DnD-Formular bleibt beim Verlassen erhalten und ist als ungespeichert markiert (R04/R10)', () => {
+  const k = nichtStoeren(DREI);
+  zeitraum(k, '0').querySelector('[data-action="dnd-edit"]').click();
+  assert.equal($d(k.u, '[data-kind="dirty"]'), null);
+  feld(k, 'start').value = '21:00'; feld(k, 'start').dispatchEvent(k.u.neuesEreignis('input'));
+  assert.match($d(k.u, '[data-kind="dirty"]').textContent, /nicht gespeichert/);
+  taste(k, 'Escape');
+  k.u.zurueck();
+  zeitraum(k, '0').querySelector('[data-action="dnd-edit"]').click();
+  assert.equal(feld(k, 'start').value, '21:00');
+  $d(k.u, '[data-action="discard"]').click();
+  assert.equal(feld(k, 'start').value, '20:00');
+});
+
+test('DnD-Speichern scheitert: R12-Text in der Liste, Eingaben kommen ins Formular zurück', async () => {
+  const k = nichtStoeren(DREI);
+  k.haus.antwort = () => Promise.reject(new Error('Zeitüberschreitung'));
+  zeitraum(k, '3').querySelector('[data-action="dnd-edit"]').click();
+  feld(k, 'start').value = '11:15'; feld(k, 'start').dispatchEvent(k.u.neuesEreignis('input'));
+  $d(k.u, '[data-action="save"]').click();
+  k.u.zurueck();
+  await mikro();
+  const status = $d(k.u, '.dnd-status');
+  assert.equal(status.getAttribute('data-kind'), 'error');
+  assert.match(status.textContent, /Zeitüberschreitung/);
+  assert.match(status.textContent, /Eingaben bleiben erhalten/);
+  zeitraum(k, '3').querySelector('[data-action="dnd-edit"]').click();
+  assert.equal(feld(k, 'start').value, '11:15');
 });
