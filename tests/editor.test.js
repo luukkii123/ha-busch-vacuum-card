@@ -64,7 +64,7 @@ test('hidden_card_objects: alle Namen aus dem Inventar CORE-18', () => {
   assert.deepEqual(roh(alle.hidden_card_objects.selector.select.options), [
     'title', 'state', 'menu', 'status', 'task_type', 'controls', 'action_buttons', 'animations', 'shortcuts',
     'cruising_history', 'error_message', 'warning_message', 'info_message', 'low_water_message',
-    'map_change_confirmation', 'progress_bar', 'dock_status_indicator',
+    'map_change_confirmation', 'progress_bar', 'dock_status_indicator', 'map_editor',
   ]);
 });
 

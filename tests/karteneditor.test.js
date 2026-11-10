@@ -143,7 +143,13 @@ test('EDI-02 kein hidden_card_objects-Schalter schaltet die Bestätigung ab; map
   assert.throws(() => k.I.mapWrite(k.karte, null, 'vacuum_set_walls', {}), /without confirmation/);
   assert.throws(() => k.I.mapWrite(k.karte, { card: k.karte }, 'vacuum_set_walls', {}), /without confirmation/);
   assert.deepEqual(k.haus.rufe, []);
-  for (const name of alle) assert.ok(!/edit|backup|map_confirm/.test(name), name + ' darf die Kartenbestätigung nicht abschalten');
+  // map_editor blendet nur Stift und Verwaltung aus (Task 4); kein anderer Name klingt nach Abschalten der Bestätigung.
+  for (const name of alle.filter((n) => n !== 'map_editor')) assert.ok(!/edit|backup|map_confirm/.test(name), name + ' darf die Kartenbestätigung nicht abschalten');
+  // Verhalten: auch mit allen ausgeblendeten Teilen erscheint die Bestätigung und sendet erst nach dem Klick.
+  const s = new k.I.MapEditSession(k.karte);
+  k.karte._openDialog(k.I.mapConfirm(k.karte, s, { title: 'x', lines: ['No-Go-Zonen: 1 neu'], action: 'Speichern', calls: [ZONE] }));
+  assert.equal(dialogVon(k.u)._views.at(-1).kind, 'confirm');
+  assert.deepEqual(k.haus.rufe, []);
 });
 
 test('EDI-02 Sperren: laufende Aufgabe, temporäre Karte, Sicherung/Wiederherstellung läuft', async () => {
@@ -533,4 +539,214 @@ test('EDI-01 Leerzustand ohne gespeicherte Karte (R18)', () => {
   verwaltung(k);
   assert.match(dialogVon(k.u).shadowRoot.textContent, /Noch keine gespeicherte Karte/);
   assert.ok($d(k.u, '[data-action="start_fast_mapping"]'), 'Anlegen bleibt möglich');
+});
+
+// ── Task 4: Bearbeitungsmodus (EDI-02) ──────────────────────────────────────
+
+const stift = (k) => k.karte._map.tools.querySelector('[data-action="map-edit"]');
+/** Testwerkzeuge in der Registry: Zonen legt eine No-Go-Zone an, Linien einen Vorhang, Wände nur ein Panel. */
+function werkzeuge(k) {
+  const knopf = (body, action, fn) => { const b = k.u.document.createElement('button'); b.setAttribute('data-action', action); b.addEventListener('click', fn); body.appendChild(b); };
+  k.I.EDIT_TOOLS.zones.panel = (card, editor, body) => knopf(body, 'add-zone', () => { editor.edit('restricted').no_go_areas.push([100, 100, 600, 600]); editor.changed(); });
+  k.I.EDIT_TOOLS.lines.panel = (card, editor, body) => knopf(body, 'add-curtain', () => { editor.edit('curtain').curtains.push([0, 0, 500, 0]); editor.changed(); });
+  k.I.EDIT_TOOLS.walls.panel = (card, editor, body) => knopf(body, 'walls-panel', () => {});
+}
+function bearbeiten(k) {
+  werkzeuge(k);
+  stift(k).click();
+  return dialogVon(k.u);
+}
+const werkzeug = (k, name) => $d(k.u, '[data-tool="' + name + '"]');
+
+test('EDI-02 Stift nur bei can("map_edit"); hidden_card_objects map_editor blendet Stift, Kartenwerkzeug und Menüeintrag aus (Label/Helper DE/EN)', () => {
+  const k = aufbau();
+  assert.equal(k.karte._model().can('map_edit'), true);
+  assert.ok(stift(k));
+  assert.equal(stift(k).getAttribute('aria-label'), 'Karte bearbeiten');
+  const haus = hausAus('voll');
+  haus.services.dreame_vacuum = { vacuum_set_property: {}, vacuum_select_map: {} };
+  const ohneDienste = neueKarte(neueUmgebung(), haus);
+  assert.equal(ohneDienste._model().can('map_edit'), false, 'Karte, aber kein Bearbeitungsdienst');
+  assert.equal(ohneDienste._map.tools.querySelector('[data-action="map-edit"]'), null);
+  const ohneKarte = neueKarte(neueUmgebung(), hausAus('ohne-karte'));
+  assert.equal(ohneKarte._model().can('map_edit'), false, 'ohne Karte kein Stift, kein Fehler');
+  const aus = aufbau({ config: { hidden_card_objects: ['map_editor'] } });
+  assert.equal(stift(aus), null);
+  assert.equal(aus.karte._map.tools.querySelector('[data-action="map-maps"]'), null);
+  assert.ok(!aus.karte._menuEntries(aus.karte._model()).some((e) => e.name === 'maps'), 'Menüeintrag maps ausgeblendet');
+  assert.ok(aus.I.HIDDEN_OBJECTS.includes('map_editor'));
+  for (const lang of ['de', 'en']) {
+    assert.ok(aus.I.TEXTE[lang].texte.obj_map_editor, 'Label ' + lang);
+    assert.match(aus.I.TEXTE[lang].helpers.hidden_card_objects, lang === 'de' ? /Kartenbearbeitung/ : /Map editing/);
+  }
+});
+
+test('EDI-02 Bearbeitungsmodus: Dialog kind editor, Karte wandert in die Ansicht und zurück, Ebene editor, Sitzung; Sperre aufgehoben mit Hinweis; ausgeblendete Objekte sichtbar', () => {
+  const k = aufbau({ config: { locked: 'always', hidden_objects: ['no_go_areas'] } });
+  const m = k.karte._map;
+  assert.equal(m._locked(), true);
+  assert.equal(m.visible('no_go_areas'), false);
+  const d = bearbeiten(k);
+  assert.equal(d._views.at(-1).kind, 'editor');
+  assert.equal($d(k.u, 'h1').textContent, 'Karte bearbeiten');
+  assert.ok(d.shadowRoot.all().includes(m.el), 'Karte liegt in der Ansicht');
+  assert.ok(!k.karte._mapSlot.childNodes.includes(m.el));
+  assert.ok(k.karte._editSession instanceof k.I.MapEditSession);
+  assert.ok(m._layers.has('editor'));
+  assert.equal(m._locked(), false, 'Gesten frei, solange der Modus läuft');
+  assert.match(d.shadowRoot.textContent, /Kartensperre ist während der Bearbeitung aufgehoben/);
+  assert.equal(m.visible('no_go_areas'), true);
+  assert.match(d.shadowRoot.textContent, /Ausgeblendete Objekte .*No-Go/);
+  assert.equal(stift(k), null, 'kein zweiter Einstieg im Modus');
+  $d(k.u, '[data-action="done"]').click();
+  k.u.uhr.vor(400);
+  assert.equal(dialogVon(k.u), null);
+  assert.ok(k.karte._mapSlot.childNodes.includes(m.el), 'Karte zurück in der Karte');
+  assert.equal(m._layers.has('editor'), false);
+  assert.equal(m._locked(), true);
+  assert.equal(m.visible('no_go_areas'), false);
+  assert.equal(k.karte._editSession, null);
+  assert.equal(k.karte._mapEdit, null);
+  assert.ok(stift(k));
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('EDI-02 Werkzeugleiste je editCaps (nur gebaute Werkzeuge), Zähler, Sammel-Speichern mit einer Bestätigung und je Gruppe einem vollständigen Aufruf; Rückgängig', async () => {
+  const k = aufbau();
+  const d = bearbeiten(k);
+  await mikro(); await mikro();
+  assert.ok(werkzeug(k, 'zones') && werkzeug(k, 'lines') && werkzeug(k, 'walls'));
+  assert.equal(werkzeug(k, 'rooms'), null, 'ohne Panel kein Werkzeug');
+  assert.equal(werkzeug(k, 'walls').disabled, true, 'ohne Bearbeitungsdaten gesperrt');
+  assert.match(d.shadowRoot.textContent, /Bearbeitungsdaten der Karte fehlen/);
+  assert.equal($d(k.u, '[data-action="save"]').disabled, true, 'nichts offen');
+  werkzeug(k, 'zones').click();
+  assert.equal(werkzeug(k, 'zones').getAttribute('aria-pressed'), 'true');
+  $d(k.u, '[data-action="add-zone"]').click();
+  assert.match($d(k.u, '[data-counter]').textContent, /Ungespeicherte Änderungen: 1/);
+  // Linien hat eigene Listen: Wechsel ohne Rückfrage? Nein — offene Änderungen des Werkzeugs fragen.
+  werkzeug(k, 'lines').click();
+  assert.ok($d(k.u, '[data-action="keep"]'), 'Werkzeugwechsel mit offenen Änderungen fragt');
+  $d(k.u, '[data-action="keep"]').click();
+  k.u.zurueck();
+  assert.equal(werkzeug(k, 'zones').getAttribute('aria-pressed'), 'true');
+  // Zweite Gruppe über einen Testweg im selben Entwurf.
+  k.karte._mapEdit.edit('curtain').curtains.push([0, 0, 500, 0]);
+  k.karte._mapEdit.changed();
+  $d(k.u, '[data-action="save"]').click();
+  const text = d.shadowRoot.textContent;
+  assert.equal(d._views.at(-1).kind, 'confirm');
+  assert.match(text, /No-Go-Zonen: 1 neu, 0 geändert, 0 gelöscht/);
+  assert.match(text, /Vorhänge: 1 neu, 0 geändert, 0 gelöscht/);
+  assert.deepEqual(k.haus.rufe, []);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_restricted_zone', 'vacuum_set_curtain'], 'eine Bestätigung, je Gruppe ein Aufruf');
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', walls: [[777, -7926, 794, -6336]], zones: [[100, 100, 600, 600]], no_mops: [] }, 'vollständig: die virtuelle Wand geht mit');
+  assert.deepEqual(roh(k.haus.rufe[2].data), { entity_id: 'vacuum.robo', curtains: [[0, 0, 500, 0]] });
+  k.u.zurueck();
+  assert.equal(k.karte._mapEdit.dirty(), false);
+  $d(k.u, '[data-action="undo"]').click();
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Stand vor der letzten Speicherung/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await mikro(); await mikro();
+  assert.deepEqual(dienste(k.haus).slice(3), ['vacuum_set_restricted_zone', 'vacuum_set_curtain']);
+  assert.deepEqual(roh(k.haus.rufe[3].data), { entity_id: 'vacuum.robo', walls: [[777, -7926, 794, -6336]], zones: [], no_mops: [] }, 'Ausgangsliste');
+  assert.deepEqual(roh(k.haus.rufe[4].data), { entity_id: 'vacuum.robo', curtains: [] });
+});
+
+test('EDI-02 Dirty-Schutz: Escape, Zurück, Schließen, Fertig, Aufgabentyp und Kartenwechsel fragen; Verwerfen setzt zurück und geht', () => {
+  const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
+  const d = bearbeiten(k);
+  werkzeug(k, 'zones').click();
+  $d(k.u, '[data-action="add-zone"]').click();
+  const gefragt = () => !!$d(k.u, '[data-action="keep"]');
+  const weiter = () => { $d(k.u, '[data-action="keep"]').click(); k.u.zurueck(); };
+  k.u.document.dispatchEvent(k.u.neuesEreignis('keydown', { key: 'Escape' }));
+  assert.ok(gefragt(), 'Escape');
+  assert.ok(d._sheet.classList.contains('shake'), 'Dialog wackelt');
+  weiter();
+  d.close();
+  assert.ok(gefragt(), 'Schließen');
+  weiter();
+  $d(k.u, '[data-action="done"]').click();
+  assert.ok(gefragt(), 'Fertig');
+  weiter();
+  k.u.zurueck();
+  assert.ok(gefragt(), 'Zurück-Geste');
+  weiter();
+  k.karte._chooseTask('zone');
+  assert.equal(k.karte._task, 'all', 'Aufgabentyp gesperrt, solange Änderungen offen sind');
+  assert.ok(gefragt(), 'Aufgabentyp fragt');
+  weiter();
+  k.karte._map.selectMap(7);
+  assert.ok(gefragt(), 'Kartenwechsel fragt');
+  assert.deepEqual(k.haus.rufe, []);
+  // Verwerfen führt weiter zur Frage von core (CORE-20); Abbrechen dort zurück in den Modus.
+  $d(k.u, '[data-action="discard"]').click();
+  assert.match(d.shadowRoot.textContent, /„Oben“ wechseln/);
+  assert.equal(k.karte._mapEdit.dirty(), false, 'verworfen');
+  $d(k.u, '[data-action="cancel"]').click();
+  k.u.zurueck();
+  assert.ok(werkzeug(k, 'zones'), 'wieder im Bearbeitungsmodus');
+  // Verwerfen beim Verlassen beendet den Modus.
+  $d(k.u, '[data-action="add-zone"]').click();
+  k.u.document.dispatchEvent(k.u.neuesEreignis('keydown', { key: 'Escape' }));
+  $d(k.u, '[data-action="discard"]').click();
+  k.u.uhr.vor(400);
+  assert.equal(dialogVon(k.u), null);
+  assert.equal(k.karte._mapEdit, null);
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('EDI-02 Nur aktive Karte: andere Karte → „Zu <Karte> wechseln“ über selectMap (CORE-20)', () => {
+  const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
+  werkzeuge(k);
+  verwaltung(k);
+  knopfIn(karteZeile(k, 3), 'edit').click();
+  assert.ok(werkzeug(k, 'zones'), 'aktive Karte: Werkzeuge');
+  const k2 = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
+  werkzeuge(k2);
+  verwaltung(k2);
+  knopfIn(karteZeile(k2, 7), 'edit').click();
+  const text = dialogVon(k2.u).shadowRoot.textContent;
+  assert.match(text, /nur die aktive Karte/);
+  assert.equal(werkzeug(k2, 'zones'), null, 'keine Werkzeuge für eine andere Karte');
+  $d(k2.u, '[data-action="switch-map"]').click();
+  assert.deepEqual(k2.haus.rufe, []);
+  assert.match(dialogVon(k2.u).shadowRoot.textContent, /„Oben“ wechseln/);
+  $d(k2.u, '[data-action="confirm"]').click();
+  assert.deepEqual(roh(k2.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_select_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
+});
+
+test('EDI-02 Bearbeitungsdaten beim Betreten; fremdes neues frame_id → Hinweis und Abgleich vor dem Speichern; eigene Speicherung ohne Hinweis', async () => {
+  const k = aufbau({ abruf: (url) => (/saved=1/.test(url) ? { json: bearbeitungsdaten() } : { status: 404 }) });
+  await mikro();
+  const gespeichert = () => k.abrufe.filter((a) => /saved=1/.test(a.url)).length;
+  assert.equal(gespeichert(), 0);
+  const d = bearbeiten(k);
+  await mikro(); await mikro(); await mikro();
+  assert.equal(gespeichert(), 1, 'beim Betreten');
+  assert.equal(werkzeug(k, 'walls').disabled, false, 'mit Daten frei');
+  werkzeug(k, 'zones').click();
+  $d(k.u, '[data-action="add-zone"]').click();
+  k.sauger({ battery_level: 42 });
+  k.haus.fremd(); k.karte.hass = k.haus.hass();
+  assert.equal(gespeichert(), 1, 'fremde Updates: 0 Abrufe');
+  // Fremde Änderung: neue Wischverbotszone und neues frame.
+  k.kamera({ frame_id: 1181, no_mopping_areas: [{ x0: 0, y0: 0, x1: 300, y1: 0, x2: 300, y2: 300, x3: 0, y3: 300, angle: null }] });
+  assert.equal(d._views.at(-1).render && $d(k.u, '[data-action="save"]').disabled, true, 'Abgleich läuft: Speichern wartet');
+  await mikro(); await mikro(); await mikro();
+  assert.equal(gespeichert(), 2, 'neu geladen');
+  assert.match(d.shadowRoot.textContent, /Karte hat sich auf dem Gerät geändert/);
+  $d(k.u, '[data-action="save"]').click();
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Abgeglichen/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(roh(k.haus.rufe.at(-1).data), { entity_id: 'vacuum.robo', walls: [[777, -7926, 794, -6336]], zones: [[100, 100, 600, 600]], no_mops: [[0, 0, 300, 300]] }, 'fremde Wischverbotszone bleibt erhalten');
+  k.u.zurueck();
+  k.kamera({ frame_id: 1182 });
+  await mikro(); await mikro(); await mikro();
+  assert.equal(gespeichert(), 3, 'nach eigener Speicherung neu geladen');
+  assert.doesNotMatch(dialogVon(k.u).shadowRoot.textContent, /Karte hat sich auf dem Gerät geändert/, 'eigene Speicherung: kein Hinweis');
 });

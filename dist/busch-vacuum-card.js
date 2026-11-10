@@ -302,7 +302,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             touch_lock: 'So lange hältst du das Schloss, um die Sperre umzuschalten, 100 bis 400 Millisekunden. Vorgabe 200.',
             disable_haptic: 'Schaltet die kurze Vibration beim Tippen am Handy ab. Vorgabe aus.',
             display_section: 'Welche Teile die Karte zeigt.',
-            hidden_card_objects: 'Gewählte Teile zeigt die Karte nicht; ohne „Bestätigung beim Kartenwechsel“ wechselt sie die Karte ohne Rückfrage. Vorgabe keine.',
+            hidden_card_objects: 'Gewählte Teile zeigt die Karte nicht; ohne „Bestätigung beim Kartenwechsel“ wechselt sie die Karte ohne Rückfrage. „Kartenbearbeitung“ blendet Stift und Kartenverwaltung aus (z. B. für Wanddisplays); Kartenänderungen werden immer bestätigt. Vorgabe keine.',
             map_section: 'Darstellung der Live-Karte: Ansicht, Farben, Symbole und was sie zeigt.',
             map_display: 'Standard zeigt Räume in eigenen Farben, Grundriss alle Räume in einem Ton mit Konturen (nur mit Kartendaten). Vorgabe Standard.',
             color_scheme: 'Farben der Karte; Automatisch folgt hellem oder dunklem Thema von Home Assistant. Vorgabe Automatisch.',
@@ -917,7 +917,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             touch_lock: 'How long you hold the lock to toggle it, 100 to 400 milliseconds. Default 200.',
             disable_haptic: 'Turns off the short vibration on taps on phones. Default off.',
             display_section: 'Which parts the card shows.',
-            hidden_card_objects: 'The card does not show the chosen parts; without “Map change confirmation” it changes maps without asking. Default none.',
+            hidden_card_objects: 'The card does not show the chosen parts; without “Map change confirmation” it changes maps without asking. “Map editing” hides the pen and map management (e.g. for wall displays); map changes are always confirmed. Default none.',
             map_section: 'How the live map looks: view, colours, icons and what it shows.',
             map_display: 'Standard shows rooms in their own colours, floor plan all rooms in one tone with outlines (map data only). Default Standard.',
             color_scheme: 'Map colours; Automatic follows the light or dark Home Assistant theme. Default Automatic.',
@@ -1504,7 +1504,7 @@ const TOUCH_LOCK_MS = { min: 100, max: 400, standard: 200 };
 const HIDDEN_OBJECTS = [
     'title', 'state', 'menu', 'status', 'task_type', 'controls', 'action_buttons', 'animations', 'shortcuts',
     'cruising_history', 'error_message', 'warning_message', 'info_message', 'low_water_message',
-    'map_change_confirmation', 'progress_bar', 'dock_status_indicator'
+    'map_change_confirmation', 'progress_bar', 'dock_status_indicator', 'map_editor'
 ];
 
 /**
@@ -1900,6 +1900,8 @@ class VacuumModel {
         }
         switch (name) {
             case 'map': return this.related.maps.map.length > 0;
+            // map-editor: a map and at least one service that edits its objects (spec: Anknüpfung).
+            case 'map_edit': return this.can('map') && EDIT_SERVICES.some((s) => this.can('dreame_vacuum.' + s));
             // Drying alone (dust bag) is a station too (DOCK-01).
             case 'dock': return ['self_wash_base', 'auto_empty_base', 'dust_bag_drying', 'manual_dust_bag_drying'].some((c) => this.caps.has(c));
             // Station actions (dock): the capability of the integration's button (button.py#L196–L296)
@@ -3377,7 +3379,8 @@ class MapView {
     }
 
     _locked() {
-        return this.card.getAttribute('data-locked') === 'true';
+        // The edit mode lifts the gesture lock for its duration (map-editor, spec: Sperre).
+        return !this.card._mapEdit && this.card.getAttribute('data-locked') === 'true';
     }
 
     _bindGestures() {
@@ -3776,12 +3779,26 @@ class MapView {
     }
 
     /**
-     * map-editor's map tools: "Karten verwalten" (the menu's maps view, R08).
+     * map-editor's map tools: the pen (edit mode, `map_edit`) and "Karten verwalten"
+     * (the menu's maps view, R08); `hidden_card_objects: map_editor` hides both.
      * They open dialogs, so the lock (a gesture lock) leaves them usable.
      */
     _renderEditTools() {
         const card = this.card;
-        const manage = !!(this.model && card._opts && this.model.can('multi_floor_map'));
+        const open = !!(this.model && card._opts && !card._hidden('map_editor'));
+        const edit = open && !card._mapEdit && this.model.can('map_edit');
+        if (edit && !this._editButton) {
+            this._editButton = BuschUI.action({ label: translate(this.hass, 'kartenBearbeiten'), icon: 'mdi:pencil-outline', variant: 'secondary', onClick: () => card._openDialog(mapEditView(card)) });
+            this._editButton.setAttribute('data-action', 'map-edit');
+            this._editButton.setAttribute('aria-haspopup', 'dialog');
+            this._editButton.classList.add('map-tool');
+            this.tools.insertBefore(this._editButton, this._tool.info.button);
+        } else if (!edit && this._editButton) {
+            this._editButton.remove();
+            this._editButton = null;
+        }
+        if (this._editButton) BuschUI.action({ node: this._editButton, label: translate(this.hass, 'kartenBearbeiten'), icon: 'mdi:pencil-outline', variant: 'secondary', onClick: () => card._openDialog(mapEditView(card)) });
+        const manage = open && this.model.can('multi_floor_map');
         if (manage && !this._mapsButton) {
             this._mapsButton = BuschUI.action({ label: translate(this.hass, 'kartenVerwalten'), icon: 'mdi:layers-edit', variant: 'secondary', onClick: () => card._openDialog(mapsView(card)) });
             this._mapsButton.setAttribute('data-action', 'map-maps');
@@ -4538,6 +4555,7 @@ class MapView {
 
     /** Whether an object kind shows on the current map (`hidden_objects`, card and per map). */
     visible(name) {
+        if (this.card._mapEdit && EDIT_SHOWN_OBJECTS.has(name)) return true;
         return !this.config(this._attrs().map_index).hidden_objects.includes(name);
     }
 
@@ -7456,11 +7474,8 @@ function historyDetail(card, name, list, ts) {
     return view;
 }
 
-const CARD_STYLES = BuschUI.cardStyles + `
-:host {
-    display: block;
-    container-type: inline-size;
-}
+/** The map's styles: in the card and, while the edit mode holds the map, in the dialog (map-editor). */
+const MAP_STYLES = `
 .map-slot,
 .map-view,
 .map {
@@ -7952,7 +7967,14 @@ canvas.map-base {
 .map-note[data-kind=unavailable] > ha-icon {
     color: var(--bvc-error-color, var(--error-color, #db4437));
 }
-/* hidden_card_objects: a hidden part never shows, whatever display its class sets. */
+`;
+
+const CARD_STYLES = BuschUI.cardStyles + `
+:host {
+    display: block;
+    container-type: inline-size;
+}
+${MAP_STYLES}/* hidden_card_objects: a hidden part never shows, whatever display its class sets. */
 [hidden] {
     display: none !important;
 }
@@ -8389,7 +8411,7 @@ ha-card {
 }
 `;
 
-const DIALOG_STYLES = BuschUI.cardStyles + `
+const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 :host {
     position: fixed;
     inset: 0;
@@ -9512,6 +9534,8 @@ class BuschVacuumCard extends HTMLElement {
         this._drafts = new Map(); // form → unsaved input, kept when the form is left (R10)
         this._settingTexts = null;
         this._mapSessions = new Set(); // map-editor: sessions of the maps view, fed like _editSession
+        this._mapEdit = null; // map-editor: the open edit mode (MapEditor), lifts the map lock
+        this._editSession = null;
     }
 
     /** Set by Home Assistant in a panel view. */
@@ -9556,7 +9580,7 @@ class BuschVacuumCard extends HTMLElement {
     }
 
     _menuEntries(model) {
-        return menuFor(model).filter((entry) => !(entry.name === 'cruising_history' && this._hidden('cruising_history')));
+        return menuFor(model).filter((entry) => !(entry.name === 'cruising_history' && this._hidden('cruising_history')) && !(entry.name === 'maps' && this._hidden('map_editor')));
     }
 
     _haptic() {
@@ -9862,11 +9886,30 @@ class BuschVacuumCard extends HTMLElement {
      * hidden. map-view calls this with the map's name and the change itself.
      */
     _confirmMapChange(name, change) {
+        // Open map edits belong to this map: ask first; discarding leads on to the change (R10).
+        const editor = this._mapEdit;
+        if (editor && editor.dirty() && this._dialog) {
+            editor.ask(this._dialog, { discard: (d) => {
+                if (this._hidden('map_change_confirmation')) {
+                    d._goBack();
+                    change();
+                } else replaceTop(d, this._mapChangeView(name, change));
+            } });
+            return;
+        }
         if (this._hidden('map_change_confirmation')) {
             change();
             return;
         }
-        const view = {
+        const view = this._mapChangeView(name, change);
+        if (this._dialog && this._dialog.isConnected) this._dialog.show(view);
+        else this._openDialog(view);
+    }
+
+    /** CORE-20's question; inside the edit mode it returns to the editor instead of closing everything. */
+    _mapChangeView(name, change) {
+        const leave = (dialog) => (this._mapEdit ? dialog._goBack() : dialog.close());
+        return {
             title: translate(this._hass, 'kartenWechselTitel'),
             kind: 'confirm',
             render: (body, hass, dialog) => {
@@ -9875,16 +9918,14 @@ class BuschVacuumCard extends HTMLElement {
                 question.textContent = translate(hass, 'kartenWechselFrage', { karte: name });
                 const actions = document.createElement('div');
                 actions.className = 'actions';
-                const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog.close() });
+                const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => leave(dialog) });
                 cancel.setAttribute('data-action', 'cancel');
-                const confirm = BuschUI.action({ label: translate(hass, 'wechseln'), text: translate(hass, 'wechseln'), variant: 'primary', onClick: () => { dialog.close(); change(); } });
+                const confirm = BuschUI.action({ label: translate(hass, 'wechseln'), text: translate(hass, 'wechseln'), variant: 'primary', onClick: () => { leave(dialog); change(); } });
                 confirm.setAttribute('data-action', 'confirm');
                 actions.append(cancel, confirm);
                 body.append(question, actions);
             }
         };
-        if (this._dialog && this._dialog.isConnected) this._dialog.show(view);
-        else this._openDialog(view);
     }
 
     _progressBar(percent) {
@@ -9995,6 +10036,15 @@ class BuschVacuumCard extends HTMLElement {
     }
 
     _chooseTask(name, quiet) {
+        // Another task type is a mode change: open map edits ask first (R10).
+        const editor = this._mapEdit;
+        if (editor && editor.dirty() && this._dialog) {
+            editor.ask(this._dialog, { discard: (d) => {
+                d._goBack();
+                this._chooseTask(name, quiet);
+            } });
+            return;
+        }
         if (!quiet) this._haptic();
         this._task = name;
         this._taskError = null;
@@ -10016,7 +10066,7 @@ class BuschVacuumCard extends HTMLElement {
     /** Map mode and the layer `tasks` for the chosen type; while a task runs the layer shows its targets. */
     _syncTaskMap(model, active, task) {
         const m = this._map;
-        if (!m) return;
+        if (!m || this._mapEdit) return; // the edit mode sets the map's mode and layers
         // TASK-04: "Spot hier" in the obstacle dialog sets a point, never starts (map-view MAP-04 slot).
         if (tasksFor(model).some((t) => t.name === 'spot')) m.addObstacleAction('spot', { label: translate(this._hass, 'spotHier'), icon: 'mdi:target', run: (o) => this._spotHere(o) });
         else m.removeObstacleAction('spot');
@@ -10096,6 +10146,8 @@ class BuschVacuumCard extends HTMLElement {
     /** Map contract events of the task types. */
     _onMapEvent(e) {
         const d = e.detail || {};
+        // The edit mode owns the map's taps and drags (its tools hear them).
+        if (this._mapEdit && e.type !== 'map-changed') return;
         if (e.type === 'map-changed') {
             // IDs and coordinates belong to one map.
             const had = this._selection.rooms.length || this._selection.zones.length || this._selection.spots.length || this._selection.goto;
@@ -11076,7 +11128,31 @@ const EDIT_TEXTS = {
         temporaerErsetzenWahl: 'Welche gespeicherte Karte soll die temporäre Karte ersetzen?',
         temporaerErsetzenZeile: 'Karte „{karte}“ wird durch die temporäre Karte ersetzt.',
         sperre_noTemporary: 'Gesperrt, solange eine temporäre Karte offen ist.',
-        frage_multi_floor_map: 'Multi-Floor (mehrere Karten) auf „{wert}“ stellen? Das ändert, wie der Roboter Karten speichert.'
+        frage_multi_floor_map: 'Multi-Floor (mehrere Karten) auf „{wert}“ stellen? Das ändert, wie der Roboter Karten speichert.',
+        kartenBearbeiten: 'Karte bearbeiten',
+        kartenWerkzeuge: 'Werkzeuge',
+        kartenWerkzeug_rooms: 'Räume',
+        kartenWerkzeug_walls: 'Wände',
+        kartenWerkzeug_zones: 'Zonen',
+        kartenWerkzeug_lines: 'Linien',
+        kartenWerkzeug_carpets: 'Teppiche',
+        kartenWerkzeug_furniture: 'Möbel',
+        kartenWerkzeug_points: 'Zielpunkte',
+        kartenWerkzeug_wifi: 'WLAN',
+        kartenObj_virtual_thresholds: 'Virtuelle Schwellen',
+        kartenObj_walls: 'Wände',
+        kartenObj_doors: 'Türen',
+        kartenOffen: 'Ungespeicherte Änderungen: {n}',
+        kartenKeineOffen: 'Keine ungespeicherten Änderungen.',
+        kartenSperreAufgehoben: 'Die Kartensperre ist während der Bearbeitung aufgehoben; danach gilt sie wieder.',
+        kartenAusgeblendetSichtbar: 'Ausgeblendete Objekte sind zum Bearbeiten sichtbar: {liste}.',
+        kartenNurAktiv: 'Bearbeitet wird nur die aktive Karte. „{karte}“ ist nicht aktiv.',
+        kartenWechselZu: 'Zu „{karte}“ wechseln',
+        kartenGeaendert: 'Die Karte hat sich auf dem Gerät geändert. Der neue Stand ist geladen; deine Änderungen bleiben und werden beim Speichern abgeglichen.',
+        kartenAbgeglichen: 'Abgeglichen mit dem neuen Stand des Geräts: nicht bearbeitete Objektarten gehen so mit, wie sie jetzt sind.',
+        kartenDatenLaden: 'Bearbeitungsdaten werden geladen …',
+        kartenKeineWerkzeuge: 'Für diese Karte gibt es noch keine Bearbeitungswerkzeuge.',
+        obj_map_editor: 'Kartenbearbeitung (Stift und Kartenverwaltung)'
     },
     en: {
         kartenSicherungTitel: 'Save map',
@@ -11130,7 +11206,31 @@ const EDIT_TEXTS = {
         temporaerErsetzenWahl: 'Which saved map should the temporary map replace?',
         temporaerErsetzenZeile: 'Map “{karte}” is replaced by the temporary map.',
         sperre_noTemporary: 'Locked while a temporary map is open.',
-        frage_multi_floor_map: 'Set multi-floor (several maps) to “{wert}”? This changes how the robot stores maps.'
+        frage_multi_floor_map: 'Set multi-floor (several maps) to “{wert}”? This changes how the robot stores maps.',
+        kartenBearbeiten: 'Edit map',
+        kartenWerkzeuge: 'Tools',
+        kartenWerkzeug_rooms: 'Rooms',
+        kartenWerkzeug_walls: 'Walls',
+        kartenWerkzeug_zones: 'Zones',
+        kartenWerkzeug_lines: 'Lines',
+        kartenWerkzeug_carpets: 'Carpets',
+        kartenWerkzeug_furniture: 'Furniture',
+        kartenWerkzeug_points: 'Target points',
+        kartenWerkzeug_wifi: 'Wi-Fi',
+        kartenObj_virtual_thresholds: 'Virtual thresholds',
+        kartenObj_walls: 'Walls',
+        kartenObj_doors: 'Doors',
+        kartenOffen: 'Unsaved changes: {n}',
+        kartenKeineOffen: 'No unsaved changes.',
+        kartenSperreAufgehoben: 'The map lock is lifted while editing; it applies again afterwards.',
+        kartenAusgeblendetSichtbar: 'Hidden objects are shown for editing: {liste}.',
+        kartenNurAktiv: 'Only the active map is edited. “{karte}” is not active.',
+        kartenWechselZu: 'Switch to “{karte}”',
+        kartenGeaendert: 'The map changed on the device. The new state is loaded; your changes are kept and reconciled when you save.',
+        kartenAbgeglichen: 'Reconciled with the device’s new state: object kinds you did not edit go along as they are now.',
+        kartenDatenLaden: 'Loading edit data …',
+        kartenKeineWerkzeuge: 'There are no edit tools for this map yet.',
+        obj_map_editor: 'Map editing (pen and map management)'
     }
 };
 for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
@@ -11697,6 +11797,11 @@ function mapRow(card, model, hass, dialog, home, sessions, entry, name, current)
         select.setAttribute('data-action', 'select');
         row.appendChild(select);
     }
+    if (model.can('map_edit') && !card._hidden('map_editor')) {
+        const edit = BuschUI.action({ label: translate(hass, 'kartenBearbeiten') + ': ' + name, icon: 'mdi:draw', variant: 'icon-only', onClick: () => dialog.show(mapEditView(card, entry.id)) });
+        edit.setAttribute('data-action', 'edit');
+        row.appendChild(edit);
+    }
     if (model.can('dreame_vacuum.vacuum_rename_map')) {
         const rename = BuschUI.action({ label: translate(hass, 'umbenennen') + ': ' + name, icon: 'mdi:pencil-outline', variant: 'icon-only', disabled: temporary,
             onClick: () => dialog.show(renameMapView(card, home, mapSessionFor(card, sessions, entry), entry)) });
@@ -11882,6 +11987,414 @@ function temporaryBlock(card, model, hass, dialog, home, sessions, entries) {
     box.appendChild(actions);
     if (session.error) box.appendChild(noteLine(session.error.text, 'error'));
     return box;
+}
+
+// ── Edit mode (map-editor Task 4: EDI-02) ───────────────────────────────────
+
+/** Map objects the edit mode shows even when `hidden_objects` hides them (spec: sonst unsichtbar bearbeitbar). */
+const EDIT_SHOWN_OBJECTS = new Set(['rooms', 'router', 'carpets', 'detected_carpets', 'deleted_carpets', 'furnitures', 'no_go_areas', 'no_mopping_areas',
+    'virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'ramps', 'curtains', 'predefined_points']);
+
+/**
+ * The edit mode's tools, in toolbar order. A tool appears only with a `panel`
+ * (later tasks register theirs) and when editCaps shows it. Shape:
+ *   icon, lists       — the object lists it edits (its open changes, its discard)
+ *   panel(card, editor, body, hass)   draws its controls under the toolbar (required)
+ *   enter?(card, editor)              when chosen: map mode (setMode) and the like
+ *   draw?(card, editor, group, ctx)   its part of the map layer `editor`
+ *   hit?(card, editor, point, ctx)    taps on that layer
+ *   onMap?(card, editor, event)       map-tap / map-room-tap / map-drag / map-object-tap
+ * Edits go through `editor.edit(group)` (the group's draft lists) and then `editor.changed()`.
+ */
+const EDIT_TOOLS = {
+    rooms: { icon: 'mdi:floor-plan', lists: [], panel: null },
+    walls: { icon: 'mdi:wall', lists: ['walls', 'doors'], panel: null },
+    zones: { icon: 'mdi:vector-rectangle', lists: ['no_go_areas', 'no_mopping_areas', 'ramps'], panel: null },
+    lines: { icon: 'mdi:vector-line', lists: ['virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'virtual_thresholds', 'curtains'], panel: null },
+    carpets: { icon: 'mdi:rug', lists: ['carpets', 'deleted_carpets'], panel: null },
+    furniture: { icon: 'mdi:sofa-outline', lists: ['furnitures'], panel: null },
+    points: { icon: 'mdi:map-marker-multiple-outline', lists: ['predefined_points'], panel: null },
+    wifi: { icon: 'mdi:wifi', lists: ['router'], panel: null }
+};
+
+/** New / changed / removed between two lists (multiset of entries; a moved object counts as changed). */
+function editCount(before, after) {
+    const pool = new Map();
+    for (const entry of before || []) {
+        const key = JSON.stringify(entry);
+        pool.set(key, (pool.get(key) || 0) + 1);
+    }
+    let added = 0;
+    for (const entry of after || []) {
+        const key = JSON.stringify(entry);
+        if (pool.get(key)) pool.set(key, pool.get(key) - 1);
+        else added++;
+    }
+    let removed = 0;
+    for (const n of pool.values()) removed += n;
+    const changed = Math.min(added, removed);
+    return { added: added - changed, changed, removed: removed - changed };
+}
+
+/** The name of an object list: map-view's layer name where there is one (R01), else the editor's. */
+function editListLabel(hass, list) {
+    const own = translate(hass, 'kartenObj_' + list);
+    return own !== 'kartenObj_' + list ? own : translate(hass, 'mapobj_' + list);
+}
+
+/** Replaces the top view in place (its history entry carries the new one): a choice that leads on. */
+function replaceTop(dialog, view) {
+    dialog._leave(dialog._views.slice(-1));
+    dialog._views[dialog._views.length - 1] = view;
+    dialog._render();
+    dialog._focusFirst();
+}
+
+/**
+ * One edit mode: `base` = the lists as on the device (editLists), `draft` =
+ * per write group the lists being edited (EDIT_GROUPS[g].lists → entries),
+ * created by `edit(group)`. Saving sends every group of `draft` complete;
+ * undo sends `base` with the same services. `toolCaps` = editCaps(…), `data` =
+ * editData(…) or null, `tool` = the chosen EDIT_TOOLS name, `session` = its
+ * MapEditSession (also card._editSession while the mode is open).
+ */
+class MapEditor {
+    constructor(card, view) {
+        this.card = card;
+        this.view = view;
+        this.session = new MapEditSession(card);
+        const cur = card._map.current();
+        this.mapId = cur.mapId;
+        this.frame = cur.frameId;
+        this.data = null;
+        this.loading = true;
+        this.base = editLists(cur.objects, null);
+        this.draft = {};
+        this.tool = null;
+        this.ownSave = false; // the next new frame_id is our own save: no "changed" note
+        this.foreign = false;
+        this.toolCaps = editCaps(card._model(), null, cur.objects);
+        this.left = false;
+    }
+
+    lists() {
+        const out = Object.assign({}, this.base);
+        for (const group of Object.values(this.draft)) Object.assign(out, group);
+        return out;
+    }
+
+    /** The draft lists of a write group, copied from `base` on first use. */
+    edit(group) {
+        if (!this.draft[group]) this.draft[group] = Object.fromEntries(EDIT_GROUPS[group].lists.map((list) => [list, cloneList(this.base[list])]));
+        return this.draft[group];
+    }
+
+    _prune() {
+        for (const [group, lists] of Object.entries(this.draft)) {
+            if (Object.entries(lists).every(([list, entries]) => JSON.stringify(entries) === JSON.stringify(this.base[list]))) delete this.draft[group];
+        }
+    }
+
+    /** After an edit: drop unchanged groups, redraw the layer and the view. */
+    changed() {
+        this._prune();
+        if (this.card._map) this.card._map.refresh('editor');
+        rerender(this.card);
+    }
+
+    /** Changed lists with their counts, optionally only `names`. */
+    counts(names) {
+        const out = [];
+        for (const lists of Object.values(this.draft)) {
+            for (const [list, entries] of Object.entries(lists)) {
+                if (names && !names.includes(list)) continue;
+                const c = editCount(this.base[list], entries);
+                if (c.added + c.changed + c.removed) out.push(Object.assign({ list }, c));
+            }
+        }
+        return out;
+    }
+
+    count(names) {
+        return this.counts(names).reduce((n, c) => n + c.added + c.changed + c.removed, 0);
+    }
+
+    dirty(names) {
+        return this.count(names) > 0;
+    }
+
+    /** Back to `base`: everything, or only `names`. */
+    discard(names) {
+        if (!names) this.draft = {};
+        else for (const lists of Object.values(this.draft)) for (const list of names) if (list in lists) lists[list] = cloneList(this.base[list]);
+        this.changed();
+    }
+
+    selectTool(name) {
+        const m = this.card._map;
+        this.tool = name;
+        m.setMode('view');
+        const tool = EDIT_TOOLS[name];
+        if (tool && tool.enter) tool.enter(this.card, this);
+        this.changed();
+    }
+
+    /** Edit data again (enter, new frame_id): untouched draft lists follow the device, edited ones stay (Abgleich). */
+    reload() {
+        const card = this.card;
+        this.loading = true;
+        const frame = this.frame;
+        return loadEditData(card).then((data) => {
+            if (this.left || frame !== this.frame) return;
+            const cur = card._map.current();
+            const fresh = editLists(cur.objects, data);
+            for (const lists of Object.values(this.draft)) {
+                for (const list of Object.keys(lists)) if (JSON.stringify(lists[list]) === JSON.stringify(this.base[list])) lists[list] = cloneList(fresh[list]);
+            }
+            this.base = fresh;
+            this.data = data;
+            this.toolCaps = editCaps(card._model(), data, cur.objects);
+            this.loading = false;
+            this.changed();
+        });
+    }
+
+    /** On every hass: a new frame_id reloads; not after our own save → note "changed" (no silent overwrite). */
+    sync() {
+        if (this.left || !this.card._map) return;
+        const cur = this.card._map.current();
+        if (cur.frameId === this.frame) return;
+        this.frame = cur.frameId;
+        if (!this.ownSave) this.foreign = true;
+        this.ownSave = false;
+        this.reload();
+        rerender(this.card); // "loading": saving waits for the reconciliation
+    }
+
+    /** One confirmation, one line per object list, one call per group with complete lists (payloadFor). */
+    saveConfirm() {
+        const card = this.card, hass = card._hass;
+        const merged = this.lists();
+        const mapId = card._map.current().mapId;
+        const groups = Object.keys(this.draft);
+        const lines = this.counts().map((c) => editCountLine(hass, editListLabel(hass, c.list), c));
+        const undoText = lines.join('; ');
+        if (this.foreign) lines.push(translate(hass, 'kartenAbgeglichen'));
+        const before = cloneList(this.base);
+        return mapConfirm(card, this.session, {
+            title: translate(hass, 'kartenSicherungTitel'),
+            lines,
+            action: translate(hass, 'speichern'),
+            calls: groups.map((g) => payloadFor(g, merged, mapId)).filter(Boolean),
+            undo: { text: undoText, calls: groups.map((g) => payloadFor(g, before, mapId)).filter(Boolean), base: before },
+            done: (dialog) => {
+                this.base = cloneList(merged);
+                this.draft = {};
+                this.ownSave = true;
+                this.foreign = false;
+                this.changed();
+                backTo(dialog, this.view);
+            }
+        });
+    }
+
+    /** R10/Regel 2: open changes → save / discard / keep editing; `discard(dialog)` says how it goes on. */
+    ask(dialog, { names, discard }) {
+        dialog.show(dirtyChoice(this.card, {
+            count: () => this.count(names),
+            save: (d) => replaceTop(d, this.saveConfirm()),
+            discard: (d) => {
+                this.discard(names);
+                discard(d);
+            }
+        }));
+    }
+
+    /** Back to the card: map, lock, task layer and mode as before (idempotent: several leave paths). */
+    leave() {
+        if (this.left) return;
+        this.left = true;
+        const card = this.card, m = card._map;
+        if (m) {
+            for (const type of ['map-tap', 'map-room-tap', 'map-drag', 'map-object-tap']) m.el.removeEventListener(type, this._onMap);
+            m.removeLayer('editor');
+            m.setMode('view');
+            card._mapSlot.appendChild(m.el);
+        }
+        if (card._editSession === this.session) card._editSession = null;
+        if (card._mapEdit === this) card._mapEdit = null;
+        card._taskMapKey = null;
+        if (m) {
+            m.lockChanged();
+            m.refresh();
+        }
+        card._update();
+    }
+
+    enter() {
+        const card = this.card, m = card._map;
+        card._mapEdit = this;
+        card._editSession = this.session;
+        this._onMap = (e) => {
+            const tool = EDIT_TOOLS[this.tool];
+            if (tool && tool.onMap) tool.onMap(card, this, e);
+        };
+        for (const type of ['map-tap', 'map-room-tap', 'map-drag', 'map-object-tap']) m.el.addEventListener(type, this._onMap);
+        m.removeLayer('tasks');
+        m.setMode('view');
+        m.addLayer('editor', {
+            z: 90,
+            render: (group, ctx) => {
+                const tool = EDIT_TOOLS[this.tool];
+                if (tool && tool.draw) tool.draw(card, this, group, ctx);
+            },
+            hit: (point, ctx) => {
+                const tool = EDIT_TOOLS[this.tool];
+                return tool && tool.hit ? tool.hit(card, this, point, ctx) : null;
+            }
+        });
+        m.lockChanged();
+        m.refresh();
+        this.reload();
+    }
+}
+
+/**
+ * EDI-02 edit mode: the card's map moves into this view for its duration,
+ * tools by editCaps, one collected save. `mapId` (vacuum `maps[].id`) asks for
+ * a map; only the active one is edited, another is offered to switch to (CORE-20).
+ */
+function mapEditView(card, mapId) {
+    let editor = null;
+    const view = {
+        title: translate(card._hass, 'kartenBearbeiten'),
+        kind: 'editor',
+        watch: () => {
+            const model = card._model();
+            return [card._opts.entity, ...model.related.maps.map.slice(0, 1)];
+        },
+        guard: (dialog) => {
+            if (!editor || !editor.dirty()) return false;
+            editor.ask(dialog, { discard: (d) => {
+                const index = d._views.indexOf(view);
+                if (index > 0) backTo(d, d._views[index - 1]);
+                else d.close();
+            } });
+            return true;
+        },
+        leave: () => {
+            if (editor) editor.leave();
+        },
+        update: () => {
+            if (editor) editor.sync();
+        },
+        render: (body, hass, dialog) => {
+            const m = card._map;
+            if (!m) {
+                body.appendChild(noteLine(translate(hass, 'keineKarte')));
+                return;
+            }
+            const active = m._activeMapId();
+            const wanted = mapId === undefined || mapId === null ? active : mapId;
+            if (active !== null && wanted !== null && String(wanted) !== String(active)) {
+                const entry = m._maps().find((e) => String(e.id) === String(wanted));
+                const name = entry ? mapEntryName(entry) : String(wanted);
+                body.appendChild(noteLine(translate(hass, 'kartenNurAktiv', { karte: name }), 'warning'));
+                const label = translate(hass, 'kartenWechselZu', { karte: name });
+                const go = BuschUI.action({ label, text: label, variant: 'primary', disabled: m._busy(), onClick: () => m.selectMap(wanted) });
+                go.setAttribute('data-action', 'switch-map');
+                const actions = document.createElement('div');
+                actions.className = 'actions';
+                actions.appendChild(go);
+                body.appendChild(actions);
+                return;
+            }
+            if (!editor) {
+                editor = new MapEditor(card, view);
+                editor.enter();
+            }
+            editRender(card, editor, body, hass, dialog);
+        }
+    };
+    return view;
+}
+
+function editRender(card, editor, body, hass, dialog) {
+    const m = card._map;
+    if (card._locked) body.appendChild(noteLine(translate(hass, 'kartenSperreAufgehoben')));
+    const hidden = m.config(m.current().index).hidden_objects.filter((name) => EDIT_SHOWN_OBJECTS.has(name));
+    if (hidden.length) body.appendChild(noteLine(translate(hass, 'kartenAusgeblendetSichtbar', { liste: hidden.map((n) => translate(hass, 'mapobj_' + n)).join(', ') })));
+    if (editor.foreign) body.appendChild(noteLine(translate(hass, 'kartenGeaendert'), 'warning'));
+    if (editor.loading) body.appendChild(noteLine(translate(hass, 'kartenDatenLaden'), 'busy'));
+    const holder = document.createElement('div');
+    holder.className = 'edit-map';
+    holder.appendChild(m.el);
+    body.appendChild(holder);
+    const tools = EDIT_TOOL_NAMES.filter((name) => EDIT_TOOLS[name].panel && editor.toolCaps[name] && editor.toolCaps[name].shown);
+    if (!tools.length) body.appendChild(noteLine(translate(hass, 'kartenKeineWerkzeuge')));
+    const bar = document.createElement('div');
+    bar.className = 'edit-tools';
+    bar.setAttribute('role', 'toolbar');
+    bar.setAttribute('aria-label', translate(hass, 'kartenWerkzeuge'));
+    for (const name of tools) {
+        const cap = editor.toolCaps[name];
+        const label = translate(hass, 'kartenWerkzeug_' + name);
+        const button = BuschUI.action({ label, text: label, icon: EDIT_TOOLS[name].icon, disabled: cap.locked, onClick: () => {
+            if (editor.tool === name) return;
+            const open = editor.tool ? EDIT_TOOLS[editor.tool].lists : [];
+            if (open.length && editor.dirty(open)) {
+                editor.ask(dialog, { names: open, discard: (d) => {
+                    editor.selectTool(name);
+                    d._goBack();
+                } });
+                return;
+            }
+            editor.selectTool(name);
+        } });
+        button.setAttribute('data-tool', name);
+        button.setAttribute('aria-pressed', String(editor.tool === name));
+        bar.appendChild(button);
+    }
+    if (tools.length) body.appendChild(bar);
+    const reasons = [...new Set(tools.filter((n) => editor.toolCaps[n].locked).map((n) => editor.toolCaps[n].reason))];
+    for (const reason of reasons) body.appendChild(noteLine(translate(hass, reason), 'locked'));
+    const tool = editor.tool && EDIT_TOOLS[editor.tool];
+    if (tool && tool.panel && tools.includes(editor.tool)) {
+        const panel = document.createElement('div');
+        panel.className = 'edit-panel';
+        panel.setAttribute('data-panel', editor.tool);
+        tool.panel(card, editor, panel, hass);
+        body.appendChild(panel);
+    }
+    const count = editor.count();
+    const counter = noteLine(count ? translate(hass, 'kartenOffen', { n: count }) : translate(hass, 'kartenKeineOffen'), count ? 'dirty' : null);
+    counter.setAttribute('data-counter', String(count));
+    body.appendChild(counter);
+    const last = editor.session.undo[editor.session.undo.length - 1];
+    if (last && !count) {
+        const note = noteLine(translate(hass, 'kartenGespeichert') + ' · ' + last.text, 'success');
+        const undo = BuschUI.action({ label: translate(hass, 'rueckgaengig'), text: translate(hass, 'rueckgaengig'), icon: 'mdi:undo', onClick: () => dialog.show(mapUndoConfirm(card, editor.session, (d) => {
+            editor.base = cloneList(last.base);
+            editor.draft = {};
+            editor.ownSave = true;
+            editor.changed();
+            backTo(d, editor.view);
+        })) });
+        undo.setAttribute('data-action', 'undo');
+        note.appendChild(undo);
+        body.appendChild(note);
+    }
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', disabled: !count || editor.loading || !!editor.session.busy,
+        onClick: () => dialog.show(editor.saveConfirm()) });
+    save.setAttribute('data-action', 'save');
+    const drop = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), disabled: !count, onClick: () => editor.discard() });
+    drop.setAttribute('data-action', 'discard-draft');
+    const done = BuschUI.action({ label: translate(hass, 'fertig'), text: translate(hass, 'fertig'), onClick: () => (dialog._views.length > 1 ? dialog._goBack() : dialog.close()) });
+    done.setAttribute('data-action', 'done');
+    actions.append(drop, done, save);
+    body.appendChild(actions);
 }
 
 // ---------------------------------------------------------------------------
@@ -12478,6 +12991,10 @@ BuschVacuumCard.__internals = {
     editCaps,
     loadEditData,
     mapsView,
+    EDIT_TOOLS,
+    MapEditor,
+    mapEditView,
+    editCount,
     REMOTE,
     remoteValue,
     RemoteSender,
