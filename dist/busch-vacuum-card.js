@@ -636,6 +636,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sperre_customized: 'Customized Cleaning ist an: dieser Wert gilt je Raum.',
             sperre_customizedMode: 'Customized Cleaning ist an: dieser Wert gilt je Raum.',
             sperre_savedMap: 'Nur mit gespeicherter Karte, nicht mit einer temporären.',
+            sperre_cleangeniusListe: 'CleanGenius geht gerade nicht: während einer Aufgabe, bei Zone/Spot oder ohne eingesetzten Mop.',
             einstellungen: 'Einstellungen',
             reinigungseinstellungen: 'Reinigungseinstellungen',
             abschnitt_cleangenius: 'CleanGenius',
@@ -1145,6 +1146,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sperre_customized: 'Customized Cleaning is on: this value is set per room.',
             sperre_customizedMode: 'Customized Cleaning is on: this value is set per room.',
             sperre_savedMap: 'Only with a saved map, not a temporary one.',
+            sperre_cleangeniusListe: 'CleanGenius is not possible now: during a task, for zones/spots or without the mop attached.',
             einstellungen: 'Settings',
             reinigungseinstellungen: 'Cleaning settings',
             abschnitt_cleangenius: 'CleanGenius',
@@ -1811,6 +1813,8 @@ const SETTING_EXTRA = {
     // 1–15 where the station washes by frequency (number.py#L166).
     wetness_level: { min: 1, max: (model) => (model.can('mop_clean_frequency') ? 15 : 32) },
     // Only while CleanGenius is on; its list stays empty otherwise (types.py#L2149).
+    // Its list empties while CleanGenius may not change (types.py#L2143): say which cases.
+    cleangenius: { emptyReason: 'sperre_cleangeniusListe' },
     cleangenius_mode: { shownIf: (model) => !['off', ''].includes(enumName(settingValue(model, 'cleangenius').value)) },
     auto_empty_area: { min: 5, max: 15 },
     // Rotates the robot's stored map (set_map_rotation, device.py#L6569): only after asking (R13).
@@ -1961,7 +1965,7 @@ function settingState(card, model, key) {
     const value = busy && busy.want !== undefined ? busy.want : current.value;
     const failed = def.needs.find((need) => !SETTING_LOCKS[need](model));
     const reason = failed ? translate(hass, 'sperre_' + failed)
-        : def.control === 'select' && options && !options.length ? translate(hass, 'sperre_liste') : '';
+        : def.control === 'select' && options && !options.length ? translate(hass, def.emptyReason || 'sperre_liste') : '';
     return {
         key, def, entityId, options,
         label: settingLabel(hass, key),
@@ -5263,7 +5267,9 @@ function cleanSettingsView(card) {
             const sections = [
                 ['cleangenius', model.can('cleangenius') ? rows(['cleangenius', 'cleangenius_mode']) : []],
                 ['basic', rows(CLEAN_BASIC).concat(repeatsRow(card, { hint: true }))],
-                ['customized', model.can('customized_cleaning') ? rows(['customized_cleaning']) : []],
+                // SET-04: CleanGenius picks per room itself; the section says so instead of the switch.
+                ['customized', !model.can('customized_cleaning') ? []
+                    : model.attr('cleangenius_cleaning') === true ? [noteLine(translate(hass, 'cleanGeniusRaeume'))] : rows(['customized_cleaning'])],
                 ['more', groupShown(model, 'cleaning')
                     ? [viewLink(translate(hass, 'weitereReinigung'), 'more-cleaning', 'mdi:robot-vacuum', () => dialog.show(groupView(card, 'cleaning')))] : []]
             ];

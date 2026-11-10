@@ -152,3 +152,36 @@ test('„Weitere Reinigungseinstellungen“ springt in device-settings, Gruppe R
   assert.equal($d(k.u, 'h1').textContent, 'Reinigung');
   assert.ok(zeileD(k, 'max_suction_power'), 'Zeilen der Gruppe cleaning');
 });
+
+// ── Task 2: CleanGenius ─────────────────────────────────────────────────────
+
+test('CleanGenius: Auswahl schreibt über vacuum_set_property; Modus nur bei CleanGenius an', () => {
+  const k = einstellungen();
+  const feld = zeileD(k, 'cleangenius').querySelector('select');
+  assert.equal(feld.value, 'Off');
+  assert.equal(zeileD(k, 'cleangenius_mode'), null, 'CleanGenius aus: Modus ausgeblendet');
+  feld.value = 'Deep cleaning';
+  feld.dispatchEvent(k.u.neuesEreignis('change'));
+  assert.deepEqual(aufrufe(k), [setze('cleangenius', 'Deep cleaning')]);
+  const an = einstellungen('voll', { attribute: { cleangenius: 'Routine cleaning', cleangenius_cleaning: true, cleangenius_mode_list: ['Vacuum and mop', 'Mop after vacuum'] } });
+  const modus = zeileD(an, 'cleangenius_mode').querySelector('select');
+  assert.equal(modus.value, 'Mop after vacuum');
+  modus.value = 'Vacuum and mop';
+  modus.dispatchEvent(an.u.neuesEreignis('change'));
+  assert.deepEqual(aufrufe(an), [setze('cleangenius_mode', 'Vacuum and mop')]);
+});
+
+test('CleanGenius an: Customized Cleaning ausgeblendet mit Satz, Grundwerte gesperrt mit Grund', () => {
+  const k = einstellungen('voll', { attribute: { cleangenius: 'Routine cleaning', cleangenius_cleaning: true } });
+  assert.equal(zeileD(k, 'customized_cleaning'), null);
+  assert.match($d(k.u, '[data-section="customized"]').textContent, /CleanGenius wählt die Einstellungen je Raum selbst/);
+  for (const key of ['cleaning_mode', 'suction_level', 'wetness_level', 'cleaning_route']) {
+    assert.equal(zeileD(k, key).getAttribute('data-state'), 'locked', key);
+    assert.match(zeileD(k, key).textContent, /CleanGenius/, key);
+  }
+});
+
+test('CleanGenius selbst gesperrt (leere Liste: Aufgabe, Zone/Spot, Mop fehlt) mit Grund', () => {
+  assert.match(grund(aufbau('voll', { attribute: { cleangenius_list: [] } }), 'cleangenius'), /Zone\/Spot|Mop/);
+  assert.match(grund(aufbau('voll', { zustand: 'cleaning', attribute: { started: true } }), 'cleangenius'), /Während einer Aufgabe/);
+});
