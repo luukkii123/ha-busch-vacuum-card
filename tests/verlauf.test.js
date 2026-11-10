@@ -478,3 +478,31 @@ test('Nochmal reinigen: nicht bei älteren Läufen; gesperrt mit Grund bei ander
   assert.equal(nachKnopf(k2).disabled, true);
   assert.match($d(k2.u, '[data-note="reclean"]').textContent, /anderen Karte/);
 });
+
+// ── Task 6: Cruising-Verlauf ────────────────────────────────────────────────
+
+test('Cruising: Liste ohne Flächensumme, Detail mit cruising=1, Dauer/Art/Karte, kein Nochmal-reinigen, kein Umschalter', async () => {
+  const k = aufbau('voll', { antwort: datenAntwort({ 1745078136: { json: verlaufsdaten({ wifi_map_data: Object.assign({}, verlaufsdaten().wifi_map_data), map_name: undefined }) } }), states: (s) => {
+    const c = s['sensor.robo_cruising_history'];
+    const e = Object.assign({}, c.attributes['2025-04-19 17:55'], { map_name: 'Karte 1' });
+    return { 'sensor.robo_cruising_history': Object.assign({}, c, { attributes: Object.assign({}, c.attributes, { '2025-04-19 17:55': e }) }) };
+  } });
+  oeffne(k, 'cruising_history');
+  assert.equal($d(k.u, 'h1').textContent, 'Cruising-Verlauf');
+  assert.equal($d(k.u, '.history-sums').textContent, '1 Lauf · 1 min');
+  const zeile = $d(k.u, '[data-run="1745078136"]');
+  assert.match(zeile.textContent, /2025/, 'anderes Jahr mit Jahreszahl');
+  assert.equal(zeile.querySelector('.run-status').getAttribute('data-level'), 'interrupted');
+  zeile.click();
+  await mikro(); await mikro();
+  assert.match(verlaufAbrufe(k)[0].url, /&v=1745078136&cruising=1&data=1$/);
+  assert.equal(wert(k, 'duration'), '1 min');
+  assert.equal(wert(k, 'cruising_type'), '0');
+  assert.equal(wert(k, 'map_name'), 'Karte 1');
+  assert.equal(wert(k, 'area'), null, 'keine Fläche');
+  assert.equal(nachKnopf(k), null);
+  assert.equal($d(k.u, '[role="tablist"]'), null);
+  assert.ok(leinwand(k));
+  const run = k.I.historyRuns(k.haus.states['sensor.robo_cruising_history'])[0];
+  assert.match(k.I.historyUrl(k.haus.states['camera.robo_map'], run, { kind: 'cruising_history' }), /&cruising=1&info=0$/);
+});
