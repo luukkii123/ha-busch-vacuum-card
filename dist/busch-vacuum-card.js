@@ -7946,6 +7946,8 @@ canvas.map-base {
     stroke-width: 2px;
 }
 [data-layer=editor] line[data-edit] { stroke-width: 4px; }
+/* doors: wider than walls, so the two read apart without colour (R17) */
+[data-layer=editor] line[data-edit=doors] { stroke-width: 8px; stroke-opacity: 0.7; }
 [data-layer=editor] [data-edit][data-state=new] { stroke-dasharray: 8 4; }
 [data-layer=editor] [data-edit][data-state=changed] { stroke-dasharray: 2 3; }
 [data-layer=editor] [data-edit][data-state=removed], [data-layer=editor] [data-edit][data-state=hidden] { opacity: 0.35; stroke-dasharray: 1 5; fill-opacity: 0; }
@@ -11367,7 +11369,17 @@ const EDIT_TEXTS = {
         moebel_26: 'Tisch',
         moebel_29: 'Sessel (schmal)',
         moebel_30: 'Dreisitzer-Sofa (schmal)',
-        moebel_31: 'L-Sofa (rechts)'
+        moebel_31: 'L-Sofa (rechts)',
+        kartenEins_walls: 'Wand',
+        kartenEins_doors: 'Tür',
+        kartenObjHinweis_walls: 'Antippen wählt eine Wand oder Tür; die Endgriffe verschieben die Enden (bei Türen die Breite), die Linie verschiebt sie (Lage). Zurücksetzen holt die Ausgangslage. Anlegen und Löschen von Wänden und Türen hat die Integration keinen öffentlichen Schreibweg — die Anzahl bleibt gleich.',
+        waendeRaum: 'Raum',
+        waendeAlle: 'Alle Räume',
+        waendeZuruecksetzen: 'Auf Ausgangslage',
+        waendeRaumZuruecksetzen: 'Wände von {raum} zurücksetzen',
+        waendeAlleZuruecksetzen: 'Alle Wände und Türen zurücksetzen',
+        waendeAnzahl: 'Die Anzahl der Wände je Raum und der Türen muss gleich bleiben (sonst verwirft das Gerät die Änderung). Verwirf die Änderung, um zu speichern.',
+        waendeTasten: 'Pfeiltasten in den Feldern: 50 mm, mit Umschalt 10 mm. Auf einem Eintrag der Liste verschieben die Pfeiltasten die Wand oder Tür.'
     },
     en: {
         kartenSicherungTitel: 'Save map',
@@ -11620,7 +11632,17 @@ const EDIT_TEXTS = {
         moebel_26: 'Table',
         moebel_29: 'Armchair (narrow)',
         moebel_30: 'Three-seat sofa (narrow)',
-        moebel_31: 'L-shaped sofa (right)'
+        moebel_31: 'L-shaped sofa (right)',
+        kartenEins_walls: 'Wall',
+        kartenEins_doors: 'Door',
+        kartenObjHinweis_walls: 'A tap picks a wall or door; the end handles move the ends (for doors the width), the line moves it (position). Reset brings back the original position. The integration has no public way to add or delete walls and doors — their number stays the same.',
+        waendeRaum: 'Room',
+        waendeAlle: 'All rooms',
+        waendeZuruecksetzen: 'To original position',
+        waendeRaumZuruecksetzen: 'Reset walls of {raum}',
+        waendeAlleZuruecksetzen: 'Reset all walls and doors',
+        waendeAnzahl: 'The number of walls per room and of doors must stay the same (otherwise the device drops the change). Discard the change to save.',
+        waendeTasten: 'Arrow keys in the fields: 50 mm, with Shift 10 mm. On an entry of the list the arrow keys move the wall or door.'
     }
 };
 for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
@@ -11821,20 +11843,22 @@ function mapUndoConfirm(card, session, done) {
 }
 
 /** R10/Regel 2: open changes on leave → the choice save / discard / keep editing. */
-function dirtyChoice(card, { count, save, discard }) {
+function dirtyChoice(card, { count, save, discard, blocked = null }) {
     return {
         title: translate(card._hass, 'kartenWackeln'),
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
             body.appendChild(noteLine(translate(hass, 'kartenOffenFrage', { n: count() })));
+            const stop = blocked ? blocked() : '';
+            if (stop) body.appendChild(noteLine(translate(hass, stop), 'error'));
             const actions = document.createElement('div');
             actions.className = 'actions';
             const keep = BuschUI.action({ label: translate(hass, 'kartenWeiter'), text: translate(hass, 'kartenWeiter'), onClick: () => dialog._goBack() });
             keep.setAttribute('data-action', 'keep');
             const drop = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), variant: 'destructive', onClick: () => discard(dialog) });
             drop.setAttribute('data-action', 'discard');
-            const store = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', onClick: () => save(dialog) });
+            const store = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', disabled: !!stop, onClick: () => save(dialog) });
             store.setAttribute('data-action', 'save');
             actions.append(keep, drop, store);
             body.appendChild(actions);
@@ -12066,6 +12090,11 @@ const EDIT_GROUPS = {
         const walls = {};
         for (const [room, ...values] of l.walls) (walls[room] = walls[room] || []).push(values);
         return { walls, doors: l.doors, map_id: mapId };
+    },
+    // map.py#L3264 drops a room's walls or all doors whose number changed: same count or no save.
+    check: (l, base) => {
+        const per = (walls) => JSON.stringify(Object.entries((walls || []).reduce((c, w) => Object.assign(c, { [w[0]]: (c[w[0]] || 0) + 1 }), {})).sort());
+        return per(l.walls) === per(base.walls) && (l.doors || []).length === (base.doors || []).length ? '' : 'waendeAnzahl';
     } },
     // One position, not a list; without one there is nothing to send.
     router: { service: 'vacuum_set_router_position', lists: ['router'], data: (l) => (l.router.length ? { x: l.router[0][0], y: l.router[0][1] } : null) },
@@ -12174,6 +12203,7 @@ function editCaps(model, data, attrs) {
     caps.carpets.features = carpets;
     caps.zones.kinds = kinds('zones');
     caps.lines.kinds = kinds('lines');
+    caps.walls.kinds = ['walls', 'doors'];
     caps.carpets.kinds = ['carpets'];
     caps.furniture.kinds = ['furnitures'];
     caps.points.kinds = ['predefined_points'];
@@ -12546,7 +12576,7 @@ const EDIT_TOOLS = {
     rooms: { icon: 'mdi:floor-plan', lists: ['room_names', 'room_types', 'hidden_segments', 'floor_materials'], panel: (...a) => roomsPanel(...a),
         enter: (card, editor) => card._map.setMode(editor.split ? 'drag' : 'pick-room', { selected: () => roomsPicked(editor) }), onMap: (...a) => roomsOnMap(...a),
         draw: (...a) => drawSplit(...a), hit: (...a) => hitSplit(...a) },
-    walls: { icon: 'mdi:wall', lists: ['walls', 'doors'], panel: null },
+    walls: Object.assign({ icon: 'mdi:wall', lists: ['walls', 'doors'] }, objectTool('walls')),
     zones: Object.assign({ icon: 'mdi:vector-rectangle', lists: ['no_go_areas', 'no_mopping_areas', 'ramps'] }, objectTool('zones')),
     lines: Object.assign({ icon: 'mdi:vector-line', lists: ['virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'virtual_thresholds', 'curtains'] }, objectTool('lines')),
     carpets: Object.assign({ icon: 'mdi:rug', lists: ['carpets', 'deleted_carpets', 'carpet_types', 'carpet_cleanings'] }, objectTool('carpets')),
@@ -12665,6 +12695,17 @@ class MapEditor {
         return this.count(names) > 0;
     }
 
+    /** Why the draft may not be saved (text key of a group's check, e.g. a changed wall count), or ''. */
+    blocked() {
+        const lists = this.lists();
+        for (const group of Object.keys(this.draft)) {
+            const check = EDIT_GROUPS[group].check;
+            const key = check ? check(lists, this.base) : '';
+            if (key) return key;
+        }
+        return '';
+    }
+
     /** Back to `base`: everything, or only `names`. */
     discard(names) {
         if (!names) this.draft = {};
@@ -12745,6 +12786,7 @@ class MapEditor {
     ask(dialog, { names, discard }) {
         dialog.show(dirtyChoice(this.card, {
             count: () => this.count(names),
+            blocked: () => this.blocked(),
             save: (d) => replaceTop(d, this.saveConfirm()),
             discard: (d) => {
                 this.discard(names);
@@ -12929,7 +12971,7 @@ function editRender(card, editor, body, hass, dialog) {
     }
     const actions = document.createElement('div');
     actions.className = 'actions';
-    const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', disabled: !count || editor.loading || !!editor.session.busy,
+    const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', disabled: !count || editor.loading || !!editor.session.busy || !!editor.blocked(),
         onClick: () => dialog.show(editor.saveConfirm()) });
     save.setAttribute('data-action', 'save');
     const drop = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), disabled: !count, onClick: () => editor.discard() });
@@ -13425,6 +13467,12 @@ const EDIT_KINDS = {
             e[10] = 1;
             return e;
         } },
+    // Walls [room, x0, y0, x1, y1, ix0, iy0, ix1, iy1, type, x, y] and doors [x0, y0, x1, y1, ix0, iy0, ix1, iy1, type, id, status]
+    // (map.py#L3264): fixed — moved and reset only, never added or deleted; reset = the original position (values 5–8).
+    walls: { group: 'walls', shape: 'line', fixed: true, fit: lineFit, toShape: (e) => ({ x0: e[1], y0: e[2], x1: e[3], y1: e[4] }),
+        entry: (s, old) => [old[0], s.x0, s.y0, s.x1, s.y1].concat(old.slice(5)), reset: (e) => [e[0]].concat(e.slice(5, 9), e.slice(5)) },
+    doors: { group: 'walls', shape: 'line', fixed: true, fit: lineFit, toShape: shapeOfEntry,
+        entry: (s, old) => [s.x0, s.y0, s.x1, s.y1].concat(old.slice(4)), reset: (e) => e.slice(4, 8).concat(e.slice(4)) },
     // Target points [x, y]: on the floor only (device.py#L6822 check_point), at most 20 (D#L6847).
     predefined_points: { group: 'points', shape: 'point', handles: false, fields: ['x', 'y'], max: 20, maxText: 'punkteMax',
         fit: (s) => ({ x0: Math.round(s.x0), y0: Math.round(s.y0), x1: Math.round(s.x0), y1: Math.round(s.y0) }),
@@ -13585,6 +13633,22 @@ function objectsPanel(card, editor, body, hass, tool) {
     if (!kinds.includes(editor.addKinds[tool])) editor.addKinds[tool] = kinds[0];
     const add = document.createElement('div');
     add.className = 'edit-row';
+    // Fixed kinds (walls, doors) have no public way to add or delete: no "Hinzufügen", the hint says so.
+    const fixed = kinds.length > 0 && kinds.every((list) => EDIT_KINDS[list].fixed);
+    if (fixed) {
+        if (hooks.addRow) hooks.addRow(card, editor, add, hass, lock);
+        if (add.childNodes.length) body.appendChild(add);
+        body.appendChild(noteLine(translate(hass, 'kartenObjHinweis_' + tool)));
+    } else objectsAdd(card, editor, body, hass, tool, kinds, lock, hooks, add);
+    for (const list of kinds) body.appendChild(objectList(card, editor, hass, list, lock, hooks.show));
+    const pick = editor.pick;
+    const entry = pick && (editor.lists()[pick.list] || [])[pick.i];
+    if (entry && kinds.includes(pick.list)) objectForm(card, editor, body, hass, tool, pick, entry, lock);
+    if (hooks.panel) hooks.panel(card, editor, body, hass, lock);
+}
+
+/** The add row of an object tool: kind, tool extras, "Hinzufügen" (+ in the middle of the view), the limit, the hint. */
+function objectsAdd(card, editor, body, hass, tool, kinds, lock, hooks, add) {
     if (kinds.length > 1) {
         const select = document.createElement('select');
         for (const list of kinds) {
@@ -13613,21 +13677,16 @@ function objectsPanel(card, editor, body, hass, tool) {
     body.appendChild(add);
     if (full) body.appendChild(noteLine(translate(hass, addKind.maxText), 'locked'));
     body.appendChild(noteLine(translate(hass, 'kartenObjHinweis_' + tool)));
-    for (const list of kinds) body.appendChild(objectList(card, editor, hass, list, lock));
-    const pick = editor.pick;
-    const entry = pick && (editor.lists()[pick.list] || [])[pick.i];
-    if (entry && kinds.includes(pick.list)) objectForm(card, editor, body, hass, tool, pick, entry, lock);
-    if (hooks.panel) hooks.panel(card, editor, body, hass, lock);
 }
 
 /** The objects of one kind: a button per object (state as text, R17), removed ones with "Zurückholen". */
-function objectList(card, editor, hass, list, lock) {
+function objectList(card, editor, hass, list, lock, show = null) {
     const art = editListLabel(hass, list);
     const box = document.createElement('div');
     box.className = 'edit-list';
     box.setAttribute('role', 'group');
     box.setAttribute('aria-label', art);
-    const rows = objectRows(editor, list);
+    const rows = objectRows(editor, list).filter((row) => !show || show(editor, list, row));
     if (!rows.length) {
         box.appendChild(noteLine(translate(hass, 'kartenArtLeer', { art })));
         return box;
@@ -13679,7 +13738,7 @@ function objectKey(card, editor, event, list, i, lock) {
         event.preventDefault();
         editor.pick = { list, i };
         setObject(card, editor, list, i, shapeMove(EDIT_KINDS[list].toShape(entry), shapeStep(card._map, dir, objectKeyStep(event))));
-    } else if (event.key === 'Delete' || event.key === 'Backspace') {
+    } else if ((event.key === 'Delete' || event.key === 'Backspace') && !EDIT_KINDS[list].fixed) {
         event.preventDefault();
         removeObject(editor, list, i);
     }
@@ -13723,17 +13782,19 @@ function objectForm(card, editor, body, hass, tool, pick, entry, lock) {
     }
     form.appendChild(fields);
     if (kind.shape !== 'point') form.appendChild(noteLine(translate(hass, 'kartenMindest', { mm: editMin(card) })));
-    form.appendChild(noteLine(translate(hass, 'kartenObjTasten')));
+    form.appendChild(noteLine(translate(hass, kind.fixed ? 'waendeTasten' : 'kartenObjTasten')));
     const hooks = OBJECT_HOOKS[tool];
     if (hooks && hooks.form) hooks.form(card, editor, form, hass, pick, entry, lock);
     if (editor.objError) form.appendChild(noteLine(translate(hass, editor.objError), 'error'));
-    const actions = document.createElement('div');
-    actions.className = 'actions';
-    const remove = BuschUI.action({ label: translate(hass, 'entfernen') + ': ' + name, text: translate(hass, 'entfernen'), icon: 'mdi:delete-outline', variant: 'secondary',
-        disabled: !!lock, onClick: () => removeObject(editor, pick.list, pick.i) });
-    remove.setAttribute('data-action', 'edit-remove');
-    actions.appendChild(remove);
-    form.appendChild(actions);
+    if (!kind.fixed) {
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const remove = BuschUI.action({ label: translate(hass, 'entfernen') + ': ' + name, text: translate(hass, 'entfernen'), icon: 'mdi:delete-outline', variant: 'secondary',
+            disabled: !!lock, onClick: () => removeObject(editor, pick.list, pick.i) });
+        remove.setAttribute('data-action', 'edit-remove');
+        actions.appendChild(remove);
+        form.appendChild(actions);
+    }
     body.appendChild(form);
 }
 
@@ -13793,6 +13854,7 @@ function objectsOnMap(card, editor, e, tool) {
             editor.objDrag = { kind: hit.part || 'move', j: hit.j, origin: shape, start: d.start, list: hit.list, i: hit.i, shape };
         } else {
             const list = editor.addKinds[tool] || toolKinds(editor, tool)[0];
+            if (!list || EDIT_KINDS[list].fixed) return undefined; // walls/doors: nothing to draw
             const at = { x0: d.start.x, y0: d.start.y, x1: d.start.x, y1: d.start.y };
             // A point or a piece of furniture follows the finger; rectangles and lines are drawn from the start.
             const follow = ['point', 'furniture'].includes(EDIT_KINDS[list].shape);
@@ -14160,6 +14222,74 @@ Object.assign(OBJECT_HOOKS, {
     furniture: { form: furnitureForm, addRow: furnitureAddRow, template: (card, editor) => [-1, editor.furnitureType || furnitureTypes(card._model())[0], null, 0, 0, 0, 0, 0, 1, 0, 1] },
     // A tap on free floor sets a point there (addObject checks floor and limit).
     points: { tapEmpty: (card, editor, d) => addObject(card, editor, 'predefined_points', { x0: d.robot.x, y0: d.robot.y, x1: d.robot.x, y1: d.robot.y }) }
+});
+
+// ── Walls and doors (map-editor Task 10: EDI-04) ────────────────────────────
+
+/** A wall or door can go back when its original position is known and differs. */
+const canReset = (list, e) => e.slice(list === 'walls' ? 5 : 4, list === 'walls' ? 9 : 8).every((v) => v !== null && Number.isFinite(Number(v)))
+    && JSON.stringify(EDIT_KINDS[list].reset(e)) !== JSON.stringify(e);
+
+/** Every entry of `list` that `which(entry, i)` names back to its original position. */
+function resetObjects(editor, list, which) {
+    if (!(editor.lists()[list] || []).some((e, i) => which(e, i) && canReset(list, e))) return;
+    changeObjects(editor, list, (entries) => {
+        entries.forEach((e, i) => {
+            if (which(e, i) && canReset(list, e)) entries[i] = EDIT_KINDS[list].reset(e);
+        });
+    });
+}
+
+/** Before the lists: the room whose walls are listed (doors always), all by default. */
+function wallsAddRow(card, editor, row, hass) {
+    const rooms = [...new Set((editor.lists().walls || []).map((e) => e[0]))].sort((x, y) => Number(x) - Number(y));
+    if (!rooms.includes(editor.wallRoom)) editor.wallRoom = '';
+    row.appendChild(editSelect('wall-room', translate(hass, 'waendeRaum'), editor.wallRoom, [['', translate(hass, 'waendeAlle')]].concat(rooms.map((r) => [r, roomLabel(editor, r)])), false, (v) => {
+        editor.wallRoom = v;
+        rerender(card);
+    }));
+}
+
+/** In the form of a wall or door: back to its original position. */
+function wallForm(card, editor, form, hass, pick, entry, lock) {
+    const label = translate(hass, 'waendeZuruecksetzen');
+    const reset = BuschUI.action({ label, text: label, icon: 'mdi:backup-restore', variant: 'secondary', disabled: !!lock || !canReset(pick.list, entry),
+        onClick: () => resetObjects(editor, pick.list, (e, i) => i === pick.i) });
+    reset.setAttribute('data-action', 'wall-reset');
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    actions.appendChild(reset);
+    form.appendChild(actions);
+}
+
+/** Below the lists: reset the chosen room's walls or everything; the count rule when it is broken. */
+function wallsPanelEnd(card, editor, body, hass, lock) {
+    const blocked = editor.blocked();
+    if (blocked) body.appendChild(noteLine(translate(hass, blocked), 'error'));
+    const lists = editor.lists();
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const room = editor.wallRoom;
+    if (room) {
+        const label = translate(hass, 'waendeRaumZuruecksetzen', { raum: roomLabel(editor, room) });
+        const b = BuschUI.action({ label, text: label, icon: 'mdi:backup-restore', variant: 'secondary', disabled: !!lock || !(lists.walls || []).some((e) => e[0] === room && canReset('walls', e)),
+            onClick: () => resetObjects(editor, 'walls', (e) => e[0] === room) });
+        b.setAttribute('data-action', 'walls-reset-room');
+        actions.appendChild(b);
+    }
+    const label = translate(hass, 'waendeAlleZuruecksetzen');
+    const any = ['walls', 'doors'].some((list) => (lists[list] || []).some((e) => canReset(list, e)));
+    const all = BuschUI.action({ label, text: label, icon: 'mdi:backup-restore', variant: 'secondary', disabled: !!lock || !any, onClick: () => {
+        resetObjects(editor, 'walls', () => true);
+        resetObjects(editor, 'doors', () => true);
+    } });
+    all.setAttribute('data-action', 'walls-reset-all');
+    actions.appendChild(all);
+    body.appendChild(actions);
+}
+
+Object.assign(OBJECT_HOOKS, {
+    walls: { addRow: wallsAddRow, form: wallForm, panel: wallsPanelEnd, show: (editor, list, row) => list !== 'walls' || !editor.wallRoom || row.entry[0] === editor.wallRoom }
 });
 
 // ---------------------------------------------------------------------------

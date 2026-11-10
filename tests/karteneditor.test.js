@@ -1644,3 +1644,99 @@ test('EDI-05 R01/R26: Wischverbotszone(n) heißen in Kartenansicht (Ebene, Farbe
   }
   assert.equal(en.texte.mapobj_no_mopping_areas, 'No-mop zones');
 });
+
+// ── Task 10: Wände und Türen (EDI-04) ───────────────────────────────────────
+
+test('EDI-04 Wände: nur mit walls + Bearbeitungsdaten; je Raum verschieben, Zurücksetzen (Felder 5–8) je Wand/Raum/alle, Türen Breite/Lage → vacuum_set_walls { walls, doors, map_id }', async () => {
+  // Lange Tür abseits der Wände: Fläche und Enden auf dem 400-px-Testbild getrennt greifbar.
+  const k = await mitDaten('walls', {}, { doors: [[-6000, 3000, 6000, 3000, -6000, 3000, 6000, 3000, 0, 7, 1]] });
+  const d = dialogVon(k.u);
+  const panel = () => $d(k.u, '[data-panel="walls"]');
+  assert.equal(k.karte._map._mode, 'draw-rect');
+  assert.match(panel().textContent, /Anlegen und Löschen.*keinen öffentlichen Schreibweg/, 'ehrlicher Hinweis im Werkzeug');
+  assert.equal($d(k.u, '[data-action="edit-add"]'), null, 'kein Hinzufügen');
+  assert.deepEqual(optionen(feldE(k, 'wall-room')), ['', '1', '3'], 'Räume mit Wänden, dazu alle');
+  assert.ok(eintrag(k, 'walls', 0) && eintrag(k, 'walls', 2) && eintrag(k, 'doors', 0));
+  // Raum 3: nur seine Wand; sie liegt nicht auf der Ausgangslage → Zurücksetzen je Wand.
+  waehle(k, feldE(k, 'wall-room'), 3);
+  assert.equal(eintrag(k, 'walls', 0), null);
+  eintrag(k, 'walls', 2).click();
+  assert.equal(wert(k, 'edit-y0'), 900);
+  assert.equal($d(k.u, '[data-action="edit-remove"]'), null, 'kein Löschen');
+  $d(k.u, '[data-action="wall-reset"]').click();
+  assert.deepEqual(roh(k.karte._mapEdit.lists().walls[2]), ['3', 0, 950, 600, 950, 0, 950, 600, 950, 2, 300, 900]);
+  assert.equal(eintrag(k, 'walls', 2).getAttribute('data-state'), 'changed');
+  assert.equal($d(k.u, '[data-action="wall-reset"]').disabled, true, 'auf Ausgangslage: nichts zurückzusetzen');
+  // Raum 1: Wand verschieben (Formular und Pfeiltaste), Entf löscht nicht; Raum zurücksetzen.
+  waehle(k, feldE(k, 'wall-room'), 1);
+  eintrag(k, 'walls', 0).click();
+  tippen(k, feldE(k, 'edit-y0'), 100);
+  k.u.tasteAn(eintrag(k, 'walls', 0), 'keydown', { key: 'Delete' });
+  assert.equal(k.karte._mapEdit.lists().walls.length, 3, 'Entf löscht keine Wand');
+  assert.deepEqual(roh(k.karte._mapEdit.lists().walls[0]).slice(0, 5), ['1', 0, 100, 1000, 0]);
+  $d(k.u, '[data-action="walls-reset-room"]').click();
+  assert.deepEqual(roh(k.karte._mapEdit.lists().walls[0]).slice(0, 5), ['1', 0, 0, 1000, 0], 'Raum zurück auf Ausgangslage');
+  tippen(k, feldE(k, 'edit-y1'), 50);
+  // Tür: Breite über das Ende, Lage durch Verschieben der Fläche.
+  waehle(k, feldE(k, 'wall-room'), '');
+  eintrag(k, 'doors', 0).click();
+  tippen(k, feldE(k, 'edit-x1'), 6500);
+  zieh(k, 'start', { x: 0, y: 3000 }, { x: 0, y: 3000 });
+  zieh(k, 'end', { x: 0, y: 3000 }, { x: 0, y: 3040 });
+  assert.deepEqual(roh(k.karte._mapEdit.lists().doors[0]), [-6000, 3040, 6500, 3040, -6000, 3000, 6000, 3000, 0, 7, 1]);
+  // Leere Kartenfläche ziehen legt nichts an.
+  zieh(k, 'start', { x: -9000, y: -9000 }, { x: -9000, y: -9000 });
+  zieh(k, 'end', { x: -9000, y: -9000 }, { x: -6000, y: -6000 });
+  assert.equal(k.karte._mapEdit.lists().walls.length, 3);
+  assert.equal(k.karte._mapEdit.lists().doors.length, 1);
+  $d(k.u, '[data-action="save"]').click();
+  assert.match(d.shadowRoot.textContent, /Wände: 0 neu, 2 geändert, 0 gelöscht/);
+  assert.match(d.shadowRoot.textContent, /Türen: 0 neu, 1 geändert, 0 gelöscht/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_walls']);
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', map_id: 2,
+    walls: { 1: [[0, 0, 1000, 50, 0, 0, 1000, 0, 1, 500, 0], [1000, 0, 1000, 800, 1000, 0, 1000, 800, 1, 1000, 400]], 3: [[0, 950, 600, 950, 0, 950, 600, 950, 2, 300, 900]] },
+    doors: [[-6000, 3040, 6500, 3040, -6000, 3000, 6000, 3000, 0, 7, 1]] }, 'alle Wände je Raum und alle Türen, Anzahl gleich');
+  // Alle zurücksetzen: Wände und Türen auf die Ausgangslage.
+  k.u.zurueck();
+  $d(k.u, '[data-action="walls-reset-all"]').click();
+  assert.deepEqual(roh(k.karte._mapEdit.lists().doors[0]).slice(0, 4), [-6000, 3000, 6000, 3000]);
+  assert.deepEqual(roh(k.karte._mapEdit.lists().walls[0]).slice(1, 5), [0, 0, 1000, 0]);
+});
+
+test('EDI-04 Wände: Anzahl je Raum oder der Türen geändert → Speichern gesperrt (mit Grund, auch im Dirty-Dialog); laufende Aufgabe sperrt; ohne Daten/walls kein Werkzeug', async () => {
+  const k = await mitDaten('walls');
+  const m = k.karte._mapEdit;
+  m.edit('walls').walls.pop();
+  m.changed();
+  assert.equal($d(k.u, '[data-action="save"]').disabled, true);
+  assert.match($d(k.u, '[data-panel="walls"]').textContent, /Anzahl der Wände je Raum und der Türen muss gleich bleiben/);
+  k.u.document.dispatchEvent(k.u.neuesEreignis('keydown', { key: 'Escape' }));
+  assert.equal($d(k.u, '[data-action="save"]').disabled, true, 'auch „Speichern“ im Dirty-Dialog');
+  $d(k.u, '[data-action="keep"]').click();
+  k.u.zurueck();
+  m.discard();
+  m.edit('walls').doors.push([1, 2, 3, 4, 1, 2, 3, 4, 0, 99, 0]);
+  m.changed();
+  assert.equal($d(k.u, '[data-action="save"]').disabled, true, 'Türen ebenso');
+  m.discard();
+  assert.equal($d(k.u, '[data-action="save"]').disabled, true, 'nichts offen');
+  assert.deepEqual(k.haus.rufe.filter((r) => r.service === 'vacuum_set_walls'), []);
+  // Laufende Aufgabe: Hinweis, Felder aus, Ziehen ohne Wirkung.
+  const k2 = await mitDaten('walls', { zustand: 'cleaning' });
+  assert.match($d(k2.u, '[data-panel="walls"]').textContent, /Gesperrt, solange eine Aufgabe läuft/);
+  eintrag(k2, 'walls', 0).click();
+  assert.equal(feldE(k2, 'edit-x0').disabled, true);
+  assert.equal($d(k2.u, '[data-action="walls-reset-all"]').disabled, true);
+  zieh(k2, 'start', { x: 500, y: 0 }, { x: 500, y: 0 });
+  zieh(k2, 'end', { x: 500, y: 0 }, { x: 500, y: 300 });
+  assert.equal(k2.karte._mapEdit.dirty(), false);
+  // Ohne Bearbeitungsdaten gesperrt, ohne Fähigkeit walls gar nicht da.
+  const k3 = aufbau();
+  stift(k3).click();
+  assert.equal(werkzeug(k3, 'walls').disabled, true);
+  const k4 = aufbau({ vac: { capabilities: VOLL_CAPS().filter((c) => c !== 'walls') } });
+  stift(k4).click();
+  assert.equal(werkzeug(k4, 'walls'), null);
+});
