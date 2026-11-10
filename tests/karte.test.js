@@ -2,7 +2,7 @@
 // Modul map-view (#882): Kartendaten, Geometrie, Kartenbereich, Vertrag.
 const test = require('node:test');
 const assert = require('node:assert');
-const { neueUmgebung } = require('./attrappe.js');
+const { neueUmgebung, hausAus, neueKarte, mikro } = require('./attrappe.js');
 const { ausFixture, kartendaten, lauflaengen, fixture } = require('./kartendaten.js');
 
 const intern = () => neueUmgebung().registry.get('busch-vacuum-card').__internals;
@@ -185,6 +185,156 @@ test('viewMatrix: Einpassen, Zoom/Verschieben, Anzeige-Drehung und scale, mit In
   const c = viewMatrix(Object.assign({}, basis, { crop: { left: 0, right: 50, top: 0, bottom: 0 } }));
   nah(applyAffine(c, { x: 0, y: 0 }), { x: 0, y: 0 }, 1e-9, 'Ausschnitt links oben');
   nah(applyAffine(c, { x: 200, y: 200 }), { x: 800, y: 800 }, 1e-9, 'Ausschnitt rechts unten');
+});
+
+// ── Task 3: Kartenbereich, Bild, Zustände ──────────────────────────────────
+const CAM = 'camera.robo_map';
+/** Umgebung, in der Bilder Maße haben (wie nach decode() im Browser). */
+function bildUmgebung({ breite = 1444, hoehe = 1444, fehler = false } = {}) {
+  const u = neueUmgebung();
+  const erzeuge = u.document.createElement.bind(u.document);
+  u.bilder = [];
+  u.document.createElement = (tag) => {
+    const n = erzeuge(tag);
+    if (tag === 'img') { n.naturalWidth = breite; n.naturalHeight = hoehe; n.decode = () => (fehler ? Promise.reject(new Error('404')) : Promise.resolve()); u.bilder.push(n); }
+    return n;
+  };
+  return u;
+}
+const kamera = (haus, attribute, zustand) => {
+  const alt = haus.states[CAM];
+  return { [CAM]: { entity_id: CAM, state: zustand || alt.state, attributes: Object.assign({}, alt.attributes, attribute) } };
+};
+const sauger = (haus, attribute, zustand) => {
+  const alt = haus.states['vacuum.robo'];
+  return { 'vacuum.robo': { entity_id: 'vacuum.robo', state: zustand || alt.state, attributes: Object.assign({}, alt.attributes, attribute) } };
+};
+const ansicht = (karte) => karte.shadowRoot.querySelector('.map-view');
+const hinweise = (karte) => karte.shadowRoot.querySelectorAll('.map-note').map((n) => n.getAttribute('data-kind'));
+async function kartenKarte(fixture = 'voll', config = {}, opts = {}) {
+  const u = bildUmgebung(opts), haus = hausAus(fixture);
+  const karte = neueKarte(u, haus, config);
+  await mikro();
+  return { u, haus, karte };
+}
+
+test('Kartenbereich nur bei can(map), zwischen Kopf und Meldungen', async () => {
+  const { karte } = await kartenKarte();
+  const slot = karte.shadowRoot.querySelector('.map-slot');
+  assert.ok(slot && !slot.hidden, 'Platz da');
+  const kinder = karte.shadowRoot.querySelector('ha-card').childNodes.map((n) => n.className);
+  assert.ok(kinder.indexOf('map-slot') === kinder.indexOf('top') + 1 && kinder.indexOf('messages') === kinder.indexOf('map-slot') + 1, kinder.join(','));
+  assert.ok(ansicht(karte));
+  for (const f of ['minimal', 'ohne-karte']) {
+    const { u, karte: k } = await kartenKarte(f);
+    assert.equal(k.shadowRoot.querySelector('.map-slot').hidden, true, f + ': kein Kartenbereich');
+    assert.equal(ansicht(k), null);
+    assert.deepEqual(u.fehler, []);
+  }
+});
+
+test('Bild aus entity_picture, decode() vor dem Tausch, mit Alternativtext', async () => {
+  const u = bildUmgebung(), haus = hausAus('voll');
+  const karte = neueKarte(u, haus);
+  assert.deepEqual(hinweise(karte), ['loading'], 'lädt (R11)');
+  assert.equal(karte.shadowRoot.querySelector('.map-base'), null, 'vor decode() kein Bild im Baum');
+  await mikro();
+  const bild = karte.shadowRoot.querySelector('.map-base');
+  assert.equal(bild.getAttribute('src'), haus.states[CAM].attributes.entity_picture);
+  assert.match(bild.getAttribute('alt'), /Karte 1/);
+  assert.deepEqual(hinweise(karte), []);
+  assert.equal(karte._map.stats.images, 1);
+});
+
+test('kein neues Bild bei fremden Updates und gleichem entity_picture; neues bei neuem v', async () => {
+  const { u, haus, karte } = await kartenKarte();
+  const vorher = karte._map.stats.renders;
+  karte.hass = haus.fremd();
+  karte.hass = haus.fremd();
+  assert.equal(karte._map.stats.images, 1, 'fremd: 0 Abrufe');
+  assert.equal(karte._map.stats.renders, vorher, 'fremd: kein Neuaufbau');
+  karte.hass = haus.setze(kamera(haus, { updated_at: 'neu' }));
+  assert.equal(karte._map.stats.images, 1, 'gleiches Bild');
+  karte.hass = haus.setze(kamera(haus, { entity_picture: '/api/camera_proxy/camera.robo_map?token=testtoken&v=2' }));
+  await mikro();
+  assert.equal(karte._map.stats.images, 2, 'neues v');
+  assert.match(karte.shadowRoot.querySelector('.map-base').getAttribute('src'), /v=2$/);
+  assert.equal(u.bilder.length, 2);
+});
+
+test('Snapshot beobachtet die aktive Kartenkamera', async () => {
+  const { haus, karte } = await kartenKarte();
+  assert.ok(karte._seen.ids.includes(CAM));
+  assert.ok(!karte._seen.ids.includes('camera.robo_map_1'), 'gespeicherte Karten nur im Dialog');
+});
+
+test('Zustand: keine gespeicherte Karte → Hinweis statt Fläche', async () => {
+  const u = bildUmgebung(), haus = hausAus('voll');
+  haus.states = Object.assign({}, haus.states, sauger(haus, { has_saved_map: false }), kamera(haus, { is_empty: true }));
+  const karte = neueKarte(u, haus);
+  await mikro();
+  assert.deepEqual(hinweise(karte), ['empty']);
+  assert.equal(karte.shadowRoot.querySelector('.map-stage').hidden, true);
+  assert.equal(karte._map.stats.images, 0, 'kein Abruf ohne Karte');
+});
+
+test('Zustand: Kamera nicht verfügbar → was, Folge, nächster Schritt (R12)', async () => {
+  const u = bildUmgebung(), haus = hausAus('voll');
+  haus.states = Object.assign({}, haus.states, kamera(haus, {}, 'unavailable'));
+  const karte = neueKarte(u, haus);
+  await mikro();
+  assert.deepEqual(hinweise(karte), ['unavailable']);
+  const text = karte.shadowRoot.querySelector('.map-note').textContent;
+  assert.match(text, /nicht verfügbar/);
+  assert.match(text, /Steuerung/);
+  assert.match(text, /Integration/);
+  assert.equal(karte._map.stats.images, 0);
+});
+
+test('Zustand: Bild lädt nicht → Fehler mit erneut laden', async () => {
+  const { haus, karte, u } = await kartenKarte('voll', {}, { fehler: true });
+  assert.deepEqual(hinweise(karte), ['error']);
+  const knopf = karte.shadowRoot.querySelector('[data-action="map-retry"]');
+  knopf.click();
+  await mikro();
+  assert.equal(karte._map.stats.images, 2, 'zweiter Versuch');
+});
+
+test('Zustand: temporäre Karte und Kartierung als Hinweis über der Karte', async () => {
+  const u = bildUmgebung(), haus = hausAus('voll');
+  haus.states = Object.assign({}, haus.states, sauger(haus, { has_temporary_map: true, mapping: true }));
+  const karte = neueKarte(u, haus);
+  await mikro();
+  assert.deepEqual(hinweise(karte), ['temporary', 'mapping']);
+  assert.ok(karte.shadowRoot.querySelector('.map-base'), 'Karte bleibt sichtbar');
+});
+
+test('Zustand: Bild ohne Kalibrierung → Hinweis, keine Overlays', async () => {
+  const u = bildUmgebung(), haus = hausAus('voll');
+  haus.states = Object.assign({}, haus.states, kamera(haus, { calibration_points: null }));
+  const karte = neueKarte(u, haus);
+  await mikro();
+  assert.deepEqual(hinweise(karte), ['uncalibrated']);
+  assert.equal(karte._map.current().calibration, null);
+  assert.equal(karte._map.toImage({ x: 0, y: 0 }), null);
+});
+
+test('current(): Kamera, Karte, Kalibrierung, Räume, Frame', async () => {
+  const { haus, karte } = await kartenKarte();
+  const c = karte._map.current();
+  const a = haus.states[CAM].attributes;
+  assert.equal(c.camera, CAM);
+  assert.equal(c.mapId, a.map_id);
+  assert.equal(c.index, 1);
+  assert.equal(c.name, 'Karte 1');
+  assert.equal(c.frameId, a.frame_id);
+  assert.equal(c.updatedAt, a.updated_at);
+  assert.equal(c.mode, 'image');
+  assert.deepEqual(Object.keys(c.rooms), Object.keys(a.rooms));
+  const p = karte._map.toImage(a.calibration_points[1].vacuum);
+  assert.deepEqual([Math.round(p.x), Math.round(p.y)], [a.calibration_points[1].map.x, a.calibration_points[1].map.y]);
+  const r = karte._map.toRobot(a.calibration_points[2].map);
+  assert.deepEqual([Math.round(r.x), Math.round(r.y)], [0, 1000]);
 });
 
 module.exports = { intern, raeume };

@@ -348,7 +348,17 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             kartenWechselTitel: 'Karte wechseln',
             kartenWechselFrage: 'Zur Karte „{karte}“ wechseln? Der Roboter arbeitet danach mit dieser Karte.',
             wechseln: 'Wechseln',
-            abbrechen: 'Abbrechen'
+            abbrechen: 'Abbrechen',
+            karte: 'Karte',
+            karteAlt: 'Karte „{karte}“ des Saugroboters',
+            karteLaedt: 'Karte lädt …',
+            karteLeer: 'Noch keine gespeicherte Karte. Sobald der Roboter eine Karte erstellt hat, erscheint sie hier; bis dahin geht die Reinigung „Gesamt“.',
+            kameraWeg: 'Die Kartenkamera ist nicht verfügbar, deshalb fehlt die Karte. Steuerung und Status gehen weiter. Prüfe die Integration dreame_vacuum oder warte, bis die Kamera wieder da ist.',
+            bildFehler: 'Das Kartenbild ließ sich nicht laden. Steuerung und Status gehen weiter. Versuche es erneut.',
+            erneutLaden: 'Erneut laden',
+            temporaereKarte: 'Temporäre Karte: noch nicht gespeichert.',
+            kartierungLaeuft: 'Kartierung läuft – die Karte wächst mit.',
+            ohneKalibrierung: 'Die Karte hat noch keine Kalibrierung: Roboter, Station und Räume lassen sich nicht einzeichnen.'
         }
     },
     en: {
@@ -466,7 +476,17 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             kartenWechselTitel: 'Change map',
             kartenWechselFrage: 'Change to the map “{karte}”? The robot then works with this map.',
             wechseln: 'Change',
-            abbrechen: 'Cancel'
+            abbrechen: 'Cancel',
+            karte: 'Map',
+            karteAlt: 'Map “{karte}” of the robot vacuum',
+            karteLaedt: 'Map loading …',
+            karteLeer: 'No saved map yet. Once the robot has created a map it shows here; until then cleaning “All” works.',
+            kameraWeg: 'The map camera is unavailable, so the map is missing. Controls and status keep working. Check the dreame_vacuum integration or wait until the camera is back.',
+            bildFehler: 'The map image could not be loaded. Controls and status keep working. Try again.',
+            erneutLaden: 'Load again',
+            temporaereKarte: 'Temporary map: not saved yet.',
+            kartierungLaeuft: 'Mapping in progress – the map grows along.',
+            ohneKalibrierung: 'The map has no calibration yet: robot, station and rooms cannot be drawn.'
         }
     }
 };
@@ -1088,6 +1108,209 @@ function snapshotUnchanged(snapshot, hass) {
 }
 
 // ---------------------------------------------------------------------------
+// Map view (map-view): the live map and the map contract for later modules
+// ---------------------------------------------------------------------------
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** Vacuum attributes the map shows (ALL-13 display); a change of any redraws the map's frame. */
+const MAP_VACUUM_KEYS = ['maps', 'map_count', 'selected_map', 'has_saved_map', 'has_temporary_map', 'mapping'];
+
+/**
+ * One per card (spec map-view, "Kartenvertrag"). Lives in the card's shadow
+ * root and is never rebuilt on foreign updates: `update()` returns at once
+ * unless the active map camera or a map attribute of the vacuum changed. The
+ * image is fetched only for a new `entity_picture` and swapped after decode().
+ */
+class MapView {
+    constructor(card) {
+        this.card = card;
+        this.hass = null;
+        this.model = null;
+        this.stats = { images: 0, data: 0, renders: 0 }; // for tests and the performance check
+        this._cam = null;
+        this._key = null;
+        this._imageUrl = null;
+        this._image = null;
+        this._imageState = 'loading';
+        this._matrix = null; // robot mm → image px
+        this._size = { width: 0, height: 0 };
+        this._build();
+    }
+
+    _build() {
+        this.el = document.createElement('div');
+        this.el.className = 'map-view';
+        this.region = document.createElement('div');
+        this.region.className = 'map';
+        this.region.setAttribute('role', 'group');
+        this.region.tabIndex = 0;
+        this.stage = document.createElement('div');
+        this.stage.className = 'map-stage';
+        this.pan = document.createElement('div');
+        this.pan.className = 'map-pan';
+        this.svg = document.createElementNS(SVG_NS, 'svg');
+        this.svg.setAttribute('class', 'map-layers');
+        this.svg.setAttribute('aria-hidden', 'true');
+        this.pan.appendChild(this.svg);
+        this.stage.appendChild(this.pan);
+        this.notes = document.createElement('div');
+        this.notes.className = 'map-notes';
+        this.region.append(this.stage);
+        this.el.append(this.region, this.notes);
+    }
+
+    _attrs() {
+        return (this._cam && this._cam.attributes) || {};
+    }
+
+    /** Called by the card on every own update; returns at once when nothing of the map changed. */
+    update(hass, model) {
+        this.hass = hass;
+        this.model = model;
+        const id = model.related.maps.map[0];
+        const cam = (hass.states && hass.states[id]) || null;
+        const key = JSON.stringify([BuschUI.language(hass, { legacy: true }), ...MAP_VACUUM_KEYS.map((k) => model.attr(k))]);
+        if (cam === this._cam && key === this._key) return;
+        this._cam = cam;
+        this._key = key;
+        this._cameraId = id;
+        this.stats.renders++;
+        const a = this._attrs();
+        this._matrix = affineFrom(a.calibration_points);
+        this.region.setAttribute('aria-label', translate(hass, 'karteAlt', { karte: this._mapName() }));
+        if (this._showsMap()) this._loadImage(a.entity_picture);
+        this._render();
+    }
+
+    /** Whether there is a map to show at all (R18: empty and failed states replace it). */
+    _showsMap() {
+        const cam = this._cam;
+        if (!cam || UNUSABLE.includes(cam.state)) return false;
+        const m = this.model;
+        const nothing = m.attr('has_saved_map') === false && !m.attr('has_temporary_map') && !m.attr('mapping');
+        return !(cam.attributes.is_empty === true || nothing);
+    }
+
+    _mapName() {
+        const index = this._attrs().map_index;
+        const maps = this.model ? this.model.attr('maps') : null;
+        const entry = Array.isArray(maps) ? maps.find((m) => m && m.index === index) : null;
+        return (entry && (entry.custom_name || entry.name)) || (this.model && this.model.attr('selected_map')) || translate(this.hass, 'karte');
+    }
+
+    _url(path) {
+        return this.hass && typeof this.hass.hassUrl === 'function' ? this.hass.hassUrl(path) : path;
+    }
+
+    _loadImage(url, force) {
+        if (!url || (url === this._imageUrl && !force)) return;
+        this._imageUrl = url;
+        this._imageState = 'loading';
+        this.stats.images++;
+        const img = document.createElement('img');
+        img.className = 'map-base';
+        img.setAttribute('decoding', 'async');
+        img.setAttribute('src', this._url(url));
+        // Swapped only once decoded: the old image stays until then, no flicker.
+        Promise.resolve(typeof img.decode === 'function' ? img.decode() : undefined).then(() => {
+            if (this._imageUrl !== url) return;
+            img.setAttribute('alt', translate(this.hass, 'karteAlt', { karte: this._mapName() }));
+            if (this._image) this._image.remove();
+            this._image = img;
+            this._size = { width: img.naturalWidth || 0, height: img.naturalHeight || 0 };
+            this.pan.insertBefore(img, this.svg);
+            this._imageState = 'ready';
+            this._render();
+        }, () => {
+            if (this._imageUrl !== url) return;
+            this._imageState = 'error';
+            this._render();
+        });
+    }
+
+    _render() {
+        const hass = this.hass;
+        const shows = this._showsMap();
+        const notes = [];
+        if (!this._cam || UNUSABLE.includes(this._cam.state)) notes.push(['unavailable', 'mdi:map-marker-off-outline', 'kameraWeg']);
+        else if (!shows) notes.push(['empty', 'mdi:map-search-outline', 'karteLeer']);
+        else {
+            if (this._imageState === 'loading') notes.push(['loading', 'mdi:progress-clock', 'karteLaedt']);
+            if (this._imageState === 'error') notes.push(['error', 'mdi:image-broken-variant', 'bildFehler']);
+            if (this.model.attr('has_temporary_map')) notes.push(['temporary', 'mdi:map-clock-outline', 'temporaereKarte']);
+            if (this.model.attr('mapping')) notes.push(['mapping', 'mdi:map-plus', 'kartierungLaeuft']);
+            if (!this._matrix && this._imageState === 'ready') notes.push(['uncalibrated', 'mdi:crosshairs-question', 'ohneKalibrierung']);
+        }
+        this.stage.hidden = !shows;
+        this.stage.setAttribute('aria-busy', String(this._imageState === 'loading'));
+        this.notes.replaceChildren(...notes.map(([kind, icon, key]) => this._note(kind, icon, translate(hass, key))));
+        this._layout();
+    }
+
+    _note(kind, icon, text) {
+        const node = document.createElement('div');
+        node.className = 'map-note';
+        node.setAttribute('data-kind', kind);
+        node.setAttribute('role', ['error', 'unavailable'].includes(kind) ? 'alert' : 'status');
+        const symbol = BuschUI.ha.icon(icon);
+        symbol.setAttribute('aria-hidden', 'true');
+        const span = document.createElement('span');
+        span.textContent = text;
+        node.append(symbol, span);
+        if (kind === 'error') {
+            const retry = BuschUI.action({ label: translate(this.hass, 'erneutLaden'), text: translate(this.hass, 'erneutLaden'), icon: 'mdi:refresh', variant: 'quiet', onClick: () => this._loadImage(this._imageUrl, true) });
+            retry.setAttribute('data-action', 'map-retry');
+            node.appendChild(retry);
+        }
+        return node;
+    }
+
+    /** Places the image in the stage: fitted now, zoom and pan follow with the gesture task. */
+    _layout() {
+        const { width, height } = this._size;
+        if (!width || !height) return;
+        this.stage.style.setProperty('--bvc-map-aspect', width + ' / ' + height);
+        const rect = this.stage.getBoundingClientRect();
+        this._view = viewMatrix({ width, height, stageWidth: rect.width, stageHeight: rect.height });
+        const m = this._view;
+        this.pan.style.width = width + 'px';
+        this.pan.style.height = height + 'px';
+        this.pan.style.transform = 'matrix(' + [m.a, m.b, m.c, m.d, m.e, m.f].join(',') + ')';
+        this.svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+    }
+
+    // ── Contract ──────────────────────────────────────────────────────────
+
+    current() {
+        const a = this._attrs();
+        return {
+            camera: this._cameraId || null,
+            mapId: a.map_id !== undefined ? a.map_id : null,
+            index: a.map_index !== undefined ? a.map_index : null,
+            name: this._mapName(),
+            calibration: this._matrix,
+            rooms: a.rooms || {},
+            objects: a,
+            frameId: a.frame_id !== undefined ? a.frame_id : null,
+            updatedAt: a.updated_at || null,
+            mode: 'image'
+        };
+    }
+
+    /** Robot mm → image px, or null without calibration. */
+    toImage(p) {
+        return this._matrix && p ? applyAffine(this._matrix, p) : null;
+    }
+
+    /** Image px → robot mm, or null without calibration. */
+    toRobot(p) {
+        const inverse = this._matrix && invertAffine(this._matrix);
+        return inverse && p ? applyAffine(inverse, p) : null;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Card
 // ---------------------------------------------------------------------------
 
@@ -1095,6 +1318,105 @@ const CARD_STYLES = BuschUI.cardStyles + `
 :host {
     display: block;
     container-type: inline-size;
+}
+.map-slot,
+.map-view,
+.map {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-2, 8px);
+    min-width: 0;
+    min-height: 0;
+}
+.map {
+    border-radius: var(--ha-card-border-radius, 12px);
+}
+.map:focus-visible {
+    outline: 2px solid var(--primary-color, #03a9f4);
+    outline-offset: 2px;
+}
+.map-stage {
+    position: relative;
+    overflow: hidden;
+    width: 100%;
+    aspect-ratio: var(--bvc-map-aspect, 4 / 3);
+    max-height: 60vh;
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--secondary-background-color, #eeeeee);
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+/* Locked (CORE-14): the page scrolls through the map, no gesture reaches it. */
+:host([data-locked=true]) .map-stage {
+    touch-action: pan-y;
+}
+:host([data-layout=panel]) .map-slot,
+:host([data-layout=full]) .map-slot,
+:host([data-layout=panel]) .map-view,
+:host([data-layout=full]) .map-view,
+:host([data-layout=panel]) .map,
+:host([data-layout=full]) .map {
+    flex: 1 1 0;
+}
+:host([data-layout=panel]) .map-stage,
+:host([data-layout=full]) .map-stage {
+    flex: 1 1 0;
+    aspect-ratio: auto;
+    max-height: none;
+    min-height: 200px;
+}
+.map-pan {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+}
+.map-base {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+}
+.map-layers {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+}
+.map-notes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-1, 4px);
+}
+.map-notes:empty {
+    display: none;
+}
+.map-note {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-2, 8px);
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+    min-width: 0;
+}
+.map-note > span {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.map-note > ha-icon {
+    flex: none;
+    --mdc-icon-size: 18px;
+}
+.map-note[data-kind=error] > ha-icon,
+.map-note[data-kind=unavailable] > ha-icon {
+    color: var(--bvc-error-color, var(--error-color, #db4437));
 }
 /* hidden_card_objects: a hidden part never shows, whatever display its class sets. */
 [hidden] {
@@ -1934,7 +2256,11 @@ class BuschVacuumCard extends HTMLElement {
             this._messages.className = 'messages';
             this._taskArea = document.createElement('div');
             this._taskArea.className = 'task-area';
-            card.append(this._progress, top, this._messages, this._stats, this._taskArea, this._controls);
+            this._mapSlot = document.createElement('div');
+            this._mapSlot.className = 'map-slot';
+            this._mapSlot.hidden = true;
+            this._map = null;
+            card.append(this._progress, top, this._mapSlot, this._messages, this._stats, this._taskArea, this._controls);
         }
         this._update();
     }
@@ -1961,7 +2287,9 @@ class BuschVacuumCard extends HTMLElement {
         const model = this._model();
         const real = model.state;
         if (this._pending && (!real || real.state === this._pending.state || real.state !== this._pending.from)) this._endPending();
-        this._seen = watchSnapshot(hass, [this._opts.entity, ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state', 'sensor.error', 'sensor.cleaning_progress'].map((k) => model.entity(k)).filter(Boolean)]);
+        const mapCamera = model.can('map') ? model.related.maps.map[0] : null;
+        // The active map camera carries the robot's position: watched like the vacuum.
+        this._seen = watchSnapshot(hass, [this._opts.entity, ...(mapCamera ? [mapCamera] : []), ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state', 'sensor.error', 'sensor.cleaning_progress'].map((k) => model.entity(k)).filter(Boolean)]);
         const shown = this._pending ? this._pending.state : real ? real.state : 'unavailable';
 
         this._title.textContent = this._opts.title || (real && real.attributes.friendly_name) || this._opts.entity;
@@ -1974,6 +2302,14 @@ class BuschVacuumCard extends HTMLElement {
         this._menuButton.hidden = this._hidden('menu') || this._menuEntries(model).length === 0;
         this._renderLock();
         this._stateLine.textContent = real ? formatState(hass, real, shown) : shown;
+        this._mapSlot.hidden = !mapCamera;
+        if (mapCamera) {
+            if (!this._map) {
+                this._map = new MapView(this);
+                this._mapSlot.appendChild(this._map.el);
+            }
+            this._map.update(hass, model);
+        }
 
         const stats = [];
         const area = statText(hass, model, 'sensor.cleaned_area', 'cleaned_area', 'm²');
