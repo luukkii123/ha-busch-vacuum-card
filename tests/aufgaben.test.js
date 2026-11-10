@@ -562,3 +562,62 @@ test('Zone: gesperrte Karte — Gesten aus, Knopfwege an', async () => {
   aktion(karte, 'zone-add').click();
   assert.equal(zonen(karte).length, 1);
 });
+
+// ── Task 5: Spot ───────────────────────────────────────────────────────────
+const punkte = (karte) => roh(karte._selection.spots).map((p) => [Math.round(p.x), Math.round(p.y)]);
+async function spotKarte(opts) {
+  const r = await kartenKarte(opts);
+  art(r.karte, 'spot').click();
+  return r;
+}
+
+test('Spot: Tipps setzen mehrere Punkte mit 1,5-m-Vorschau; unbegehbar → nicht gesetzt + Hinweis', async () => {
+  const { u, karte, karten } = await spotKarte();
+  assert.equal(karte._map._mode, 'pick-point');
+  const a = raeume()['5'], b = raeume()['3'];
+  tippe(u, karte, bildschirm(karte, a));
+  tippe(u, karte, bildschirm(karte, b));
+  naheGleich(punkte(karte), [[a.x, a.y], [b.x, b.y]], 40, 'zwei Punkte');
+  const vorschau = ebeneTasks(karte).querySelectorAll('[data-select="spot"]');
+  assert.equal(vorschau.length, 2, 'Vorschau-Quadrat je Punkt');
+  const [left, top] = karten.size;
+  tippe(u, karte, bildschirm(karte, { x: left + 10, y: top + 10 }));
+  assert.equal(punkte(karte).length, 2, 'außerhalb nicht gesetzt');
+  assert.match(notiz(karte, 'outside').textContent, /nicht auf befahrbarer Fläche/);
+});
+
+test('Spot: × am Punkt entfernt; Liste mit Pfeilen, Tasten und Entfernen (R15)', async () => {
+  const { u, karte } = await spotKarte();
+  const a = raeume()['5'];
+  tippe(u, karte, bildschirm(karte, a));
+  const vorher = punkte(karte)[0];
+  assert.match(aktion(karte, 'spot-0').textContent, /Punkt 1/);
+  assert.equal(aktion(karte, 'spot-0').getAttribute('aria-pressed'), 'true', 'neuer Punkt gewählt');
+  aktion(karte, 'spot-right').click();
+  assert.equal(punkte(karte)[0][0], vorher[0] + 100);
+  aktion(karte, 'spot-0').dispatchEvent(u.neuesEreignis('keydown', { key: 'ArrowLeft', shiftKey: true }));
+  assert.equal(punkte(karte)[0][0], vorher[0] - 400);
+  tippe(u, karte, karte._spotHandles(0).remove);
+  assert.deepEqual(punkte(karte), []);
+});
+
+test('Spot: „Punkt an Roboterposition“ setzt den Punkt am Roboter', async () => {
+  const { haus, karte } = await spotKarte();
+  const r = haus.states[CAM].attributes.vacuum_position;
+  aktion(karte, 'spot-robot').click();
+  assert.deepEqual(punkte(karte), [[r.x, r.y]]);
+});
+
+test('„Spot hier“ im Hindernis-Dialog: wechselt auf Spot, setzt den Punkt, startet nicht', async () => {
+  const { u, haus, karte } = await kartenKarte();
+  const o = haus.states[CAM].attributes.obstacles['2'];
+  tippe(u, karte, bildschirm(karte, o));
+  $(karte, '[data-action="obstacle-details"]').click();
+  const dialog = u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG');
+  const spot = dialog.shadowRoot.querySelector('[data-action="obstacle-spot"]');
+  assert.match(spot.textContent, /Spot hier/);
+  spot.click();
+  assert.deepEqual(gewaehlt(karte), ['spot']);
+  assert.deepEqual(punkte(karte), [[Math.round(o.x), Math.round(o.y)]]);
+  assert.deepEqual(haus.rufe, [], 'kein Dienstaufruf');
+});

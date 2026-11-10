@@ -370,6 +370,12 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskSpot: 'Spot',
             taskGoto: 'Hinfahren',
             aufgabeLaeuft: 'Aufgabe läuft',
+            spotHier: 'Spot hier',
+            punkte: 'Punkte',
+            punktName: 'Punkt {n} · 1,5 × 1,5 m',
+            punktBearbeiten: 'Punkt {n} verschieben',
+            punktAmRoboter: 'Punkt an Roboterposition',
+            tastenPunkt: 'Tasten am Punkt: Pfeile verschieben (Umschalt: 500 mm), Entf entfernt, Escape hebt die Wahl auf.',
             bereiche: 'Bereiche',
             bereichName: 'Bereich {n} · {w} × {h} m',
             bereichBearbeiten: 'Bereich {n} bearbeiten',
@@ -843,6 +849,12 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskSpot: 'Spot',
             taskGoto: 'Go to',
             aufgabeLaeuft: 'Task running',
+            spotHier: 'Spot here',
+            punkte: 'Points',
+            punktName: 'Point {n} · 1.5 × 1.5 m',
+            punktBearbeiten: 'Move point {n}',
+            punktAmRoboter: 'Point at robot position',
+            tastenPunkt: 'Keys on a point: arrows move (Shift: 500 mm), Delete removes, Escape deselects.',
             bereiche: 'Areas',
             bereichName: 'Area {n} · {w} × {h} m',
             bereichBearbeiten: 'Edit area {n}',
@@ -5978,6 +5990,10 @@ canvas.map-base {
     stroke: var(--bvc-task-color, var(--primary-color, #03a9f4));
     stroke-width: 2px;
 }
+[data-layer=tasks] [data-handle=point] text {
+    fill: var(--primary-text-color, #212121);
+    stroke: none;
+}
 [data-layer=tasks] [data-handle=remove] path {
     stroke: var(--primary-text-color, #212121);
     stroke-width: 2px;
@@ -7081,6 +7097,7 @@ class BuschVacuumCard extends HTMLElement {
         this._run = null; // { at, stopped, seen }: a task this card started, until it ends (TASK-01)
         this._taskError = null; // R12 text of the last failed start
         this._zoneActive = null; // zone chosen in the list (keys and edit buttons)
+        this._spotActive = null; // the same for spots
         this._dismissed = new Map(); // message kind → text wiped away, until the message changes (CORE-10)
         this._dialog = null;
         this._panel = false;
@@ -7522,6 +7539,7 @@ class BuschVacuumCard extends HTMLElement {
         } else {
             if (task === 'room') nodes.push(...this._roomPanel(hass, model));
             if (task === 'zone') nodes.push(...this._zonePanel(hass, model));
+            if (task === 'spot') nodes.push(...this._spotPanel(hass, model));
             if (this._undo) {
                 const note = this._note('task-note', 'mdi:undo-variant', translate(hass, 'auswahlGeleert'));
                 note.appendChild(this._panelButton(hass, 'rueckgaengig', 'mdi:undo', 'undo', () => this._undoClear()));
@@ -7577,6 +7595,9 @@ class BuschVacuumCard extends HTMLElement {
     _syncTaskMap(model, active, task) {
         const m = this._map;
         if (!m) return;
+        // TASK-04: "Spot hier" in the obstacle dialog sets a point, never starts (map-view MAP-04 slot).
+        if (tasksFor(model).some((t) => t.name === 'spot')) m.addObstacleAction('spot', { label: translate(this._hass, 'spotHier'), icon: 'mdi:target', run: (o) => this._spotHere(o) });
+        else m.removeObstacleAction('spot');
         const mode = active ? 'view' : TASK_MAP_MODES[task] || 'view';
         const layer = active || task !== 'all';
         const key = mode + '|' + layer + '|' + task;
@@ -7659,6 +7680,7 @@ class BuschVacuumCard extends HTMLElement {
             this._selection = emptySelection();
             this._taskInfo = had ? { key: 'auswahlKarteGewechselt', note: 'map-changed' } : null;
             this._zoneActive = null;
+            this._spotActive = null;
             this._selectionChanged();
             return;
         }
@@ -7666,6 +7688,7 @@ class BuschVacuumCard extends HTMLElement {
         if (taskActive(model, model.state ? model.state.state : 'unavailable')) return;
         const task = this._chosenTask(model);
         if (e.type === 'map-room-tap' && task === 'room' && d.mode === 'pick-room') this._toggleRoom(model, Number(d.room), d.shift);
+        if (task === 'spot' && d.mode === 'pick-point' && e.type === 'map-tap' && d.robot) this._spotTap(d);
         if (task === 'zone' && d.mode === 'draw-rect') {
             if (e.type === 'map-tap' && d.robot) this._zoneTap(d);
             if (e.type === 'map-drag') this._zoneDrag(d);
@@ -7954,13 +7977,141 @@ class BuschVacuumCard extends HTMLElement {
         return note;
     }
 
-    /** Taps on own targets: × first, then corner handles (44 px), then the area. */
+    // ── Spot (TASK-04) ────────────────────────────────────────────────────
+
+    /** Client points of a spot and its × (up right of it on screen). */
+    _spotHandles(i) {
+        const p = this._selection.spots[i];
+        const c = p && this._client(p);
+        if (!c) return null;
+        const off = 18 * this._map.config(this._map._attrs().map_index).object_scale;
+        return { point: c, remove: { x: c.x + off, y: c.y - off } };
+    }
+
+    _addSpot(p) {
+        this._selection.spots.push({ x: Math.round(p.x), y: Math.round(p.y) });
+        this._spotActive = this._selection.spots.length - 1;
+        this._selectionChanged();
+    }
+
+    _removeSpot(i) {
+        this._selection.spots.splice(i, 1);
+        this._spotActive = null;
+        this._selectionChanged();
+    }
+
+    _moveSpot(i, dir, mm) {
+        const p = this._selection.spots[i], d = this._zoneStep(dir, mm);
+        this._selection.spots[i] = { x: p.x + d.x, y: p.y + d.y };
+        this._spotActive = i;
+        this._selectionChanged();
+    }
+
+    _spotTap(d) {
+        const id = d.hit && d.hit.layer === 'tasks' ? String(d.hit.id) : '';
+        const [kind, i] = id.split(':');
+        if (kind === 'spot-remove') return this._removeSpot(Number(i));
+        if (kind === 'spot') {
+            this._spotActive = Number(i);
+            return this._update();
+        }
+        if (d.passable === false) {
+            this._taskInfo = { key: 'punktAusserhalb', note: 'outside' };
+            return this._update();
+        }
+        this._addSpot(d.robot);
+    }
+
+    /** From the obstacle dialog: switch to Spot and set the point; starting stays a deliberate tap. */
+    _spotHere(o) {
+        if (this._dialog && this._dialog.isConnected) this._dialog.close();
+        this._task = 'spot';
+        this._addSpot({ x: Number(o.x), y: Number(o.y) });
+    }
+
+    _spotPanel(hass, model) {
+        const nodes = [];
+        const spots = this._selection.spots;
+        if (this._spotActive !== null && !spots[this._spotActive]) this._spotActive = null;
+        const robot = cameraAttrs(model).vacuum_position;
+        const tools = document.createElement('div');
+        tools.className = 'task-tools';
+        tools.appendChild(this._panelButton(hass, 'punktAmRoboter', 'mdi:robot-vacuum', 'spot-robot', () => this._addSpot(robot), !robot));
+        if (spots.length) tools.appendChild(this._panelButton(hass, 'auswahlLeeren', 'mdi:selection-remove', 'spots-clear', () => this._clearSelection('spots')));
+        nodes.push(tools);
+        if (spots.length) {
+            const list = document.createElement('div');
+            list.className = 'task-list';
+            list.setAttribute('role', 'group');
+            list.setAttribute('aria-label', translate(hass, 'punkte'));
+            spots.forEach((p, i) => {
+                const text = translate(hass, 'punktName', { n: i + 1 });
+                const button = BuschUI.action({ label: text, text, icon: 'mdi:target', variant: 'secondary', onClick: () => {
+                    this._spotActive = this._spotActive === i ? null : i;
+                    this._update();
+                } });
+                button.classList.add('task-item');
+                button.setAttribute('data-action', 'spot-' + i);
+                button.setAttribute('aria-pressed', String(this._spotActive === i));
+                button.addEventListener('keydown', (event) => this._pointKey(event, i, 'spot'));
+                list.appendChild(button);
+            });
+            nodes.push(list);
+        }
+        const i = this._spotActive;
+        if (i !== null && spots[i]) {
+            nodes.push(this._arrowRow(hass, 'spot', (dir, mm) => this._moveSpot(i, dir, mm), () => this._removeSpot(i), translate(hass, 'punktBearbeiten', { n: i + 1 })));
+            nodes.push(this._keyHint(hass, 'tastenPunkt'));
+        }
+        return nodes;
+    }
+
+    /** Arrow buttons (100 mm, Shift 500 mm) and optionally Remove, for a point or the Go-To target. */
+    _arrowRow(hass, prefix, move, remove, label) {
+        const row = document.createElement('div');
+        row.className = 'task-edit';
+        row.setAttribute('role', 'group');
+        row.setAttribute('aria-label', label);
+        for (const [dir, icon] of [['left', 'mdi:arrow-left'], ['up', 'mdi:arrow-up'], ['down', 'mdi:arrow-down'], ['right', 'mdi:arrow-right']]) {
+            const name = translate(hass, 'nach_' + dir);
+            const button = BuschUI.action({ label: name, icon, variant: 'secondary', onClick: (event) => move(dir, event && event.shiftKey ? 500 : 100) });
+            button.setAttribute('data-action', prefix + '-' + dir);
+            row.appendChild(button);
+        }
+        if (remove) row.appendChild(this._panelButton(hass, 'entfernen', 'mdi:close', prefix + '-remove', remove));
+        return row;
+    }
+
+    /** Keys on a point entry: arrows move (Shift 500 mm), Delete removes, Escape deselects. */
+    _pointKey(event, i, kind) {
+        const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[event.key];
+        if (dir) {
+            event.preventDefault();
+            this._moveSpot(i, dir, event.shiftKey ? 500 : 100);
+        } else if (event.key === 'Delete' || event.key === 'Backspace') {
+            event.preventDefault();
+            this._removeSpot(i);
+        } else if (event.key === 'Escape' && this._spotActive === i) {
+            event.preventDefault();
+            this._spotActive = null;
+            this._update();
+        }
+    }
+
+    /** Taps on own targets: × first, then handles (44 px), then the area or point. */
     _hitSelection(point) {
         const model = this._model();
-        if (this._chosenTask(model) !== 'zone') return null;
+        const task = this._chosenTask(model);
         const c = this._client(point);
         if (!c) return null;
         const near = (q) => q && Math.hypot(q.x - c.x, q.y - c.y) <= HANDLE_PX;
+        if (task === 'spot') {
+            const spots = this._selection.spots;
+            for (let i = spots.length - 1; i >= 0; i--) if (near((this._spotHandles(i) || {}).remove)) return { id: 'spot-remove:' + i, object: spots[i] };
+            for (let i = spots.length - 1; i >= 0; i--) if (near((this._spotHandles(i) || {}).point)) return { id: 'spot:' + i, object: spots[i] };
+            return null;
+        }
+        if (task !== 'zone') return null;
         const zones = this._selection.zones;
         for (let i = zones.length - 1; i >= 0; i--) {
             const h = this._zoneHandles(i);
@@ -7979,6 +8130,20 @@ class BuschVacuumCard extends HTMLElement {
     /** Draws the own selection into the layer `tasks` (shape + number, R17). */
     _drawSelection(group, ctx) {
         const task = this._chosenTask(ctx.model);
+        if (task === 'spot') {
+            const map = this._taskMap();
+            this._selection.spots.forEach((p, i) => {
+                const outside = !!map && map.passable(p) === false;
+                group.appendChild(ctx.svgNode('polygon', { 'data-select': 'spot', 'data-spot': i, 'data-invalid': String(outside), 'data-chosen': String(this._spotActive === i), points: boxPoints(ctx, spotBox(p)) }));
+                const g = group.appendChild(screenMark(ctx, p, { 'data-handle': 'point' }));
+                g.appendChild(ctx.svgNode('circle', { r: 8 }));
+                g.appendChild(ctx.svgNode('text', { 'text-anchor': 'middle', y: 4, 'font-size': 11 })).textContent = String(i + 1);
+                const x = g.appendChild(ctx.svgNode('g', { 'data-handle': 'remove', transform: 'translate(18 -18)' }));
+                x.appendChild(ctx.svgNode('circle', { r: 11 }));
+                x.appendChild(ctx.svgNode('path', { d: 'M-4 -4 L4 4 M4 -4 L-4 4' }));
+            });
+            return;
+        }
         if (task === 'zone') {
             const map = this._taskMap();
             this._selection.zones.forEach((z, i) => {
