@@ -536,7 +536,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             gruppe_consumables: 'Zubehör',
             gruppe_info: 'Geräteinfo',
             gruppe_other: 'Sonstiges',
-            set_custom_mopping_mode: 'Eigener Wischmodus'
+            set_custom_mopping_mode: 'Eigener Wischmodus',
+            sucheLabel: 'Einstellungen durchsuchen',
+            treffer: '{n} Treffer',
+            keineTreffer: 'Keine Einstellung gefunden. Versuche einen anderen Begriff.'
         }
     },
     en: {
@@ -842,7 +845,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             gruppe_consumables: 'Consumables',
             gruppe_info: 'Device info',
             gruppe_other: 'Other',
-            set_custom_mopping_mode: 'Custom mopping mode'
+            set_custom_mopping_mode: 'Custom mopping mode',
+            sucheLabel: 'Search settings',
+            treffer: '{n} results',
+            keineTreffer: 'No setting found. Try another term.'
         }
     }
 };
@@ -3629,24 +3635,57 @@ const MODULE_VIEWS = {
     consumables: (card) => groupView(card, 'consumables')
 };
 
+/** Rows of device-settings (not dock's or clean-settings'), for the search (R14). */
+const searchableKeys = () => Object.keys(SETTINGS).filter((key) => !['station', 'clean'].includes(SETTINGS[key].group));
+
 function settingsView(card) {
     loadSettingTexts(card);
+    let query = ''; // survives redraws while the view is open; a new visit starts empty (R21)
     return {
         title: translate(card._hass, 'entrySettings'),
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
             const model = card._model();
-            const list = document.createElement('div');
-            list.className = 'menu settings-groups';
-            for (const group of SETTING_GROUPS.filter((g) => groupShown(model, g.name))) {
-                const label = translate(hass, 'gruppe_' + group.name);
-                const item = BuschUI.action({ label, text: label, icon: group.icon, variant: 'quiet', onClick: () => dialog.show(groupView(card, group.name)) });
-                item.classList.add('menu-item');
-                item.setAttribute('data-group', group.name);
-                list.appendChild(item);
-            }
-            body.appendChild(list);
+            const search = document.createElement('input');
+            search.className = 'settings-search setting-input';
+            search.setAttribute('type', 'search');
+            search.setAttribute('aria-label', translate(hass, 'sucheLabel'));
+            search.setAttribute('placeholder', translate(hass, 'sucheLabel'));
+            search.value = query;
+            const count = document.createElement('p');
+            count.className = 'search-count';
+            count.setAttribute('role', 'status');
+            const results = document.createElement('div');
+            const fill = () => {
+                const words = query.trim().toLowerCase();
+                if (!words) {
+                    count.hidden = true;
+                    const list = document.createElement('div');
+                    list.className = 'menu settings-groups';
+                    for (const group of SETTING_GROUPS.filter((g) => groupShown(model, g.name))) {
+                        const label = translate(hass, 'gruppe_' + group.name);
+                        const item = BuschUI.action({ label, text: label, icon: group.icon, variant: 'quiet', onClick: () => dialog.show(groupView(card, group.name)) });
+                        item.classList.add('menu-item');
+                        item.setAttribute('data-group', group.name);
+                        list.appendChild(item);
+                    }
+                    results.replaceChildren(list);
+                    return;
+                }
+                // Only the input's results redraw while typing; the field keeps focus and caret.
+                const rows = searchableKeys().filter((key) => settingLabel(hass, key).toLowerCase().includes(words))
+                    .map((key) => settingRow(card, model, key)).filter(Boolean);
+                count.hidden = false;
+                count.textContent = rows.length ? translate(hass, 'treffer', { n: rows.length }) : translate(hass, 'keineTreffer');
+                const list = document.createElement('div');
+                list.className = 'settings-list';
+                list.append(...rows);
+                results.replaceChildren(list);
+            };
+            search.addEventListener('input', () => { query = search.value; fill(); });
+            fill();
+            body.append(search, count, results);
         }
     };
 }
@@ -4583,6 +4622,16 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+}
+.settings-search {
+    width: 100%;
+    max-width: none;
+    margin-bottom: var(--ha-space-2, 8px);
+}
+.search-count {
+    margin: 0 0 var(--ha-space-2, 8px);
+    color: var(--secondary-text-color, #727272);
+    overflow-wrap: anywhere;
 }
 .settings-list {
     display: flex;
@@ -5538,6 +5587,7 @@ BuschVacuumCard.__internals = {
     SETTING_GROUPS,
     settingState,
     settingRow,
+    MODULE_VIEWS,
     writeSetting,
     callAction,
     DIALOG_STYLES,

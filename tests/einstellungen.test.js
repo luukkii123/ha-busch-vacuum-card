@@ -192,3 +192,74 @@ test('dock/clean-settings nutzen dieselbe Zeile ohne Änderung (Dock-Schlüssel)
   sel.dispatchEvent(k.u.neuesEreignis('change'));
   assert.deepEqual(aufrufe(k), [setze(k, 'washing_mode', sel.childNodes[0].value)]);
 });
+
+// ── Task 2: Übersicht, Gruppen, Suche (R25) ─────────────────────────────────
+
+const gruppen = (k) => $$d(k.u, '[data-group]').map((b) => b.getAttribute('data-group'));
+function uebersicht(name) {
+  const k = aufbau(name);
+  k.karte._openDialog(k.I.MODULE_VIEWS.settings(k.karte));
+  return k;
+}
+
+test('Übersicht: Gruppen nur mit Inhalt (voll, ohne Dock, minimal)', () => {
+  const k = einstellungen();
+  assert.deepEqual(gruppen(k), ['cleaning', 'mopping', 'carpet', 'station', 'camera', 'audio', 'dnd', 'schedule', 'battery', 'consumables', 'info', 'other']);
+  for (const b of $$d(k.u, '[data-group]')) assert.ok(b.textContent.trim(), 'Text, nicht nur Symbol');
+  assert.ok(!gruppen(uebersicht('ohne-dock')).includes('station'));
+  assert.deepEqual(gruppen(uebersicht('minimal')), ['info'], 'fremder Sauger: nur Geräteinfo');
+});
+
+test('Station führt in die Dock-Ansicht (Platzhalter bis Modul dock)', () => {
+  const k = einstellungen();
+  gruppe(k, 'station').click();
+  assert.equal($d(k.u, 'h1').textContent, 'Station');
+  assert.match($d(k.u, '.placeholder').textContent, /dock/);
+});
+
+test('Gruppe als Unterseite; Escape geht genau eine Ebene zurück', () => {
+  const k = einstellungen();
+  gruppe(k, 'carpet').click();
+  assert.equal($d(k.u, 'h1').textContent, 'Teppich');
+  assert.deepEqual($$d(k.u, '.setting').map((z) => z.getAttribute('data-setting')),
+    ['carpet_recognition', 'carpet_avoidance', 'carpet_boost', 'intensive_carpet_cleaning', 'clean_carpets_first', 'side_brush_carpet_rotate', 'carpet_cleaning']);
+  k.u.document.dispatchEvent(k.u.neuesEreignis('keydown', { key: 'Escape' }));
+  k.u.zurueck();
+  assert.equal($d(k.u, 'h1').textContent, 'Geräteeinstellungen');
+  assert.ok(gruppe(k, 'carpet'));
+});
+
+test('Suche über alle Zeilen mit Ergebnisanzahl; leeres Ergebnis mit Text (R14/R18)', () => {
+  const k = einstellungen();
+  const feld = $d(k.u, 'input[type="search"]') || $d(k.u, '.settings-search');
+  assert.equal(feld.getAttribute('aria-label'), 'Einstellungen durchsuchen');
+  feld.value = 'carpet';
+  feld.dispatchEvent(k.u.neuesEreignis('input'));
+  const treffer = $$d(k.u, '.setting').map((z) => z.getAttribute('data-setting'));
+  assert.ok(treffer.length >= 7 && treffer.every((key) => key.includes('carpet')), treffer.join());
+  assert.equal($d(k.u, '.search-count').textContent, treffer.length + ' Treffer');
+  assert.equal($$d(k.u, '[data-group]').length, 0, 'Treffer statt Gruppen');
+  feld.value = 'xyz';
+  feld.dispatchEvent(k.u.neuesEreignis('input'));
+  assert.equal($$d(k.u, '.setting').length, 0);
+  assert.match($d(k.u, '.search-count').textContent, /Keine Einstellung/);
+  feld.value = '';
+  feld.dispatchEvent(k.u.neuesEreignis('input'));
+  assert.ok(gruppe(k, 'carpet'), 'leere Suche zeigt wieder die Gruppen');
+});
+
+test('Suche bleibt beim Neuzeichnen erhalten und nutzt HA-Namen der Integration', () => {
+  const k = aufbau();
+  const hass = k.haus.hass;
+  k.haus.hass = () => Object.assign(hass(), { localize: (id) => (id === 'component.dreame_vacuum.entity.switch.child_lock.name' ? 'Kindersicherung' : '') });
+  k.karte.hass = k.haus.hass();
+  menue(k);
+  eintrag(k.u, 'settings').click();
+  const feld = $d(k.u, '.settings-search');
+  feld.value = 'kinder';
+  feld.dispatchEvent(k.u.neuesEreignis('input'));
+  assert.deepEqual($$d(k.u, '.setting').map((z) => z.getAttribute('data-setting')), ['child_lock']);
+  neu(k, { child_lock: true });
+  assert.equal($d(k.u, '.settings-search').value, 'kinder');
+  assert.deepEqual($$d(k.u, '.setting').map((z) => z.getAttribute('data-setting')), ['child_lock']);
+});
