@@ -106,3 +106,98 @@ test('Geräteinfo (ALL-12) nennt die Stationsprobleme aus stationStatus', () => 
   d.shadowRoot.querySelectorAll('[data-group]').find((b) => b.getAttribute('data-group') === 'info').click();
   assert.match(d.shadowRoot.querySelector('[data-info="station"]').textContent, /Dust bag status: Check/);
 });
+
+// ── Task 2: Dock-Knopf und Aktionsmenü (DOCK-05) ─────────────────────────────
+
+const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
+const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
+const $$d = (u, sel) => dialogVon(u).shadowRoot.querySelectorAll(sel);
+const dockKnopf = (k) => k.karte.shadowRoot.querySelector('.dock');
+function dockMenue(name = 'voll', optionen) {
+  const k = aufbau(name, optionen);
+  dockKnopf(k).click();
+  return k;
+}
+const menueEintraege = (k) => $$d(k.u, '[data-station-action]').map((b) => b.getAttribute('data-station-action'));
+const menueEintrag = (k, name) => $$d(k.u, '[data-station-action]').find((b) => b.getAttribute('data-station-action') === name);
+
+test('Dock-Anzeige ist ein Knopf mit Text und Farbe wie bisher; ohne Dock keiner', () => {
+  const k = aufbau('voll', { attribute: { dust_bag_status: 'Check' } });
+  const knopf = dockKnopf(k);
+  assert.equal(knopf.tagName, 'BUTTON');
+  assert.equal(knopf.getAttribute('aria-haspopup'), 'menu');
+  assert.equal(knopf.getAttribute('data-dock'), 'warning');
+  assert.match(knopf.textContent, /Station · Staubbeutel/);
+  assert.match(knopf.getAttribute('aria-label'), /Station · Staubbeutel/);
+  assert.equal(dockKnopf(aufbau('ohne-dock')), null);
+  assert.equal(dockKnopf(aufbau('voll', { config: { hidden_card_objects: ['dock_status_indicator'] } })), null);
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('Menü je Zustand mit genau den möglichen Einträgen', () => {
+  const weg = { washing_available: false, drying_available: false, dust_collection_available: false };
+  const faelle = [
+    ['angedockt', {}, 'docked', ['wash', 'dry', 'empty', 'return?', 'settings']],
+    ['waschend', { washing: true }, 'docked', ['wash', 'dry', 'empty', 'settings']],
+    ['trocknend', { drying: true, washing_available: false }, 'docked', ['dry', 'empty', 'settings']],
+    ['unterwegs', weg, 'cleaning', ['return', 'settings']],
+    ['Fehler', weg, 'error', ['return', 'settings']]
+  ];
+  for (const [fall, attribute, zustand, soll] of faelle) {
+    const k = dockMenue('voll', { attribute, zustand });
+    assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'menu', fall);
+    assert.deepEqual(menueEintraege(k), soll.filter((e) => e !== 'return?'), fall);
+  }
+  assert.match(menueEintrag(dockMenue('voll', { attribute: { washing: true } }), 'wash').textContent, /Waschen läuft · pausieren/);
+  assert.match(menueEintrag(dockMenue('voll', { attribute: { washing: true, washing_paused: true } }), 'wash').textContent, /pausiert · fortsetzen/);
+  assert.match(menueEintrag(dockMenue('voll', { attribute: { drying: true } }), 'dry').textContent, /Trocknen läuft · stoppen/);
+  const beutel = dockMenue('voll', { attribute: { capabilities: caps(aufbau()).concat('dust_bag_drying') } });
+  assert.ok(menueEintraege(beutel).includes('dust_bag_dry'), 'Beutel trocknen, wenn vorhanden');
+});
+
+test('Jeder Eintrag ruft genau seinen Dienst; Doppeltipp = ein Aufruf', () => {
+  const soll = { wash: aktion('toggle_washing'), dry: aktion('toggle_drying'), empty: aktion('start_auto_empty'), dust_bag_dry: aktion('toggle_dust_bag_drying') };
+  for (const [name, aufruf] of Object.entries(soll)) {
+    const k = dockMenue('voll', { attribute: { capabilities: caps(aufbau()).concat('dust_bag_drying') } });
+    const e = menueEintrag(k, name);
+    e.click();
+    e.click();
+    assert.deepEqual(aufrufe(k), [aufruf], name);
+  }
+  const z = dockMenue('voll', { attribute: { washing_available: false }, zustand: 'cleaning' });
+  const zurueck = menueEintrag(z, 'return');
+  assert.match(zurueck.textContent, /Zurück/, 'gleicher Text wie der Steuerknopf (R01)');
+  zurueck.click();
+  zurueck.click();
+  assert.deepEqual(aufrufe(z), [{ domain: 'vacuum', service: 'return_to_base', data: { entity_id: 'vacuum.robo' } }]);
+});
+
+test('Laufender Aufruf zeigt Zustand; Erfolg schließt das Menü, Fehler bleibt mit R12-Text', async () => {
+  const k = dockMenue();
+  let fertig;
+  k.haus.antwort = () => new Promise((ok) => { fertig = ok; });
+  menueEintrag(k, 'wash').click();
+  const busy = menueEintrag(k, 'wash');
+  assert.equal(busy.getAttribute('aria-busy'), 'true');
+  assert.equal(busy.disabled, true);
+  assert.match(busy.textContent, /Wird gestartet/);
+  fertig();
+  await mikro();
+  k.u.uhr.vor(400);
+  assert.equal(dialogVon(k.u), null, 'Menü zu');
+  const f = dockMenue();
+  f.haus.antwort = () => Promise.reject(new Error('nicht verfügbar während Reinigung'));
+  menueEintrag(f, 'empty').click();
+  await mikro();
+  const note = $d(f.u, '[data-note="empty"]');
+  assert.match(note.textContent, /nicht verfügbar während Reinigung/);
+  assert.match(note.textContent, /erneut/);
+  assert.equal(menueEintrag(f, 'empty').disabled, false, 'wieder bedienbar');
+});
+
+test('Station-Einstellungen aus dem Dock-Menü', () => {
+  const k = dockMenue();
+  menueEintrag(k, 'settings').click();
+  assert.equal($d(k.u, 'h1').textContent, 'Station');
+  assert.notEqual($d(k.u, '.sheet').getAttribute('data-kind'), 'menu');
+});

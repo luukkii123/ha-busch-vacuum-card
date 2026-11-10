@@ -526,6 +526,25 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sperre_liste: 'Die Integration erlaubt die Änderung gerade nicht.',
             ja: 'Ja',
             nein: 'Nein',
+            aktWaschen: 'Mop waschen',
+            aktWaschenPausieren: 'Waschen läuft · pausieren',
+            aktWaschenFortsetzen: 'Waschen pausiert · fortsetzen',
+            aktTrocknen: 'Trocknen starten',
+            aktTrocknenStoppen: 'Trocknen läuft · stoppen',
+            aktBeutel: 'Staubbeutel trocknen',
+            aktEntleeren: 'Jetzt entleeren',
+            aktAblassen: 'Wasser ablassen',
+            aktTankLeeren: 'Wassertank leeren',
+            aktStationReinigen: 'Station reinigen',
+            aktSelbstreparatur: 'Selbstreparatur',
+            aktNachreinigen: 'Nachreinigen',
+            folge_drain: 'Die Station lässt ihr Wasser ab. Waschen und Wischen gehen erst wieder, wenn Wasser nachgefüllt ist.',
+            folge_empty_tank: 'Der Frischwassertank wird geleert; das Wasser darin wird verworfen. Danach den Tank neu füllen.',
+            folge_self_repair: 'Die Station prüft und repariert sich selbst. Das dauert einige Minuten; währenddessen wäscht und trocknet sie nicht.',
+            starten: 'Starten',
+            wirdGestartet: 'Wird gestartet …',
+            aktionFehler: '{name} wurde nicht gestartet ({grund}). An der Station hat sich nichts geändert. Prüfe Station und Roboter und versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
+            stationEinstellungen: 'Station-Einstellungen',
             status_washing: 'Mop wird gewaschen',
             status_washing_paused: 'Waschen pausiert',
             status_drying: 'Trocknet',
@@ -917,6 +936,25 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sperre_liste: 'The integration does not allow this change right now.',
             ja: 'Yes',
             nein: 'No',
+            aktWaschen: 'Wash mop',
+            aktWaschenPausieren: 'Washing · pause',
+            aktWaschenFortsetzen: 'Washing paused · resume',
+            aktTrocknen: 'Start drying',
+            aktTrocknenStoppen: 'Drying · stop',
+            aktBeutel: 'Dry dust bag',
+            aktEntleeren: 'Empty now',
+            aktAblassen: 'Drain water',
+            aktTankLeeren: 'Empty water tank',
+            aktStationReinigen: 'Clean station',
+            aktSelbstreparatur: 'Self-repair',
+            aktNachreinigen: 'Re-clean',
+            folge_drain: 'The station drains its water. Washing and mopping work again once water is refilled.',
+            folge_empty_tank: 'The clean water tank is emptied; its water is discarded. Refill the tank afterwards.',
+            folge_self_repair: 'The station checks and repairs itself. This takes a few minutes; it neither washes nor dries meanwhile.',
+            starten: 'Start',
+            wirdGestartet: 'Starting …',
+            aktionFehler: '{name} did not start ({grund}). Nothing changed at the station. Check station and robot and try again; if that does not help, check the dreame_vacuum integration.',
+            stationEinstellungen: 'Station settings',
             status_washing: 'Mop washing',
             status_washing_paused: 'Washing paused',
             status_drying: 'Drying',
@@ -1756,7 +1794,7 @@ const errorText = (error) => String((error && (error.message || error.code)) || 
  * setters end silently). Without `check` (actions) the service's answer is the
  * confirmation; `done` runs then. A second tap while one runs is ignored (R11).
  */
-function trackWrite(card, key, { want, check, call, label, done }) {
+function trackWrite(card, key, { want, check, call, label, done, failKey = 'schreibFehler' }) {
     if (card._settingWrites.has(key)) return false;
     card._settingNotes.delete(key);
     const pending = { want, check: check || (() => false), timer: null };
@@ -1773,7 +1811,7 @@ function trackWrite(card, key, { want, check, call, label, done }) {
         if (check || card._settingWrites.get(key) !== pending) return;
         if (done) done();
         fail('');
-    }, (error) => fail(translate(card._hass, 'schreibFehler', { name, grund: errorText(error) })));
+    }, (error) => fail(translate(card._hass, failKey, { name, grund: errorText(error) })));
     rerender(card);
     return true;
 }
@@ -1793,10 +1831,10 @@ function writeSetting(card, key, value, params) {
 }
 
 /** `vacuum_call_action { entity_id, key[, value] }`, busy until the service answers. */
-function callAction(card, key, value, { track = key, label, done } = {}) {
+function callAction(card, key, value, { track = key, label, done, failKey } = {}) {
     const data = { entity_id: card._opts.entity, key };
     if (value !== undefined) data.value = String(value);
-    return trackWrite(card, track, { label, done, call: () => card._hass.callService('dreame_vacuum', 'vacuum_call_action', data) });
+    return trackWrite(card, track, { label, done, failKey, call: () => card._hass.callService('dreame_vacuum', 'vacuum_call_action', data) });
 }
 
 function pickMap(card, model, name) {
@@ -4737,6 +4775,123 @@ function voicePackConfirm(card, draft) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// Station (dock): actions, dock menu, station view with tabs (DOCK-01…06)
+// ---------------------------------------------------------------------------
+
+/**
+ * Station actions, all through `vacuum_call_action { key[, value] }`
+ * (device.py#L5407–L5630). `needs`: can() name; `when`: possible right now
+ * (R18); `tab`: shown in that tab of the station view and, with `menu`, in the
+ * dock menu (R01: same text, symbol, call); no tab = "Maintenance".
+ * `confirm`: asks first, naming what follows (R13).
+ */
+const STATION_ACTIONS = [
+    { name: 'wash', key: 'toggle_washing', needs: 'wash', tab: 'wash', menu: true, icon: 'mdi:dishwasher',
+        when: (m) => m.attr('washing_available') !== false || m.attr('washing') === true,
+        text: (m) => (m.attr('washing_paused') ? 'aktWaschenFortsetzen' : m.attr('washing') ? 'aktWaschenPausieren' : 'aktWaschen') },
+    { name: 'dry', key: 'toggle_drying', needs: 'dry', tab: 'dry', menu: true, icon: 'mdi:weather-sunny',
+        when: (m) => m.attr('drying_available') !== false || m.attr('drying') === true,
+        text: (m) => (m.attr('drying') ? 'aktTrocknenStoppen' : 'aktTrocknen') },
+    { name: 'dust_bag_dry', key: 'toggle_dust_bag_drying', needs: 'dust_bag_dry', tab: 'dry', menu: true, icon: 'mdi:fire',
+        when: (m) => m.attr('dust_bag_drying_available') !== false, text: () => 'aktBeutel' },
+    { name: 'empty', key: 'start_auto_empty', needs: 'empty', tab: 'empty', menu: true, icon: 'mdi:delete-empty',
+        when: (m) => m.attr('dust_collection_available') !== false, text: () => 'aktEntleeren' },
+    // start_draining without value drains, with '1' empties the clean water tank (device.py#L5567): nothing else.
+    { name: 'drain', key: 'start_draining', needs: 'drain', icon: 'mdi:pump', confirm: true,
+        when: (m) => m.attr('draining_available') !== false, text: () => 'aktAblassen' },
+    { name: 'empty_tank', key: 'start_draining', value: '1', needs: 'empty_tank', icon: 'mdi:waves-arrow-up', confirm: true,
+        when: (m) => m.attr('draining_available') !== false, text: () => 'aktTankLeeren' },
+    { name: 'station_cleaning', key: 'start_station_cleaning', needs: 'station_cleaning', icon: 'mdi:car-wash', when: () => true, text: () => 'aktStationReinigen' },
+    { name: 'self_repair', key: 'start_self_repairing', needs: 'self_repair', icon: 'mdi:wrench-cog', confirm: true, when: () => true, text: () => 'aktSelbstreparatur' },
+    { name: 'recleaning', key: 'start_recleaning', needs: 'recleaning', icon: 'mdi:refresh-circle', when: () => true, text: () => 'aktNachreinigen' }
+];
+
+const stationActions = (model, filter) => STATION_ACTIONS.filter((a) => filter(a) && model.can(a.needs) && a.when(model));
+
+/** Runs an action once (R11: busy until the service answers, a second tap is ignored). */
+function runStationAction(card, action, done) {
+    const hass = card._hass;
+    return callAction(card, action.key, action.value, { track: 'station:' + action.name, label: translate(hass, action.text(card._model())), failKey: 'aktionFehler', done });
+}
+
+/** The one button of a station action, for menu and station view (R01/R08), with its error note (R12). */
+function stationActionItem(card, model, hass, action, done) {
+    const track = 'station:' + action.name;
+    const busy = card._settingWrites.has(track);
+    const label = translate(hass, action.text(model));
+    const shown = busy ? translate(hass, 'wirdGestartet') : label;
+    const button = BuschUI.action({ label: busy ? label + ' · ' + shown : label, text: shown, icon: action.icon, variant: 'quiet', disabled: busy,
+        onClick: () => (action.confirm ? stationConfirm(card, action) : runStationAction(card, action, done)) });
+    button.classList.add('menu-item');
+    button.setAttribute('data-station-action', action.name);
+    if (busy) button.setAttribute('aria-busy', 'true');
+    const note = card._settingNotes.get(track);
+    if (!note) return [button];
+    const line = noteLine(note, 'error');
+    line.setAttribute('data-note', action.name);
+    return [button, line];
+}
+
+/** Draining, emptying the tank and self-repair ask first and say what follows (R13). */
+function stationConfirm(card, action) {
+    const hass = card._hass;
+    const view = {
+        title: translate(hass, action.text(card._model())) + '?',
+        kind: 'confirm',
+        render: (body, h, dialog) => {
+            body.appendChild(noteLine(translate(h, 'folge_' + action.name)));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const cancel = BuschUI.action({ label: translate(h, 'abbrechen'), text: translate(h, 'abbrechen'), onClick: () => dialog._goBack() });
+            cancel.setAttribute('data-action', 'cancel');
+            const go = BuschUI.action({ label: translate(h, 'starten'), text: translate(h, 'starten'), variant: 'primary', onClick: () => {
+                runStationAction(card, action);
+                dialog._goBack();
+            } });
+            go.setAttribute('data-action', 'confirm');
+            actions.append(cancel, go);
+            body.appendChild(actions);
+        }
+    };
+    if (card._dialog && card._dialog.isConnected) card._dialog.show(view);
+    else card._openDialog(view);
+    return true;
+}
+
+/** The dock button's menu (DOCK-05): only what is possible now (R18); fleeting (R04). */
+function stationMenu(card) {
+    return {
+        title: translate(card._hass, 'station'),
+        kind: 'menu',
+        watch: () => [card._opts.entity],
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const list = document.createElement('div');
+            list.className = 'menu';
+            const close = () => { if (dialog.isConnected) dialog.close(); };
+            for (const action of stationActions(model, (a) => a.menu)) list.append(...stationActionItem(card, model, hass, action, close));
+            const state = model.state ? model.state.state : 'unavailable';
+            if (!['docked', 'returning'].includes(state) && model.can('return_home')) {
+                let sent = false;
+                const back = BuschUI.action({ label: translate(hass, 'return'), text: translate(hass, 'return'), icon: CONTROLS.return.icon, variant: 'quiet', onClick: () => {
+                    if (sent) return;
+                    sent = true;
+                    card._call('return', model.state);
+                    close();
+                } });
+                back.classList.add('menu-item');
+                back.setAttribute('data-station-action', 'return');
+                list.appendChild(back);
+            }
+            const settings = viewLink(translate(hass, 'stationEinstellungen'), 'station-settings', 'mdi:tune-variant', () => dialog.show(groupView(card, 'station')));
+            settings.setAttribute('data-station-action', 'settings');
+            list.appendChild(settings);
+            body.appendChild(list);
+        }
+    };
+}
+
 const CARD_STYLES = BuschUI.cardStyles + `
 :host {
     display: block;
@@ -6512,18 +6667,19 @@ class BuschVacuumCard extends HTMLElement {
         return node;
     }
 
-    /** Station status: colour AND text (R17), so it never speaks through colour alone. */
+    /** Station status as the dock button (DOCK-05): colour AND text (R17), opens the station menu. */
     _dock(hass, model) {
         const status = dockStatus(model);
-        const node = document.createElement('div');
-        node.className = 'dock';
-        node.setAttribute('role', 'status');
+        const words = translate(hass, 'station') + (status.key ? ' · ' + translate(hass, status.key) : '');
+        const node = BuschUI.action({ label: words, icon: status.level === 'ok' ? 'mdi:home-variant-outline' : 'mdi:home-alert-outline', variant: 'secondary',
+            onClick: () => this._openDialog(stationMenu(this)) });
+        node.classList.add('dock');
+        node.setAttribute('aria-haspopup', 'menu');
+        node.setAttribute('data-action', 'dock');
         node.setAttribute('data-dock', status.level);
-        const symbol = BuschUI.ha.icon(status.level === 'ok' ? 'mdi:home-variant-outline' : 'mdi:home-alert-outline');
-        symbol.setAttribute('aria-hidden', 'true');
         const text = document.createElement('span');
-        text.textContent = translate(hass, 'station') + (status.key ? ' · ' + translate(hass, status.key) : '');
-        node.append(symbol, text);
+        text.textContent = words;
+        node.appendChild(text);
         return node;
     }
 
