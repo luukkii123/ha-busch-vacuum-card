@@ -539,6 +539,23 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             set_custom_mopping_mode: 'Eigener Wischmodus',
             sucheLabel: 'Einstellungen durchsuchen',
             stationWaschen: 'Station: Waschen, Wassertemperatur, Waschfrequenz',
+            sprachpaket: 'Sprachpaket',
+            sprachpaketTitel: 'Sprachpaket installieren',
+            sprachpaketHinweis: 'Die Integration bringt keinen Katalog mit: Adresse, MD5-Prüfsumme und Größe des Pakets müssen aus einer vertrauenswürdigen Quelle stammen. Alle Felder sind Pflichtfelder.',
+            feld_lang_id: 'Sprach-ID',
+            feld_url: 'Adresse des Pakets (URL)',
+            feld_md5: 'MD5-Prüfsumme',
+            feld_size: 'Größe in Bytes',
+            fehlerSprachId: 'Pflichtfeld: Buchstaben, Ziffern, - oder _ (z. B. DE).',
+            fehlerUrl: 'Pflichtfeld: vollständige Adresse mit http:// oder https://, ohne Leer- und Anführungszeichen.',
+            fehlerMd5: 'Pflichtfeld: genau 32 Zeichen aus 0–9 und a–f.',
+            fehlerGroesse: 'Pflichtfeld: ganze Zahl über 0.',
+            weiter: 'Weiter',
+            installieren: 'Installieren',
+            sprachpaketFrageTitel: 'Sprachpaket installieren?',
+            sprachpaketFrage: 'Paket „{id}“ ({groesse} Bytes) von {url} installieren? Der Roboter lädt es herunter und ersetzt damit seine Sprachausgabe.',
+            sprachpaketGesendet: 'Installation von „{id}“ angefragt. Sobald das Gerät fertig ist, zeigt „Sprachpaket“ die neue ID.',
+            eingabenBleiben: 'Deine Eingaben bleiben erhalten.',
             treffer: '{n} Treffer',
             keineTreffer: 'Keine Einstellung gefunden. Versuche einen anderen Begriff.'
         }
@@ -849,6 +866,23 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             set_custom_mopping_mode: 'Custom mopping mode',
             sucheLabel: 'Search settings',
             stationWaschen: 'Station: washing, water temperature, washing frequency',
+            sprachpaket: 'Voice pack',
+            sprachpaketTitel: 'Install voice pack',
+            sprachpaketHinweis: 'The integration has no catalogue: address, MD5 checksum and size of the pack must come from a trusted source. All fields are required.',
+            feld_lang_id: 'Language ID',
+            feld_url: 'Pack address (URL)',
+            feld_md5: 'MD5 checksum',
+            feld_size: 'Size in bytes',
+            fehlerSprachId: 'Required: letters, digits, - or _ (e.g. DE).',
+            fehlerUrl: 'Required: full address with http:// or https://, without blanks or quotes.',
+            fehlerMd5: 'Required: exactly 32 characters of 0–9 and a–f.',
+            fehlerGroesse: 'Required: a whole number above 0.',
+            weiter: 'Next',
+            installieren: 'Install',
+            sprachpaketFrageTitel: 'Install voice pack?',
+            sprachpaketFrage: 'Install pack “{id}” ({groesse} bytes) from {url}? The robot downloads it and replaces its voice with it.',
+            sprachpaketGesendet: 'Installation of “{id}” requested. Once the device is done, “Voice pack” shows the new ID.',
+            eingabenBleiben: 'Your input is kept.',
             treffer: '{n} results',
             keineTreffer: 'No setting found. Try another term.'
         }
@@ -1543,25 +1577,27 @@ const errorText = (error) => String((error && (error.message || error.code)) || 
 /**
  * Tracks one write until the device confirms it (`check`), or reports why not:
  * a service error at once, no confirmation after OPTIMISTIC_HOLD_MS (some
- * setters end silently). A second tap while one runs is ignored (R11).
+ * setters end silently). Without `check` (actions) the service's answer is the
+ * confirmation; `done` runs then. A second tap while one runs is ignored (R11).
  */
-function trackWrite(card, key, { want, check, call }) {
+function trackWrite(card, key, { want, check, call, label, done }) {
     if (card._settingWrites.has(key)) return false;
     card._settingNotes.delete(key);
     const pending = { want, check: check || (() => false), timer: null };
-    const label = SETTINGS[key] ? settingLabel(card._hass, key) : translate(card._hass, 'aenderung');
+    const name = label || (SETTINGS[key] ? settingLabel(card._hass, key) : translate(card._hass, 'aenderung'));
     const fail = (text) => {
         if (card._settingWrites.get(key) !== pending) return;
         settleWrite(card, key);
         if (text) card._settingNotes.set(key, text);
         rerender(card);
     };
-    pending.timer = setTimeout(() => fail(pending.check(card._model()) ? '' : translate(card._hass, 'nichtUebernommen', { name: label })), OPTIMISTIC_HOLD_MS);
+    if (check) pending.timer = setTimeout(() => fail(check(card._model()) ? '' : translate(card._hass, 'nichtUebernommen', { name })), OPTIMISTIC_HOLD_MS);
     card._settingWrites.set(key, pending);
     Promise.resolve(call()).then(() => {
-        // Actions have nothing to compare: the service's answer is the confirmation.
-        if (!check && card._settingWrites.get(key) === pending) fail('');
-    }, (error) => fail(translate(card._hass, 'schreibFehler', { name: label, grund: errorText(error) })));
+        if (check || card._settingWrites.get(key) !== pending) return;
+        if (done) done();
+        fail('');
+    }, (error) => fail(translate(card._hass, 'schreibFehler', { name, grund: errorText(error) })));
     rerender(card);
     return true;
 }
@@ -1581,10 +1617,10 @@ function writeSetting(card, key, value, params) {
 }
 
 /** `vacuum_call_action { entity_id, key[, value] }`, busy until the service answers. */
-function callAction(card, key, value, check) {
+function callAction(card, key, value, { track = key, label, done } = {}) {
     const data = { entity_id: card._opts.entity, key };
     if (value !== undefined) data.value = String(value);
-    return trackWrite(card, key, { check, call: () => card._hass.callService('dreame_vacuum', 'vacuum_call_action', data) });
+    return trackWrite(card, track, { label, done, call: () => card._hass.callService('dreame_vacuum', 'vacuum_call_action', data) });
 }
 
 /** Status line under a setting's name: always words, never colour alone (R17). */
@@ -3619,6 +3655,7 @@ function groupShown(model, name) {
         case 'consumables': return model.can('consumables');
         case 'info': return !!model.state;
         case 'schedule': return Array.isArray(model.attr('schedule'));
+        case 'audio': return model.attr('voice_packet_id') !== undefined || groupKeys(name).some((key) => settingValue(model, key).source !== null);
         default: return groupKeys(name).some((key) => settingValue(model, key).source !== null);
     }
 }
@@ -3720,14 +3757,177 @@ function groupView(card, name) {
                 if (row) list.appendChild(row);
             }
             body.appendChild(list);
-            // Water temperature, washing mode and frequency are dock's rows (ALL-03): one place, linked (R08).
-            if (name === 'mopping' && model.can('dock')) {
-                const label = translate(hass, 'stationWaschen');
-                const link = BuschUI.action({ label, text: label, icon: 'mdi:chevron-right', variant: 'quiet', onClick: () => dialog.show(groupView(card, 'station')) });
-                link.classList.add('menu-item');
-                link.setAttribute('data-action', 'station');
-                body.appendChild(link);
+            if (GROUP_EXTRAS[name]) GROUP_EXTRAS[name](card, model, body, hass, dialog);
+        }
+    };
+}
+
+/** A link to a deeper view, styled as a menu entry. */
+function viewLink(label, action, icon, onClick) {
+    const link = BuschUI.action({ label, text: label, icon, variant: 'quiet', onClick });
+    link.classList.add('menu-item');
+    link.setAttribute('data-action', action);
+    return link;
+}
+
+/** A read-only line in a settings list: name and value as text. */
+function infoRow(label, value, name) {
+    const row = document.createElement('div');
+    row.className = 'setting';
+    row.setAttribute('data-info', name);
+    const text = document.createElement('div');
+    text.className = 'setting-text';
+    const caption = document.createElement('span');
+    caption.className = 'setting-name';
+    caption.textContent = label;
+    text.appendChild(caption);
+    const shown = document.createElement('span');
+    shown.className = 'setting-value';
+    shown.textContent = value;
+    row.append(text, shown);
+    return row;
+}
+
+/** What groups show beyond their rows. */
+const GROUP_EXTRAS = {
+    // Water temperature, washing mode and frequency are dock's rows (ALL-03): one place, linked (R08).
+    mopping: (card, model, body, hass, dialog) => {
+        if (model.can('dock')) body.appendChild(viewLink(translate(hass, 'stationWaschen'), 'station', 'mdi:chevron-right', () => dialog.show(groupView(card, 'station'))));
+    },
+    audio: (card, model, body, hass, dialog) => {
+        // Letter IDs like "DE" become None in set_property_value (device.py#L2916): shown, changed only by installing.
+        if (model.attr('voice_packet_id') !== undefined) body.appendChild(infoRow(translate(hass, 'sprachpaket'), String(model.attr('voice_packet_id')), 'voice_packet_id'));
+        if (model.can('dreame_vacuum.vacuum_install_voice_pack')) {
+            const done = card._settingDone.get('voice_pack');
+            if (done) body.appendChild(noteLine(done));
+            body.appendChild(viewLink(translate(hass, 'sprachpaketTitel'), 'voice-pack', 'mdi:download-outline', () => dialog.show(voicePackView(card))));
+        }
+    }
+};
+
+function noteLine(text, kind) {
+    const note = document.createElement('p');
+    note.className = 'form-note';
+    if (kind) note.setAttribute('data-kind', kind);
+    note.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    note.textContent = text;
+    return note;
+}
+
+/**
+ * One labelled form field (R10): visible label, required marker for screen
+ * readers, inline error under the field. `update(text)` changes only the error.
+ */
+function formField(name, label, input, error) {
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    input.id = 'field-' + name;
+    input.setAttribute('data-field', name);
+    input.classList.add('setting-input');
+    const caption = document.createElement('label');
+    caption.setAttribute('for', input.id);
+    caption.textContent = label;
+    const message = document.createElement('span');
+    message.className = 'field-error';
+    message.id = input.id + '-error';
+    input.setAttribute('aria-describedby', message.id);
+    const update = (text) => {
+        message.textContent = text || '';
+        if (text) input.setAttribute('aria-invalid', 'true');
+        else input.removeAttribute('aria-invalid');
+    };
+    update(error);
+    wrap.append(caption, input, message);
+    return { wrap, update };
+}
+
+/** Inline checks of the voice pack form; keys of the error texts. */
+function voicePackErrors(draft) {
+    const errors = {};
+    if (!/^[A-Za-z0-9_-]{1,16}$/.test(draft.lang_id.trim())) errors.lang_id = 'fehlerSprachId';
+    // The integration pastes url into a JSON string by hand (device.py#L5972): no quotes or blanks.
+    if (!/^https?:\/\/[^\s"'\\<>]+$/i.test(draft.url.trim())) errors.url = 'fehlerUrl';
+    if (!/^[0-9a-f]{32}$/i.test(draft.md5.trim())) errors.md5 = 'fehlerMd5';
+    if (!/^[1-9]\d{0,11}$/.test(draft.size.trim())) errors.size = 'fehlerGroesse';
+    return errors;
+}
+
+/**
+ * DEV-02: voice pack install as a form (user's decision 10.11.2026); the
+ * integration has no catalogue, so URL, MD5 and size come from the user.
+ * The draft lives on the card: leaving and coming back keeps it (R10).
+ */
+function voicePackView(card) {
+    const draft = card._drafts.get('voice') || { lang_id: '', url: '', md5: '', size: '' };
+    card._drafts.set('voice', draft);
+    let checked = false;
+    return {
+        title: translate(card._hass, 'sprachpaketTitel'),
+        kind: 'editor',
+        watch: () => [],
+        render: (body, hass, dialog) => {
+            body.appendChild(noteLine(translate(hass, 'sprachpaketHinweis')));
+            const errors = checked ? voicePackErrors(draft) : {};
+            const fields = {};
+            for (const name of ['lang_id', 'url', 'md5', 'size']) {
+                const input = document.createElement('input');
+                input.setAttribute('type', name === 'url' ? 'url' : 'text');
+                if (name === 'size') input.setAttribute('inputmode', 'numeric');
+                input.setAttribute('aria-required', 'true');
+                input.setAttribute('autocomplete', 'off');
+                input.value = draft[name];
+                const field = formField(name, translate(hass, 'feld_' + name), input, errors[name] ? translate(hass, errors[name]) : '');
+                input.addEventListener('input', () => {
+                    draft[name] = input.value;
+                    if (checked) field.update(voicePackErrors(draft)[name] ? translate(hass, voicePackErrors(draft)[name]) : '');
+                });
+                fields[name] = field;
+                body.appendChild(field.wrap);
             }
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const next = BuschUI.action({ label: translate(hass, 'weiter'), text: translate(hass, 'weiter'), variant: 'primary', onClick: () => {
+                checked = true;
+                if (Object.keys(voicePackErrors(draft)).length) dialog._render();
+                else dialog.show(voicePackConfirm(card, draft));
+            } });
+            next.setAttribute('data-action', 'submit');
+            actions.appendChild(next);
+            body.appendChild(actions);
+        }
+    };
+}
+
+function voicePackConfirm(card, draft) {
+    const data = { entity_id: card._opts.entity, lang_id: draft.lang_id.trim(), url: draft.url.trim(), md5: draft.md5.trim().toLowerCase(), size: Number(draft.size.trim()) };
+    return {
+        title: translate(card._hass, 'sprachpaketFrageTitel'),
+        kind: 'confirm',
+        watch: () => [],
+        render: (body, hass, dialog) => {
+            const busy = card._settingWrites.has('voice_pack');
+            const failed = card._settingNotes.get('voice_pack');
+            body.appendChild(noteLine(translate(hass, 'sprachpaketFrage', { id: data.lang_id, url: data.url, groesse: data.size })));
+            if (failed) body.appendChild(noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error'));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            cancel.setAttribute('data-action', 'cancel');
+            const go = BuschUI.action({ label: translate(hass, 'installieren'), text: translate(hass, busy ? 'speichert' : 'installieren'), variant: 'primary', disabled: busy, onClick: () => {
+                trackWrite(card, 'voice_pack', {
+                    label: translate(hass, 'sprachpaket'),
+                    call: () => card._hass.callService('dreame_vacuum', 'vacuum_install_voice_pack', data),
+                    done: () => {
+                        card._drafts.delete('voice');
+                        card._settingDone.set('voice_pack', translate(hass, 'sprachpaketGesendet', { id: data.lang_id }));
+                        dialog.close();
+                    }
+                });
+            } });
+            go.setAttribute('data-action', 'confirm');
+            if (busy) go.setAttribute('aria-busy', 'true');
+            actions.append(cancel, go);
+            body.appendChild(actions);
         }
     };
 }
@@ -4712,6 +4912,38 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 .setting-input:disabled {
     opacity: 0.5;
 }
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-1, 4px);
+    margin-bottom: var(--ha-space-3, 12px);
+}
+.field .setting-input {
+    flex: none;
+    width: 100%;
+}
+.field-error {
+    color: var(--bvc-error-color, var(--error-color, #db4437));
+    font-size: var(--ha-font-size-s, 12px);
+    overflow-wrap: anywhere;
+}
+.field-error:empty {
+    display: none;
+}
+.form-note {
+    margin: 0 0 var(--ha-space-3, 12px);
+    color: var(--secondary-text-color, #727272);
+    overflow-wrap: anywhere;
+}
+.form-note[data-kind=error] {
+    color: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.setting-value {
+    flex: 0 1 auto;
+    min-width: 0;
+    text-align: end;
+    overflow-wrap: anywhere;
+}
 .floor-preview {
     flex: none;
     width: 56px;
@@ -4962,6 +5194,8 @@ class BuschVacuumCard extends HTMLElement {
         this._lockHeld = false;
         this._settingWrites = new Map(); // setting key → write waiting for the device (writeSetting)
         this._settingNotes = new Map(); // setting key → why the last write failed (R12)
+        this._settingDone = new Map(); // action → what it achieved, shown once in its group (R11)
+        this._drafts = new Map(); // form → unsaved input, kept when the form is left (R10)
         this._settingTexts = null;
     }
 

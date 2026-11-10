@@ -266,7 +266,7 @@ test('Suche bleibt beim Neuzeichnen erhalten und nutzt HA-Namen der Integration'
 
 // ── Task 3: Reinigung, Wischen, Teppich (ALL-01 Anteil, ALL-02, DEV-03/04) ────
 
-const zeilen = (k) => $$d(k.u, '.setting').map((z) => z.getAttribute('data-setting'));
+const zeilen = (k) => $$d(k.u, '[data-setting]').map((z) => z.getAttribute('data-setting'));
 const wert = (z) => {
   const s = z.querySelector('[role="switch"]');
   return s ? s.getAttribute('aria-checked') === 'true' : z.querySelector('select').value;
@@ -398,4 +398,114 @@ test('Kameralicht automatisch über den belegten Umweg: an = Helligkeit 40 mit p
   const aus = aufbau('voll', { states: zustand('switch.robo_camera_light_brightness_auto', 'on') });
   zeile(aus, 'camera_light_brightness_auto').querySelector('[role="switch"]').click();
   assert.deepEqual(aufrufe(aus), [setze(aus, 'camera_light_brightness', 40)]);
+});
+
+// ── Task 5: Audio und Sprachpaket (ALL-07, DEV-02) ───────────────────────────
+
+const taste = (k, key) => k.u.document.dispatchEvent(k.u.neuesEreignis('keydown', { key }));
+const feld = (k, name) => $d(k.u, `[data-field="${name}"]`);
+function tippe(k, name, text) {
+  const f = feld(k, name);
+  f.value = text;
+  f.dispatchEvent(k.u.neuesEreignis('input'));
+}
+function audio() {
+  const k = einstellungen();
+  gruppe(k, 'audio').click();
+  return k;
+}
+
+test('Audio: Lautstärke 0–100, Sprachassistent, Sprache als Liste, Streaming-Ansage, Sprachpaket als Anzeige', () => {
+  const k = audio();
+  assert.deepEqual(zeilen(k), ['voice_assistant', 'streaming_voice_prompt', 'voice_assistant_language', 'volume']);
+  const sprache = $$d(k.u, '.setting').find((z) => z.getAttribute('data-setting') === 'voice_assistant_language').querySelector('select');
+  assert.equal(sprache.childNodes.length, 7);
+  assert.equal(sprache.value, 'English');
+  const paket = $d(k.u, '[data-info="voice_packet_id"]');
+  assert.match(paket.textContent, /DE/);
+  assert.equal(paket.querySelector('button, select, input'), null, 'nur Anzeige: Buchstaben-IDs lassen sich nicht über vacuum_set_property setzen');
+});
+
+test('Sprachpaket installieren: Pflichtfelder und Inline-Prüfung, kein Aufruf bei Fehlern (R10)', () => {
+  const k = audio();
+  $d(k.u, '[data-action="voice-pack"]').click();
+  assert.equal($d(k.u, 'h1').textContent, 'Sprachpaket installieren');
+  for (const name of ['lang_id', 'url', 'md5', 'size']) {
+    const f = feld(k, name);
+    assert.ok($$d(k.u, 'label').some((l) => l.getAttribute('for') === f.id), name + ' hat ein Label');
+    assert.equal(f.getAttribute('aria-required'), 'true');
+  }
+  $d(k.u, '[data-action="submit"]').click();
+  assert.equal($$d(k.u, '.field-error').filter((e) => e.textContent).length, 4);
+  assert.equal(feld(k, 'url').getAttribute('aria-invalid'), 'true');
+  tippe(k, 'lang_id', 'DE');
+  tippe(k, 'url', 'ftp://beispiel.invalid/paket.pkg');
+  tippe(k, 'md5', '1234');
+  tippe(k, 'size', '0');
+  $d(k.u, '[data-action="submit"]').click();
+  const fehler = $$d(k.u, '.field-error').map((e) => e.textContent).filter(Boolean);
+  assert.equal(fehler.length, 3);
+  assert.match(fehler.join(' '), /http/);
+  assert.match(fehler.join(' '), /32/);
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('Sprachpaket: Bestätigung nennt das Paket; erst dann genau vacuum_install_voice_pack', () => {
+  const k = audio();
+  $d(k.u, '[data-action="voice-pack"]').click();
+  tippe(k, 'lang_id', 'DE');
+  tippe(k, 'url', 'https://beispiel.invalid/de.pkg');
+  tippe(k, 'md5', 'D41D8CD98F00B204E9800998ECF8427E');
+  tippe(k, 'size', '2048');
+  $d(k.u, '[data-action="submit"]').click();
+  assert.equal(dialogVon(k.u).shadowRoot.querySelector('.sheet').getAttribute('data-kind'), 'confirm');
+  assert.match($d(k.u, '.body').textContent, /DE/);
+  assert.match($d(k.u, '.body').textContent, /beispiel\.invalid/);
+  assert.deepEqual(k.haus.rufe, []);
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_install_voice_pack', data: { entity_id: 'vacuum.robo', lang_id: 'DE', url: 'https://beispiel.invalid/de.pkg', md5: 'd41d8cd98f00b204e9800998ecf8427e', size: 2048 } }]);
+});
+
+test('Sprachpaket: Eingaben bleiben beim Verlassen und nach einem Dienstfehler erhalten (R10/R12)', async () => {
+  const k = audio();
+  $d(k.u, '[data-action="voice-pack"]').click();
+  tippe(k, 'url', 'https://beispiel.invalid/de.pkg');
+  taste(k, 'Escape');
+  k.u.zurueck();
+  $d(k.u, '[data-action="voice-pack"]').click();
+  assert.equal(feld(k, 'url').value, 'https://beispiel.invalid/de.pkg', 'Entwurf erhalten');
+  tippe(k, 'lang_id', 'DE');
+  tippe(k, 'md5', 'd41d8cd98f00b204e9800998ecf8427e');
+  tippe(k, 'size', '10');
+  k.haus.antwort = () => Promise.reject(new Error('Download fehlgeschlagen'));
+  $d(k.u, '[data-action="submit"]').click();
+  $d(k.u, '[data-action="confirm"]').click();
+  await mikro();
+  assert.match($d(k.u, '.body').textContent, /Download fehlgeschlagen/);
+  assert.match($d(k.u, '.body').textContent, /Eingaben bleiben erhalten/);
+  assert.equal($d(k.u, '[data-action="confirm"]').disabled, false, 'erneut versuchen möglich');
+  $d(k.u, '[data-action="cancel"]').click();
+  k.u.zurueck();
+  assert.equal(feld(k, 'lang_id').value, 'DE', 'Formular mit Eingaben wieder da');
+  assert.equal(feld(k, 'url').value, 'https://beispiel.invalid/de.pkg');
+});
+
+test('Sprachpaket: Erfolg schließt den Dialog und meldet die Anfrage in „Audio“ (R11)', async () => {
+  const k = audio();
+  k.haus.antwort = () => Promise.resolve();
+  $d(k.u, '[data-action="voice-pack"]').click();
+  tippe(k, 'lang_id', 'DE');
+  tippe(k, 'url', 'https://beispiel.invalid/de.pkg');
+  tippe(k, 'md5', 'd41d8cd98f00b204e9800998ecf8427e');
+  tippe(k, 'size', '10');
+  $d(k.u, '[data-action="submit"]').click();
+  $d(k.u, '[data-action="confirm"]').click();
+  await mikro();
+  k.u.zurueck();
+  k.u.uhr.vor(400);
+  assert.equal(dialogVon(k.u), null);
+  menue(k);
+  eintrag(k.u, 'settings').click();
+  gruppe(k, 'audio').click();
+  assert.match($d(k.u, '.form-note').textContent, /angefragt/);
 });
