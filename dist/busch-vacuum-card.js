@@ -557,6 +557,9 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sprachpaketGesendet: 'Installation von „{id}“ angefragt. Sobald das Gerät fertig ist, zeigt „Sprachpaket“ die neue ID.',
             eingabenBleiben: 'Deine Eingaben bleiben erhalten.',
             taeglich: 'Täglich',
+            bestaetigenTitel: '{name} ändern?',
+            frage_map_rotation: 'Die gespeicherte Karte des Roboters auf {wert} drehen? Das ändert die Karte im Gerät, nicht nur die Anzeige.',
+            aendern: 'Ändern',
             einmalig: 'Einmalig',
             zeitraum: 'Zeitraum',
             bearbeitenVon: '{name} bearbeiten',
@@ -903,6 +906,9 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sprachpaketGesendet: 'Installation of “{id}” requested. Once the device is done, “Voice pack” shows the new ID.',
             eingabenBleiben: 'Your input is kept.',
             taeglich: 'Daily',
+            bestaetigenTitel: 'Change {name}?',
+            frage_map_rotation: 'Rotate the robot’s stored map to {wert}? This changes the map in the device, not only the display.',
+            aendern: 'Change',
             einmalig: 'Once',
             zeitraum: 'Period',
             bearbeitenVon: 'Edit {name}',
@@ -1456,7 +1462,10 @@ const SETTING_EXTRA = {
     mop_cleaning_remainder: { min: 0, max: 180 },
     wetness_level: { min: 1, max: 32 },
     auto_empty_area: { min: 5, max: 15 },
-    map_rotation: { options: ['0', '90', '180', '270'] },
+    // Rotates the robot's stored map (set_map_rotation, device.py#L6569): only after asking (R13).
+    map_rotation: { options: ['0', '90', '180', '270'], confirm: true, wire: (value) => ({ key: 'map_rotation', value: Number(value) }) },
+    // The floor changes through map-view's contract, with core's confirmation (CORE-20).
+    selected_map: { pick: (card, model, name) => pickMap(card, model, name) },
     // With `dnd_task` the periods replace the single window (attribute `dnd` is then a list).
     dnd: { replacedBy: 'dnd_task' },
     dnd_start: { replacedBy: 'dnd_task' },
@@ -1665,6 +1674,40 @@ function callAction(card, key, value, { track = key, label, done } = {}) {
     return trackWrite(card, track, { label, done, call: () => card._hass.callService('dreame_vacuum', 'vacuum_call_action', data) });
 }
 
+function pickMap(card, model, name) {
+    const entry = (model.attr('maps') || []).find((m) => (m.custom_name || m.name || String(m.id)) === name);
+    if (!entry) return false;
+    if (card._map) return card._map.selectMap(entry.id);
+    card._confirmMapChange(name, () => card._hass.callService('dreame_vacuum', 'vacuum_select_map', { entity_id: card._opts.entity, map_id: entry.id }));
+    return true;
+}
+
+/** A setting that changes something lasting asks first, naming the new value (R13). */
+function confirmSetting(card, key, value) {
+    const hass = card._hass;
+    const view = {
+        title: translate(hass, 'bestaetigenTitel', { name: settingLabel(hass, key) }),
+        kind: 'confirm',
+        render: (body, h, dialog) => {
+            body.appendChild(noteLine(translate(h, 'frage_' + key, { wert: optionLabel(h, key, value) })));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const cancel = BuschUI.action({ label: translate(h, 'abbrechen'), text: translate(h, 'abbrechen'), onClick: () => dialog._goBack() });
+            cancel.setAttribute('data-action', 'cancel');
+            const go = BuschUI.action({ label: translate(h, 'aendern'), text: translate(h, 'aendern'), variant: 'primary', onClick: () => {
+                writeSetting(card, key, value);
+                dialog._goBack();
+            } });
+            go.setAttribute('data-action', 'confirm');
+            actions.append(cancel, go);
+            body.appendChild(actions);
+        }
+    };
+    if (card._dialog && card._dialog.isConnected) card._dialog.show(view);
+    else card._openDialog(view);
+    return true;
+}
+
 /** Status line under a setting's name: always words, never colour alone (R17). */
 function settingStatus(hass, s) {
     if (s.busy) return ['busy', translate(hass, 'speichert')];
@@ -1698,7 +1741,11 @@ function settingRow(card, model, key) {
     text.append(name, status);
     row.appendChild(text);
     const blocked = s.locked || s.busy;
-    const write = (value) => writeSetting(card, key, value);
+    const write = (value) => {
+        if (s.def.pick) return s.def.pick(card, model, value);
+        if (s.def.confirm) return confirmSetting(card, key, value);
+        return writeSetting(card, key, value);
+    };
     const describe = (node) => {
         node.setAttribute('aria-labelledby', name.id);
         node.setAttribute('aria-describedby', status.id);

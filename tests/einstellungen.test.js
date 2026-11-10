@@ -668,3 +668,68 @@ test('DnD-Speichern scheitert: R12-Text in der Liste, Eingaben kommen ins Formul
   zeitraum(k, '3').querySelector('[data-action="dnd-edit"]').click();
   assert.equal(feld(k, 'start').value, '11:15');
 });
+
+// ── Task 7: Akku und Sonstiges (ALL-09, ALL-10, DEV-07/10) ──────────────────
+
+function wahl(k, key, wert) {
+  const sel = $d(k.u, `[data-setting="${key}"]`).querySelector('select');
+  sel.value = wert;
+  sel.dispatchEvent(k.u.neuesEreignis('change'));
+}
+
+test('Akku: Nebenzeit-Laden mit Beginn/Ende (HH:MM)', () => {
+  const k = einstellungen();
+  gruppe(k, 'battery').click();
+  assert.deepEqual(zeilen(k), ['off_peak_charging', 'off_peak_charging_start', 'off_peak_charging_end']);
+  $d(k.u, '[data-setting="off_peak_charging"]').querySelector('[role="switch"]').click();
+  const ende = $d(k.u, '[data-setting="off_peak_charging_end"]').querySelector('input');
+  ende.value = '06:00';
+  ende.dispatchEvent(k.u.neuesEreignis('change'));
+  assert.deepEqual(aufrufe(k), [setze(k, 'off_peak_charging', 1), setze(k, 'off_peak_charging_end', '06:00')]);
+});
+
+test('Weitere Modelle: Ladegrenze 80/90/100 % als Auswahl', () => {
+  const k = aufbau('voll', { attribute: { battery_charge_level: '90%', battery_charge_level_list: ['80%', '90%', '100%'] } });
+  const sel = zeile(k, 'battery_charge_level').querySelector('select');
+  assert.equal(sel.value, '90%');
+  sel.value = '80%';
+  sel.dispatchEvent(k.u.neuesEreignis('change'));
+  assert.deepEqual(aufrufe(k), [setze(k, 'battery_charge_level', '80%')]);
+});
+
+test('Sonstiges: Kindersicherung, Mehrstockwerkskarte, Kartenwahl, Kartenrotation', () => {
+  const k = einstellungen();
+  gruppe(k, 'other').click();
+  assert.deepEqual(zeilen(k), ['child_lock', 'multi_floor_map', 'selected_map', 'map_rotation']);
+  assert.equal($d(k.u, '[data-setting="selected_map"]').querySelector('select').value, 'Karte 1');
+  assert.equal($d(k.u, '[data-setting="map_rotation"]').querySelector('select').value, '0');
+  $d(k.u, '[data-setting="multi_floor_map"]').querySelector('[role="switch"]').click();
+  assert.deepEqual(aufrufe(k), [setze(k, 'multi_floor_map', 1)]);
+});
+
+test('Kartenrotation nur nach Bestätigung mit Wert (ändert die Roboterkarte, R13)', () => {
+  const k = einstellungen();
+  gruppe(k, 'other').click();
+  wahl(k, 'map_rotation', '90');
+  assert.deepEqual(k.haus.rufe, []);
+  assert.equal(dialogVon(k.u).shadowRoot.querySelector('.sheet').getAttribute('data-kind'), 'confirm');
+  assert.match($d(k.u, '.body').textContent, /90°/);
+  $d(k.u, '[data-action="cancel"]').click();
+  assert.deepEqual(k.haus.rufe, []);
+  k.u.zurueck();
+  wahl(k, 'map_rotation', '180');
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(aufrufe(k), [setze(k, 'map_rotation', 180)]);
+});
+
+test('Kartenwahl über MapView.selectMap mit der Bestätigung von core (CORE-20)', () => {
+  const maps = [{ id: 3, index: 1, name: 'Karte 1', custom_name: null }, { id: 7, index: 2, name: 'Karte 2', custom_name: null }];
+  const k = einstellungen('voll', { attribute: { maps, map_count: 2 } });
+  gruppe(k, 'other').click();
+  assert.deepEqual($d(k.u, '[data-setting="selected_map"]').querySelector('select').childNodes.map((o) => o.value), ['Karte 1', 'Karte 2']);
+  wahl(k, 'selected_map', 'Karte 2');
+  assert.match($d(k.u, '.placeholder').textContent, /Karte 2/);
+  assert.deepEqual(k.haus.rufe, []);
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_select_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
+});
