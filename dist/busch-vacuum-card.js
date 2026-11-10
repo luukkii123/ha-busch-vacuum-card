@@ -8033,6 +8033,7 @@ canvas.map-base {
 [data-layer=editor] line[data-edit] { stroke-width: 4px; }
 /* doors: wider than walls, so the two read apart without colour (R17) */
 [data-layer=editor] line[data-edit=doors] { stroke-width: 8px; stroke-opacity: 0.7; }
+[data-layer=editor] image[data-wifi-image] { pointer-events: none; opacity: 0.85; }
 [data-layer=editor] [data-edit][data-state=new] { stroke-dasharray: 8 4; }
 [data-layer=editor] [data-edit][data-state=changed] { stroke-dasharray: 2 3; }
 [data-layer=editor] [data-edit][data-state=removed], [data-layer=editor] [data-edit][data-state=hidden] { opacity: 0.35; stroke-dasharray: 1 5; fill-opacity: 0; }
@@ -11455,6 +11456,21 @@ const EDIT_TEXTS = {
         moebel_29: 'Sessel (schmal)',
         moebel_30: 'Dreisitzer-Sofa (schmal)',
         moebel_31: 'L-Sofa (rechts)',
+        kartenEins_router: 'Router',
+        kartenObjHinweis_wifi: 'Ein Tipp auf befahrbare Fläche setzt den Router dorthin, sein Symbol lässt sich ziehen; Koordinaten im Formular. Neben der Fläche wird abgelehnt.',
+        routerUnbekannt: 'Das Gerät meldet keine Router-Position — sie lässt sich erst nach einer WLAN-Kartierung setzen.',
+        routerZeile: 'Router: neue Lage ({x}, {y})',
+        wlanAnsicht: 'Kartenansicht',
+        wlanKeinBild: 'Keine WLAN-Karte vorhanden — sie entsteht bei einer Reinigung mit WLAN-Kartierung.',
+        wlanOhneKalibrierung: 'Die WLAN-Karte hat keine Kalibrierung und lässt sich nicht über die Karte legen.',
+        wlanLegende: 'Signalstärke',
+        wlanLegendeAllgemein: 'Allgemeine Legende — die Kartendaten enthalten keine WLAN-Werte.',
+        wlanAnteil: '{stufe}: {anteil} %',
+        wlanStufe_14: 'Ausgezeichnet',
+        wlanStufe_13: 'Gut',
+        wlanStufe_12: 'Schwach',
+        wlanStufe_11: 'Sehr schwach',
+        wlanStufe_10: 'Nicht erreicht',
         blaseBearbeiten: 'Bearbeiten',
         blaseErkannterTeppich: 'Erkannter Teppich',
         blaseNichtBearbeitbar: 'Dieses Objekt lässt sich hier nicht bearbeiten.',
@@ -11722,6 +11738,21 @@ const EDIT_TEXTS = {
         moebel_29: 'Armchair (narrow)',
         moebel_30: 'Three-seat sofa (narrow)',
         moebel_31: 'L-shaped sofa (right)',
+        kartenEins_router: 'Router',
+        kartenObjHinweis_wifi: 'A tap on reachable floor puts the router there, its symbol can be dragged; coordinates in the form. Off the floor is refused.',
+        routerUnbekannt: 'The device reports no router position — it can be set only after a Wi-Fi mapping.',
+        routerZeile: 'Router: new position ({x}, {y})',
+        wlanAnsicht: 'Map view',
+        wlanKeinBild: 'No Wi-Fi map yet — it is made during a cleaning with Wi-Fi mapping.',
+        wlanOhneKalibrierung: 'The Wi-Fi map has no calibration and cannot be laid over the map.',
+        wlanLegende: 'Signal strength',
+        wlanLegendeAllgemein: 'General legend — the map data holds no Wi-Fi values.',
+        wlanAnteil: '{stufe}: {anteil} %',
+        wlanStufe_14: 'Excellent',
+        wlanStufe_13: 'Good',
+        wlanStufe_12: 'Weak',
+        wlanStufe_11: 'Poor',
+        wlanStufe_10: 'Not reached',
         blaseBearbeiten: 'Edit',
         blaseErkannterTeppich: 'Detected carpet',
         blaseNichtBearbeitbar: 'This object cannot be edited here.',
@@ -12019,6 +12050,7 @@ function editData(raw) {
         furnitures: list(raw.furnitures, furnitureFromData),
         points: list(raw.predefined_points, (p) => [roundMm(p[0]), roundMm(p[1])]),
         stationSegment: raw.station_segment === undefined || raw.station_segment === null ? null : raw.station_segment,
+        wifi: raw.wifi_map_data && typeof raw.wifi_map_data === 'object' ? raw.wifi_map_data : null,
         segments,
         neighbors: Object.fromEntries(segments.map((s) => [s.id, s.neighbors]))
     };
@@ -12297,6 +12329,7 @@ function editCaps(model, data, attrs) {
     caps.zones.kinds = kinds('zones');
     caps.lines.kinds = kinds('lines');
     caps.walls.kinds = ['walls', 'doors'];
+    caps.wifi.kinds = ['router'];
     caps.carpets.kinds = ['carpets'];
     caps.furniture.kinds = ['furnitures'];
     caps.points.kinds = ['predefined_points'];
@@ -12675,7 +12708,7 @@ const EDIT_TOOLS = {
     carpets: Object.assign({ icon: 'mdi:rug', lists: ['carpets', 'deleted_carpets', 'carpet_types', 'carpet_cleanings'] }, objectTool('carpets')),
     furniture: Object.assign({ icon: 'mdi:sofa-outline', lists: ['furnitures'] }, objectTool('furniture')),
     points: Object.assign({ icon: 'mdi:map-marker-multiple-outline', lists: ['predefined_points'] }, objectTool('points')),
-    wifi: { icon: 'mdi:wifi', lists: ['router'], panel: null }
+    wifi: Object.assign({ icon: 'mdi:wifi', lists: ['router'] }, objectTool('wifi'))
 };
 
 /** New / changed / removed between two lists (multiset of entries; a moved object counts as changed). */
@@ -13616,6 +13649,9 @@ const EDIT_KINDS = {
         entry: (s) => [s.x0, s.y0] }
 };
 
+// The router [x, y] (EDI-07): a point like the target points, but one and fixed (vacuum_set_router_position takes one position).
+EDIT_KINDS.router = Object.assign({}, EDIT_KINDS.predefined_points, { group: 'router', fixed: true, max: undefined, maxText: undefined });
+
 /** A piece of furniture's default box (0.8 × 0.8 m) around a robot point. */
 const centreShapeAt = (p) => ({ x0: p.x - 400, y0: p.y - 400, x1: p.x + 400, y1: p.y + 400 });
 
@@ -14435,6 +14471,144 @@ Object.assign(OBJECT_HOOKS, {
     walls: { addRow: wallsAddRow, form: wallForm, panel: wallsPanelEnd, show: (editor, list, row) => list !== 'walls' || !editor.wallRoom || row.entry[0] === editor.wallRoom }
 });
 
+// ── WiFi map and router (map-editor Task 12: EDI-07) ─────────────────────────
+
+/** Signal levels (types.py MapPixelType WIFI_*) and the colours map.py paints them with, strongest first. */
+const WIFI_LEVELS = [[14, 'rgb(129, 168, 245)'], [13, 'rgb(161, 189, 242)'], [12, 'rgb(205, 218, 239)'], [11, 'rgb(217, 226, 239)'], [10, 'rgb(229, 234, 238)']];
+
+/**
+ * The legend of the WiFi map: per level its share of the measured cells of
+ * `wifi_map_data` (edit data, map.py#L8537), or null shares without data.
+ */
+function wifiLegend(raw) {
+    const grid = decodeMapData(raw);
+    const counts = new Map(WIFI_LEVELS.map(([code]) => [code, 0]));
+    if (grid) for (const v of grid.cells) if (counts.has(v)) counts.set(v, counts.get(v) + 1);
+    const total = [...counts.values()].reduce((a, b) => a + b, 0);
+    return WIFI_LEVELS.map(([code, colour]) => ({ code, colour, share: total ? Math.round(counts.get(code) / total * 100) : null }));
+}
+
+/**
+ * The WiFi picture of the active map and its calibration (robot mm → its px):
+ * the saved WiFi camera of this map (findRelated wifi_map), else the map
+ * camera's `wifi_map_picture` (camera_wifi_map_proxy) with the map's own
+ * calibration. null without a picture.
+ */
+function wifiSource(card) {
+    const m = card._map, hass = card._hass;
+    if (!m || !hass) return null;
+    const cur = m.current();
+    const cams = card._model().related.maps.wifi_map.map((id) => hass.states[id]).filter(Boolean);
+    const cam = cams.find((c) => String(c.attributes.map_id) === String(cur.mapId)) || null;
+    const url = (cam && cam.attributes.entity_picture) || cur.objects.wifi_map_picture || null;
+    if (!url) return null;
+    return { url, matrix: affineFrom((cam && cam.attributes.calibration_points) || cur.objects.calibration_points) };
+}
+
+/** Loads the WiFi picture once per URL for its size; the layer redraws when it is there. */
+function loadWifiImage(card, editor, url) {
+    if (editor.wifiImage && editor.wifiImage.url === url) return;
+    const entry = { url, width: 0, height: 0, ready: false, failed: false };
+    editor.wifiImage = entry;
+    const img = document.createElement('img');
+    img.setAttribute('src', card._map._url(url));
+    Promise.resolve(typeof img.decode === 'function' ? img.decode() : undefined).then(() => {
+        if (editor.wifiImage !== entry || editor.left) return;
+        Object.assign(entry, { width: img.naturalWidth || 0, height: img.naturalHeight || 0, ready: true });
+        card._map.refresh('editor');
+    }, () => {
+        if (editor.wifiImage !== entry || editor.left) return;
+        entry.failed = true;
+        rerender(card);
+    });
+}
+
+/** The map shown under the router: the WiFi map first when there is one (R21: nothing remembered across sessions). */
+const wifiView = (card, editor) => (editor.wifiView || (wifiSource(card) ? 'wifi' : 'cleaning'));
+
+/** Switch cleaning map / WiFi map (only with a WiFi picture). */
+function wifiTabs(card, editor, row, hass) {
+    const src = wifiSource(card);
+    if (!src) {
+        row.appendChild(noteLine(translate(hass, 'wlanKeinBild')));
+        return;
+    }
+    const group = document.createElement('div');
+    group.className = 'edit-tools';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', translate(hass, 'wlanAnsicht'));
+    for (const name of ['cleaning', 'wifi']) {
+        const label = translate(hass, name === 'wifi' ? 'wlanKarte' : 'reinigungsKarte');
+        const b = BuschUI.action({ label, text: label, icon: name === 'wifi' ? 'mdi:wifi' : 'mdi:map-outline', variant: 'secondary', onClick: () => {
+            editor.wifiView = name;
+            editor.changed();
+        } });
+        b.setAttribute('data-wifi-view', name);
+        b.setAttribute('aria-pressed', String(wifiView(card, editor) === name));
+        group.appendChild(b);
+    }
+    row.appendChild(group);
+}
+
+/** Below the router: no position known, the WiFi picture's state, the legend of the signal levels (R17: name, not only colour). */
+function wifiPanelEnd(card, editor, body, hass) {
+    if (!(editor.lists().router || []).length) body.appendChild(noteLine(translate(hass, 'routerUnbekannt'), 'locked'));
+    if (wifiView(card, editor) !== 'wifi') return;
+    const src = wifiSource(card);
+    if (src && !src.matrix) body.appendChild(noteLine(translate(hass, 'wlanOhneKalibrierung'), 'locked'));
+    if (editor.wifiImage && editor.wifiImage.failed) body.appendChild(noteLine(translate(hass, 'bildFehler'), 'error'));
+    const levels = wifiLegend(editor.data && editor.data.wifi);
+    const box = document.createElement('div');
+    box.className = 'wifi-legend';
+    box.setAttribute('role', 'list');
+    box.setAttribute('aria-label', translate(hass, 'wlanLegende'));
+    for (const level of levels) {
+        const item = document.createElement('span');
+        item.setAttribute('role', 'listitem');
+        item.setAttribute('data-level', String(level.code));
+        const swatch = document.createElement('i');
+        swatch.setAttribute('aria-hidden', 'true');
+        swatch.style.background = level.colour;
+        const name = translate(hass, 'wlanStufe_' + level.code);
+        const text = document.createElement('span');
+        text.textContent = level.share === null ? name : translate(hass, 'wlanAnteil', { stufe: name, anteil: level.share });
+        item.append(swatch, text);
+        box.appendChild(item);
+    }
+    body.appendChild(noteLine(translate(hass, 'wlanLegende')));
+    body.appendChild(box);
+    if (levels.every((l) => l.share === null)) body.appendChild(noteLine(translate(hass, 'wlanLegendeAllgemein')));
+}
+
+/** The WiFi picture under the router, mapped robot mm → its px → the map's px (three points, any calibration or data mode). */
+function wifiDraw(card, editor, group, ctx) {
+    if (wifiView(card, editor) !== 'wifi') return;
+    const src = wifiSource(card);
+    if (!src || !src.matrix) return;
+    loadWifiImage(card, editor, src.url);
+    const image = editor.wifiImage;
+    if (!image || !image.ready || !image.width) return;
+    const pairs = [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 0, y: 1000 }].map((p) => ({ vacuum: applyAffine(src.matrix, p), map: ctx.toImage(p) }));
+    if (pairs.some((q) => !q.map)) return;
+    const t = affineFrom(pairs);
+    if (!t) return;
+    const matrix = 'matrix(' + [t.a, t.b, t.c, t.d, t.e, t.f].map((v) => Number(v.toFixed(6))).join(' ') + ')';
+    group.appendChild(ctx.svgNode('image', { 'data-wifi-image': '', href: card._map._url(src.url), width: image.width, height: image.height, transform: matrix, preserveAspectRatio: 'none', 'aria-hidden': 'true' }));
+}
+
+Object.assign(OBJECT_HOOKS, {
+    // A tap on free floor moves the router there (setObject checks the floor, R10: refused keeps it).
+    wifi: { addRow: wifiTabs, panel: wifiPanelEnd, draw: wifiDraw, tapEmpty: (card, editor, d) => {
+        if (!(editor.lists().router || []).length) return undefined;
+        editor.pick = { list: 'router', i: 0 };
+        return setObject(card, editor, 'router', 0, { x0: d.robot.x, y0: d.robot.y, x1: d.robot.x, y1: d.robot.y });
+    } }
+});
+
+Object.assign(EDIT_LINES, {
+    router: (hass, editor, before, after) => (after.length ? [translate(hass, 'routerZeile', { x: after[0][0], y: after[0][1] })] : [])
+});
+
 // ---------------------------------------------------------------------------
 // Remote control (remote): one sender, sliders, hold buttons and keys feed it (R08)
 // ---------------------------------------------------------------------------
@@ -15036,6 +15210,8 @@ BuschVacuumCard.__internals = {
     editRooms,
     nextTypeIndex,
     groupCalls,
+    wifiLegend,
+    wifiSource,
     shapeFit,
     shapeStep,
     shapeMove,

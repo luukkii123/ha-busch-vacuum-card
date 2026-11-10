@@ -560,6 +560,7 @@ function werkzeuge(k) {
   k.I.EDIT_TOOLS.zones.panel = (card, editor, body) => knopf(body, 'add-zone', () => { editor.edit('restricted').no_go_areas.push([100, 100, 600, 600]); editor.changed(); });
   k.I.EDIT_TOOLS.lines.panel = (card, editor, body) => knopf(body, 'add-curtain', () => { editor.edit('curtain').curtains.push([0, 0, 500, 0]); editor.changed(); });
   k.I.EDIT_TOOLS.walls.panel = (card, editor, body) => knopf(body, 'walls-panel', () => {});
+  k.I.EDIT_TOOLS.wifi.panel = null; // Werkzeug ohne Panel erscheint nicht
 }
 function bearbeiten(k) {
   werkzeuge(k);
@@ -1826,4 +1827,83 @@ test('EDI-06 keine Schnellbearbeitung bei hidden_card_objects map_editor, ohne c
   assert.equal(blase(modus).hidden, true, 'im Bearbeitungsmodus wählt das Werkzeug, keine Blase');
   // Hindernis-Blase (MAP-04) bleibt unverändert.
   assert.equal(typeof modus.karte._map.addObstacleAction, 'function');
+});
+
+// ── Task 12: WLAN-Karte und Router (EDI-07) ─────────────────────────────────
+
+const wlanBild = (k) => k.karte._map._layers.get('editor').group.querySelector('image');
+
+test('EDI-07 WLAN-Karte: Umschalter Reinigungs-/WLAN-Karte, Bild der WLAN-Kamera kalibriert über der Karte, allgemeine Legende; Router tippen/ziehen nur auf Fläche → vacuum_set_router_position { x, y }, Rückgängig', async () => {
+  const k = await mitDaten('wifi');
+  const d = dialogVon(k.u);
+  const panel = () => $d(k.u, '[data-panel="wifi"]');
+  k.karte._map.passable = (p) => (p.x > 100000 ? false : null);
+  assert.equal(k.karte._map._mode, 'draw-rect');
+  assert.equal($d(k.u, '[data-wifi-view="wifi"]').getAttribute('aria-pressed'), 'true', 'WLAN-Karte zuerst');
+  assert.equal($d(k.u, '[data-wifi-view="cleaning"]').getAttribute('aria-pressed'), 'false');
+  assert.match($d(k.u, '[data-wifi-view="cleaning"]').textContent, /Reinigungskarte/);
+  await mikro(); await mikro();
+  const bild = wlanBild(k);
+  assert.ok(bild, 'WLAN-Bild in der Ebene editor');
+  assert.match(bild.getAttribute('href'), /\/api\/camera_proxy\/camera\.robo_wifi_map_1\?token=testtoken/);
+  assert.equal(bild.getAttribute('width'), '1444');
+  assert.match(bild.getAttribute('transform'), /^matrix\(/);
+  assert.match(panel().textContent, /Signalstärke/);
+  for (const stufe of ['Ausgezeichnet', 'Gut', 'Schwach', 'Sehr schwach', 'Nicht erreicht']) assert.ok(panel().textContent.includes(stufe), stufe);
+  assert.match(panel().textContent, /Allgemeine Legende/);
+  $d(k.u, '[data-wifi-view="cleaning"]').click();
+  assert.equal(wlanBild(k), null, 'Reinigungskarte: kein WLAN-Bild');
+  assert.equal($d(k.u, '.wifi-legend'), null);
+  $d(k.u, '[data-wifi-view="wifi"]').click();
+  // Router: Liste, Tipp neben die Fläche abgelehnt, Tipp auf Fläche setzt, Ziehen verschiebt.
+  assert.match(eintrag(k, 'router', 0).getAttribute('aria-label'), /Router 1, \(2560, -3063\)/);
+  assert.equal($d(k.u, '[data-action="edit-add"]'), null, 'ein Router: kein Hinzufügen');
+  tippeAuf(k, { x: 200000, y: 0 });
+  assert.deepEqual(roh(k.karte._mapEdit.lists().router), [[2560, -3063]]);
+  assert.match(panel().textContent, /nicht auf befahrbarer Fläche/);
+  tippeAuf(k, { x: 1000, y: -2000 });
+  assert.deepEqual(roh(k.karte._mapEdit.lists().router), [[1000, -2000]]);
+  assert.equal(eintrag(k, 'router', 0).getAttribute('data-state'), 'changed');
+  zieh(k, 'start', { x: 1000, y: -2000 }, { x: 1000, y: -2000 });
+  zieh(k, 'end', { x: 1000, y: -2000 }, { x: 200000, y: -2100 });
+  assert.deepEqual(roh(k.karte._mapEdit.lists().router), [[1000, -2000]], 'Ziehen neben die Fläche abgelehnt');
+  zieh(k, 'start', { x: 1000, y: -2000 }, { x: 1000, y: -2000 });
+  zieh(k, 'end', { x: 1000, y: -2000 }, { x: 1200, y: -2100 });
+  assert.deepEqual(roh(k.karte._mapEdit.lists().router), [[1200, -2100]]);
+  assert.equal(eintrag(k, 'router', 0).getAttribute('aria-pressed'), 'true', 'gezogener Router ist gewählt: Formular offen');
+  tippen(k, feldE(k, 'edit-x'), 1300);
+  $d(k.u, '[data-action="save"]').click();
+  assert.match(d.shadowRoot.textContent, /Router: neue Lage \(1300, -2100\)/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_router_position']);
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', x: 1300, y: -2100 });
+  k.u.zurueck();
+  $d(k.u, '[data-action="undo"]').click();
+  $d(k.u, '[data-action="confirm"]').click();
+  await mikro(); await mikro();
+  assert.deepEqual(roh(k.haus.rufe.at(-1)), { domain: 'dreame_vacuum', service: 'vacuum_set_router_position', data: { entity_id: 'vacuum.robo', x: 2560, y: -3063 } });
+});
+
+test('EDI-07 Legende aus wifi_map_data (Anteile je Stufe); gesperrt während einer Aufgabe; ohne Router-Position Hinweis; ohne wifi_map kein Werkzeug', async () => {
+  const k = await mitDaten('wifi', {}, { wifi_map_data: { size: [0, 0, 0, 0, 4, 1, 50, 0], data: { 14: [0, 0, 3], 10: [3, 0, 1] } } });
+  const text = $d(k.u, '[data-panel="wifi"]').textContent;
+  assert.match(text, /Ausgezeichnet: 75 %/);
+  assert.match(text, /Nicht erreicht: 25 %/);
+  assert.match(text, /Gut: 0 %/);
+  assert.doesNotMatch(text, /Allgemeine Legende/);
+  const k2 = await mitDaten('wifi', { zustand: 'cleaning' });
+  assert.match($d(k2.u, '[data-panel="wifi"]').textContent, /Gesperrt, solange eine Aufgabe läuft/);
+  tippeAuf(k2, { x: 1000, y: -2000 });
+  assert.equal(k2.karte._mapEdit.dirty(), false);
+  eintrag(k2, 'router', 0).click();
+  assert.equal(feldE(k2, 'edit-x').disabled, true);
+  const k3 = await mitDaten('wifi', { cam: { router_position: null } });
+  assert.match($d(k3.u, '[data-panel="wifi"]').textContent, /keine Router-Position/);
+  tippeAuf(k3, { x: 1000, y: -2000 });
+  assert.equal(k3.karte._mapEdit.dirty(), false);
+  const k4 = aufbau({ vac: { capabilities: VOLL_CAPS().filter((c) => c !== 'wifi_map') } });
+  stift(k4).click();
+  assert.equal(werkzeug(k4, 'wifi'), null);
+  assert.deepEqual([k, k2, k3].flatMap((x) => x.haus.rufe), []);
 });
