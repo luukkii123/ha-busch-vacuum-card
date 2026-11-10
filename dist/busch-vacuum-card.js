@@ -656,6 +656,24 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             aufAlleStand: '{n} von {gesamt} Räumen übertragen.',
             aufAlleFehler: 'Abgebrochen: {grund}. Schon geändert: {raeume}. Erneut versuchen, sobald der Roboter ruht.',
             uebertragen: 'Übertragen',
+            abschnitt_unordered: 'Ohne Reihenfolge',
+            raumPlatz: '{name}, Platz {n} von {gesamt}',
+            raumGegriffen: '{name} gegriffen, Platz {n} von {gesamt}. Pfeile verschieben, Leertaste legt ab, Escape bricht ab.',
+            raumVerschoben: '{name} auf Platz {n} von {gesamt}.',
+            raumAbgelegt: '{name} abgelegt auf Platz {n}.',
+            raumAbgebrochen: 'Verschieben abgebrochen, {name} wieder auf Platz {n}.',
+            nachOben: '{name} nach oben',
+            nachUnten: '{name} nach unten',
+            anDenAnfang: '{name} an den Anfang',
+            herausnehmen: '{name} aus der Reihenfolge nehmen',
+            einreihen: '{name} hinten einreihen',
+            einreihenKurz: 'Einreihen',
+            antippen: 'Der Reihe nach antippen',
+            antippenHinweis: 'Räume in der neuen Reihenfolge antippen; nicht getippte folgen in ihrer bisherigen Reihenfolge.',
+            fertig: 'Fertig',
+            reihenfolgeAus: 'Reihenfolge aus',
+            reihenfolgeAusFolge: 'Ohne Reihenfolge nach dem Speichern: {raeume}.',
+            reihenfolgeLeer: 'Keine eigene Reihenfolge: der Roboter wählt sie selbst.',
             status_washing: 'Mop wird gewaschen',
             status_washing_paused: 'Waschen pausiert',
             status_drying: 'Trocknet',
@@ -1175,6 +1193,24 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             aufAlleStand: '{n} of {gesamt} rooms done.',
             aufAlleFehler: 'Stopped: {grund}. Already changed: {raeume}. Try again once the robot rests.',
             uebertragen: 'Apply',
+            abschnitt_unordered: 'Without order',
+            raumPlatz: '{name}, position {n} of {gesamt}',
+            raumGegriffen: '{name} grabbed, position {n} of {gesamt}. Arrows move, Space drops, Escape cancels.',
+            raumVerschoben: '{name} to position {n} of {gesamt}.',
+            raumAbgelegt: '{name} dropped at position {n}.',
+            raumAbgebrochen: 'Move cancelled, {name} back at position {n}.',
+            nachOben: 'Move {name} up',
+            nachUnten: 'Move {name} down',
+            anDenAnfang: 'Move {name} to the top',
+            herausnehmen: 'Take {name} out of the sequence',
+            einreihen: 'Add {name} at the end',
+            einreihenKurz: 'Add',
+            antippen: 'Tap in order',
+            antippenHinweis: 'Tap the rooms in their new order; rooms not tapped follow in their previous order.',
+            fertig: 'Done',
+            reihenfolgeAus: 'Sequence off',
+            reihenfolgeAusFolge: 'Without order once saved: {raeume}.',
+            reihenfolgeLeer: 'No own sequence: the robot picks it.',
             status_washing: 'Mop washing',
             status_washing_paused: 'Washing paused',
             status_drying: 'Drying',
@@ -4390,7 +4426,8 @@ const settingsWatch = (card) => {
 /** Menu entries filled by a module; the others keep core's placeholder until theirs arrives. */
 const MODULE_VIEWS = {
     settings: (card) => settingsView(card),
-    consumables: (card) => groupView(card, 'consumables')
+    consumables: (card) => groupView(card, 'consumables'),
+    cleaning_sequence: (card) => sequenceView(card)
 };
 
 /** Rows of device-settings (not dock's or clean-settings'), for the search (R14). */
@@ -5290,6 +5327,8 @@ function cleanSettingsView(card) {
                     : model.attr('cleangenius_cleaning') === true ? [noteLine(translate(hass, 'cleanGeniusRaeume'))]
                         : rows(['customized_cleaning']).concat(roomsInOrder(model).length
                             ? [viewLink(translate(hass, 'raeumeEinstellen'), 'rooms', 'mdi:floor-plan', () => dialog.show(roomsView(card)))] : [])],
+                ['sequence', model.can('customized_cleaning') && roomsInOrder(model).length
+                    ? [viewLink(translate(hass, 'entrySequence'), 'sequence', 'mdi:sort-numeric-ascending', () => dialog.show(sequenceView(card)))] : []],
                 ['more', groupShown(model, 'cleaning')
                     ? [viewLink(translate(hass, 'weitereReinigung'), 'more-cleaning', 'mdi:robot-vacuum', () => dialog.show(groupView(card, 'cleaning')))] : []]
             ];
@@ -5631,6 +5670,278 @@ function applyAllView(card, sourceId) {
                 go.setAttribute('data-action', 'confirm');
                 actions.appendChild(go);
             }
+            body.appendChild(actions);
+        }
+    };
+}
+
+/**
+ * The cleaning sequence (SET-05): strict devices (cleaning_sequence_v2) give
+ * every room a place and refuse an empty list; others leave rooms without a
+ * place, and an empty list turns the own sequence off (device.py#L7147–L7174,
+ * map.py#L2772–L2797). Ids are the camera's; unknown ones never appear.
+ */
+function sequenceModel(model, rooms) {
+    const ids = Object.keys(rooms);
+    const strict = model.can('cleaning_sequence_v2');
+    const attr = model.attr('cleaning_sequence');
+    const ordered = Array.isArray(attr) ? attr.map(String).filter((id) => rooms[id])
+        : ids.filter((id) => Number(rooms[id].order) > 0).sort((a, b) => Number(rooms[a].order) - Number(rooms[b].order));
+    const rest = ids.filter((id) => !ordered.includes(id));
+    return strict ? { strict, ordered: ordered.concat(rest), unordered: [] } : { strict, ordered, unordered: rest };
+}
+
+/** The one move all ways share (drag, buttons, keys, tap mode; R08/R15): `id` to place `to`. */
+function moveRoom(list, id, to) {
+    const next = list.filter((x) => x !== id);
+    next.splice(Math.max(0, Math.min(to, next.length)), 0, id);
+    return next;
+}
+
+const TOUCH_HOLD_MS = 300;
+
+/**
+ * The sequence editor (SET-05, CORE-05 entry; one view for menu and settings,
+ * R01/R08). The draft lives on the card until the device reports it (R04/R10)
+ * and is sent once with "Save".
+ */
+function sequenceView(card) {
+    let grab = null; // keyboard: { id, before }
+    let tapping = null; // tap mode: ids in tapped order
+    let undo = null; // „Reihenfolge aus“: the draft before
+    let spoken = '';
+    return {
+        title: translate(card._hass, 'entrySequence'),
+        kind: 'editor',
+        watch: () => settingsWatch(card),
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const rooms = roomsOf(model);
+            const base = sequenceModel(model, rooms);
+            const pending = card._settingWrites.get('sequence');
+            if (pending && pending.check(model)) settleWrite(card, 'sequence');
+            const busy = card._settingWrites.has('sequence');
+            let draft = card._drafts.get('sequence');
+            if (draft && JSON.stringify(draft.ordered) === JSON.stringify(base.ordered) && !undo) {
+                card._drafts.delete('sequence');
+                draft = null;
+            }
+            const current = draft || base;
+            const dirty = !!draft;
+            const lock = roomLock(model);
+            const name = (id) => roomName(rooms[id], id);
+            const redraw = (focusId) => {
+                dialog._render();
+                const node = focusId && dialog.shadowRoot.querySelectorAll('[role="option"]').find((n) => n.getAttribute('data-room') === focusId);
+                if (node) node.focus();
+            };
+            const change = (ordered, unordered = current.unordered, focusId) => {
+                card._drafts.set('sequence', { strict: current.strict, ordered: ordered.filter((id) => rooms[id]), unordered });
+                redraw(focusId);
+            };
+            const say = (key, id, to) => { spoken = translate(hass, key, { name: name(id), n: to + 1, gesamt: current.ordered.length }); };
+
+            if (lock) body.appendChild(noteLine(translate(hass, lock)));
+            if (dirty) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
+            const note = card._settingNotes.get('sequence');
+            if (note) body.appendChild(noteLine(note, 'error'));
+            if (undo) {
+                const line = noteLine(translate(hass, 'reihenfolgeAusFolge', { raeume: undo.ordered.map(name).join(', ') }));
+                const back = BuschUI.action({ label: translate(hass, 'rueckgaengig'), text: translate(hass, 'rueckgaengig'), icon: 'mdi:undo', onClick: () => {
+                    card._drafts.set('sequence', undo);
+                    undo = null;
+                    redraw();
+                } });
+                back.setAttribute('data-action', 'undo');
+                line.appendChild(back);
+                body.appendChild(line);
+            }
+
+            if (tapping) {
+                body.appendChild(noteLine(translate(hass, 'antippenHinweis')));
+                const chips = document.createElement('div');
+                chips.className = 'seq-chips';
+                for (const id of current.ordered.concat(current.unordered)) {
+                    const n = tapping.indexOf(id) + 1;
+                    const chip = BuschUI.action({ label: n ? translate(hass, 'raumPosition', { name: name(id), n }) : name(id), text: n ? n + ' · ' + name(id) : name(id),
+                        icon: rooms[id].icon || 'mdi:floor-plan', onClick: () => {
+                            tapping = n ? tapping.filter((x) => x !== id) : tapping.concat(id);
+                            redraw();
+                        } });
+                    chip.setAttribute('data-tap', id);
+                    chip.setAttribute('aria-pressed', String(!!n));
+                    chips.appendChild(chip);
+                }
+                const actions = document.createElement('div');
+                actions.className = 'actions';
+                const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => { tapping = null; redraw(); } });
+                cancel.setAttribute('data-action', 'tap-cancel');
+                const done = BuschUI.action({ label: translate(hass, 'fertig'), text: translate(hass, 'fertig'), variant: 'primary', onClick: () => {
+                    const ordered = tapping.concat(current.ordered.filter((x) => !tapping.includes(x)));
+                    const unordered = current.unordered.filter((x) => !tapping.includes(x));
+                    tapping = null;
+                    change(ordered, unordered);
+                } });
+                done.setAttribute('data-action', 'tap-done');
+                actions.append(cancel, done);
+                body.append(chips, actions);
+                return;
+            }
+
+            const live = document.createElement('p');
+            live.className = 'seq-live';
+            live.setAttribute('aria-live', 'polite');
+            live.setAttribute('role', 'status');
+            live.textContent = spoken;
+            const list = document.createElement('div');
+            list.className = 'seq-list';
+            list.setAttribute('role', 'listbox');
+            list.setAttribute('aria-label', translate(hass, 'entrySequence'));
+            const total = current.ordered.length;
+            current.ordered.forEach((id, index) => {
+                const row = document.createElement('div');
+                row.className = 'seq-row';
+                row.setAttribute('role', 'option');
+                row.setAttribute('data-room', id);
+                row.setAttribute('aria-selected', String(!!grab && grab.id === id));
+                row.setAttribute('aria-label', translate(hass, 'raumPlatz', { name: name(id), n: index + 1, gesamt: total }));
+                row.tabIndex = 0;
+                const handle = document.createElement('span');
+                handle.className = 'seq-handle';
+                handle.setAttribute('aria-hidden', 'true');
+                const grip = document.createElement('ha-icon');
+                grip.setAttribute('icon', 'mdi:drag');
+                handle.appendChild(grip);
+                const position = document.createElement('span');
+                position.className = 'seq-pos';
+                position.textContent = String(index + 1);
+                const label = document.createElement('span');
+                label.className = 'seq-name';
+                label.textContent = name(id);
+                row.append(handle, position, label);
+                const button = (action, icon, key, to, disabled) => {
+                    const b = BuschUI.action({ label: translate(hass, key, { name: name(id) }), icon, variant: 'icon-only', disabled: disabled || !!lock,
+                        onClick: () => { say('raumVerschoben', id, to); change(moveRoom(current.ordered, id, to)); } });
+                    b.setAttribute('data-action', action);
+                    b.tabIndex = -1; // keys work on the row itself (R03)
+                    return b;
+                };
+                row.append(button('up', 'mdi:arrow-up', 'nachOben', index - 1, index === 0), button('down', 'mdi:arrow-down', 'nachUnten', index + 1, index === total - 1),
+                    button('top', 'mdi:arrow-collapse-up', 'anDenAnfang', 0, index === 0));
+                if (!current.strict) {
+                    const out = BuschUI.action({ label: translate(hass, 'herausnehmen', { name: name(id) }), icon: 'mdi:close', variant: 'icon-only', disabled: !!lock,
+                        onClick: () => change(current.ordered.filter((x) => x !== id), current.unordered.concat(id)) });
+                    out.setAttribute('data-action', 'remove');
+                    out.tabIndex = -1;
+                    row.appendChild(out);
+                }
+                // Keys (R03/R16): Space grabs and drops, arrows move, Escape cancels.
+                row.addEventListener('keydown', (event) => {
+                    if (lock) return;
+                    const step = { ArrowUp: -1, ArrowDown: 1 }[event.key];
+                    if (event.key === ' ') {
+                        event.preventDefault();
+                        if (grab) { say('raumAbgelegt', id, index); grab = null; } else { grab = { id, before: current.ordered.slice() }; say('raumGegriffen', id, index); }
+                        redraw(id);
+                    } else if (step && grab) {
+                        event.preventDefault();
+                        say('raumVerschoben', id, index + step);
+                        change(moveRoom(current.ordered, id, index + step), current.unordered, id);
+                    } else if (step) {
+                        event.preventDefault();
+                        const next = current.ordered[index + step];
+                        const node = next && dialog.shadowRoot.querySelectorAll('[role="option"]').find((n) => n.getAttribute('data-room') === next);
+                        if (node) node.focus();
+                    } else if (event.key === 'Escape' && grab) {
+                        event.preventDefault();
+                        event.stopPropagation(); // one level back is the cancelled grab, not the view (R03)
+                        const before = grab.before;
+                        grab = null;
+                        say('raumAbgebrochen', id, before.indexOf(id));
+                        change(before, current.unordered, id);
+                    }
+                });
+                // Pointer: mouse/pen at once, touch after holding 300 ms (R06); the drop is moveRoom.
+                handle.addEventListener('pointerdown', (event) => {
+                    if (lock || (event.pointerType === 'mouse' && event.button !== 0)) return;
+                    let active = event.pointerType !== 'touch';
+                    let to = index;
+                    const timer = active ? null : setTimeout(() => { active = true; row.setAttribute('data-dragging', ''); }, TOUCH_HOLD_MS);
+                    if (active) row.setAttribute('data-dragging', '');
+                    try { handle.setPointerCapture(event.pointerId); } catch (e) { /* attrappe or lost pointer: events still reach the handle */ }
+                    const others = () => dialog.shadowRoot.querySelectorAll('[role="option"]').filter((n) => n !== row);
+                    const move = (e) => {
+                        if (!active) { clearTimeout(timer); return end(); }
+                        e.preventDefault && e.preventDefault();
+                        to = others().filter((n) => { const r = n.getBoundingClientRect(); return r.top + r.height / 2 < e.clientY; }).length;
+                    };
+                    const up = () => {
+                        const moved = active && to !== index;
+                        end();
+                        if (moved) { say('raumVerschoben', id, to); change(moveRoom(current.ordered, id, to)); } else row.removeAttribute('data-dragging');
+                    };
+                    const end = () => {
+                        clearTimeout(timer);
+                        handle.removeEventListener('pointermove', move);
+                        handle.removeEventListener('pointerup', up);
+                        handle.removeEventListener('pointercancel', end);
+                        row.removeAttribute('data-dragging');
+                    };
+                    handle.addEventListener('pointermove', move);
+                    handle.addEventListener('pointerup', up);
+                    handle.addEventListener('pointercancel', end);
+                });
+                list.appendChild(row);
+            });
+            if (total) body.append(list, live);
+            else body.appendChild(noteLine(translate(hass, 'reihenfolgeLeer')));
+
+            if (!current.strict && current.unordered.length) {
+                const rows = current.unordered.map((id) => {
+                    const row = document.createElement('div');
+                    row.className = 'setting';
+                    const text = document.createElement('span');
+                    text.className = 'setting-name';
+                    text.textContent = name(id);
+                    const add = BuschUI.action({ label: translate(hass, 'einreihen', { name: name(id) }), text: translate(hass, 'einreihenKurz'), icon: 'mdi:plus', disabled: !!lock,
+                        onClick: () => change(current.ordered.concat(id), current.unordered.filter((x) => x !== id)) });
+                    add.setAttribute('data-action', 'add');
+                    add.setAttribute('data-room', id);
+                    row.append(text, add);
+                    return row;
+                });
+                body.appendChild(viewSection(hass, 'unordered', rows));
+            }
+
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const tap = BuschUI.action({ label: translate(hass, 'antippen'), text: translate(hass, 'antippen'), icon: 'mdi:gesture-tap', disabled: !!lock, onClick: () => { tapping = []; redraw(); } });
+            tap.setAttribute('data-action', 'tap-mode');
+            actions.appendChild(tap);
+            if (!current.strict && current.ordered.length) {
+                const off = BuschUI.action({ label: translate(hass, 'reihenfolgeAus'), text: translate(hass, 'reihenfolgeAus'), disabled: !!lock, onClick: () => {
+                    undo = { strict: current.strict, ordered: current.ordered.slice(), unordered: current.unordered.slice() };
+                    change([], current.unordered.concat(current.ordered));
+                } });
+                off.setAttribute('data-action', 'sequence-off');
+                actions.appendChild(off);
+            }
+            if (dirty) {
+                const discard = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), onClick: () => { card._drafts.delete('sequence'); undo = null; redraw(); } });
+                discard.setAttribute('data-action', 'discard');
+                actions.appendChild(discard);
+            }
+            const save = BuschUI.action({ label: translate(hass, busy ? 'speichert' : 'speichern'), text: translate(hass, busy ? 'speichert' : 'speichern'), variant: 'primary',
+                disabled: !!lock || busy || !dirty, onClick: () => {
+                    const ids = current.ordered.filter((id) => rooms[id]).map(Number);
+                    const same = (m) => JSON.stringify((m.attr('cleaning_sequence') || []).map(Number)) === JSON.stringify(ids);
+                    undo = null;
+                    trackWrite(card, 'sequence', { want: ids, label: translate(hass, 'entrySequence'), check: same,
+                        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_cleaning_sequence', { entity_id: card._opts.entity, cleaning_sequence: ids }) });
+                } });
+            save.setAttribute('data-action', 'save');
+            if (busy) save.setAttribute('aria-busy', 'true');
+            actions.appendChild(save);
             body.appendChild(actions);
         }
     };
@@ -7437,6 +7748,65 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 }
 .repeats-hint {
     flex: 1 1 100%;
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+}
+.seq-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-1, 4px);
+}
+.seq-row {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-2, 8px);
+    min-height: 44px;
+    padding: 0 var(--ha-space-1, 4px);
+    border-radius: var(--ha-border-radius-md, 8px);
+    background: var(--secondary-background-color, #eeeeee);
+}
+.seq-row:focus-visible,
+.seq-row[aria-selected=true] {
+    outline: 2px solid var(--primary-color, #03a9f4);
+    outline-offset: 1px;
+}
+.seq-row[data-dragging] {
+    opacity: 0.6;
+}
+.seq-handle {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    cursor: grab;
+    /* The grip alone takes the gesture; the list scrolls everywhere else (R06). */
+    touch-action: none;
+    color: var(--secondary-text-color, #727272);
+}
+.seq-pos {
+    flex: none;
+    min-width: 1.5em;
+    font-weight: var(--ha-font-weight-medium, 500);
+}
+.seq-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.seq-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ha-space-1, 4px);
+}
+.seq-chips [aria-pressed=true] {
+    background: var(--primary-color, #03a9f4);
+    color: var(--text-primary-color, #ffffff);
+}
+.seq-live {
+    margin: 0;
+    min-height: 1.2em;
     color: var(--secondary-text-color, #727272);
     font-size: var(--ha-font-size-s, 14px);
 }
@@ -9247,6 +9617,8 @@ BuschVacuumCard.__internals = {
     MODULE_VIEWS,
     ROOM_KEYS,
     roomPayload,
+    sequenceModel,
+    moveRoom,
     daysOfMask,
     maskOfDays,
     maskOfRepeats,

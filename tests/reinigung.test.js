@@ -316,3 +316,170 @@ test('Mop-Typ: X40 ohne Zeile; mit auto_change_mop genau vacuum_set_mop_type ohn
   const gesperrt = raumSeite(3, { caps: (c) => c.concat('auto_change_mop'), raeume: { 3: { mop_type: 'A' } }, attribute: { has_temporary_map: true } });
   assert.equal(raumFeld(gesperrt, 'mop_type').querySelector('select').disabled, true);
 });
+
+// ── Task 5: Reinigungsreihenfolge ───────────────────────────────────────────
+
+const FOLGE = ['3', '5', '7', '1', '6', '9', '4'];
+const NICHT_STRIKT = (c) => c.filter((x) => x !== 'cleaning_sequence_v2');
+const folgeAufruf = (liste) => ({ domain: 'dreame_vacuum', service: 'vacuum_set_cleaning_sequence', data: { entity_id: 'vacuum.robo', cleaning_sequence: liste } });
+
+test('sequenceModel: strikt volle Liste; nicht strikt mit „ohne Reihenfolge“; unbekannte IDs nie', () => {
+  const k = aufbau('voll', { attribute: { cleaning_sequence: [3, 99, 5] } });
+  const raeume = k.haus.states[CAM].attributes.rooms;
+  const s = roh(k.I.sequenceModel(k.model(), raeume));
+  assert.equal(s.strict, true);
+  assert.deepEqual(s.ordered.slice(0, 2), ['3', '5']);
+  assert.deepEqual(s.ordered.slice().sort(), Object.keys(raeume).sort(), 'jeder Raum hat einen Platz');
+  assert.deepEqual(s.unordered, []);
+  const n = aufbau('voll', { caps: NICHT_STRIKT, attribute: { cleaning_sequence: [3, 99, 5] } });
+  const t = roh(n.I.sequenceModel(n.model(), raeume));
+  assert.deepEqual([t.strict, t.ordered], [false, ['3', '5']]);
+  assert.deepEqual(t.unordered.sort(), ['1', '4', '6', '7', '9']);
+  const leer = aufbau('voll', { caps: NICHT_STRIKT, attribute: { cleaning_sequence: null }, raeume: Object.fromEntries(Object.keys(raeume).map((id) => [id, { order: 0 }])) });
+  assert.deepEqual(roh(leer.I.sequenceModel(leer.model(), leer.haus.states[CAM].attributes.rooms)).ordered, [], 'leere Liste möglich');
+  assert.deepEqual(roh(k.I.moveRoom(['a', 'b', 'c'], 'c', 0)), ['c', 'a', 'b']);
+  assert.deepEqual(roh(k.I.moveRoom(['a', 'b', 'c'], 'a', 9)), ['b', 'c', 'a']);
+});
+
+/** Reihenfolge über das Menü öffnen. */
+function folge(optionen) {
+  const k = aufbau('voll', optionen);
+  k.karte.shadowRoot.querySelector('.menu-button').click();
+  $$d(k.u, '.menu-item').find((b) => b.getAttribute('data-entry') === 'cleaning_sequence').click();
+  return k;
+}
+const zeilen = (k) => $$d(k.u, '[role="option"]').map((z) => z.getAttribute('data-room'));
+const zeileR = (k, id) => $$d(k.u, '[role="option"]').find((z) => z.getAttribute('data-room') === id);
+const taste = (k, el, key) => el.dispatchEvent(k.u.neuesEreignis('keydown', { key }));
+
+test('Menü und Einstellungen öffnen dieselbe Ansicht (kind editor, listbox/option)', () => {
+  const k = folge();
+  assert.equal($d(k.u, 'h1').textContent, 'Reinigungsreihenfolge');
+  assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'editor');
+  assert.ok($d(k.u, '[role="listbox"]'));
+  assert.deepEqual(zeilen(k), FOLGE);
+  const e = einstellungen();
+  $d(e.u, '[data-action="sequence"]').click();
+  assert.equal($d(e.u, 'h1').textContent, 'Reinigungsreihenfolge');
+  assert.deepEqual(zeilen(e), FOLGE);
+});
+
+test('Knöpfe, Tastatur, Ziehen und Antipp-Modus ergeben dieselbe Liste', () => {
+  const soll = ['1', '3', '5', '7', '6', '9', '4'];
+  const knoepfe = folge();
+  zeileR(knoepfe, '1').querySelector('[data-action="top"]').click();
+  assert.deepEqual(zeilen(knoepfe), soll, 'An den Anfang');
+  const hochRunter = folge();
+  for (let i = 0; i < 3; i++) zeileR(hochRunter, '1').querySelector('[data-action="up"]').click();
+  zeileR(hochRunter, '1').querySelector('[data-action="down"]').click();
+  zeileR(hochRunter, '1').querySelector('[data-action="up"]').click();
+  assert.deepEqual(zeilen(hochRunter), soll, '↑/↓');
+
+  const tasten = folge();
+  taste(tasten, zeileR(tasten, '1'), ' ');
+  assert.match($d(tasten.u, '[aria-live]').textContent, /Atelier/, 'Greifen angesagt');
+  for (let i = 0; i < 3; i++) taste(tasten, zeileR(tasten, '1'), 'ArrowUp');
+  taste(tasten, zeileR(tasten, '1'), ' ');
+  assert.deepEqual(zeilen(tasten), soll, 'Tastatur');
+  const abbruch = folge();
+  taste(abbruch, zeileR(abbruch, '1'), ' ');
+  taste(abbruch, zeileR(abbruch, '1'), 'ArrowUp');
+  taste(abbruch, zeileR(abbruch, '1'), 'Escape');
+  assert.deepEqual(zeilen(abbruch), FOLGE, 'Escape bricht ab');
+  assert.ok(dialogVon(abbruch.u), 'Escape schließt nicht den Dialog');
+
+  const ziehen = folge();
+  $$d(ziehen.u, '[role="option"]').forEach((z, i) => { z.getBoundingClientRect = () => ({ left: 0, right: 300, top: i * 50, bottom: i * 50 + 50, width: 300, height: 50 }); });
+  const griff = zeileR(ziehen, '1').querySelector('.seq-handle');
+  const zeiger = (typ, y) => griff.dispatchEvent(ziehen.u.neuesEreignis(typ, { clientX: 20, clientY: y, pointerType: 'mouse', pointerId: 1, button: 0 }));
+  zeiger('pointerdown', 175);
+  zeiger('pointermove', 60);
+  zeiger('pointermove', 10);
+  zeiger('pointerup', 10);
+  assert.deepEqual(zeilen(ziehen), soll, 'Ziehen');
+
+  const tippen = folge();
+  $d(tippen.u, '[data-action="tap-mode"]').click();
+  $$d(tippen.u, '[data-tap]').find((b) => b.getAttribute('data-tap') === '1').click();
+  assert.match($$d(tippen.u, '[data-tap]').find((b) => b.getAttribute('data-tap') === '1').textContent, /1/, 'Badge zählt');
+  $d(tippen.u, '[data-action="tap-done"]').click();
+  assert.deepEqual(zeilen(tippen), soll, 'Antipp-Modus');
+  for (const k of [knoepfe, tasten, ziehen, tippen]) assert.deepEqual(aufrufe(k), [], 'nur Entwurf, nichts gesendet');
+});
+
+test('Ziehen per Touch erst nach 300 ms Halten', () => {
+  const k = folge();
+  $$d(k.u, '[role="option"]').forEach((z, i) => { z.getBoundingClientRect = () => ({ left: 0, right: 300, top: i * 50, bottom: i * 50 + 50, width: 300, height: 50 }); });
+  const griff = () => zeileR(k, '1').querySelector('.seq-handle');
+  const zeiger = (typ, y) => griff().dispatchEvent(k.u.neuesEreignis(typ, { clientX: 20, clientY: y, pointerType: 'touch', pointerId: 2 }));
+  zeiger('pointerdown', 175);
+  zeiger('pointermove', 10);
+  zeiger('pointerup', 10);
+  assert.deepEqual(zeilen(k), FOLGE, 'sofortiges Wischen scrollt nur');
+  zeiger('pointerdown', 175);
+  k.u.uhr.vor(300);
+  zeiger('pointermove', 10);
+  zeiger('pointerup', 10);
+  assert.deepEqual(zeilen(k)[0], '1');
+});
+
+test('Speichern: genau ein vacuum_set_cleaning_sequence; Entwurf bleibt bis das Gerät ihn meldet, auch beim Verlassen', () => {
+  const k = folge();
+  zeileR(k, '1').querySelector('[data-action="top"]').click();
+  assert.match($d(k.u, '.body').textContent, /nicht gespeichert/);
+  $d(k.u, '[data-action="close"]').click();
+  k.u.uhr.vor(300);
+  assert.equal(dialogVon(k.u), null, 'Dialog zu');
+  k.karte.shadowRoot.querySelector('.menu-button').click();
+  $$d(k.u, '.menu-item').find((b) => b.getAttribute('data-entry') === 'cleaning_sequence').click();
+  assert.deepEqual(zeilen(k)[0], '1', 'Entwurf erhalten (R10)');
+  $d(k.u, '[data-action="save"]').click();
+  $d(k.u, '[data-action="save"]').click();
+  assert.deepEqual(aufrufe(k), [folgeAufruf([1, 3, 5, 7, 6, 9, 4])], 'einmal, als Zahlen');
+  k.karte.hass = k.haus.setze(sauger(k.haus, { cleaning_sequence: [1, 3, 5, 7, 6, 9, 4] }));
+  assert.doesNotMatch($d(k.u, '.body').textContent, /nicht gespeichert/);
+});
+
+test('Speichern-Fehler (R12): Hinweis, Entwurf bleibt', async () => {
+  const { mikro } = require('./attrappe.js');
+  const k = folge();
+  k.haus.antwort = () => Promise.reject(new Error('unavailable_while_running'));
+  zeileR(k, '1').querySelector('[data-action="top"]').click();
+  $d(k.u, '[data-action="save"]').click();
+  await mikro();
+  assert.match($d(k.u, '.body').textContent, /unavailable_while_running/);
+  assert.deepEqual(zeilen(k)[0], '1');
+});
+
+test('Strikt ohne „Reihenfolge aus“; nicht strikt: aus mit Rückgängig, leere Liste gesendet', () => {
+  assert.equal($d(folge().u, '[data-action="sequence-off"]'), null);
+  const k = folge({ caps: NICHT_STRIKT, attribute: { cleaning_sequence: [3, 5] } });
+  assert.deepEqual(zeilen(k), ['3', '5']);
+  assert.match($d(k.u, '[data-section="unordered"]').textContent, /Atelier/);
+  $d(k.u, '[data-action="sequence-off"]').click();
+  assert.deepEqual(zeilen(k), []);
+  assert.match($d(k.u, '.body').textContent, /Salon, Bibliothek/, 'betroffene Räume genannt (R13)');
+  $d(k.u, '[data-action="undo"]').click();
+  assert.deepEqual(zeilen(k), ['3', '5']);
+  $d(k.u, '[data-action="sequence-off"]').click();
+  $d(k.u, '[data-action="save"]').click();
+  assert.deepEqual(aufrufe(k), [folgeAufruf([])]);
+  const add = folge({ caps: NICHT_STRIKT, attribute: { cleaning_sequence: [3, 5] } });
+  $$d(add.u, '[data-action="add"]').find((b) => b.getAttribute('data-room') === '1').click();
+  assert.deepEqual(zeilen(add), ['3', '5', '1'], 'einreihen hängt hinten an');
+});
+
+test('Sperrgründe: Aufgabe läuft, temporäre Karte → Speichern aus', () => {
+  for (const [opt, text] of [[{ zustand: 'cleaning', attribute: { started: true } }, /Während einer Aufgabe/], [{ attribute: { has_temporary_map: true } }, /temporären/]]) {
+    const k = folge(opt);
+    assert.match($d(k.u, '.body').textContent, text);
+    assert.equal($d(k.u, '[data-action="save"]').disabled, true);
+  }
+});
+
+test('Fremde Updates bauen die Reihenfolge nicht neu (R20)', () => {
+  const k = folge();
+  const vorher = zeileR(k, '3');
+  k.karte.hass = k.haus.fremd();
+  assert.equal(zeileR(k, '3'), vorher);
+});
