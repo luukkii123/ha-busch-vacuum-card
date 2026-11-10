@@ -201,7 +201,30 @@ function neueKarte(umgebung, haus, config = {}) {
   return karte;
 }
 
+/**
+ * fetch wie im Browser für die Verlaufs-Endpunkte: `antwort(url)` liefert
+ * `{ status, json }` (Vorgabe 404). Der Verlaufsdaten-Endpunkt antwortet mit
+ * gzip und `Content-Encoding: gzip`; der Browser entpackt selbst — hier
+ * ebenso aus echten gzip-Bytes. `abrufe` sammelt `{ url, signal }`.
+ */
+function verlaufsAbruf(umgebung, antwort = () => ({ status: 404 })) {
+  const zlib = require('node:zlib');
+  const abrufe = [];
+  umgebung.kontext.AbortController = AbortController;
+  umgebung.kontext.fetch = (url, optionen = {}) => {
+    abrufe.push({ url, signal: optionen.signal || null });
+    return Promise.resolve(antwort(url)).then((a) => {
+      if (optionen.signal && optionen.signal.aborted) throw Object.assign(new Error('abgebrochen'), { name: 'AbortError' });
+      const status = (a && a.status) || 200;
+      const roh = a && a.json !== undefined ? zlib.gzipSync(Buffer.from(JSON.stringify(a.json))) : null;
+      return { ok: status >= 200 && status < 300, status, headers: { get: (k) => (/encoding/i.test(k) && roh ? 'gzip' : null) },
+        json: async () => JSON.parse(zlib.gunzipSync(roh).toString('utf8')) };
+    });
+  };
+  return abrufe;
+}
+
 /** Alle Mikrotasks (Promise-Ketten) abarbeiten. */
 const mikro = () => new Promise((r) => setImmediate(r));
 
-module.exports = { neueUhr, neueUmgebung, neuesHaus, hausAus, neueKarte, einfacherSauger, mikro };
+module.exports = { neueUhr, neueUmgebung, neuesHaus, hausAus, neueKarte, einfacherSauger, mikro, verlaufsAbruf };

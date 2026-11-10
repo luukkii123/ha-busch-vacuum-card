@@ -776,7 +776,28 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             einLauf: '1 Lauf',
             laeufe: '{n} Läufe',
             gruppeTitel: 'Reinigung + Nachreinigung',
-            verlaufLeer: 'Kein Verlauf — die Integration lädt ihn nur mit Cloud-Verbindung.'
+            verlaufLeer: 'Kein Verlauf — die Integration lädt ihn nur mit Cloud-Verbindung.',
+            raumNr: 'Raum {id}',
+            verlaufDauer: 'Dauer',
+            verlaufArt: 'Reinigungsart',
+            verlaufKarte: 'Karte',
+            verlaufFlaeche: 'Fläche',
+            verlaufSaugstufe: 'Saugstufe',
+            verlaufMop: 'Mopp',
+            verlaufTank: 'Wassertank',
+            verlaufStart: 'Startmethode',
+            verlaufEntleert: 'Entleerungen',
+            verlaufGewaschen: 'Mopp-Wäschen',
+            verlaufGrund: 'Unterbrechungsgrund',
+            verlaufHaustier: 'Haustier',
+            laedtLauf: 'Daten des Laufs werden geladen …',
+            keineLaufdaten: 'Keine Karte und keine Zusatzdaten für diesen Lauf.',
+            laufFehler: 'Daten des Laufs konnten nicht geladen werden ({grund}).',
+            erneut: 'Erneut',
+            laufWeg: 'Diesen Lauf gibt es im Verlauf nicht mehr.',
+            neuer: 'Neuer',
+            aelter: 'Älter',
+            blockierteRaeume: 'Blockierte Räume'
         }
     },
     en: {
@@ -1322,7 +1343,28 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             einLauf: '1 run',
             laeufe: '{n} runs',
             gruppeTitel: 'Cleaning + re-cleaning',
-            verlaufLeer: 'No history — the integration loads it only with a cloud connection.'
+            verlaufLeer: 'No history — the integration loads it only with a cloud connection.',
+            raumNr: 'Room {id}',
+            verlaufDauer: 'Duration',
+            verlaufArt: 'Cleaning type',
+            verlaufKarte: 'Map',
+            verlaufFlaeche: 'Area',
+            verlaufSaugstufe: 'Suction level',
+            verlaufMop: 'Mop',
+            verlaufTank: 'Water tank',
+            verlaufStart: 'Started by',
+            verlaufEntleert: 'Emptyings',
+            verlaufGewaschen: 'Mop washes',
+            verlaufGrund: 'Interrupt reason',
+            verlaufHaustier: 'Pet',
+            laedtLauf: 'Loading the run\'s data …',
+            keineLaufdaten: 'No map and no further data for this run.',
+            laufFehler: 'The run\'s data could not be loaded ({grund}).',
+            erneut: 'Retry',
+            laufWeg: 'This run is no longer in the history.',
+            neuer: 'Newer',
+            aelter: 'Older',
+            blockierteRaeume: 'Blocked rooms'
         }
     }
 };
@@ -6609,7 +6651,8 @@ function historyRunsOf(card, kind, state, hass) {
 function historyView(card, name) {
     loadSettingTexts(card);
     const kind = HISTORY_KINDS[name];
-    const state = { cache: null, open: new Set() }; // open groups: only while the view lives (R21)
+    // Open groups, the run to return to, the detail's loads: only while the view lives (R21).
+    const state = { cache: null, open: new Set(), back: null, scroll: 0, detail: null };
     return {
         title: translate(card._hass, kind.title),
         kind: 'editor',
@@ -6644,6 +6687,11 @@ function historyView(card, name) {
                 button.className = 'history-run';
                 button.setAttribute('type', 'button');
                 button.setAttribute('data-run', String(run.timestamp));
+                button.addEventListener('click', () => {
+                    state.back = run.timestamp;
+                    state.scroll = dialog._sheet ? dialog._sheet.scrollTop : 0;
+                    dialog.show(historyDetail(card, name, state, run.timestamp));
+                });
                 const status = integrationState(hass, 'status', run.entry.status);
                 return runLine(button, [runDateText(hass, run.timestamp), status].filter(Boolean).join(' · '), runFacts(hass, run), runStatus(hass, run.level));
             };
@@ -6695,8 +6743,251 @@ function historyView(card, name) {
                 list.appendChild(item);
             }
             body.append(total, list);
+            if (state.back !== null) {
+                // Back from a detail: the list where it was, the focus on the run seen last (R14).
+                const back = state.back, scroll = state.scroll || 0;
+                state.back = null;
+                abortRun(state.detail || { loads: new Map() });
+                requestAnimationFrame(() => {
+                    if (dialog._sheet) dialog._sheet.scrollTop = scroll;
+                    const run = runs.find((r) => r.timestamp === back);
+                    const nodes = Array.from(dialog.shadowRoot.querySelectorAll('[data-run], [data-group]'));
+                    const node = nodes.find((n) => n.getAttribute('data-run') === String(back)) || (run && run.group && nodes.find((n) => n.getAttribute('data-group') === run.group));
+                    if (node) node.focus();
+                });
+            }
         }
     };
+}
+
+/** The main map camera (map_index 0): only it serves the history endpoints (camera.py#L253). */
+const historyCamera = (card) => card._model().related.maps.map[0] || null;
+
+const hassUrl = (hass, path) => (hass && typeof hass.hassUrl === 'function' ? hass.hassUrl(path) : path);
+
+/**
+ * The URL of a run from the camera's current attribute, matched by `v=` (the
+ * run's timestamp; the index moves with every new run). `data`: map data
+ * (gzip JSON); else the picture without burnt-in text, cleaning or WiFi map.
+ */
+function historyUrl(camera, run, { kind = 'history', data = false, wifi = false } = {}) {
+    const pictures = camera && camera.attributes && camera.attributes[HISTORY_KINDS[kind].picture];
+    if (!pictures || typeof pictures !== 'object') return null;
+    const v = String(Math.trunc(run.timestamp));
+    const base = Object.values(pictures).find((url) => typeof url === 'string' && (/[?&]v=(\d+)/.exec(url) || [])[1] === v);
+    if (!base) return null;
+    if (data) return base + '&data=1';
+    return base + '&info=0' + (HISTORY_KINDS[kind].cruising ? '' : wifi ? '&wifi=1' : '&cleaning=1');
+}
+
+/** The `index` of a run's URL (the integration's position in its list), for the obstacle photos. */
+const historyIndex = (url) => (url ? (/[?&]index=(\d+)/.exec(url) || [])[1] || null : null);
+
+/**
+ * The run's map data (`&data=1`): once per run and view, only for the open
+ * detail; a page turn or closing aborts the one under way (R20).
+ */
+function loadRun(card, kind, run, detail, redraw) {
+    const ts = run.timestamp;
+    if (detail.loads.has(ts)) return detail.loads.get(ts);
+    abortRun(detail);
+    const url = historyUrl(card._hass.states[historyCamera(card)], run, { kind: kind.name, data: true });
+    const load = { status: url ? 'loading' : 'missing', data: null, error: '' };
+    detail.loads.set(ts, load);
+    if (!url) return load;
+    if (typeof fetch !== 'function') return Object.assign(load, { status: 'error', error: 'fetch' });
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    detail.controller = controller;
+    Promise.resolve().then(() => fetch(hassUrl(card._hass, url), controller ? { signal: controller.signal } : {})).then((res) => {
+        if (res.status === 404) return { status: 'missing' };
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json().then((data) => ({ status: 'ready', data }));
+    }).then((result) => {
+        if (detail.loads.get(ts) !== load) return;
+        Object.assign(load, result);
+        if (detail.controller === controller) detail.controller = null;
+        redraw();
+    }, (error) => {
+        if (detail.loads.get(ts) !== load || (error && error.name === 'AbortError')) return;
+        Object.assign(load, { status: 'error', error: errorText(error) });
+        if (detail.controller === controller) detail.controller = null;
+        redraw();
+    });
+    return load;
+}
+
+/** Aborts the fetch under way; its unfinished entry goes, so a later visit loads again. */
+function abortRun(detail) {
+    if (detail.controller) detail.controller.abort();
+    detail.controller = null;
+    for (const [ts, load] of detail.loads) if (load.status === 'loading') detail.loads.delete(ts);
+}
+
+/** StartupMethod of the map data (types.py#L4633) → state key of the integration's sensor. */
+const STARTUP_METHODS = { 0: 'button', 1: 'app', 2: 'scheduled', 3: 'voice' };
+
+/** Room name from the camera, else "Room <id>". */
+function historyRoomName(hass, rooms, id) {
+    return rooms[id] ? roomName(rooms[id], id) : translate(hass, 'raumNr', { id });
+}
+
+/** Blocked rooms of a run: the sensor's reasons, plus rooms only the map data names. */
+function blockedRooms(run, load) {
+    const out = new Map(Object.entries(run.entry.blocked_rooms && typeof run.entry.blocked_rooms === 'object' ? run.entry.blocked_rooms : {}));
+    const data = load && load.data && load.data.blocked_segments;
+    if (data && typeof data === 'object') for (const id of Object.keys(data)) if (!out.has(id)) out.set(id, '');
+    return out;
+}
+
+/** The facts of a run: [name, label key, text, from the map data]. */
+function runFactRows(hass, kind, run, load) {
+    const e = run.entry;
+    const data = load.status === 'ready' ? load.data || {} : null;
+    const fromData = (value) => (data && value !== undefined && value !== null ? String(value) : null);
+    const [area, duration] = runFacts(hass, run);
+    if (kind.cruising) {
+        return [
+            ['duration', 'verlaufDauer', duration], ['cruising_type', 'verlaufArt', e.cruising_type === undefined ? '' : String(e.cruising_type)],
+            ['map_name', 'verlaufKarte', e.map_name || '']
+        ];
+    }
+    const startup = data && data.startup_method !== undefined && data.startup_method !== null ? integrationState(hass, 'startup_method', STARTUP_METHODS[data.startup_method] || 'unknown') : null;
+    return [
+        ['area', 'verlaufFlaeche', area], ['duration', 'verlaufDauer', duration],
+        ['suction_level', 'verlaufSaugstufe', e.suction_level ? optionLabel(hass, 'suction_level', e.suction_level) : ''],
+        ['mop_pad', 'verlaufMop', e.mop_pad || ''], ['water_tank', 'verlaufTank', e.water_tank || ''],
+        ['cleanup_method', 'verlaufArt', integrationState(hass, 'cleanup_method', e.cleanup_method)],
+        ['startup_method', 'verlaufStart', startup, true],
+        ['dust_collection_count', 'verlaufEntleert', fromData(data && data.dust_collection_count), true],
+        ['mop_wash_count', 'verlaufGewaschen', fromData(data && data.mop_wash_count), true],
+        ['interrupt_reason', 'verlaufGrund', e.interrupt_reason || ''],
+        ['pet', 'verlaufHaustier', typeof e.pet === 'boolean' ? translate(hass, e.pet ? 'ja' : 'nein') : '']
+    ];
+}
+
+/** The note of the map data's state (R11/R12/R18); error with Retry. */
+function runLoadNote(hass, load, retry) {
+    if (load.status === 'ready') return null;
+    const key = { loading: 'laedtLauf', missing: 'keineLaufdaten', error: 'laufFehler' }[load.status];
+    const note = noteLine(translate(hass, key, { grund: load.error }), load.status === 'error' ? 'error' : undefined);
+    note.setAttribute('data-load', load.status);
+    if (load.status === 'error') {
+        const again = BuschUI.action({ label: translate(hass, 'erneut'), text: translate(hass, 'erneut'), icon: 'mdi:refresh', onClick: retry });
+        again.setAttribute('data-action', 'retry');
+        note.appendChild(again);
+    }
+    return note;
+}
+
+/**
+ * HIS-02/03: one run. Facts from the sensor at once, the map data's (counters,
+ * start) as "—" until loaded; Older/Newer and ←/→ turn pages within the view
+ * (back = the list, R05); the same view for cleaning and cruising (R08).
+ */
+function historyDetail(card, name, list, ts) {
+    const kind = Object.assign({ name }, HISTORY_KINDS[name]);
+    const detail = list.detail || (list.detail = { loads: new Map(), controller: null });
+    let current = ts;
+    let closing = false;
+    const runAt = (hass) => historyRunsOf(card, kind, list, hass).find((r) => r.timestamp === current);
+    const view = {
+        get title() {
+            return runDateText(card._hass, current);
+        },
+        kind: 'editor',
+        watch: () => [card._model().entity(kind.sensor), historyCamera(card)].filter(Boolean),
+        render: (body, hass, dialog) => {
+            if (!closing) {
+                closing = true;
+                dialog.addEventListener('dialog-closed', () => abortRun(detail));
+            }
+            const redraw = () => { if (dialog._views[dialog._views.length - 1] === view) dialog._render(); };
+            const runs = historyRunsOf(card, kind, list, hass);
+            const index = runs.findIndex((r) => r.timestamp === current);
+            const wrap = document.createElement('div');
+            wrap.className = 'history-detail';
+            body.appendChild(wrap);
+            if (index < 0) {
+                wrap.appendChild(noteLine(translate(hass, 'laufWeg')));
+                return;
+            }
+            const run = runs[index];
+            const load = loadRun(card, kind, run, detail, redraw);
+            const go = (to, action) => {
+                if (to < 0 || to >= runs.length) return;
+                abortRun(detail);
+                current = runs[to].timestamp;
+                list.back = current;
+                dialog._render();
+                const again = action && dialog.shadowRoot.querySelector('[data-action="' + action + '"]');
+                if (again && !again.disabled) again.focus();
+            };
+            wrap.addEventListener('keydown', (event) => {
+                const to = { ArrowLeft: index - 1, ArrowRight: index + 1 }[event.key];
+                if (to === undefined) return;
+                event.preventDefault();
+                go(to);
+            });
+
+            const head = document.createElement('p');
+            head.className = 'history-head';
+            const status = integrationState(hass, 'status', run.entry.status);
+            head.appendChild(runStatus(hass, run.level));
+            if (status) {
+                const word = document.createElement('span');
+                word.className = 'history-state';
+                word.textContent = status;
+                head.appendChild(word);
+            }
+            wrap.appendChild(head);
+
+            const pager = document.createElement('div');
+            pager.className = 'actions history-pager';
+            const newer = BuschUI.action({ label: translate(hass, 'neuer'), text: translate(hass, 'neuer'), icon: 'mdi:chevron-left', disabled: index === 0, onClick: () => go(index - 1, 'newer') });
+            newer.setAttribute('data-action', 'newer');
+            const older = BuschUI.action({ label: translate(hass, 'aelter'), text: translate(hass, 'aelter'), icon: 'mdi:chevron-right', disabled: index === runs.length - 1, onClick: () => go(index + 1, 'older') });
+            older.setAttribute('data-action', 'older');
+            pager.append(newer, older);
+
+            const facts = document.createElement('dl');
+            facts.className = 'history-facts';
+            for (const [key, label, text, fromData] of runFactRows(hass, kind, run, load)) {
+                if (!fromData && !text) continue;
+                const dt = document.createElement('dt');
+                dt.textContent = translate(hass, label);
+                const dd = document.createElement('dd');
+                dd.setAttribute('data-fact', key);
+                dd.textContent = text || '—';
+                if (fromData && load.status === 'loading') dd.setAttribute('aria-busy', 'true');
+                facts.append(dt, dd);
+            }
+            wrap.appendChild(facts);
+            const note = runLoadNote(hass, load, () => {
+                detail.loads.delete(current);
+                dialog._render();
+            });
+            if (note) wrap.appendChild(note);
+
+            const blocked = blockedRooms(run, load);
+            if (blocked.size) {
+                const rooms = cameraAttrs(card._model()).rooms || {};
+                const heading = document.createElement('h2');
+                heading.className = 'settings-heading';
+                heading.textContent = translate(hass, 'blockierteRaeume');
+                const ul = document.createElement('ul');
+                ul.className = 'history-blocked';
+                for (const [id, reason] of blocked) {
+                    const li = document.createElement('li');
+                    li.setAttribute('data-room', id);
+                    li.textContent = [historyRoomName(hass, rooms, id), reason].filter(Boolean).join(' · ');
+                    ul.appendChild(li);
+                }
+                wrap.append(heading, ul);
+            }
+            wrap.appendChild(pager);
+        }
+    };
+    return view;
 }
 
 const CARD_STYLES = BuschUI.cardStyles + `
@@ -7766,17 +8057,20 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     color: var(--secondary-text-color, #727272);
     overflow-wrap: anywhere;
 }
-.obstacle-facts {
+.obstacle-facts,
+.history-facts {
     display: grid;
     grid-template-columns: auto 1fr;
     gap: var(--ha-space-1, 4px) var(--ha-space-3, 12px);
     margin: 0;
 }
-.obstacle-facts dt {
+.obstacle-facts dt,
+.history-facts dt {
     color: var(--secondary-text-color, #727272);
     overflow-wrap: anywhere;
 }
-.obstacle-facts dd {
+.obstacle-facts dd,
+.history-facts dd {
     margin: 0;
     min-width: 0;
     overflow-wrap: anywhere;
@@ -8183,6 +8477,37 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 }
 .run-status span {
     color: var(--primary-text-color, #212121);
+}
+.history-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ha-space-2, 8px);
+    margin: 0 0 var(--ha-space-3, 12px);
+}
+.history-state {
+    overflow-wrap: anywhere;
+}
+.history-detail .form-note {
+    margin-top: var(--ha-space-3, 12px);
+}
+.history-detail [data-action=retry] {
+    margin-inline-start: var(--ha-space-2, 8px);
+}
+.history-blocked {
+    margin: var(--ha-space-2, 8px) 0 0;
+    padding-inline-start: var(--ha-space-5, 20px);
+}
+.history-blocked li {
+    overflow-wrap: anywhere;
+}
+.history-pager {
+    margin-top: var(--ha-space-4, 16px);
+}
+.history-pager .busch-ui-action {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
 }
 `;
 
@@ -10000,6 +10325,7 @@ BuschVacuumCard.__internals = {
     taskReady,
     historyRuns,
     historySums,
+    historyUrl,
     version: CARD_VERSION
 };
 

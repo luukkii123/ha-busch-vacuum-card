@@ -75,4 +75,28 @@ function ausFixture(name = 'voll', optionen) {
   return kartendaten(fixture(name).states['camera.robo_map'].attributes.rooms, optionen);
 }
 
-module.exports = { kartendaten, ausFixture, lauflaengen, fixture };
+/**
+ * Synthetische Verlaufsdaten wie `/api/camera_history_map_proxy/…&data=1`
+ * (map.py get_data einer Verlaufskarte, Feldform live 10.11.2026 lesend geprüft):
+ * Karte aus den verfremdeten Räumen, Zähler, blockierte Räume, Hindernisse,
+ * Pfad, WLAN-Karte. `mehr` ersetzt Felder.
+ */
+function verlaufsdaten(mehr = {}) {
+  const { _zellen, _breite, _hoehe, ...karte } = ausFixture('voll');
+  const { _zellen: z2, _breite: b2, _hoehe: h2, ...wlan } = ausFixture('voll');
+  return Object.assign(karte, {
+    history_map: true, map_id: 2, completed: true, startup_method: 1, cleanup_method: 0,
+    mop_wash_count: 3, dust_collection_count: 1, task_interrupt_reason: null, task_end_type: 2,
+    cleaned_area: 24, cleaning_time: 53, multiple_cleaning_time: null,
+    blocked_segments: { 4: [3, 100, 200], 5: [4, 300, 400], 9: [3, 500, 600] },
+    obstacles: [
+      ['1', 300, 400, 200, null, 0, 0, '0', null, null, null, null, 'Bibliothek', 1, 5, 'Blocked by threshold'],
+      ['2', 1200, 900, 133, 80, 0, 2, 'ab12', 1180, 880, 40, 40, 'Salon', 2, null, null],
+    ],
+    path: [[1, 1000, 1000, 1500, 1000, 1500, 1500], [3, 1500, 1500, 2000, 1500]],
+    cleaning_map_data: null,
+    wifi_map_data: Object.assign(wlan, { wifi_map: true, map_id: 2 }),
+  }, mehr);
+}
+
+module.exports = { kartendaten, ausFixture, lauflaengen, fixture, verlaufsdaten };

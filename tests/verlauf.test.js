@@ -3,13 +3,15 @@
 // Karte des Laufs, Hindernisse, „Nochmal reinigen“. Verlaufsdaten nur synthetisch.
 const test = require('node:test');
 const assert = require('node:assert');
-const { neueUmgebung, hausAus, neueKarte } = require('./attrappe.js');
+const { neueUmgebung, hausAus, neueKarte, mikro, verlaufsAbruf } = require('./attrappe.js');
+const { verlaufsdaten } = require('./kartendaten.js');
 
 const roh = (x) => JSON.parse(JSON.stringify(x));
 const HIST = 'sensor.robo_cleaning_history';
 
-function aufbau(name = 'voll', { states, config, services, haus: mitHaus } = {}) {
+function aufbau(name = 'voll', { states, config, services, haus: mitHaus, antwort } = {}) {
   const u = neueUmgebung(), haus = hausAus(name);
+  if (antwort) u.abrufe = verlaufsAbruf(u, antwort);
   if (states) haus.states = Object.assign({}, haus.states, states(haus.states));
   if (services) haus.services = services(haus.services);
   if (mitHaus) mitHaus(haus);
@@ -208,4 +210,118 @@ test('Snapshot: fremde Updates zeichnen die Liste nicht neu, ein neuer Sensorwer
   dialogVon(k.u).hass = k.haus.setze({ [HIST]: Object.assign({}, s, { attributes: Object.assign({}, s.attributes, { '11-10 08:00': { timestamp: 1794297600, completed: true, cleaned_area: '5 m²', cleaning_time: '6 min' } }) }) });
   assert.notEqual($d(k.u, '.history-list'), vorher);
   assert.ok($d(k.u, '[data-run="1794297600"]'));
+});
+
+// ── Task 3: Detail ohne Karte, Blättern ────────────────────────────────────
+
+const NEUESTER = 1794228429; // 11-09 13:47, blockierte Räume 4/5/9, Gruppe mit 12:46
+const ZWEITER = 1794224793;
+const verlaufAbrufe = (k) => k.u.abrufe.filter((a) => a.url.includes('/api/camera_history_map_proxy/'));
+/** Antwort: Daten-JSON für jeden Lauf; `je` setzt je v= etwas anderes (Status, Daten, Versprechen). */
+const datenAntwort = (je = {}) => (url) => {
+  if (!url.includes('/api/camera_history_map_proxy/')) return { status: 404 };
+  const v = Number(/[?&]v=(\d+)/.exec(url)[1]);
+  return je[v] !== undefined ? (typeof je[v] === 'function' ? je[v](url) : je[v]) : { json: verlaufsdaten() };
+};
+function detail(optionen = {}, ts = NEUESTER) {
+  const k = aufbau('voll', Object.assign({ antwort: datenAntwort(), haus: mitTexten }, optionen));
+  oeffne(k);
+  const kopf = $d(k.u, '[data-group="1794228271"]');
+  if (kopf && !$d(k.u, '[data-run="' + ts + '"]')) kopf.click();
+  $d(k.u, '[data-run="' + ts + '"]').click();
+  return k;
+}
+const wert = (k, name) => { const dd = $d(k.u, '[data-fact="' + name + '"]'); return dd ? dd.textContent : null; };
+
+test('Detail: Sensorwerte sofort, Daten-JSON-Werte „—“ mit Ladeanzeige, danach Zähler/Startmethode', async () => {
+  const k = detail();
+  assert.equal($d(k.u, 'h1').textContent.includes(':'), true, 'Titel = Datum und Uhrzeit');
+  assert.equal(wert(k, 'area'), '24 m²');
+  assert.equal(wert(k, 'duration'), '53 min');
+  assert.equal(wert(k, 'cleanup_method'), 'Standard');
+  assert.equal(wert(k, 'mop_pad'), 'Installed');
+  assert.equal(wert(k, 'startup_method'), '—');
+  assert.equal($d(k.u, '[data-fact="startup_method"]').getAttribute('aria-busy'), 'true');
+  assert.ok($d(k.u, '[data-load="loading"]'), 'Ladeanzeige');
+  await mikro(); await mikro();
+  assert.equal(wert(k, 'startup_method'), 'App');
+  assert.equal(wert(k, 'dust_collection_count'), '1');
+  assert.equal(wert(k, 'mop_wash_count'), '3');
+  assert.equal($d(k.u, '[data-load="loading"]'), null);
+  const blockiert = $d(k.u, '.history-blocked').childNodes.map((n) => n.textContent);
+  assert.deepEqual(blockiert, ['Galerie · Blocked by door', 'Bibliothek · Blocked by threshold', 'Sauna · Blocked by door']);
+  const abrufe = verlaufAbrufe(k);
+  assert.equal(abrufe.length, 1, 'genau ein Abruf je geöffnetem Lauf');
+  assert.match(abrufe[0].url, /^\/api\/camera_history_map_proxy\/camera\.robo_map\?token=testtoken&index=\d+&v=1794228429&data=1$/);
+});
+
+test('Kein Abruf ohne geöffnetes Detail (Liste, fremde Updates)', async () => {
+  const k = aufbau('voll', { antwort: datenAntwort() });
+  oeffne(k);
+  dialogVon(k.u).hass = k.haus.fremd();
+  await mikro();
+  assert.equal(verlaufAbrufe(k).length, 0);
+});
+
+test('Blättern: Älter/Neuer und ←/→, am Rand gesperrt; ein Abruf je Lauf, Abbruch beim Blättern', async () => {
+  let offen = null;
+  const k = detail({ antwort: datenAntwort({ [ZWEITER]: () => new Promise((r) => { offen = r; }) }) });
+  await mikro(); await mikro();
+  const neuer = $d(k.u, '[data-action="newer"]'), aelter = $d(k.u, '[data-action="older"]');
+  assert.equal(neuer.disabled, true, 'neuester Lauf: Neuer gesperrt');
+  assert.equal(aelter.disabled, false);
+  const titel = $d(k.u, 'h1').textContent;
+  aelter.click();
+  assert.notEqual($d(k.u, 'h1').textContent, titel);
+  assert.equal(wert(k, 'area'), '34 m²', '11-09 12:46');
+  await mikro();
+  assert.equal(verlaufAbrufe(k).length, 2);
+  const zweiter = verlaufAbrufe(k)[1];
+  taste($d(k.u, '.history-detail'), 'ArrowLeft');
+  assert.equal($d(k.u, 'h1').textContent, titel, '← = neuer');
+  assert.equal(zweiter.signal.aborted, true, 'laufender Abruf beim Blättern abgebrochen');
+  assert.equal(verlaufAbrufe(k).length, 2, 'fertiger Lauf wird nicht neu geladen');
+  assert.equal(wert(k, 'startup_method'), 'App');
+  offen({ json: verlaufsdaten() });
+  taste($d(k.u, '.history-detail'), 'ArrowRight');
+  await mikro();
+  assert.equal(verlaufAbrufe(k).length, 3, 'abgebrochener Lauf lädt beim Wiederkommen neu');
+});
+
+test('Escape/Zurück: Liste an gleicher Position, Fokus auf dem Lauf', async () => {
+  const k = detail({}, 1794047923);
+  const d = dialogVon(k.u);
+  d._sheet.scrollTop = 0;
+  k.u.document.dispatchEvent(k.u.neuesEreignis('keydown', { key: 'Escape' }));
+  k.u.zurueck();
+  assert.equal($d(k.u, 'h1').textContent, 'Reinigungsverlauf');
+  k.u.bild();
+  assert.equal(d.shadowRoot.activeElement && d.shadowRoot.activeElement.getAttribute('data-run'), '1794047923');
+});
+
+test('Fehler beim Laden → R12-Text mit Erneut; 404 → keine Daten für diesen Lauf', async () => {
+  let n = 0;
+  const k = detail({ antwort: datenAntwort({ [NEUESTER]: () => (++n === 1 ? { status: 500 } : { json: verlaufsdaten() }) }) });
+  await mikro(); await mikro();
+  const fehler = $d(k.u, '[data-load="error"]');
+  assert.ok(fehler);
+  assert.match(fehler.textContent, /nicht geladen/);
+  assert.equal(wert(k, 'startup_method'), '—');
+  $d(k.u, '[data-action="retry"]').click();
+  await mikro(); await mikro();
+  assert.equal(wert(k, 'startup_method'), 'App');
+  assert.equal(verlaufAbrufe(k).length, 2);
+  const k2 = detail({ antwort: datenAntwort({ [NEUESTER]: { status: 404 } }) });
+  await mikro(); await mikro();
+  assert.match($d(k2.u, '[data-load="missing"]').textContent, /Keine Karte/);
+  assert.equal($d(k2.u, '[data-action="retry"]'), null);
+});
+
+test('Schließen bricht den laufenden Abruf ab', async () => {
+  const k = detail({ antwort: datenAntwort({ [NEUESTER]: () => new Promise(() => {}) }) });
+  await mikro();
+  const a = verlaufAbrufe(k)[0];
+  dialogVon(k.u).close();
+  k.u.zurueck();
+  assert.equal(a.signal.aborted, true);
 });
