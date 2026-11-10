@@ -371,6 +371,16 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskGoto: 'Hinfahren',
             brauchtKarte: '„{task}“ braucht die Karte. Die Kartenansicht folgt in einem späteren Ausbau; bis dahin geht nur „Gesamt“.',
             aufgabeLaeuft: 'Aufgabe läuft',
+            sperreAblassenAufgabe: 'Während die Station Wasser ablässt oder sich selbst repariert, startet keine Aufgabe. Warte, bis sie fertig ist.',
+            raumOhneKarte: 'Räume lassen sich nur auf einer gespeicherten Karte reinigen. Lass den Roboter die Karte fertig erstellen und speichern, oder wähle „Gesamt“.',
+            leerRaum: 'Noch kein Raum gewählt. Tippe einen Raum auf der Karte oder einen Raum-Knopf an.',
+            leerZone: 'Noch kein Bereich. Tippe auf die Karte, ziehe ein Rechteck oder nutze „Bereich hinzufügen“.',
+            leerSpot: 'Noch kein Punkt. Tippe auf die Karte oder nutze „Punkt an Roboterposition“.',
+            leerGoto: 'Noch kein Ziel. Tippe auf die Karte oder wähle einen gespeicherten Zielpunkt.',
+            zoneZuKlein: 'Ein Bereich ist zu klein: jede Seite muss länger als {min} sein. Vergrößere ihn mit den Griffen oder „Breite +“/„Höhe +“.',
+            zoneAusserhalb: 'Ein Bereich liegt ganz außerhalb der befahrbaren Fläche. Verschiebe ihn auf den Boden oder entferne ihn.',
+            punktAusserhalb: 'Der Punkt liegt nicht auf befahrbarer Fläche. Wähle einen Punkt auf dem Boden der Karte.',
+            gotoAmRoboter: 'Der Roboter steht schon an diesem Ziel. Wähle einen Punkt weiter weg.',
             aufgabeGeplant: 'Geplante Aufgabe',
             aufgabeShortcut: 'Shortcut-Aufgabe',
             stufeError: 'Fehler',
@@ -810,6 +820,16 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskGoto: 'Go to',
             brauchtKarte: '“{task}” needs the map. The map view follows in a later update; until then only “All” works.',
             aufgabeLaeuft: 'Task running',
+            sperreAblassenAufgabe: 'No task starts while the station drains water or repairs itself. Wait until it has finished.',
+            raumOhneKarte: 'Rooms can only be cleaned on a saved map. Let the robot finish and save the map, or choose “All”.',
+            leerRaum: 'No room chosen yet. Tap a room on the map or a room button.',
+            leerZone: 'No area yet. Tap the map, drag a rectangle or use “Add area”.',
+            leerSpot: 'No point yet. Tap the map or use “Point at robot position”.',
+            leerGoto: 'No target yet. Tap the map or choose a saved point.',
+            zoneZuKlein: 'An area is too small: each side must be longer than {min}. Enlarge it with the handles or “Width +”/“Height +”.',
+            zoneAusserhalb: 'An area lies completely outside the reachable floor. Move it onto the floor or remove it.',
+            punktAusserhalb: 'The point is not on reachable floor. Choose a point on the floor of the map.',
+            gotoAmRoboter: 'The robot is already at this target. Choose a point further away.',
             aufgabeGeplant: 'Scheduled task',
             aufgabeShortcut: 'Shortcut task',
             stufeError: 'Error',
@@ -2383,6 +2403,85 @@ function runningTask(model) {
     if (model.attr('zone_cleaning')) return 'zone';
     if (model.attr('spot_cleaning')) return 'spot';
     return 'all';
+}
+
+// ---------------------------------------------------------------------------
+// Tasks (clean-tasks): one selection model in robot mm for map, chips and
+// lists (R08); payload and checks are pure functions (testable without DOM)
+// ---------------------------------------------------------------------------
+
+const TASK_SERVICES = { room: 'vacuum_clean_segment', zone: 'vacuum_clean_zone', spot: 'vacuum_clean_spot', goto: 'vacuum_goto' };
+const GRID_MM = 50; // grid_size when the map data is missing (device.py: size 100 = 2 × 50)
+const emptySelection = () => ({ rooms: [], zones: [], spots: [], goto: null });
+
+/** Attributes of the vacuum's active map camera, or {}. */
+function cameraAttrs(model) {
+    const id = model.related.maps.map[0];
+    const cam = id && model.hass && model.hass.states[id];
+    return (cam && cam.attributes) || {};
+}
+
+/** A zone with sorted, whole robot mm: [x0, y0, x1, y1] as the service wants it. */
+const zoneBox = (z) => [Math.round(Math.min(z.x0, z.x1)), Math.round(Math.min(z.y0, z.y1)), Math.round(Math.max(z.x0, z.x1)), Math.round(Math.max(z.y0, z.y1))];
+
+/**
+ * The one service call of a task (spec table): `{ domain, service, data }`
+ * without entity_id. With Customized Cleaning the room values go along as
+ * lists in selection order; otherwise the service would set repeats=1 for all
+ * rooms (vacuum.py#L1123 → device.py#L4910).
+ */
+function taskPayload(model, task, selection, repeats) {
+    const n = Math.min(3, Math.max(1, Number(repeats) || 1));
+    if (task === 'room') {
+        const segments = selection.rooms.slice();
+        if (model.attr('customized_cleaning') !== true) return { domain: 'dreame_vacuum', service: TASK_SERVICES.room, data: { segments, repeats: n } };
+        const rooms = cameraAttrs(model).rooms || {};
+        const list = (key, fallback) => segments.map((id) => { const v = rooms[id] && rooms[id][key]; return v === undefined || v === null ? fallback : Number(v); });
+        return { domain: 'dreame_vacuum', service: TASK_SERVICES.room, data: { segments, repeats: list('cleaning_times', 1), suction_level: list('suction_level', 0), water_volume: list('water_volume', 0) } };
+    }
+    if (task === 'zone') return { domain: 'dreame_vacuum', service: TASK_SERVICES.zone, data: { zone: selection.zones.map(zoneBox), repeats: selection.zones.map(() => n) } };
+    if (task === 'spot') return { domain: 'dreame_vacuum', service: TASK_SERVICES.spot, data: { points: selection.spots.map((p) => [Math.round(p.x), Math.round(p.y)]), repeats: selection.spots.map(() => n) } };
+    if (task === 'goto') return { domain: 'dreame_vacuum', service: TASK_SERVICES.goto, data: { x: Math.round(selection.goto.x), y: Math.round(selection.goto.y) } };
+    return { domain: 'vacuum', service: 'start', data: {} };
+}
+
+/** Nine sample points of a zone: corners, edge centres, centre. */
+const zoneSamples = (z) => [0, 0.5, 1].flatMap((fx) => [0, 0.5, 1].map((fy) => ({ x: z.x0 + (z.x1 - z.x0) * fx, y: z.y0 + (z.y1 - z.y0) * fy })));
+
+/**
+ * Whether a task can start, else the dictionary key of why (R12). What the
+ * integration would refuse is caught here first (device.py#L4771, L4895,
+ * L4996, L5099, L4831, L5050, L5150). `map`: `{ passable(p), grid }`;
+ * passable blocks only on false (image mode answers null).
+ */
+function taskReady(model, task, selection, map) {
+    const no = (reason) => ({ ok: false, reason });
+    if (task === 'all' || !TASK_SERVICES[task]) return { ok: true, reason: null };
+    if (model.attr('draining') === true || model.attr('self_repairing') === true) return no('sperreAblassenAufgabe');
+    const grid = (map && map.grid) || GRID_MM;
+    const blocked = (p) => !!map && map.passable(p) === false;
+    if (task === 'room') {
+        if (model.attr('has_saved_map') === false) return no('raumOhneKarte');
+        return selection.rooms.length ? { ok: true, reason: null } : no('leerRaum');
+    }
+    if (task === 'zone') {
+        if (!selection.zones.length) return no('leerZone');
+        // The device needs each side longer than 2 × grid_size (w <= 1.0 fails).
+        if (selection.zones.some((z) => Math.abs(z.x1 - z.x0) <= 2 * grid || Math.abs(z.y1 - z.y0) <= 2 * grid)) return no('zoneZuKlein');
+        if (selection.zones.some((z) => zoneSamples(z).every(blocked))) return no('zoneAusserhalb');
+        return { ok: true, reason: null };
+    }
+    if (task === 'spot') {
+        if (!selection.spots.length) return no('leerSpot');
+        return selection.spots.some(blocked) ? no('punktAusserhalb') : { ok: true, reason: null };
+    }
+    const target = selection.goto;
+    if (!target) return no('leerGoto');
+    if (blocked(target)) return no('punktAusserhalb');
+    const robot = cameraAttrs(model).vacuum_position;
+    // Only the simulated way (a small zone) refuses a target next to the robot.
+    if (!model.can('cruising') && robot && Math.abs(target.x - robot.x) <= 2 * grid && Math.abs(target.y - robot.y) <= 2 * grid) return no('gotoAmRoboter');
+    return { ok: true, reason: null };
 }
 
 const MESSAGE_LOOK = {
@@ -7408,6 +7507,8 @@ BuschVacuumCard.__internals = {
     viewMatrix,
     paintMapPixels,
     parseColor,
+    taskPayload,
+    taskReady,
     version: CARD_VERSION
 };
 
