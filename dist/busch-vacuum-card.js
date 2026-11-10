@@ -769,7 +769,14 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             treffer: '{n} Treffer',
             keineTreffer: 'Keine Einstellung gefunden. Versuche einen anderen Begriff.',
             dauerMin: '{m} min',
-            dauerStdMin: '{h} h {m} min'
+            dauerStdMin: '{h} h {m} min',
+            laufFertig: 'Fertig',
+            laufAuffaellig: 'Auffällig',
+            laufUnterbrochen: 'Unterbrochen',
+            einLauf: '1 Lauf',
+            laeufe: '{n} Läufe',
+            gruppeTitel: 'Reinigung + Nachreinigung',
+            verlaufLeer: 'Kein Verlauf — die Integration lädt ihn nur mit Cloud-Verbindung.'
         }
     },
     en: {
@@ -1308,7 +1315,14 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             treffer: '{n} results',
             keineTreffer: 'No setting found. Try another term.',
             dauerMin: '{m} min',
-            dauerStdMin: '{h} h {m} min'
+            dauerStdMin: '{h} h {m} min',
+            laufFertig: 'Done',
+            laufAuffaellig: 'Notice',
+            laufUnterbrochen: 'Interrupted',
+            einLauf: '1 run',
+            laeufe: '{n} runs',
+            gruppeTitel: 'Cleaning + re-cleaning',
+            verlaufLeer: 'No history — the integration loads it only with a cloud connection.'
         }
     }
 };
@@ -1760,6 +1774,7 @@ class VacuumModel {
             case 'station_cleaning': return this.caps.has('station_cleaning') && this.can('dreame_vacuum.vacuum_call_action');
             case 'recleaning': return this.caps.has('auto_recleaning') && this.caps.has('map') && this.can('dreame_vacuum.vacuum_call_action');
             case 'history': return !!this.entity('sensor.cleaning_history');
+            case 'cruising_history': return this.caps.has('cruising') && !!this.entity('sensor.cruising_history');
             // CORE-10: the button is what v2.0.3 offers; the documented service only if present.
             case 'clear_warning': return !!this.entity('button.clear_warning') || this.can('dreame_vacuum.vacuum_clear_warning');
             case 'consumables': return Object.keys(this.consumables()).length > 0;
@@ -2797,7 +2812,7 @@ function progressOf(hass, model) {
 const MENU = [
     { name: 'locate', text: 'entryLocate', icon: 'mdi:map-marker-radius-outline', needs: 'locate' },
     { name: 'history', text: 'entryHistory', icon: 'mdi:history', needs: 'history', module: 'history' },
-    { name: 'cruising_history', text: 'entryCruising', icon: 'mdi:map-marker-path', needs: 'cruising', module: 'history' },
+    { name: 'cruising_history', text: 'entryCruising', icon: 'mdi:map-marker-path', needs: 'cruising_history', module: 'history' },
     { name: 'consumables', text: 'entryConsumables', icon: 'mdi:wrench-clock', needs: 'consumables', module: 'device-settings' },
     { name: 'cleaning_sequence', text: 'entrySequence', icon: 'mdi:sort-numeric-ascending', needs: 'cleangenius', module: 'clean-settings' },
     { name: 'remote', text: 'entryRemote', icon: 'mdi:gamepad-round-outline', needs: 'remote', module: 'remote' },
@@ -4431,7 +4446,9 @@ const settingsWatch = (card) => {
 const MODULE_VIEWS = {
     settings: (card) => settingsView(card),
     consumables: (card) => groupView(card, 'consumables'),
-    cleaning_sequence: (card) => sequenceView(card)
+    cleaning_sequence: (card) => sequenceView(card),
+    history: (card) => historyView(card, 'history'),
+    cruising_history: (card) => historyView(card, 'cruising_history')
 };
 
 /** Rows of device-settings (not dock's or clean-settings'), for the search (R14). */
@@ -6500,6 +6517,188 @@ function historySums(runs, hass) {
     return { count: runs.length, area, minutes, areaText: areaText(hass, area), timeText: minutesText(hass, minutes) };
 }
 
+/** The two history views: sensor (by translation key), camera attribute of the run pictures. */
+const HISTORY_KINDS = {
+    history: { sensor: 'sensor.cleaning_history', picture: 'cleaning_history_picture', title: 'entryHistory', cruising: false },
+    cruising_history: { sensor: 'sensor.cruising_history', picture: 'cruising_history_picture', title: 'entryCruising', cruising: true }
+};
+
+/** Status dot of a run: symbol and word, never colour alone (R17). */
+const RUN_LEVELS = {
+    done: { icon: 'mdi:check-circle-outline', text: 'laufFertig' },
+    notice: { icon: 'mdi:alert-outline', text: 'laufAuffaellig' },
+    interrupted: { icon: 'mdi:close-octagon-outline', text: 'laufUnterbrochen' }
+};
+const RUN_LEVEL_ORDER = ['done', 'notice', 'interrupted'];
+
+/** A state text of the integration's sensor in HA's words (R26), else the raw text. */
+function integrationState(hass, sensor, raw) {
+    if (raw === undefined || raw === null || raw === '') return '';
+    const slug = enumName(raw);
+    for (const name of [slug, slug.replace(/_mode$/, '')]) {
+        const id = 'component.dreame_vacuum.entity.sensor.' + sensor + '.state.' + name;
+        const text = hass && typeof hass.localize === 'function' ? hass.localize(id) : '';
+        if (text && text !== id) return text;
+    }
+    return String(raw);
+}
+
+/** Date and time of a run as HA shows them (CORE-16); the year only when it is not this one. */
+function runDateText(hass, timestamp) {
+    const date = new Date(timestamp * 1000);
+    const options = { weekday: 'short', day: '2-digit', month: '2-digit' };
+    if (date.getFullYear() !== new Date().getFullYear()) options.year = 'numeric';
+    let day;
+    try {
+        day = new Intl.DateTimeFormat(localeOf(hass).language, options).format(date);
+    } catch (e) {
+        day = date.toLocaleDateString();
+    }
+    return day + ' ' + clockText(hass, date.getHours(), date.getMinutes());
+}
+
+const runsText = (hass, n) => translate(hass, n === 1 ? 'einLauf' : 'laeufe', { n });
+
+function runStatus(hass, level) {
+    const chip = document.createElement('span');
+    chip.className = 'run-status';
+    chip.setAttribute('data-level', level);
+    const icon = BuschUI.ha.icon(RUN_LEVELS[level].icon);
+    icon.setAttribute('aria-hidden', 'true');
+    const word = document.createElement('span');
+    word.textContent = translate(hass, RUN_LEVELS[level].text);
+    chip.append(icon, word);
+    return chip;
+}
+
+/** One line of a run (or of a group head): title, facts, status. */
+function runLine(button, title, facts, status) {
+    const text = document.createElement('span');
+    text.className = 'run-text';
+    const head = document.createElement('span');
+    head.className = 'run-title';
+    head.textContent = title;
+    const meta = document.createElement('span');
+    meta.className = 'run-meta';
+    meta.textContent = facts.filter(Boolean).join(' · ');
+    text.append(head, meta);
+    button.append(text, status);
+    return button;
+}
+
+/** Area and duration of one run in HA's units ("—" stays out). */
+function runFacts(hass, run) {
+    const area = leadingNumber(run.entry.cleaned_area);
+    const minutes = leadingNumber(run.entry.cleaning_time !== undefined ? run.entry.cleaning_time : run.entry.cruising_time);
+    return [area === null ? '' : areaText(hass, area), minutes === null ? '' : minutesText(hass, minutes)];
+}
+
+/** The runs of a view, recomputed only for a new sensor object (R20). */
+function historyRunsOf(card, kind, state, hass) {
+    const id = card._model().entity(kind.sensor);
+    const obj = id ? hass.states[id] : null;
+    if (!state.cache || state.cache.obj !== obj) state.cache = { obj, runs: obj && !UNUSABLE.includes(obj.state) ? historyRuns(obj) : [] };
+    return state.cache.runs;
+}
+
+/**
+ * HIS-01/03: the list. Runs newest first; a cleaning and its re-cleaning as
+ * one group (head with sums, Shift+Plus/Minus or a tap opens it, R03); sums
+ * of the runs shown; empty without runs or without cloud (R18).
+ */
+function historyView(card, name) {
+    loadSettingTexts(card);
+    const kind = HISTORY_KINDS[name];
+    const state = { cache: null, open: new Set() }; // open groups: only while the view lives (R21)
+    return {
+        title: translate(card._hass, kind.title),
+        kind: 'editor',
+        watch: () => [card._model().entity(kind.sensor)].filter(Boolean),
+        render: (body, hass, dialog) => {
+            const runs = historyRunsOf(card, kind, state, hass);
+            if (!runs.length) {
+                const empty = document.createElement('p');
+                empty.className = 'history-empty';
+                empty.setAttribute('role', 'status');
+                empty.textContent = translate(hass, 'verlaufLeer');
+                body.appendChild(empty);
+                return;
+            }
+            const sums = historySums(runs, hass);
+            const total = document.createElement('p');
+            total.className = 'history-sums';
+            total.textContent = [runsText(hass, sums.count), kind.cruising ? '' : sums.areaText, sums.timeText].filter(Boolean).join(' · ');
+            const list = document.createElement('div');
+            list.className = 'history-list';
+            list.setAttribute('role', 'list');
+            const toggle = (group, open) => {
+                if (open === state.open.has(group)) return;
+                if (open) state.open.add(group);
+                else state.open.delete(group);
+                dialog._render();
+                const head = Array.from(dialog.shadowRoot.querySelectorAll('[data-group]')).find((n) => n.getAttribute('data-group') === group);
+                if (head) head.focus();
+            };
+            const row = (run) => {
+                const button = document.createElement('button');
+                button.className = 'history-run';
+                button.setAttribute('type', 'button');
+                button.setAttribute('data-run', String(run.timestamp));
+                const status = integrationState(hass, 'status', run.entry.status);
+                return runLine(button, [runDateText(hass, run.timestamp), status].filter(Boolean).join(' · '), runFacts(hass, run), runStatus(hass, run.level));
+            };
+            const done = new Set();
+            for (const run of runs) {
+                if (run.group && done.has(run.group)) continue;
+                const item = document.createElement('div');
+                item.setAttribute('role', 'listitem');
+                if (!run.group) {
+                    item.appendChild(row(run));
+                    list.appendChild(item);
+                    continue;
+                }
+                done.add(run.group);
+                const members = runs.filter((r) => r.group === run.group);
+                const open = state.open.has(run.group);
+                const head = document.createElement('button');
+                head.className = 'history-run history-group';
+                head.setAttribute('type', 'button');
+                head.setAttribute('data-group', run.group);
+                head.setAttribute('aria-expanded', String(open));
+                const s = historySums(members, hass);
+                const worst = members.reduce((w, r) => (RUN_LEVEL_ORDER.indexOf(r.level) > RUN_LEVEL_ORDER.indexOf(w) ? r.level : w), 'done');
+                runLine(head, runDateText(hass, members.at(-1).timestamp) + ' · ' + translate(hass, 'gruppeTitel'),
+                    [runsText(hass, s.count), kind.cruising ? '' : s.areaText, s.timeText], runStatus(hass, worst));
+                const chevron = BuschUI.ha.icon(open ? 'mdi:chevron-up' : 'mdi:chevron-down');
+                chevron.setAttribute('aria-hidden', 'true');
+                head.insertBefore(chevron, head.firstChild);
+                head.addEventListener('click', () => toggle(run.group, !open));
+                head.addEventListener('keydown', (event) => {
+                    const want = event.key === '+' ? true : event.key === '-' ? false : null;
+                    if (want === null) return;
+                    event.preventDefault();
+                    toggle(run.group, want);
+                });
+                item.appendChild(head);
+                if (open) {
+                    const inner = document.createElement('div');
+                    inner.className = 'history-members';
+                    inner.setAttribute('role', 'list');
+                    for (const member of members) {
+                        const li = document.createElement('div');
+                        li.setAttribute('role', 'listitem');
+                        li.appendChild(row(member));
+                        inner.appendChild(li);
+                    }
+                    item.appendChild(inner);
+                }
+                list.appendChild(item);
+            }
+            body.append(total, list);
+        }
+    };
+}
+
 const CARD_STYLES = BuschUI.cardStyles + `
 :host {
     display: block;
@@ -7914,6 +8113,76 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+.history-sums,
+.history-empty {
+    margin: 0 0 var(--ha-space-3, 12px);
+    color: var(--secondary-text-color, #727272);
+    overflow-wrap: anywhere;
+}
+.history-list,
+.history-members {
+    display: flex;
+    flex-direction: column;
+}
+.history-members {
+    padding-inline-start: var(--ha-space-6, 24px);
+}
+.history-run {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-3, 12px);
+    width: 100%;
+    min-height: 48px;
+    padding: var(--ha-space-2, 8px) var(--ha-space-1, 4px);
+    border: 0;
+    border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+    background: none;
+    color: var(--primary-text-color, #212121);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+.history-run:hover {
+    background: var(--secondary-background-color, #f5f5f5);
+}
+.history-run:focus-visible {
+    outline: 2px solid var(--primary-color, #03a9f4);
+    outline-offset: -2px;
+}
+.history-run > ha-icon {
+    flex: none;
+}
+.run-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.run-title,
+.run-meta {
+    overflow-wrap: anywhere;
+}
+.run-meta {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+}
+.run-status {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    font-size: var(--ha-font-size-s, 14px);
+    color: var(--bvc-success-color, var(--success-color, #43a047));
+}
+.run-status[data-level=notice] {
+    color: var(--bvc-warning-color, var(--warning-color, #ffa600));
+}
+.run-status[data-level=interrupted] {
+    color: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.run-status span {
+    color: var(--primary-text-color, #212121);
 }
 `;
 

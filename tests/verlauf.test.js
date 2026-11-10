@@ -85,3 +85,127 @@ test('historySums: Fläche, Zeit, Anzahl aus den Texten; ft² mit HA-Einheiten',
   assert.equal(f.areaText, '366 ft²', '34 m² × 10,7639');
   assert.equal(I.historySums(I.historyRuns(haus.states[HIST]), hass).count, 30);
 });
+
+// ── Task 2: Liste und Menüeinträge ──────────────────────────────────────────
+
+const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
+const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
+const $$d = (u, sel) => dialogVon(u).shadowRoot.querySelectorAll(sel);
+const menueEintraege = (k) => {
+  k.karte.shadowRoot.querySelector('.menu-button').click();
+  const liste = $$d(k.u, '.menu-item').map((b) => b.getAttribute('data-entry'));
+  dialogVon(k.u).remove();
+  return liste;
+};
+/** Öffnet Menü → Eintrag (history / cruising_history). */
+function oeffne(k, name = 'history') {
+  k.karte.shadowRoot.querySelector('.menu-button').click();
+  $$d(k.u, '.menu-item').find((b) => b.getAttribute('data-entry') === name).click();
+}
+const HA_TEXTE = {
+  'component.dreame_vacuum.entity.sensor.status.state.room_cleaning': 'Raumreinigung',
+  'component.dreame_vacuum.entity.sensor.status.state.cleaning': 'Reinigen',
+  'component.dreame_vacuum.entity.sensor.startup_method.state.app': 'App',
+  'component.dreame_vacuum.entity.sensor.cleanup_method.state.default': 'Standard'
+};
+const mitTexten = (haus) => { const h = haus.hass; haus.hass = () => Object.assign(h(), { localize: (id) => HA_TEXTE[id] || '' }); };
+const taste = (el, key, extra = {}) => el.dispatchEvent({ type: 'keydown', key, preventDefault() { this.defaultPrevented = true; }, stopPropagation() {}, ...extra });
+
+test('Menü: history/cruising_history aus MODULE_VIEWS statt Platzhalter', () => {
+  const k = aufbau();
+  assert.equal(typeof k.I.MODULE_VIEWS.history, 'function');
+  assert.equal(typeof k.I.MODULE_VIEWS.cruising_history, 'function');
+  oeffne(k);
+  assert.equal($d(k.u, 'h1').textContent, 'Reinigungsverlauf');
+  assert.equal($d(k.u, '.placeholder'), null);
+  assert.ok($$d(k.u, '[data-run]').length > 0);
+});
+
+test("can('cruising_history') = Fähigkeit cruising und Sensor; hidden_card_objects blendet aus", () => {
+  assert.ok(menueEintraege(aufbau()).includes('cruising_history'));
+  const ohneCap = aufbau('voll', { states: (s) => ({ 'vacuum.robo': Object.assign({}, s['vacuum.robo'], { attributes: Object.assign({}, s['vacuum.robo'].attributes, { capabilities: s['vacuum.robo'].attributes.capabilities.filter((c) => c !== 'cruising') }) }) }) });
+  assert.equal(ohneCap.model().can('cruising_history'), false);
+  assert.ok(!menueEintraege(ohneCap).includes('cruising_history'));
+  const ohneSensor = aufbau('voll', { haus: (h) => {
+    h.entities = Object.fromEntries(Object.entries(h.entities).filter(([id]) => id !== 'sensor.robo_cruising_history'));
+    h.states = Object.fromEntries(Object.entries(h.states).filter(([id]) => id !== 'sensor.robo_cruising_history'));
+  } });
+  assert.equal(ohneSensor.model().can('cruising_history'), false);
+  assert.ok(!menueEintraege(ohneSensor).includes('cruising_history'));
+  const versteckt = aufbau('voll', { config: { hidden_card_objects: ['cruising_history'] } });
+  const e = menueEintraege(versteckt);
+  assert.ok(e.includes('history') && !e.includes('cruising_history'));
+});
+
+test('Liste: Datum nach HA, Status übersetzt (Rückfall Rohtext), Fläche, Dauer, Statuspunkt mit Symbol und Wort', () => {
+  const k = aufbau('voll', { haus: mitTexten });
+  oeffne(k);
+  // Gruppen zu: oberste Zeile ist der Kopf der Gruppe 1794228271.
+  const kopf = $d(k.u, '[data-group="1794228271"]');
+  assert.ok(kopf, 'Gruppenkopf');
+  assert.equal(kopf.getAttribute('aria-expanded'), 'false');
+  kopf.click();
+  const zeile = $d(k.u, '[data-run="1794228429"]');
+  assert.ok(zeile, 'neuester Lauf nach Aufklappen');
+  const text = zeile.textContent;
+  assert.match(text, /09\.11\./);
+  const d = new Date(1794228429 * 1000), zwei = (n) => String(n).padStart(2, '0');
+  assert.ok(text.includes(zwei(d.getHours()) + ':' + zwei(d.getMinutes())), 'Uhrzeit 24 h nach HA (Zeitzone des Prozesses)');
+  assert.match(text, /Reinigen/, 'HA-Übersetzung des Status');
+  assert.match(text, /24 m²/);
+  assert.match(text, /53 min/);
+  const punkt = zeile.querySelector('.run-status');
+  assert.equal(punkt.getAttribute('data-level'), 'notice');
+  assert.ok(punkt.querySelector('ha-icon'), 'Symbol');
+  assert.match(punkt.textContent, /Auffällig/, 'Wort, nicht nur Farbe (R17)');
+  // Rohtext ohne HA-Übersetzung
+  const k2 = aufbau('voll', { states: () => ({ [HIST]: sensor({ a: { timestamp: 1794228429, status: 'Mystery mode', completed: false, cleaned_area: '1 m²', cleaning_time: '2 min' } }) }) });
+  oeffne(k2);
+  const z2 = $d(k2.u, '[data-run="1794228429"]');
+  assert.match(z2.textContent, /Mystery mode/);
+  assert.equal(z2.querySelector('.run-status').getAttribute('data-level'), 'interrupted');
+  assert.match(z2.querySelector('.run-status').textContent, /Unterbrochen/);
+});
+
+test('Liste: Gruppen per Shift+Plus/Minus auf- und zuklappen; Summenzeile', () => {
+  const k = aufbau();
+  oeffne(k);
+  const summe = $d(k.u, '.history-sums');
+  assert.match(summe.textContent, /30 Läufe/);
+  assert.match(summe.textContent, /\d+ m²/);
+  assert.match(summe.textContent, /\d+ h \d+ min/);
+  let kopf = $d(k.u, '[data-group="1794228271"]');
+  assert.match(kopf.textContent, /2 Läufe/);
+  assert.match(kopf.textContent, /58 m²/, 'Gruppensumme 34 + 24');
+  taste(kopf, '+', { shiftKey: true });
+  kopf = $d(k.u, '[data-group="1794228271"]');
+  assert.equal(kopf.getAttribute('aria-expanded'), 'true');
+  assert.ok($d(k.u, '[data-run="1794224793"]'));
+  taste(kopf, '-', { shiftKey: true });
+  assert.equal($d(k.u, '[data-group="1794228271"]').getAttribute('aria-expanded'), 'false');
+  assert.equal($d(k.u, '[data-run="1794224793"]'), null);
+  // Einzelläufe stehen ohne Kopf in der Liste.
+  assert.ok($d(k.u, '[data-run="1794047923"]'), '11-07 11:38 ohne Gruppe');
+});
+
+test('Leerzustand ohne Läufe und ohne Sensorwert (R18)', () => {
+  for (const s of [sensor({}), { entity_id: HIST, state: 'unavailable', attributes: {} }]) {
+    const k = aufbau('voll', { states: () => ({ [HIST]: s }) });
+    oeffne(k);
+    assert.equal($$d(k.u, '[data-run]').length, 0);
+    assert.match($d(k.u, '.history-empty').textContent, /Kein Verlauf/);
+    assert.match($d(k.u, '.history-empty').textContent, /Cloud/);
+  }
+});
+
+test('Snapshot: fremde Updates zeichnen die Liste nicht neu, ein neuer Sensorwert schon', () => {
+  const k = aufbau();
+  oeffne(k);
+  const vorher = $d(k.u, '.history-list');
+  dialogVon(k.u).hass = k.haus.fremd();
+  assert.equal($d(k.u, '.history-list'), vorher);
+  const s = k.haus.states[HIST];
+  dialogVon(k.u).hass = k.haus.setze({ [HIST]: Object.assign({}, s, { attributes: Object.assign({}, s.attributes, { '11-10 08:00': { timestamp: 1794297600, completed: true, cleaned_area: '5 m²', cleaning_time: '6 min' } }) }) });
+  assert.notEqual($d(k.u, '.history-list'), vorher);
+  assert.ok($d(k.u, '[data-run="1794297600"]'));
+});
