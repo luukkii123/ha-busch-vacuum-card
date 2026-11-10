@@ -638,21 +638,19 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             einmalig: 'Einmalig',
             zeitraum: 'Zeitraum',
             bearbeitenVon: '{name} bearbeiten',
-            keineZeitraeume: 'Keine Zeiträume. Lege einen an, damit der Roboter in dieser Zeit leise bleibt.',
+            keineZeitraeume: 'Kein Zeitraum. Richte „Nicht stören“ einmal in der Dreame-App ein; danach änderst du Beginn und Ende hier.',
             zeitraumNeu: 'Zeitraum hinzufügen',
             zeitraumBearbeiten: 'Zeitraum bearbeiten',
             feld_start: 'Beginn',
             feld_end: 'Ende',
-            feld_days: 'Tage',
             fehlerZeit: 'Pflichtfeld: Uhrzeit im Format HH:MM.',
             fehlerGleich: 'Ende muss sich vom Beginn unterscheiden.',
-            fehlerTage: 'Mindestens einen Tag wählen.',
             ungespeichert: 'Änderungen sind noch nicht gespeichert.',
             verwerfen: 'Verwerfen',
             speichern: 'Speichern',
             loeschen: 'Löschen',
             zeitraumLoeschenTitel: 'Zeitraum löschen?',
-            zeitraumLoeschenFrage: 'Zeitraum {zeitraum} ({tage}) endgültig löschen?',
+            zeitraumLoeschenFrage: 'Zeitraum {zeitraum} endgültig löschen?',
             treffer: '{n} Treffer',
             keineTreffer: 'Keine Einstellung gefunden. Versuche einen anderen Begriff.'
         }
@@ -1062,21 +1060,19 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             einmalig: 'Once',
             zeitraum: 'Period',
             bearbeitenVon: 'Edit {name}',
-            keineZeitraeume: 'No periods. Create one to keep the robot quiet during that time.',
+            keineZeitraeume: 'No period. Set up “Do not disturb” once in the Dreame app; then change start and end here.',
             zeitraumNeu: 'Add period',
             zeitraumBearbeiten: 'Edit period',
             feld_start: 'Start',
             feld_end: 'End',
-            feld_days: 'Days',
             fehlerZeit: 'Required: time as HH:MM.',
             fehlerGleich: 'End must differ from start.',
-            fehlerTage: 'Choose at least one day.',
             ungespeichert: 'Changes are not saved yet.',
             verwerfen: 'Discard',
             speichern: 'Save',
             loeschen: 'Delete',
             zeitraumLoeschenTitel: 'Delete period?',
-            zeitraumLoeschenFrage: 'Permanently delete period {zeitraum} ({tage})?',
+            zeitraumLoeschenFrage: 'Permanently delete period {zeitraum}?',
             treffer: '{n} results',
             keineTreffer: 'No setting found. Try another term.'
         }
@@ -4129,20 +4125,18 @@ function infoRow(label, value, name) {
 }
 
 /**
- * Weekday order of DnD `wk` (bit mask 1–127) and schedule `repeats` ("0000000").
- * dreame_vacuum v2.0.3 decodes neither (device.py#L1717, #L1745, #L4263 pass
- * them through); `repeats` is left-padded (`zfill(7)`, device.py#L1745), so it
- * is read as a binary number, highest bit first.
- * shortcut: bit d = Date#getDay d (0 = Sunday) is an assumption until a weekday
- * example from the Dreame app confirms it; every conversion goes through
- * WEEKDAY_BIT, so a correction is one line. The mapping is a bijection: an
- * entry the user does not touch is written back unchanged either way.
+ * Weekdays of a schedule: `repeats` is positional from the left, Sunday first
+ * — character d is Date#getDay d (app example 10.11.2026: Monday + Wednesday =
+ * "0101000", written back live with the user's OK, attribute unchanged).
+ * Inside the card a day set is a mask with bit d = day d.
+ * DnD periods have no weekdays in the Dreame app: their `wk` passes unchanged.
  */
 const WEEKDAY_BIT = (day) => 1 << day;
 const daysOfMask = (mask) => [0, 1, 2, 3, 4, 5, 6].filter((day) => (Number(mask) & WEEKDAY_BIT(day)) !== 0);
 const maskOfDays = (days) => days.reduce((mask, day) => mask | WEEKDAY_BIT(day), 0);
-const maskOfRepeats = (text) => (/^[01]{1,7}$/.test(String(text)) ? parseInt(String(text), 2) : 0);
-const repeatsOfMask = (mask) => Number(mask).toString(2).padStart(7, '0');
+// The integration pads shorter strings on the left (zfill(7), device.py#L1745) before they reach us.
+const maskOfRepeats = (text) => (/^[01]{7}$/.test(String(text)) ? maskOfDays([...String(text)].map((c, day) => (c === '1' ? day : -1)).filter((day) => day >= 0)) : 0);
+const repeatsOfMask = (mask) => [0, 1, 2, 3, 4, 5, 6].map((day) => ((Number(mask) & WEEKDAY_BIT(day)) !== 0 ? '1' : '0')).join('');
 
 /** Weekdays from HA's first day of the week (CORE-16), as getDay numbers. */
 const weekOrder = (hass) => [0, 1, 2, 3, 4, 5, 6].map((i) => (firstWeekday(hass) + i) % 7);
@@ -4160,8 +4154,17 @@ const timeText = (hass, value) => (/^\d{1,2}:\d{2}$/.test(String(value)) ? clock
 
 const dndTasks = (model) => (Array.isArray(model.attr('dnd')) ? model.attr('dnd').filter((t) => t && t.id !== undefined) : []);
 
-/** The integration's own wire form of a period (set_dnd_tasks, device.py#L4255ff); `ss` passes unchanged. */
-const dndWire = (t) => ({ id: Number(t.id), en: t.enabled ? 1 : 0, st: t.start, et: t.end, wk: Number(t.repeats), ss: t.ss === undefined || t.ss === null ? 0 : Number(t.ss) });
+/**
+ * The integration's own wire form of a period (set_dnd_tasks, device.py#L4255ff):
+ * `en` as a boolean like the integration sends it, `wk` and `ss` unchanged.
+ */
+const dndWire = (t) => ({ id: Number(t.id), en: !!t.enabled, st: t.start, et: t.end, wk: Number(t.repeats), ss: t.ss === undefined || t.ss === null ? 0 : Number(t.ss) });
+/**
+ * Adding and deleting periods only where the device already reports several:
+ * the X40 rejected a second period live (10.11.2026, "Property not updated:
+ * DND_TASK"), the Dreame app and set_dnd_tasks edit just one.
+ */
+const dndMany = (model) => dndTasks(model).length > 1;
 const dndJson = (list) => JSON.stringify(list.map(dndWire).sort((a, b) => a.id - b.id));
 
 /**
@@ -4230,10 +4233,7 @@ function dndPeriods(card, model, body, hass, dialog) {
         const name = document.createElement('span');
         name.className = 'setting-name';
         name.textContent = periodText(hass, t);
-        const days = document.createElement('span');
-        days.className = 'setting-status';
-        days.textContent = daysText(hass, t.repeats);
-        text.append(name, days);
+        text.append(name);
         const label = translate(hass, 'zeitraum') + ' ' + periodText(hass, t);
         const toggle = entrySwitch(hass, label, t.enabled, busy, () => writeDnd(card, model, dndTasks(model).map((x) => (x.id === t.id ? Object.assign({}, x, { enabled: !x.enabled }) : x))));
         const edit = BuschUI.action({ label: translate(hass, 'bearbeitenVon', { name: label }), icon: 'mdi:pencil-outline', variant: 'icon-only', onClick: () => dialog.show(dndForm(card, t.id)) });
@@ -4248,7 +4248,7 @@ function dndPeriods(card, model, body, hass, dialog) {
         body.appendChild(empty);
     }
     body.appendChild(list);
-    body.appendChild(viewLink(translate(hass, 'zeitraumNeu'), 'dnd-add', 'mdi:plus', () => dialog.show(dndForm(card, null))));
+    if (dndMany(model)) body.appendChild(viewLink(translate(hass, 'zeitraumNeu'), 'dnd-add', 'mdi:plus', () => dialog.show(dndForm(card, null))));
 }
 
 /** Day toggles in HA's week order: one button per day, `aria-pressed` (R16). */
@@ -4277,7 +4277,6 @@ function dndErrors(draft) {
     if (!TIME_PATTERN.test(draft.start)) errors.start = 'fehlerZeit';
     if (!TIME_PATTERN.test(draft.end)) errors.end = 'fehlerZeit';
     else if (draft.start === draft.end) errors.end = 'fehlerGleich';
-    if (!draft.mask) errors.days = 'fehlerTage';
     return errors;
 }
 
@@ -4305,8 +4304,8 @@ function dndForm(card, id) {
     const draftKey = 'dnd:' + (id === null ? 'new' : id);
     const model0 = card._model();
     const original = id === null ? null : dndTasks(model0).find((t) => t.id === id);
-    const initial = () => (original ? { start: original.start, end: original.end, mask: Number(original.repeats), enabled: !!original.enabled }
-        : { start: '22:00', end: '08:00', mask: 127, enabled: true });
+    const initial = () => (original ? { start: original.start, end: original.end, enabled: !!original.enabled }
+        : { start: '22:00', end: '08:00', enabled: true });
     if (!card._drafts.has(draftKey)) card._drafts.set(draftKey, initial());
     let checked = false;
     return {
@@ -4334,10 +4333,9 @@ function dndForm(card, id) {
                 });
                 body.appendChild(field.wrap);
             }
-            body.appendChild(fieldGroup('field-days', translate(hass, 'feld_days'), dayPicker(hass, draft, redraw), errors.days ? translate(hass, errors.days) : ''));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            if (original) {
+            if (original && dndMany(card._model())) {
                 const remove = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'destructive', onClick: () => dialog.show(dndDelete(card, original)) });
                 remove.setAttribute('data-action', 'delete');
                 actions.appendChild(remove);
@@ -4353,7 +4351,8 @@ function dndForm(card, id) {
                 const model = card._model();
                 const tasks = dndTasks(model);
                 const nextId = tasks.reduce((max, t) => Math.max(max, Number(t.id)), 0) + 1;
-                const entry = { id: original ? original.id : nextId, enabled: draft.enabled, start: draft.start, end: draft.end, repeats: draft.mask, ss: original ? original.ss : 0 };
+                // New periods (only where the device has several) repeat every day: wk 127 as set_dnd_tasks.
+                const entry = { id: original ? original.id : nextId, enabled: draft.enabled, start: draft.start, end: draft.end, repeats: original ? original.repeats : 127, ss: original ? original.ss : 0 };
                 const list = original ? tasks.map((t) => (t.id === original.id ? Object.assign({}, t, entry) : t)) : tasks.concat(entry);
                 if (!writeDnd(card, model, list)) return undefined;
                 // Kept until the device confirms: a failed write leaves the input to retry (R12).
@@ -4376,7 +4375,7 @@ function dndDelete(card, task) {
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
-            body.appendChild(noteLine(translate(hass, 'zeitraumLoeschenFrage', { zeitraum: periodText(hass, task), tage: daysText(hass, task.repeats) })));
+            body.appendChild(noteLine(translate(hass, 'zeitraumLoeschenFrage', { zeitraum: periodText(hass, task) })));
             const actions = document.createElement('div');
             actions.className = 'actions';
             const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
@@ -4520,7 +4519,7 @@ const scheduleList = (model) => (Array.isArray(model.attr('schedule')) ? model.a
 function scheduleRaw(t) {
     const flag = t.invalid ? '3' : t.enabled ? '1' : '0';
     const options = Array.isArray(t.options) && t.options.length ? t.options.join(',') : '0';
-    // shortcut: a repeating entry's raw marker is lost in the attribute; '1' is assumed. Confirm with an app example.
+    // A repeating entry's raw marker is '1': written back live 10.11.2026 (user's OK), attribute unchanged.
     return [t.id, flag, t.time, t.repeats || '0000000', t.once ? '0' : '1', t.map_id, t.suction_level, t.water_volume, options].join('-');
 }
 

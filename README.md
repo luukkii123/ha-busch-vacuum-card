@@ -124,8 +124,9 @@ services (`dreame_vacuum.vacuum_set_property`, `vacuum_call_action`,
 `vacuum_reset_consumable`, `vacuum_install_voice_pack`) and count as done
 only once the device reports the new value.
 
-- **Do not disturb:** periods with start, end and days; add, edit, switch
-  and delete (with confirmation).
+- **Do not disturb:** the period's start and end, on/off — like the Dreame
+  app, without weekdays. Adding and deleting periods only on devices that
+  already report several (the X40 accepts one).
 - **Schedules:** time, days (none = once), on/off, delete with confirmation.
   The integration hands schedules out only parsed, so saving rewrites all of
   them from what it reports; details of the Dreame app beyond that are lost.

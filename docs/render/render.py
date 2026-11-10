@@ -760,9 +760,9 @@ def main():
             ("suche", [(".settings-search", "carpet")]),
             ("suche-leer", [(".settings-search", "xyz")]),
             ("dnd-formular", [("[data-group=dnd]", None), ("[data-action=dnd-edit]", None)]),
-            ("dnd-fehler", [("[data-group=dnd]", None), ("[data-action=dnd-add]", None), ("[data-day='1']", None), ("[data-day='2']", None),
-                            ("[data-day='3']", None), ("[data-day='4']", None), ("[data-day='5']", None), ("[data-day='6']", None), ("[data-day='0']", None), ("[data-action=save]", None)]),
-            ("dnd-loeschen", [("[data-group=dnd]", None), ("[data-action=dnd-edit]", None), ("[data-action=delete]", None)]),
+            # DnD without weekdays: the inline error is start = end (first period 12:00–13:00 → start 13:00).
+            ("dnd-fehler", [("[data-group=dnd]", None), ("[data-action=dnd-edit]", None), ("[data-field=start]", "13:00"), ("[data-action=save]", None)]),
+            ("zeitplan-loeschen", [("[data-group=schedule]", None), ("[data-action=schedule-edit]", None), ("[data-action=delete]", None)]),
             ("zeitplan-formular", [("[data-group=schedule]", None), ("[data-action=schedule-edit]", None)]),
             ("sprachpaket-fehler", [("[data-group=audio]", None), ("[data-action=voice-pack]", None), ("[data-action=submit]", None)]),
             ("zubehoer-zuruecksetzen", [("[data-group=consumables]", None), ("[data-part=filter] [data-action=reset]", None)]),
@@ -791,13 +791,13 @@ def main():
         report["settingsDialogs"] = settings_geo
         inside = lambda x: x["top"] >= -0.5 and x["bottom"] <= x["H"] + 0.5 and x["left"] >= -0.5 and x["right"] <= x["W"] + 0.5
         bad = [x for x in settings_geo if not inside(x) or x["small"] or x["smallFields"] or x["overflowX"] > 1 or str(x["title"]).startswith("missing")]
-        check("device settings: 23 views x 4 sizes x 2 themes inside the viewport, no sideways overflow, 44 px buttons and fields",
+        check("device settings: 22 views x 4 sizes x 2 themes inside the viewport, no sideways overflow, 44 px buttons and fields",
               not bad, json.dumps(bad[:4]))
         by = {x["label"]: x for x in settings_geo if x["w"] == 390 and x["theme"] == "light"}
         check("device settings: titles, rows and states as expected (search hits, inline errors, confirmations narrow)",
               by["uebersicht"]["title"] == "Geräteeinstellungen" and by["gruppe-carpet"]["rows"] == 7 and by["suche"]["rows"] >= 7
               and by["suche-leer"]["rows"] == 0 and by["dnd-fehler"]["errors"] == 1 and by["sprachpaket-fehler"]["errors"] == 4
-              and all(by[k]["kind"] == "confirm" for k in ("dnd-loeschen", "zubehoer-zuruecksetzen", "rotation-bestaetigen"))
+              and all(by[k]["kind"] == "confirm" for k in ("zeitplan-loeschen", "zubehoer-zuruecksetzen", "rotation-bestaetigen"))
               and by["gruppe-station"]["title"] == "Station" and by["gruppe-info"]["rows"] >= 8,
               json.dumps({k: {"title": v["title"], "rows": v["rows"], "errors": v["errors"], "kind": v["kind"]} for k, v in by.items()}))
 
@@ -920,7 +920,7 @@ def main():
                 page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
             for label, steps, kind in (("einstellungen", [], "bearbeitung"), ("einstellungen_kamera", [("[data-group=camera]", None)], "bearbeitung"),
                                        ("einstellungen_dnd_formular", [("[data-group=dnd]", None), ("[data-action=dnd-edit]", None)], "bearbeitung"),
-                                       ("einstellungen_loeschen", [("[data-group=dnd]", None), ("[data-action=dnd-edit]", None), ("[data-action=delete]", None)], "bestaetigung")):
+                                       ("einstellungen_loeschen", [("[data-group=schedule]", None), ("[data-action=schedule-edit]", None), ("[data-action=delete]", None)], "bestaetigung")):
                 opener = lambda st=steps: page.evaluate(settings_open, st)
                 r["regel1_dialog_" + label] = lauf_breiten(
                     page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, ".sheet"),

@@ -527,30 +527,49 @@ const zeitraum = (k, id) => $d(k.u, `[data-dnd="${id}"]`);
 const dndAufruf = (liste) => setze(null, 'dnd_task', JSON.stringify(liste));
 function tag(k, d) { $d(k.u, `[data-day="${d}"]`).click(); }
 
-test('Wochentage: eine Zuordnung für DnD-Bitfeld und Zeitplan-Zeichenkette, verlustfrei hin und zurück', () => {
+test('Zeitplan-Wochentage positionsweise ab Sonntag (App-Beispiel 10.11.2026: Mo + Mi = "0101000")', () => {
   const { I } = aufbau();
+  assert.deepEqual(roh(I.daysOfMask(I.maskOfRepeats('0101000'))), [1, 3], 'Zeichen d = Date#getDay d');
+  assert.equal(I.repeatsOfMask(I.maskOfDays([1, 3])), '0101000', 'zurück wie vom Gerät');
+  assert.deepEqual(roh(I.daysOfMask(I.maskOfRepeats('1000000'))), [0], 'erstes Zeichen = Sonntag');
+  assert.deepEqual(roh(I.daysOfMask(I.maskOfRepeats('0000001'))), [6], 'letztes Zeichen = Samstag');
   for (let m = 0; m < 128; m++) {
     assert.equal(I.maskOfDays(I.daysOfMask(m)), m);
     assert.equal(I.maskOfRepeats(I.repeatsOfMask(m)), m);
   }
-  assert.equal(I.repeatsOfMask(0), '0000000', 'App-Beispiel 10.11.2026: einmaliger Zeitplan');
+  assert.equal(I.repeatsOfMask(0), '0000000', 'einmalig');
   assert.equal(I.repeatsOfMask(127), '1111111');
-  assert.deepEqual(roh(I.daysOfMask(127)), [0, 1, 2, 3, 4, 5, 6]);
-  // Annahme bis zum App-Beispiel mit Wochentag: Bit d = Date#getDay d (0 = Sonntag).
-  assert.deepEqual(roh(I.daysOfMask(2)), [1]);
+  // Live mit Nutzer-OK 10.11.2026: genau diese Kette zurückgeschrieben, Attribut danach gleich (once-Code 1 = wiederholt).
+  const beispiel = [{ id: 1, enabled: true, invalid: false, time: '14:51', repeats: '0101000', once: false, map_id: '0', suction_level: 0, water_volume: 146, options: null }];
+  assert.equal(I.scheduleValue(beispiel), '1-1-14:51-0101000-1-0-0-146-0');
+  const k = zeitplaene(beispiel);
+  assert.match(plan(k, '1').textContent, /Mo\.?, Mi/);
+  assert.doesNotMatch(plan(k, '1').textContent, /Fr/);
 });
 
-test('Liste der Zeiträume aus dnd (Start–Ende, Tage, an/aus); leer → Leerzustand mit Hinzufügen', () => {
+test('Liste der Zeiträume aus dnd (Start–Ende, an/aus, keine Wochentage wie in der App); ein Zeitraum = kein Hinzufügen', () => {
   const k = nichtStoeren();
   const z = zeitraum(k, '0');
   assert.match(z.textContent, /20:00/);
   assert.match(z.textContent, /09:00/);
-  assert.match(z.textContent, /Täglich/);
+  assert.doesNotMatch(z.textContent, /Täglich/);
   assert.equal(z.querySelector('[role="switch"]').getAttribute('aria-checked'), 'true');
   assert.equal($d(k.u, '[data-setting="dnd"]'), null, 'Gerät mit dnd_task: kein einfacher Schalter');
+  assert.equal($d(k.u, '[data-action="dnd-add"]'), null, 'Gerät meldet einen Zeitraum: das Gerät nimmt keinen zweiten an (live 10.11.2026)');
   const leer = nichtStoeren([]);
-  assert.match($d(leer.u, '.dnd-empty').textContent, /Keine Zeiträume/);
-  assert.ok($d(leer.u, '[data-action="dnd-add"]'));
+  assert.match($d(leer.u, '.dnd-empty').textContent, /Dreame-App/);
+  assert.equal($d(leer.u, '[data-action="dnd-add"]'), null);
+  assert.ok($d(nichtStoeren(DREI).u, '[data-action="dnd-add"]'), 'meldet das Gerät mehrere, geht Hinzufügen');
+});
+
+test('Einzelner Zeitraum: nur Ein/Start/Ende, kein Tage-Feld, kein Löschen; id, wk, ss und en-Form bleiben', () => {
+  const k = nichtStoeren();
+  zeitraum(k, '0').querySelector('[data-action="dnd-edit"]').click();
+  assert.equal($d(k.u, '[data-day="1"]'), null, 'keine Wochentage');
+  assert.equal($d(k.u, '[data-action="delete"]'), null);
+  feld(k, 'start').value = '21:00'; feld(k, 'start').dispatchEvent(k.u.neuesEreignis('input'));
+  $d(k.u, '[data-action="save"]').click();
+  assert.deepEqual(JSON.parse(aufrufe(k)[0].data.value), [{ id: 0, en: true, st: '21:00', et: '09:00', wk: 127, ss: 0 }]);
 });
 
 test('Anlegen schreibt die ganze Liste als dnd_task-JSON; neue id = höchste + 1', () => {
@@ -559,10 +578,10 @@ test('Anlegen schreibt die ganze Liste als dnd_task-JSON; neue id = höchste + 1
   assert.equal($d(k.u, 'h1').textContent, 'Zeitraum hinzufügen');
   feld(k, 'start').value = '08:00'; feld(k, 'start').dispatchEvent(k.u.neuesEreignis('input'));
   feld(k, 'end').value = '10:00'; feld(k, 'end').dispatchEvent(k.u.neuesEreignis('input'));
-  assert.equal($d(k.u, '[data-day="1"]').getAttribute('aria-pressed'), 'true', 'Vorgabe täglich (R10)');
+  assert.equal($d(k.u, '[data-day="1"]'), null, 'keine Wochentage; neu = 127 (jeden Tag)');
   $d(k.u, '[data-action="save"]').click();
-  const soll = [{ id: 0, en: 1, st: '20:00', et: '09:00', wk: 127, ss: 0 }, { id: 3, en: 0, st: '12:00', et: '13:00', wk: 62, ss: 5 },
-    { id: 7, en: 1, st: '06:00', et: '07:00', wk: 65, ss: -1 }, { id: 8, en: 1, st: '08:00', et: '10:00', wk: 127, ss: 0 }];
+  const soll = [{ id: 0, en: true, st: '20:00', et: '09:00', wk: 127, ss: 0 }, { id: 3, en: false, st: '12:00', et: '13:00', wk: 62, ss: 5 },
+    { id: 7, en: true, st: '06:00', et: '07:00', wk: 65, ss: -1 }, { id: 8, en: true, st: '08:00', et: '10:00', wk: 127, ss: 0 }];
   const r = aufrufe(k);
   assert.equal(r.length, 1);
   assert.equal(r[0].data.key, 'dnd_task');
@@ -574,14 +593,12 @@ test('Bearbeiten eines von drei Zeiträumen lässt die anderen und ss unverände
   zeitraum(k, '3').querySelector('[data-action="dnd-edit"]').click();
   assert.equal($d(k.u, 'h1').textContent, 'Zeitraum bearbeiten');
   assert.equal(feld(k, 'start').value, '12:00');
-  assert.equal($d(k.u, '[data-day="1"]').getAttribute('aria-pressed'), 'true');
   feld(k, 'end').value = '14:30'; feld(k, 'end').dispatchEvent(k.u.neuesEreignis('input'));
-  tag(k, 0);
   $d(k.u, '[data-action="save"]').click();
   const liste = JSON.parse(aufrufe(k)[0].data.value);
-  assert.deepEqual(liste[1], { id: 3, en: 0, st: '12:00', et: '14:30', wk: 63, ss: 5 });
-  assert.deepEqual(liste[0], { id: 0, en: 1, st: '20:00', et: '09:00', wk: 127, ss: 0 });
-  assert.deepEqual(liste[2], { id: 7, en: 1, st: '06:00', et: '07:00', wk: 65, ss: -1 });
+  assert.deepEqual(liste[1], { id: 3, en: false, st: '12:00', et: '14:30', wk: 62, ss: 5 }, 'wk unverändert');
+  assert.deepEqual(liste[0], { id: 0, en: true, st: '20:00', et: '09:00', wk: 127, ss: 0 });
+  assert.deepEqual(liste[2], { id: 7, en: true, st: '06:00', et: '07:00', wk: 65, ss: -1 });
 });
 
 test('Ein/Aus in der Liste: ganze Liste mit geändertem en, Doppeltipp = ein Aufruf', () => {
@@ -590,20 +607,18 @@ test('Ein/Aus in der Liste: ganze Liste mit geändertem en, Doppeltipp = ein Auf
   zeitraum(k, '7').querySelector('[role="switch"]').click();
   const r = aufrufe(k);
   assert.equal(r.length, 1);
-  assert.deepEqual(JSON.parse(r[0].data.value).map((t) => t.en), [1, 0, 0]);
+  assert.deepEqual(JSON.parse(r[0].data.value).map((t) => t.en), [true, false, false], 'en wie das Gerät es meldet');
   assert.match($d(k.u, '.dnd-status').textContent, /Speichert/);
 });
 
-test('Validierung: Start ≠ Ende, mindestens ein Tag; kein Aufruf (R10)', () => {
-  const k = nichtStoeren([]);
-  $d(k.u, '[data-action="dnd-add"]').click();
+test('Validierung: Start ≠ Ende; kein Aufruf (R10)', () => {
+  const k = nichtStoeren();
+  zeitraum(k, '0').querySelector('[data-action="dnd-edit"]').click();
   feld(k, 'start').value = '10:00'; feld(k, 'start').dispatchEvent(k.u.neuesEreignis('input'));
   feld(k, 'end').value = '10:00'; feld(k, 'end').dispatchEvent(k.u.neuesEreignis('input'));
-  for (let d = 0; d < 7; d++) tag(k, d);
   $d(k.u, '[data-action="save"]').click();
   const fehler = $$d(k.u, '.field-error').map((e) => e.textContent).filter(Boolean).join(' ');
   assert.match(fehler, /Ende/);
-  assert.match(fehler, /Tag/);
   assert.deepEqual(k.haus.rufe, []);
 });
 
@@ -888,7 +903,7 @@ test('Bearbeiten: Uhrzeit und Tage; ohne Tag = einmalig', () => {
   feld(k, 'time').value = '10:00'; feld(k, 'time').dispatchEvent(k.u.neuesEreignis('input'));
   tag(k, 1); tag(k, 3);
   $d(k.u, '[data-action="save"]').click();
-  assert.equal(rohAufruf(k).split(';')[0], '1-1-10:00-0001010-1-0-0-146-0');
+  assert.equal(rohAufruf(k).split(';')[0], '1-1-10:00-0101000-1-0-0-146-0', 'Mo + Mi positionsweise ab Sonntag');
 });
 
 test('Neu: id = höchste + 1, Reinigungswerte vom vorhandenen Zeitplan; ohne Vorlage gesperrt mit Grund', () => {

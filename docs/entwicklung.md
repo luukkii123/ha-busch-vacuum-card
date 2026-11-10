@@ -117,15 +117,18 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 - Texte: `hass.localize('component.dreame_vacuum.entity.<plattform>.<key>.name')`
   nach `loadBackendTranslation('entity', 'dreame_vacuum')`, sonst `set_<key>`
   im Wörterbuch, sonst der Schlüssel in Worten.
-- **Wochentage:** `WEEKDAY_BIT(d) = 1 << d` mit d = `Date#getDay` (0 = Sonntag)
-  für DnD-`wk` und Zeitplan-`repeats` (als Binärzahl, höchstes Bit links,
-  `zfill(7)` device.py#L1745). v2.0.3 dekodiert beides nirgends (device.py#L1717,
-  #L1745, #L4263 reichen durch) — **Annahme, live mit einem App-Beispiel mit
-  Wochentag bestätigen**; Korrektur = eine Zeile. Die Zuordnung ist umkehrbar:
-  unberührte Einträge gehen unverändert zurück.
+- **Wochentage (Zeitpläne):** `repeats` ist positionsweise von links ab
+  Sonntag (Zeichen d = `Date#getDay` d; App-Beispiel Mo + Mi = `"0101000"`,
+  live mit Nutzer-OK zurückgeschrieben, Attribut gleich). Intern ein Bitfeld
+  `WEEKDAY_BIT(d) = 1 << d`.
+- **Nicht stören:** ohne Wochentage (die Dreame-App hat keine); bearbeitet
+  werden nur vorhandene Zeiträume (ein/aus, Beginn, Ende), `id`, `wk`, `ss`
+  bleiben, `en` als Boolean wie `set_dnd_tasks`. Hinzufügen/Löschen nur, wenn
+  das Gerät schon mehrere meldet: das X40 lehnte einen zweiten Zeitraum live
+  ab („Property not updated: DND_TASK“).
 - **Zeitpläne:** nur die Rohzeichenkette aller Einträge ist schreibbar
   (`scheduleValue`); verlustbehaftet (Flag 2 → 1, Felder nach dem neunten,
-  Wiederholungs-Kennung `1` angenommen) — die Ansicht sagt das. Löschen über
+  Wiederholungs-Kennung `1`, live belegt) — die Ansicht sagt das. Löschen über
   `vacuum_call_action delete_scheduled_task` (device.py#L4394), das auch den
   letzten Eintrag löscht. Neue Einträge übernehmen Karte/Saugstufe/Wasser
   eines vorhandenen (Codes undokumentiert, nichts geraten).
