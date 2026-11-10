@@ -10,6 +10,9 @@ other Busch cards.
 > **Work in progress.** Version 0.1.0 is a scaffold and not released yet.
 > This README grows with each module.
 
+![The card while cleaning](docs/render/baseline/core-0.1.0/karte-cleaning-karte-480-dark.png)
+![The main menu on a phone](docs/render/baseline/core-0.1.0/dialog-menu-360x640-light.png)
+
 ## Requirements
 
 - Home Assistant 2026.9.3 or newer
