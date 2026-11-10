@@ -549,6 +549,16 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             skripte: 'Skripte',
             laeuft: 'läuft',
             skripteFehlen: 'Nicht gefunden: {liste}.',
+            verwalten: 'Verwalten',
+            shortcutsVerwalten: 'Shortcuts verwalten',
+            keineShortcuts: 'Keine Shortcuts auf dem Gerät. Shortcuts legst du in der Dreame-App an; danach hier „Neu laden“.',
+            neuLaden: 'Neu laden',
+            umbenennen: 'Umbenennen',
+            loeschenLaeuft: 'Läuft gerade — Löschen geht erst danach.',
+            feld_shortcut_name: 'Name',
+            nameFehlt: 'Bitte einen Namen eingeben.',
+            nameNummer: 'Gibt es den Namen schon, hängt das Gerät eine Zahl an.',
+            frageShortcutLoeschen: 'Shortcut „{name}“ löschen? Er verschwindet auch aus der Dreame-App.',
             shortcutZusaetzlich: 'Eine Aufgabe läuft — der Shortcut wird zusätzlich gestartet; was mit der laufenden Aufgabe geschieht, entscheidet der Roboter.',
             sperreAblassen: 'Während die Station Wasser ablässt, startet kein Shortcut. Warte, bis das Ablassen fertig ist.',
             shortcutFehler: '{name} wurde nicht gestartet ({grund}). Der Roboter macht weiter wie bisher. Versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
@@ -978,6 +988,16 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             skripte: 'Scripts',
             laeuft: 'running',
             skripteFehlen: 'Not found: {liste}.',
+            verwalten: 'Manage',
+            shortcutsVerwalten: 'Manage shortcuts',
+            keineShortcuts: 'No shortcuts on the device. Create shortcuts in the Dreame app, then “Reload” here.',
+            neuLaden: 'Reload',
+            umbenennen: 'Rename',
+            loeschenLaeuft: 'Running — delete it afterwards.',
+            feld_shortcut_name: 'Name',
+            nameFehlt: 'Please enter a name.',
+            nameNummer: 'If the name exists already, the device appends a number.',
+            frageShortcutLoeschen: 'Delete shortcut “{name}”? It also disappears from the Dreame app.',
             shortcutZusaetzlich: 'A task is running — the shortcut starts in addition; the robot decides what happens to the running task.',
             sperreAblassen: 'No shortcut starts while the station drains water. Wait until draining has finished.',
             shortcutFehler: '{name} did not start ({grund}). The robot carries on as before. Try again; if that does not help, check the dreame_vacuum integration.',
@@ -4700,6 +4720,10 @@ const GROUP_EXTRAS = {
     mopping: (card, model, body, hass, dialog) => {
         if (model.can('dock')) body.appendChild(viewLink(translate(hass, 'stationWaschen'), 'station', 'mdi:chevron-right', () => dialog.show(groupView(card, 'station'))));
     },
+    // ALL-13: reload and manage shortcuts also when the device has none yet (the menu button needs content).
+    other: (card, model, body, hass, dialog) => {
+        if (model.can('shortcut_manage')) body.appendChild(viewLink(translate(hass, 'shortcutsVerwalten'), 'shortcuts-manage', 'mdi:chevron-right', () => dialog.show(shortcutManageView(card))));
+    },
     audio: (card, model, body, hass, dialog) => {
         // Letter IDs like "DE" become None in set_property_value (device.py#L2916): shown, changed only by installing.
         if (model.attr('voice_packet_id') !== undefined) body.appendChild(infoRow(translate(hass, 'sprachpaket'), String(model.attr('voice_packet_id')), 'voice_packet_id'));
@@ -5189,10 +5213,141 @@ function shortcutMenu(card) {
                 for (const entry of part) list.append(...shortcutItem(card, model, hass, entry, close));
                 body.append(heading, list);
             }
+            if (model.can('shortcut_manage')) body.appendChild(viewLink(translate(hass, 'verwalten'), 'manage', 'mdi:pencil-outline', () => dialog.show(shortcutManageView(card))));
         }
     };
 }
 
+/** Management (SHO-02): start, rename, delete per device shortcut; reload from the device (ALL-13). */
+function shortcutManageView(card) {
+    return {
+        title: translate(card._hass, 'shortcutsVerwalten'),
+        kind: 'editor',
+        watch: () => [card._opts.entity],
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const entries = shortcutEntries(hass, model, []);
+            if (!entries.length) body.appendChild(noteLine(translate(hass, 'keineShortcuts')));
+            const list = document.createElement('div');
+            list.className = 'settings-list';
+            for (const entry of entries) {
+                const row = document.createElement('div');
+                row.className = 'setting';
+                row.setAttribute('data-manage', String(entry.id));
+                const start = shortcutItem(card, model, hass, entry);
+                start[0].classList.add('setting-text');
+                row.append(...start);
+                const rename = BuschUI.action({ label: translate(hass, 'umbenennen') + ': ' + entry.name, icon: 'mdi:pencil-outline', variant: 'icon-only',
+                    onClick: () => dialog.show(shortcutRenameView(card, entry)) });
+                rename.setAttribute('data-action', 'rename');
+                const busy = card._settingWrites.has('delete:' + entry.id);
+                const remove = BuschUI.action({ label: translate(hass, 'loeschen') + ': ' + entry.name, icon: 'mdi:delete-outline', variant: 'icon-only',
+                    disabled: entry.running || busy, onClick: () => dialog.show(shortcutDeleteView(card, entry)) });
+                remove.setAttribute('data-action', 'delete');
+                if (busy) remove.setAttribute('aria-busy', 'true');
+                row.append(rename, remove);
+                if (entry.running) row.appendChild(noteLine(translate(hass, 'loeschenLaeuft')));
+                const note = card._settingNotes.get('delete:' + entry.id);
+                if (note) row.appendChild(noteLine(note, 'error'));
+                list.appendChild(row);
+            }
+            body.appendChild(list);
+            const busy = card._settingWrites.has('reload_shortcuts');
+            const label = translate(hass, 'neuLaden');
+            const reload = BuschUI.action({ label, text: busy ? translate(hass, 'wirdGestartet') : label, icon: 'mdi:refresh', disabled: busy,
+                onClick: () => callAction(card, 'reload_shortcuts', undefined, { label, failKey: 'shortcutFehler' }) });
+            reload.setAttribute('data-action', 'reload');
+            if (busy) reload.setAttribute('aria-busy', 'true');
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            actions.appendChild(reload);
+            body.appendChild(actions);
+            const note = card._settingNotes.get('reload_shortcuts');
+            if (note) body.appendChild(noteLine(note, 'error'));
+        }
+    };
+}
+
+/**
+ * Rename form (R10): required, unchanged = no save, locked during a task
+ * (device.py#L6321). The draft survives leaving and a failed save (R04/R12).
+ */
+function shortcutRenameView(card, entry) {
+    const key = 'shortcut-name:' + entry.id;
+    const track = 'rename:' + entry.id;
+    if (!card._drafts.has(key)) card._drafts.set(key, entry.name);
+    let checked = false;
+    return {
+        title: translate(card._hass, 'umbenennen') + ': ' + entry.name,
+        kind: 'editor',
+        watch: () => [card._opts.entity],
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const locked = taskActive(model, model.state ? model.state.state : 'unavailable');
+            const busy = card._settingWrites.has(track);
+            const error = () => (checked && !card._drafts.get(key).trim() ? translate(hass, 'nameFehlt') : '');
+            if (card._drafts.get(key) !== entry.name) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
+            if (locked) body.appendChild(noteLine(translate(hass, 'sperre_idle')));
+            const failed = card._settingNotes.get(track);
+            if (failed) body.appendChild(noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error'));
+            const input = document.createElement('input');
+            input.setAttribute('type', 'text');
+            input.setAttribute('aria-required', 'true');
+            input.setAttribute('autocomplete', 'off');
+            input.value = card._drafts.get(key);
+            const field = formField('shortcut_name', translate(hass, 'feld_shortcut_name'), input, error());
+            body.append(field.wrap, noteLine(translate(hass, 'nameNummer')));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, busy ? 'speichert' : 'speichern'), variant: 'primary', onClick: () => {
+                checked = true;
+                const name = card._drafts.get(key).trim();
+                if (!name) { field.update(error()); return; }
+                trackWrite(card, track, {
+                    label: entry.name,
+                    call: () => card._hass.callService('dreame_vacuum', 'vacuum_rename_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id, shortcut_name: name }),
+                    done: () => { card._drafts.delete(key); dialog._goBack(); }
+                });
+            } });
+            save.setAttribute('data-action', 'save');
+            const able = () => { save.disabled = locked || busy || card._drafts.get(key) === entry.name; };
+            able();
+            if (busy) save.setAttribute('aria-busy', 'true');
+            input.addEventListener('input', () => {
+                card._drafts.set(key, input.value);
+                field.update(error());
+                able();
+            });
+            actions.appendChild(save);
+            body.appendChild(actions);
+        }
+    };
+}
+
+/** Delete asks first and names the shortcut (R13). */
+function shortcutDeleteView(card, entry) {
+    return {
+        title: translate(card._hass, 'loeschen') + '?',
+        kind: 'confirm',
+        render: (body, hass, dialog) => {
+            body.appendChild(noteLine(translate(hass, 'frageShortcutLoeschen', { name: entry.name })));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            cancel.setAttribute('data-action', 'cancel');
+            const go = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'primary', onClick: () => {
+                trackWrite(card, 'delete:' + entry.id, {
+                    label: entry.name,
+                    call: () => card._hass.callService('dreame_vacuum', 'vacuum_delete_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id })
+                });
+                dialog._goBack();
+            } });
+            go.setAttribute('data-action', 'confirm');
+            actions.append(cancel, go);
+            body.appendChild(actions);
+        }
+    };
+}
 
 const CARD_STYLES = BuschUI.cardStyles + `
 :host {

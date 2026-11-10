@@ -170,3 +170,101 @@ test('Gesperrt beim Ablassen mit Grund; Dienstfehler → R12-Text im Menü', asy
   assert.equal(eintrag(f, 'device:31').disabled, false);
 });
 
+// ── Task 3: Verwaltung (SHO-02, ALL-13 reload_shortcuts) ──────────────────────
+
+function verwaltung(optionen) {
+  const k = menue(mitShortcuts(optionen));
+  $d(k.u, '[data-action="manage"]').click();
+  return k;
+}
+const zeile = (k, id) => $$d(k.u, '[data-manage]').find((z) => z.getAttribute('data-manage') === String(id));
+const darin = (z, sel) => z.querySelectorAll(sel)[0] || null;
+const umbenennen = (id, name) => ({ domain: 'dreame_vacuum', service: 'vacuum_rename_shortcut', data: { entity_id: 'vacuum.robo', shortcut_id: id, shortcut_name: name } });
+
+test('„Verwalten“ nur mit can(shortcut_manage); Liste mit Starten, Umbenennen, Löschen; Neu laden', () => {
+  const nurSkript = menue(aufbau('minimal', { states: SKRIPT('script.bibliothek', 'Bibliothek'), config: { scripts: ['script.bibliothek'] } }));
+  assert.equal($d(nurSkript.u, '[data-action="manage"]'), null);
+  const k = verwaltung();
+  assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'editor');
+  assert.deepEqual($$d(k.u, '[data-manage]').map((z) => z.getAttribute('data-manage')), ['30', '32', '31']);
+  const z = zeile(k, 32);
+  assert.match(darin(z, '[data-shortcut]').textContent, /Gewächshaus nach dem Gießen 🍝/, 'gleicher Starten-Eintrag wie im Menü (R01)');
+  assert.ok(darin(z, '[data-action="rename"]') && darin(z, '[data-action="delete"]'));
+  darin(z, '[data-shortcut]').click();
+  $d(k.u, '[data-action="reload"]').click();
+  assert.deepEqual(aufrufe(k), [start(32), { domain: 'dreame_vacuum', service: 'vacuum_call_action', data: { entity_id: 'vacuum.robo', key: 'reload_shortcuts' } }]);
+});
+
+test('Ohne Shortcuts erreichbar über Geräteeinstellungen → Sonstiges: Leerzustand und Neu laden', () => {
+  const k = aufbau();
+  k.karte._openDialog(k.I.MODULE_VIEWS.settings(k.karte));
+  $$d(k.u, '[data-group]').find((b) => b.getAttribute('data-group') === 'other').click();
+  $d(k.u, '[data-action="shortcuts-manage"]').click();
+  assert.match($d(k.u, '.body').textContent, /Dreame-App/);
+  $d(k.u, '[data-action="reload"]').click();
+  assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_call_action', data: { entity_id: 'vacuum.robo', key: 'reload_shortcuts' } }]);
+  const m = aufbau('minimal');
+  m.karte._openDialog(m.I.MODULE_VIEWS.settings(m.karte));
+  assert.equal($$d(m.u, '[data-group]').find((b) => b.getAttribute('data-group') === 'other'), undefined);
+});
+
+test('Umbenennen: Pflichtfeld, unverändert = Speichern aus, Hinweis auf Nummer; genau vacuum_rename_shortcut', () => {
+  const k = verwaltung();
+  darin(zeile(k, 30), '[data-action="rename"]').click();
+  assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'editor');
+  const feld = $d(k.u, '[data-field="shortcut_name"]');
+  assert.equal(feld.value, 'Galerie');
+  assert.equal($d(k.u, '[data-action="save"]').disabled, true, 'unverändert');
+  assert.match($d(k.u, '.body').textContent, /hängt das Gerät eine Zahl an/);
+  feld.value = '   ';
+  feld.dispatchEvent(k.u.neuesEreignis('input'));
+  $d(k.u, '[data-action="save"]').click();
+  assert.match($d(k.u, '.field-error').textContent, /Namen eingeben/);
+  assert.deepEqual(aufrufe(k), []);
+  const f2 = $d(k.u, '[data-field="shortcut_name"]');
+  f2.value = 'Galerie Süd ✨';
+  f2.dispatchEvent(k.u.neuesEreignis('input'));
+  $d(k.u, '[data-action="save"]').click();
+  $d(k.u, '[data-action="save"]').click();
+  assert.deepEqual(aufrufe(k), [umbenennen(30, 'Galerie Süd ✨')]);
+});
+
+test('Umbenennen gesperrt während einer Aufgabe; Eingabe bleibt beim Verlassen und nach Dienstfehler (R04/R12)', async () => {
+  const g = verwaltung({ zustand: 'cleaning', attribute: { started: true } });
+  darin(zeile(g, 30), '[data-action="rename"]').click();
+  const feld = $d(g.u, '[data-field="shortcut_name"]');
+  feld.value = 'Neu';
+  feld.dispatchEvent(g.u.neuesEreignis('input'));
+  assert.equal($d(g.u, '[data-action="save"]').disabled, true);
+  assert.match($d(g.u, '.body').textContent, /Während einer Aufgabe/);
+  const k = verwaltung();
+  darin(zeile(k, 30), '[data-action="rename"]').click();
+  const f = $d(k.u, '[data-field="shortcut_name"]');
+  f.value = 'Entwurf';
+  f.dispatchEvent(k.u.neuesEreignis('input'));
+  dialogVon(k.u)._goBack();
+  k.u.zurueck();
+  darin(zeile(k, 30), '[data-action="rename"]').click();
+  assert.equal($d(k.u, '[data-field="shortcut_name"]').value, 'Entwurf', 'ungespeicherter Name bleibt');
+  assert.match($d(k.u, '.body').textContent, /noch nicht gespeichert/);
+  k.haus.antwort = () => Promise.reject(new Error('unavailable_while_running'));
+  $d(k.u, '[data-action="save"]').click();
+  await mikro();
+  assert.match($d(k.u, '.body').textContent, /unavailable_while_running/);
+  assert.equal($d(k.u, '[data-field="shortcut_name"]').value, 'Entwurf');
+});
+
+test('Löschen nur nach Bestätigung mit Namen; gesperrt, solange dieser Shortcut läuft', () => {
+  const k = verwaltung();
+  darin(zeile(k, 31), '[data-action="delete"]').click();
+  assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'confirm');
+  assert.match($d(k.u, '.body').textContent, /„Turmzimmer“/);
+  assert.deepEqual(aufrufe(k), []);
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_delete_shortcut', data: { entity_id: 'vacuum.robo', shortcut_id: 31 } }]);
+  const l = verwaltung({ attribute: { shortcuts: Object.assign({}, SHORTCUTS, { 31: Object.assign({}, SHORTCUTS[31], { running: true }) }) } });
+  const loeschen = darin(zeile(l, 31), '[data-action="delete"]');
+  assert.equal(loeschen.disabled, true);
+  assert.match(zeile(l, 31).textContent, /Läuft gerade — Löschen geht erst danach/);
+  assert.equal(darin(zeile(l, 30), '[data-action="delete"]').disabled, false);
+});
