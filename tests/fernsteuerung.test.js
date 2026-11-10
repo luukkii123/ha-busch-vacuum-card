@@ -654,6 +654,42 @@ test('Tastatur: Leertaste = Stopp, Escape = Stopp und Ansicht verlassen', async 
   assert.equal($d(k.u, '.remote'), null, 'zurück im Menü');
 });
 
+test('REM-02 Leertaste stoppt immer, auch wenn ein Knopf/Schalter den Fokus hat (keine Knopf-Auslösung)', async () => {
+  const k = await tastatur();
+  for (const sel of ['[data-action="precision"]', '[data-action="stop"]', '.remote-hold', '[data-axis="turn"]']) {
+    const knopf = $d(k.u, sel);
+    assert.ok(knopf, sel);
+    knopf.focus();
+    k.runter('w');
+    await k.antworte();
+    assert.deepEqual(schritte(k.haus).at(-1), [100, 0], sel + ': fährt');
+    let klicks = 0;
+    const zaehle = () => { klicks++; };
+    knopf.addEventListener('click', zaehle);
+    const runter = k.u.tasteAn(knopf, 'keydown', { key: ' ' });
+    assert.equal(runter.defaultPrevented, true, sel + ': keydown verhindert');
+    letzterIstStopp(k.haus);
+    const hoch = k.u.tasteAn(knopf, 'keyup', { key: ' ' });
+    assert.equal(hoch.defaultPrevented, true, sel + ': keyup verhindert (sonst löst der Knopf aus)');
+    knopf.removeEventListener('click', zaehle);
+    assert.equal(klicks, 0);
+    assert.equal($d(k.u, '[data-action="precision"]').getAttribute('aria-checked'), 'false', sel + ': Präzision unverändert');
+    k.hoch('w');
+    await k.schritt();
+    k.u.uhr.vor(1000);
+    await k.schritt();
+  }
+});
+
+test('REM-02 Leertaste vor dem Starten löst den fokussierten Knopf nicht aus und sendet nichts', () => {
+  const k = ansicht();
+  const knopf = $d(k.u, '[data-action="precision"]');
+  knopf.focus();
+  assert.equal(k.u.tasteAn(knopf, 'keydown', { key: ' ' }).defaultPrevented, true);
+  assert.equal(k.u.tasteAn(knopf, 'keyup', { key: ' ' }).defaultPrevented, true);
+  assert.deepEqual(k.haus.rufe, []);
+});
+
 test('Tastatur: nur freigegeben, nicht in Textfeldern, nicht wenn eine andere Ansicht oben liegt', async () => {
   const k = ansicht();
   taste(k.u, 'w');

@@ -11154,16 +11154,21 @@ function remoteView(card) {
     };
     const onKey = (event) => {
         const dialog = ctl.dialog;
-        if (!ctl.armed || !dialog || dialog._views[dialog._views.length - 1] !== view) return;
-        const active = dialog.shadowRoot && dialog.shadowRoot.activeElement;
-        if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
+        if (!dialog || dialog._views[dialog._views.length - 1] !== view) return;
         const key = String(event.key || '').toLowerCase();
         const down = event.type === 'keydown';
-        ctl.mods = { shift: !!event.shiftKey, ctrl: !!event.ctrlKey };
+        // Space always stops while the view is on top, armed or not, whatever has the focus: the
+        // listener runs in the capture phase (BuschUI buttons stop Space from bubbling) and cancels
+        // keydown and keyup, so a focused button or switch is never activated instead.
         if (key === ' ') {
-            if (down) { event.preventDefault(); halt(); }
+            event.preventDefault();
+            if (down) halt();
             return;
         }
+        if (!ctl.armed) return;
+        const active = dialog.shadowRoot && dialog.shadowRoot.activeElement;
+        if (active && (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || active.isContentEditable)) return;
+        ctl.mods = { shift: !!event.shiftKey, ctrl: !!event.ctrlKey };
         if (!KEYS[key]) {
             if (ctl.sources.size) drive(); // Shift/Ctrl pressed or let go while moving
             return;
@@ -11183,8 +11188,8 @@ function remoteView(card) {
         const method = on ? 'addEventListener' : 'removeEventListener';
         window[method]('blur', onBlur);
         document[method]('visibilitychange', onVisibility);
-        document[method]('keydown', onKey);
-        document[method]('keyup', onKey);
+        document[method]('keydown', onKey, true);
+        document[method]('keyup', onKey, true);
         if (on) ctl.mapEl = card._map ? card._map.el : null;
         if (ctl.mapEl) ctl.mapEl[method]('map-frame', onFrame);
     };

@@ -110,20 +110,22 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
     click() { this.dispatchEvent(neuesEreignis('click')); }
   }
   function neuesEreignis(type, init = {}) {
-    return Object.assign({ type, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() {} }, init);
+    return Object.assign({ type, defaultPrevented: false, propagationStopped: false, preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.propagationStopped = true; } }, init);
   }
   class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } }
 
   body = new Element('body');
   const docListeners = {};
+  const docCapture = {};
   const document = {
     body,
     documentElement: new Element('html'),
     activeElement: null,
     createElement(tag) { const K = registry.get(tag); if (K) { const n = new K(); n.tagName = tag.toUpperCase(); return n; } return new Element(tag); },
     createElementNS(_ns, tag) { return new Element(tag); },
-    addEventListener(t, fn) { (docListeners[t] ||= []).push(fn); },
-    removeEventListener(t, fn) { docListeners[t] = (docListeners[t] || []).filter((f) => f !== fn); },
+    // Capture-Listener (drittes Argument true/{capture}) merkt sich die Attrappe zusätzlich, damit `tasteAn` die Phasen nachbilden kann.
+    addEventListener(t, fn, opt) { (docListeners[t] ||= []).push(fn); if (opt === true || (opt && opt.capture)) (docCapture[t] ||= new Set()).add(fn); },
+    removeEventListener(t, fn) { docListeners[t] = (docListeners[t] || []).filter((f) => f !== fn); if (docCapture[t]) docCapture[t].delete(fn); },
     dispatchEvent(e) { for (const fn of [...(docListeners[e.type] || [])]) fn(e); return true; },
     querySelector() { return null; },
   };
@@ -148,9 +150,22 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
   kontext.globalThis = kontext;
   vm.createContext(kontext);
   vm.runInContext(fs.readFileSync(KARTE, 'utf8'), kontext, { filename: 'busch-vacuum-card.js' });
+  /**
+   * Tastenereignis wie im Browser an einem fokussierten Element: erst die
+   * Capture-Listener des Dokuments, dann Ziel und Vorfahren (Bubble), dann die
+   * übrigen Dokument-Listener — außer jemand ruft stopPropagation().
+   */
+  const tasteAn = (ziel, type, init = {}) => {
+    const e = neuesEreignis(type, init);
+    const cap = docCapture[type] || new Set();
+    for (const fn of [...(docListeners[type] || [])]) if (cap.has(fn)) fn(e);
+    for (let w = ziel; w && !e.propagationStopped; w = w.parentNode || w.host || null) w.dispatchEvent(e);
+    if (!e.propagationStopped) for (const fn of [...(docListeners[type] || [])]) if (!cap.has(fn)) fn(e);
+    return e;
+  };
   /** Zurück-Geste: popstate an alle Fenster-Listener. */
   const zurueck = () => { for (const fn of [...(fenster.listeners.popstate || [])]) fn({}); };
-  return { uhr, kontext, document, body, registry, fehler, neuesEreignis, verlauf, zurueck, bild };
+  return { uhr, kontext, document, body, registry, fehler, neuesEreignis, verlauf, zurueck, bild, tasteAn };
 }
 
 // ---- hass ---------------------------------------------------------------
