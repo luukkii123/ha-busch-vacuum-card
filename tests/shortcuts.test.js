@@ -119,3 +119,54 @@ test('Editor-Hinweis nennt fehlende Scripts', () => {
   assert.match(form.computeHelper({ name: 'scripts' }), /script\.fehlt/);
 });
 
+// ── Task 2: Starten, auch bei laufender Aufgabe (SHO-01, TASK-07) ────────────
+
+const start = (id) => ({ domain: 'dreame_vacuum', service: 'vacuum_start_shortcut', data: { entity_id: 'vacuum.robo', shortcut_id: id } });
+
+test('Tipp startet genau den Eintrag; Doppeltipp = ein Aufruf; Erfolg schließt das Menü', async () => {
+  const k = menue(mitShortcuts({ config: { scripts: ['script.bibliothek'] }, states: SKRIPT('script.bibliothek', 'Bibliothek') }));
+  let fertig;
+  k.haus.antwort = () => new Promise((ok) => { fertig = ok; });
+  const e = eintrag(k, 'device:32');
+  e.click();
+  e.click();
+  assert.deepEqual(aufrufe(k), [start(32)]);
+  const busy = eintrag(k, 'device:32');
+  assert.equal(busy.getAttribute('aria-busy'), 'true');
+  assert.match(busy.textContent, /Wird gestartet/);
+  fertig();
+  await mikro();
+  k.u.uhr.vor(400);
+  assert.equal(dialogVon(k.u), null, 'Menü zu');
+  const s = menue(mitShortcuts({ config: { scripts: ['script.bibliothek'] }, states: SKRIPT('script.bibliothek', 'Bibliothek') }));
+  eintrag(s, 'script:script.bibliothek').click();
+  assert.deepEqual(aufrufe(s), [{ domain: 'script', service: 'turn_on', data: { entity_id: 'script.bibliothek' } }]);
+});
+
+test('Bei laufender Aufgabe: kein stop/pause davor, Hinweis im Menükopf (TASK-07)', () => {
+  for (const zustand of ['cleaning', 'paused']) {
+    const k = menue(mitShortcuts({ zustand, attribute: { started: true } }));
+    assert.match($d(k.u, '[data-note="task"]').textContent, /Aufgabe läuft/, zustand);
+    eintrag(k, 'device:30').click();
+    assert.deepEqual(aufrufe(k), [start(30)], zustand + ': nur der Start, kein vacuum.stop/pause');
+  }
+  assert.equal($d(menue(mitShortcuts()).u, '[data-note="task"]'), null, 'angedockt ohne Hinweis');
+});
+
+test('Gesperrt beim Ablassen mit Grund; Dienstfehler → R12-Text im Menü', async () => {
+  const k = menue(mitShortcuts({ attribute: { draining: true } }));
+  const e = eintrag(k, 'device:30');
+  assert.equal(e.disabled, true);
+  assert.match($d(k.u, '[data-note="locked"]').textContent, /Ablassen/);
+  e.click();
+  assert.deepEqual(aufrufe(k), []);
+  const f = menue(mitShortcuts());
+  f.haus.antwort = () => Promise.reject(new Error('unavailable_while_draining'));
+  eintrag(f, 'device:31').click();
+  await mikro();
+  const note = $d(f.u, '[data-note="device:31"]');
+  assert.match(note.textContent, /Turmzimmer wurde nicht gestartet \(unavailable_while_draining\)/);
+  assert.match(note.textContent, /erneut/);
+  assert.equal(eintrag(f, 'device:31').disabled, false);
+});
+

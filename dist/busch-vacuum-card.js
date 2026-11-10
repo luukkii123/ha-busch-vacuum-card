@@ -549,6 +549,9 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             skripte: 'Skripte',
             laeuft: 'läuft',
             skripteFehlen: 'Nicht gefunden: {liste}.',
+            shortcutZusaetzlich: 'Eine Aufgabe läuft — der Shortcut wird zusätzlich gestartet; was mit der laufenden Aufgabe geschieht, entscheidet der Roboter.',
+            sperreAblassen: 'Während die Station Wasser ablässt, startet kein Shortcut. Warte, bis das Ablassen fertig ist.',
+            shortcutFehler: '{name} wurde nicht gestartet ({grund}). Der Roboter macht weiter wie bisher. Versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
             stationStatus: 'Stationsstatus',
             alleWerte: 'Alle Stationswerte ({n})',
             reiter_wash: 'Waschen',
@@ -975,6 +978,9 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             skripte: 'Scripts',
             laeuft: 'running',
             skripteFehlen: 'Not found: {liste}.',
+            shortcutZusaetzlich: 'A task is running — the shortcut starts in addition; the robot decides what happens to the running task.',
+            sperreAblassen: 'No shortcut starts while the station drains water. Wait until draining has finished.',
+            shortcutFehler: '{name} did not start ({grund}). The robot carries on as before. Try again; if that does not help, check the dreame_vacuum integration.',
             stationStatus: 'Station status',
             alleWerte: 'All station values ({n})',
             reiter_wash: 'Washing',
@@ -5119,15 +5125,59 @@ function shortcutText(hass, model, entry) {
     return entry.name + (floor ? ' · ' + floor : '') + (entry.running ? ' · ' + translate(hass, 'laeuft') : '');
 }
 
+/**
+ * The one start path (R08): `vacuum_start_shortcut { entity_id, shortcut_id }`
+ * or `script.turn_on`. Never stops or pauses a running task first (TASK-07);
+ * busy until the service answers, a second tap is ignored (R11).
+ */
+function startShortcut(card, entry, done) {
+    const call = entry.kind === 'device'
+        ? () => card._hass.callService('dreame_vacuum', 'vacuum_start_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id })
+        : () => card._hass.callService('script', 'turn_on', { entity_id: entry.id });
+    return trackWrite(card, 'shortcut:' + entry.kind + ':' + entry.id, { label: entry.name, failKey: 'shortcutFehler', call, done });
+}
+
+/** Why no shortcut can start now (device.py#L5281: draining), else ''. Self-repair only the service reports. */
+const shortcutLock = (hass, model) => (model.attr('draining') === true ? translate(hass, 'sperreAblassen') : '');
+
+/** One start item, for menu and management (R01): text, symbol, busy state, error note. */
+function shortcutItem(card, model, hass, entry, done) {
+    const track = 'shortcut:' + entry.kind + ':' + entry.id;
+    const busy = card._settingWrites.has(track);
+    const text = busy ? entry.name + ' · ' + translate(hass, 'wirdGestartet') : shortcutText(hass, model, entry);
+    const locked = entry.kind === 'device' && !!shortcutLock(hass, model);
+    const item = BuschUI.action({ label: text, text, icon: entry.icon, variant: 'quiet', disabled: busy || locked, onClick: () => startShortcut(card, entry, done) });
+    item.classList.add('menu-item');
+    item.setAttribute('data-shortcut', entry.kind + ':' + entry.id);
+    if (busy) item.setAttribute('aria-busy', 'true');
+    const note = card._settingNotes.get(track);
+    if (!note) return [item];
+    const line = noteLine(note, 'error');
+    line.setAttribute('data-note', entry.kind + ':' + entry.id);
+    return [item, line];
+}
+
 /** The shortcut button's menu (SHO-01): scripts, then shortcuts; fleeting (R04). */
 function shortcutMenu(card) {
     return {
         title: translate(card._hass, 'shortcuts'),
         kind: 'menu',
         watch: () => [card._opts.entity, ...card._opts.scripts],
-        render: (body, hass) => {
+        render: (body, hass, dialog) => {
             const model = card._model();
             const entries = shortcutEntries(hass, model, card._opts.scripts);
+            const close = () => { if (dialog.isConnected) dialog.close(); };
+            if (taskActive(model, model.state ? model.state.state : 'unavailable')) {
+                const note = noteLine(translate(hass, 'shortcutZusaetzlich'));
+                note.setAttribute('data-note', 'task');
+                body.appendChild(note);
+            }
+            const lock = shortcutLock(hass, model);
+            if (lock && entries.some((e) => e.kind === 'device')) {
+                const note = noteLine(lock);
+                note.setAttribute('data-note', 'locked');
+                body.appendChild(note);
+            }
             for (const kind of ['script', 'device']) {
                 const part = entries.filter((e) => e.kind === kind);
                 if (!part.length) continue;
@@ -5136,13 +5186,7 @@ function shortcutMenu(card) {
                 heading.textContent = translate(hass, kind === 'script' ? 'skripte' : 'shortcuts');
                 const list = document.createElement('div');
                 list.className = 'menu';
-                for (const entry of part) {
-                    const text = shortcutText(hass, model, entry);
-                    const item = BuschUI.action({ label: text, text, icon: entry.icon, variant: 'quiet' });
-                    item.classList.add('menu-item');
-                    item.setAttribute('data-shortcut', entry.kind + ':' + entry.id);
-                    list.appendChild(item);
-                }
+                for (const entry of part) list.append(...shortcutItem(card, model, hass, entry, close));
                 body.append(heading, list);
             }
         }
