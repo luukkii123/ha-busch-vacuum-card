@@ -423,3 +423,142 @@ test('Kartenwechsel (map-changed) leert die Auswahl mit Hinweis', async () => {
   assert.deepEqual(roh(karte._selection.rooms), []);
   assert.match(notiz(karte, 'map-changed').textContent, /Karte gewechselt/);
 });
+
+// ── Task 4: Zone ───────────────────────────────────────────────────────────
+const zonen = (karte) => roh(karte._selection.zones).map((z) => [z.x0, z.y0, z.x1, z.y1].map(Math.round));
+const ziehe = (u, karte, von, nach, schritte = 3) => {
+  zeiger(u, karte, 'pointerdown', von.x, von.y);
+  for (let i = 1; i <= schritte; i++) zeiger(u, karte, 'pointermove', von.x + (nach.x - von.x) * i / schritte, von.y + (nach.y - von.y) * i / schritte);
+  zeiger(u, karte, 'pointerup', nach.x, nach.y);
+  u.uhr.vor(400);
+};
+const naheGleich = (a, b, tol, was) => a.forEach((z, i) => z.forEach((v, j) => assert.ok(Math.abs(v - b[i][j]) <= tol, `${was}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`)));
+async function zoneKarte(opts) {
+  const r = await kartenKarte(opts);
+  art(r.karte, 'zone').click();
+  return r;
+}
+
+test('Zone: Tipp auf freie Fläche legt 1,5 × 1,5 m um den Punkt an; Liste nennt Maße', async () => {
+  const { u, karte } = await zoneKarte();
+  assert.equal(karte._map._mode, 'draw-rect');
+  const r = raeume()['5'];
+  tippe(u, karte, bildschirm(karte, r));
+  naheGleich(zonen(karte), [[r.x - 750, r.y - 750, r.x + 750, r.y + 750]], 40, 'Tipp-Zone');
+  const eintrag = aktion(karte, 'zone-0');
+  assert.match(eintrag.textContent, /Bereich 1 · 1,5 × 1,5 m/);
+  assert.equal(ebeneTasks(karte).querySelectorAll('[data-select="zone"]').length, 1);
+});
+
+test('Zone: Ziehen zeichnet ein Rechteck (draw-rect) mit Lupe', async () => {
+  const { u, karte } = await zoneKarte();
+  const a = { x: -5000, y: -5000 }, b = { x: -2500, y: -3000 };
+  const von = bildschirm(karte, a), nach = bildschirm(karte, b);
+  zeiger(u, karte, 'pointerdown', von.x, von.y);
+  zeiger(u, karte, 'pointermove', nach.x, nach.y);
+  assert.equal($(karte, '.map-loupe').hidden, false);
+  zeiger(u, karte, 'pointerup', nach.x, nach.y);
+  naheGleich(zonen(karte), [[-5000, -5000, -2500, -3000]], 40, 'gezogen');
+});
+
+test('Zone: Knopf „Bereich hinzufügen“ legt in der Mitte der sichtbaren Karte an', async () => {
+  const { karte } = await zoneKarte();
+  const m = karte._map, rect = m._stageRect();
+  const mitte = m.toRobot(m.fromScreen({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }));
+  aktion(karte, 'zone-add').click();
+  naheGleich(zonen(karte), [[mitte.x - 750, mitte.y - 750, mitte.x + 750, mitte.y + 750]], 2, 'Mitte');
+  assert.equal(aktion(karte, 'zone-0').getAttribute('aria-pressed'), 'true', 'neue Zone gewählt');
+});
+
+test('Zone: Tipp auf Teppich übernimmt seinen Umriss', async () => {
+  const { u, haus, karte } = await zoneKarte();
+  const t = haus.states[CAM].attributes.carpets[0];
+  tippe(u, karte, bildschirm(karte, { x: (t.x0 + t.x1) / 2, y: (t.y0 + t.y2) / 2 }));
+  assert.deepEqual(zonen(karte), [[Math.round(Math.min(t.x0, t.x1)), Math.round(Math.min(t.y0, t.y2)), Math.round(Math.max(t.x0, t.x1)), Math.round(Math.max(t.y0, t.y2))]]);
+});
+
+test('Zone: Fläche ziehen verschiebt, Eckgriff skaliert, Untergrenze hält, × entfernt', async () => {
+  const { u, karte } = await zoneKarte();
+  karte._selection.zones.push({ x0: -5000, y0: -5000, x1: -3000, y1: -3000 });
+  karte._selectionChanged();
+  ziehe(u, karte, bildschirm(karte, { x: -4000, y: -4000 }), bildschirm(karte, { x: -3500, y: -4200 }));
+  naheGleich(zonen(karte), [[-4500, -5200, -2500, -3200]], 40, 'verschoben');
+  const griffe = karte._zoneHandles(0);
+  // Griff ≥ 44 px: 15 px neben der Ecke trifft noch den Griff.
+  const ecke = griffe.corners[2];
+  ziehe(u, karte, { x: ecke.x + 15, y: ecke.y }, bildschirm(karte, { x: -2000, y: -2000 }));
+  const z = zonen(karte)[0];
+  assert.ok(Math.abs(z[2] + 2000) <= 60 || Math.abs(z[3] + 2000) <= 60, 'Ecke gezogen: ' + JSON.stringify(z));
+  const klein = karte._zoneHandles(0).corners[2];
+  const gegen = karte._zoneHandles(0).corners[0];
+  ziehe(u, karte, klein, gegen);
+  const k = zonen(karte)[0];
+  assert.ok(k[2] - k[0] > 100 && k[3] - k[1] > 100, 'Untergrenze 2 × grid_size: ' + JSON.stringify(k));
+  tippe(u, karte, karte._zoneHandles(0).remove);
+  assert.deepEqual(zonen(karte), []);
+});
+
+test('Zone: Knöpfe und Tastatur ergeben dasselbe wie Ziehen (R15)', async () => {
+  const gezogen = await zoneKarte();
+  gezogen.karte._selection.zones.push({ x0: -5000, y0: -5000, x1: -3000, y1: -3000 });
+  gezogen.karte._selectionChanged();
+  ziehe(gezogen.u, gezogen.karte, bildschirm(gezogen.karte, { x: -4000, y: -4000 }), bildschirm(gezogen.karte, { x: -3500, y: -4000 }));
+  const { u, karte } = await zoneKarte();
+  karte._selection.zones.push({ x0: -5000, y0: -5000, x1: -3000, y1: -3000 });
+  karte._selectionChanged();
+  aktion(karte, 'zone-0').click();
+  const rechts = karte._zoneStep('right', 100);
+  assert.equal(Math.abs(rechts.x) + Math.abs(rechts.y), 100, 'eine Achse, 100 mm');
+  aktion(karte, 'zone-right').click();
+  klick(u, aktion(karte, 'zone-right'), { shiftKey: true });
+  assert.deepEqual(zonen(karte).map((z) => z.map((v) => Math.round(v / 100) * 100)), [[-4400, -5000, -2400, -3000]], '100 + 500 mm');
+  const e = u.neuesEreignis('keydown', { key: 'ArrowLeft' });
+  aktion(karte, 'zone-0').dispatchEvent(e);
+  assert.ok(e.defaultPrevented);
+  naheGleich(zonen(karte), zonen(gezogen.karte), 40, 'Tastatur = Ziehen');
+});
+
+test('Zone: Breite/Höhe ± und Alt+Pfeile skalieren, Entf entfernt, Escape hebt Wahl auf', async () => {
+  const { u, karte } = await zoneKarte();
+  karte._selection.zones.push({ x0: 0, y0: 0, x1: 1000, y1: 1000 });
+  karte._selectionChanged();
+  aktion(karte, 'zone-0').click();
+  aktion(karte, 'zone-wider').click();
+  aktion(karte, 'zone-taller').click();
+  let [z] = zonen(karte);
+  assert.equal(z[2] - z[0], 1100);
+  assert.equal(z[3] - z[1], 1100);
+  for (let i = 0; i < 20; i++) aktion(karte, 'zone-narrower').click();
+  [z] = zonen(karte);
+  assert.ok(z[2] - z[0] > 100, 'nicht unter die Untergrenze');
+  const taste = (key, extra = {}) => aktion(karte, 'zone-0').dispatchEvent(u.neuesEreignis('keydown', Object.assign({ key }, extra)));
+  const vorher = zonen(karte)[0];
+  taste('ArrowRight', { altKey: true });
+  assert.equal(zonen(karte)[0][2] - zonen(karte)[0][0], vorher[2] - vorher[0] + 100);
+  taste('Escape');
+  assert.equal(aktion(karte, 'zone-0').getAttribute('aria-pressed'), 'false');
+  assert.equal(aktion(karte, 'zone-left'), null, 'Bearbeiten-Knöpfe nur mit gewählter Zone');
+  taste('Delete');
+  assert.deepEqual(zonen(karte), []);
+});
+
+test('Zone: ganz außerhalb markiert und Start gesperrt; CleanGenius-Hinweis', async () => {
+  const { karte, haus } = await zoneKarte({ vacuum: { cleangenius_cleaning: true } });
+  karte._selection.zones.push({ x0: 90000, y0: 90000, x1: 92000, y1: 92000 });
+  karte._selectionChanged();
+  assert.equal(ebeneTasks(karte).querySelector('[data-select="zone"]').getAttribute('data-invalid'), 'true');
+  assert.match(aktion(karte, 'zone-0').textContent, /außerhalb/);
+  assert.equal(knopf(karte, 'start').disabled, true);
+  assert.match(notiz(karte, 'cleangenius').textContent, /CleanGenius/);
+  knopf(karte, 'start').click();
+  assert.deepEqual(haus.rufe, []);
+});
+
+test('Zone: gesperrte Karte — Gesten aus, Knopfwege an', async () => {
+  const { u, karte } = await zoneKarte();
+  karte._toggleLock();
+  tippe(u, karte, bildschirm(karte, raeume()['5']));
+  assert.deepEqual(zonen(karte), []);
+  aktion(karte, 'zone-add').click();
+  assert.equal(zonen(karte).length, 1);
+});

@@ -370,6 +370,22 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskSpot: 'Spot',
             taskGoto: 'Hinfahren',
             aufgabeLaeuft: 'Aufgabe läuft',
+            bereiche: 'Bereiche',
+            bereichName: 'Bereich {n} · {w} × {h} m',
+            bereichBearbeiten: 'Bereich {n} bearbeiten',
+            bereichHinzufuegen: 'Bereich hinzufügen',
+            ausserhalb: 'außerhalb',
+            nach_left: 'Nach links (mit Umschalt 500 mm)',
+            nach_right: 'Nach rechts (mit Umschalt 500 mm)',
+            nach_up: 'Nach oben (mit Umschalt 500 mm)',
+            nach_down: 'Nach unten (mit Umschalt 500 mm)',
+            schmaler: 'Breite −',
+            breiter: 'Breite +',
+            niedriger: 'Höhe −',
+            hoeher: 'Höhe +',
+            entfernen: 'Entfernen',
+            tastenBereich: 'Tasten am Bereich: Pfeile verschieben (Umschalt: 500 mm), Alt+Pfeile ändern die Größe, Entf entfernt, Escape hebt die Wahl auf.',
+            cleanGeniusAus: 'CleanGenius ist an: Für diese Aufgabe schaltet die Integration CleanGenius kurz aus und danach wieder an.',
             raumGewaehlt: '{n} Raum gewählt',
             raeumeGewaehlt: '{n} Räume gewählt',
             alleWaehlen: 'Alle wählen',
@@ -827,6 +843,22 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskSpot: 'Spot',
             taskGoto: 'Go to',
             aufgabeLaeuft: 'Task running',
+            bereiche: 'Areas',
+            bereichName: 'Area {n} · {w} × {h} m',
+            bereichBearbeiten: 'Edit area {n}',
+            bereichHinzufuegen: 'Add area',
+            ausserhalb: 'outside',
+            nach_left: 'Left (Shift: 500 mm)',
+            nach_right: 'Right (Shift: 500 mm)',
+            nach_up: 'Up (Shift: 500 mm)',
+            nach_down: 'Down (Shift: 500 mm)',
+            schmaler: 'Width −',
+            breiter: 'Width +',
+            niedriger: 'Height −',
+            hoeher: 'Height +',
+            entfernen: 'Remove',
+            tastenBereich: 'Keys on an area: arrows move (Shift: 500 mm), Alt+arrows resize, Delete removes, Escape deselects.',
+            cleanGeniusAus: 'CleanGenius is on: for this task the integration switches CleanGenius off and back on afterwards.',
             raumGewaehlt: '{n} room chosen',
             raeumeGewaehlt: '{n} rooms chosen',
             alleWaehlen: 'Select all',
@@ -2517,6 +2549,31 @@ const SPOT_MM = 1500; // a spot cleans 1.5 × 1.5 m around its point (vacuum.py#
 const boxPoints = (ctx, z) => [[z.x0, z.y0], [z.x1, z.y0], [z.x1, z.y1], [z.x0, z.y1]].map(([x, y]) => ctx.toImage({ x, y })).map((p) => p.x + ',' + p.y).join(' ');
 const spotBox = (p) => ({ x0: p.x - SPOT_MM / 2, y0: p.y - SPOT_MM / 2, x1: p.x + SPOT_MM / 2, y1: p.y + SPOT_MM / 2 });
 
+const HANDLE_PX = 22; // half of a 44-px touch target (R06)
+
+function insidePolygon(p, corners) {
+    let inside = false;
+    for (let i = 0, j = corners.length - 1; i < corners.length; j = i++) {
+        const a = corners[i], b = corners[j];
+        if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+    }
+    return inside;
+}
+
+/** The smallest shown carpet or furniture under a robot point as a rectangle, or null (zone from an object). */
+function outlineAt(view, p) {
+    const ctx = view._ctx();
+    const shapes = [];
+    for (const name of ['carpets', 'detected_carpets']) if (view.visible(name)) for (const item of ctx.objects[name] || []) shapes.push(areaCorners(item));
+    if (view.visible('furnitures')) for (const f of MAP_DRAW.furniture.source(view, 'furnitures', ctx)) shapes.push(furnitureCorners(f));
+    const boxes = shapes.filter((c) => insidePolygon(p, c)).map((c) => {
+        const xs = c.map((q) => q.x), ys = c.map((q) => q.y);
+        return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+    });
+    boxes.sort((a, b) => (a.x1 - a.x0) * (a.y1 - a.y0) - (b.x1 - b.x0) * (b.y1 - b.y0));
+    return boxes[0] || null;
+}
+
 /** A screen-sized group at a robot point (like the map's symbols). */
 function screenMark(ctx, robot, attrs) {
     const p = ctx.toImage(robot);
@@ -2767,6 +2824,13 @@ function obstacleList(view, ctx) {
     });
 }
 
+/** Corners of a furniture item [x, y, width, height, type, edit_type, angle, …] in robot mm. */
+function furnitureCorners(f) {
+    const [x, y, w, h, , , angle] = f.map(Number);
+    const rad = (angle || 0) * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+    return [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([dx, dy]) => ({ x: x + dx * cos - dy * sin, y: y + dx * sin + dy * cos }));
+}
+
 const toPoints = (view, corners) => corners.map((c) => view.toImage(c)).map((p) => p.x + ',' + p.y).join(' ');
 
 /** How each kind of built-in layer reads its source and draws. */
@@ -2789,10 +2853,7 @@ const MAP_DRAW = {
         source: (view, name, ctx) => (ctx.data && ctx.data.raw && ctx.data.raw.furnitures) || [],
         // [x, y, width, height, type, edit_type, angle, …] (map.py get_data): centre, size and turn in robot mm.
         render: (view, name, group, ctx) => MAP_DRAW.furniture.source(view, name, ctx).forEach((f, i) => {
-            const [x, y, w, h, , , angle] = f.map(Number);
-            const rad = (angle || 0) * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
-            const corners = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([dx, dy]) => ({ x: x + dx * cos - dy * sin, y: y + dx * sin + dy * cos }));
-            group.appendChild(view.svgNode('polygon', { 'data-object': i, points: toPoints(view, corners) }));
+            group.appendChild(view.svgNode('polygon', { 'data-object': i, points: toPoints(view, furnitureCorners(f)) }));
         })
     },
     path: {
@@ -5896,6 +5957,31 @@ canvas.map-base {
     stroke: none;
     font-weight: var(--ha-font-weight-bold, 700);
 }
+[data-layer=tasks] polygon[data-select] {
+    stroke: var(--bvc-task-color, var(--primary-color, #03a9f4));
+    fill: var(--bvc-task-color, var(--primary-color, #03a9f4));
+    fill-opacity: 0.18;
+    stroke-width: 2px;
+}
+[data-layer=tasks] polygon[data-chosen=true] {
+    stroke-width: 3px;
+    fill-opacity: 0.3;
+}
+/* Outside the floor: red and dotted, plus "!" and the word in the list (R17). */
+[data-layer=tasks] polygon[data-invalid=true] {
+    stroke: var(--bvc-task-invalid, var(--error-color, #db4437));
+    fill: var(--bvc-task-invalid, var(--error-color, #db4437));
+    stroke-dasharray: 2 4;
+}
+[data-layer=tasks] [data-handle] circle {
+    fill: var(--ha-card-background, var(--card-background-color, #ffffff));
+    stroke: var(--bvc-task-color, var(--primary-color, #03a9f4));
+    stroke-width: 2px;
+}
+[data-layer=tasks] [data-handle=remove] path {
+    stroke: var(--primary-text-color, #212121);
+    stroke-width: 2px;
+}
 [data-layer=tasks] [data-active] {
     stroke: var(--bvc-task-color, var(--primary-color, #03a9f4));
     fill: var(--bvc-task-color, var(--primary-color, #03a9f4));
@@ -6294,6 +6380,39 @@ ha-card {
     order: -1;
     flex: none;
     --mdc-icon-size: 18px;
+}
+.task-list,
+.task-edit {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ha-space-1, 4px);
+    min-width: 0;
+}
+.task-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.task-item ha-icon,
+.task-edit ha-icon {
+    order: -1;
+    flex: none;
+    --mdc-icon-size: 18px;
+}
+.task-item[aria-pressed=true] {
+    background: var(--bvc-accent-color, var(--primary-color, #03a9f4));
+    color: var(--text-primary-color, #ffffff);
+}
+.task-edit .busch-ui-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--ha-space-1, 4px);
 }
 .task-note {
     display: flex;
@@ -6961,6 +7080,7 @@ class BuschVacuumCard extends HTMLElement {
         this._repeats = 1;
         this._run = null; // { at, stopped, seen }: a task this card started, until it ends (TASK-01)
         this._taskError = null; // R12 text of the last failed start
+        this._zoneActive = null; // zone chosen in the list (keys and edit buttons)
         this._dismissed = new Map(); // message kind → text wiped away, until the message changes (CORE-10)
         this._dialog = null;
         this._panel = false;
@@ -7401,14 +7521,21 @@ class BuschVacuumCard extends HTMLElement {
             nodes.push(this._note('task-badge', icon, translate(hass, key)));
         } else {
             if (task === 'room') nodes.push(...this._roomPanel(hass, model));
+            if (task === 'zone') nodes.push(...this._zonePanel(hass, model));
             if (this._undo) {
                 const note = this._note('task-note', 'mdi:undo-variant', translate(hass, 'auswahlGeleert'));
                 note.appendChild(this._panelButton(hass, 'rueckgaengig', 'mdi:undo', 'undo', () => this._undoClear()));
                 nodes.push(note);
             }
             if (this._taskInfo) {
-                const note = this._note('task-note', 'mdi:map-marker-alert-outline', translate(hass, this._taskInfo));
-                note.setAttribute('data-note', 'map-changed');
+                const note = this._note('task-note', 'mdi:map-marker-alert-outline', translate(hass, this._taskInfo.key));
+                note.setAttribute('data-note', this._taskInfo.note);
+                nodes.push(note);
+            }
+            // Zone, spot and the simulated Go-To switch CleanGenius off for the task (device.py#L4854, L5065, L5139).
+            if (model.attr('cleangenius_cleaning') === true && (task === 'zone' || task === 'spot' || (task === 'goto' && !model.can('cruising')))) {
+                const note = this._note('task-note', 'mdi:creation-outline', translate(hass, 'cleanGeniusAus'));
+                note.setAttribute('data-note', 'cleangenius');
                 nodes.push(note);
             }
             if (!ready.ok) nodes.push(this._note('task-hint', 'mdi:information-outline', translate(hass, ready.reason, { min: this._zoneMinText() })));
@@ -7497,6 +7624,7 @@ class BuschVacuumCard extends HTMLElement {
     /** Selection changed: map layer, chips and panel follow (R08). */
     _selectionChanged() {
         this._taskError = null;
+        if (this._taskInfo && this._taskInfo.note === 'outside') this._taskInfo = null;
         if (this._map) this._map.refresh('tasks');
         this._update();
     }
@@ -7529,7 +7657,8 @@ class BuschVacuumCard extends HTMLElement {
             // IDs and coordinates belong to one map.
             const had = this._selection.rooms.length || this._selection.zones.length || this._selection.spots.length || this._selection.goto;
             this._selection = emptySelection();
-            this._taskInfo = had ? 'auswahlKarteGewechselt' : null;
+            this._taskInfo = had ? { key: 'auswahlKarteGewechselt', note: 'map-changed' } : null;
+            this._zoneActive = null;
             this._selectionChanged();
             return;
         }
@@ -7537,6 +7666,10 @@ class BuschVacuumCard extends HTMLElement {
         if (taskActive(model, model.state ? model.state.state : 'unavailable')) return;
         const task = this._chosenTask(model);
         if (e.type === 'map-room-tap' && task === 'room' && d.mode === 'pick-room') this._toggleRoom(model, Number(d.room), d.shift);
+        if (task === 'zone' && d.mode === 'draw-rect') {
+            if (e.type === 'map-tap' && d.robot) this._zoneTap(d);
+            if (e.type === 'map-drag') this._zoneDrag(d);
+        }
     }
 
     _toggleRoom(model, id, range) {
@@ -7587,9 +7720,285 @@ class BuschVacuumCard extends HTMLElement {
         return button;
     }
 
+    // ── Zone (TASK-03) ────────────────────────────────────────────────────
+
+    /** Smallest side: the device wants more than 2 × grid_size (device.py#L4831), plus one cell. */
+    _zoneMin() {
+        const map = this._taskMap();
+        return 3 * ((map && map.grid) || GRID_MM);
+    }
+
+    _fitZone(z) {
+        const min = this._zoneMin();
+        const r = { x0: Math.min(z.x0, z.x1), y0: Math.min(z.y0, z.y1), x1: Math.max(z.x0, z.x1), y1: Math.max(z.y0, z.y1) };
+        if (r.x1 - r.x0 < min) r.x1 = r.x0 + min;
+        if (r.y1 - r.y0 < min) r.y1 = r.y0 + min;
+        return { x0: Math.round(r.x0), y0: Math.round(r.y0), x1: Math.round(r.x1), y1: Math.round(r.y1) };
+    }
+
+    _client(robot) {
+        const m = this._map;
+        return m ? m.toScreen(m.toImage(robot)) : null;
+    }
+
+    /** Client points of a zone's corner handles and its × (beside the corner that is top right on screen). */
+    _zoneHandles(i) {
+        const z = this._selection.zones[i];
+        if (!z) return null;
+        const corners = [[z.x0, z.y0], [z.x1, z.y0], [z.x1, z.y1], [z.x0, z.y1]].map(([x, y]) => this._client({ x, y }));
+        if (corners.some((c) => !c)) return null;
+        const k = corners.reduce((best, c, j) => (c.x - c.y > corners[best].x - corners[best].y ? j : best), 0);
+        const off = 18 * this._map.config(this._map._attrs().map_index).object_scale;
+        return { corners, k, remove: { x: corners[k].x + off, y: corners[k].y - off } };
+    }
+
+    /** A robot-mm step of `mm` in a screen direction, snapped to the map's nearest axis (keys and buttons match dragging). */
+    _zoneStep(dir, mm) {
+        const unit = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[dir];
+        const m = this._map;
+        if (m && m._view) {
+            const rect = m._stageRect();
+            const c = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+            const a = m.toRobot(m.fromScreen(c)), b = m.toRobot(m.fromScreen({ x: c.x + unit[0] * 10, y: c.y + unit[1] * 10 }));
+            if (a && b) {
+                const dx = b.x - a.x, dy = b.y - a.y;
+                return Math.abs(dx) >= Math.abs(dy) ? { x: Math.sign(dx) * mm, y: 0 } : { x: 0, y: Math.sign(dy) * mm };
+            }
+        }
+        return { x: unit[0] * mm, y: -unit[1] * mm };
+    }
+
+    _moveZone(i, dir, mm) {
+        const z = this._selection.zones[i];
+        const d = this._zoneStep(dir, mm);
+        this._selection.zones[i] = { x0: z.x0 + d.x, y0: z.y0 + d.y, x1: z.x1 + d.x, y1: z.y1 + d.y };
+        this._selectionChanged();
+    }
+
+    /** Wider/narrower (screen right edge) or taller/shorter (screen top edge), never below the minimum. */
+    _resizeZone(i, dir, mm) {
+        const z = Object.assign({}, this._selection.zones[i]);
+        const d = this._zoneStep(dir, 1), min = this._zoneMin();
+        if (d.x > 0) z.x1 = Math.max(z.x0 + min, z.x1 + mm);
+        if (d.x < 0) z.x0 = Math.min(z.x1 - min, z.x0 - mm);
+        if (d.y > 0) z.y1 = Math.max(z.y0 + min, z.y1 + mm);
+        if (d.y < 0) z.y0 = Math.min(z.y1 - min, z.y0 - mm);
+        this._selection.zones[i] = z;
+        this._selectionChanged();
+    }
+
+    _removeZone(i) {
+        this._selection.zones.splice(i, 1);
+        this._zoneActive = this._selection.zones.length ? Math.min(i, this._selection.zones.length - 1) : null;
+        if (this._zoneActive !== null && i !== this._zoneActive) this._zoneActive = null;
+        this._selectionChanged();
+    }
+
+    _addZone(z) {
+        this._selection.zones.push(this._fitZone(z));
+        this._zoneActive = this._selection.zones.length - 1;
+        this._selectionChanged();
+    }
+
+    /** Centre of the visible map in robot mm, or null without calibration. */
+    _mapCentre() {
+        const m = this._map;
+        if (!m || !m._view) return null;
+        const rect = m._stageRect();
+        return m.toRobot(m.fromScreen({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }));
+    }
+
+    _zoneTap(d) {
+        const id = d.hit && d.hit.layer === 'tasks' ? String(d.hit.id) : '';
+        const [kind, i] = id.split(':');
+        if (kind === 'zone-remove') return this._removeZone(Number(i));
+        if (kind === 'zone' || kind === 'zone-corner') {
+            this._zoneActive = Number(i);
+            return this._update();
+        }
+        const outline = outlineAt(this._map, d.robot);
+        if (outline) return this._addZone(outline);
+        if (d.passable === false) {
+            this._taskInfo = { key: 'punktAusserhalb', note: 'outside' };
+            return this._update();
+        }
+        const half = SPOT_MM / 2;
+        this._addZone({ x0: d.robot.x - half, y0: d.robot.y - half, x1: d.robot.x + half, y1: d.robot.y + half });
+    }
+
+    /** draw-rect: a corner handle scales, the area moves, elsewhere a new rectangle is drawn. */
+    _zoneDrag(d) {
+        const zones = this._selection.zones;
+        if (d.phase === 'start') {
+            const [kind, i, j] = String((this._hitSelection(d.start) || {}).id || '').split(':');
+            if (kind === 'zone-corner') this._drag = { kind: 'corner', i: Number(i), j: Number(j), origin: Object.assign({}, zones[i]), start: d.start };
+            else if (kind === 'zone' || kind === 'zone-remove') this._drag = { kind: 'move', i: Number(i), origin: Object.assign({}, zones[i]), start: d.start };
+            else {
+                zones.push({ x0: d.start.x, y0: d.start.y, x1: d.start.x, y1: d.start.y });
+                this._drag = { kind: 'draw', i: zones.length - 1, start: d.start };
+            }
+            this._zoneActive = this._drag.i;
+            return;
+        }
+        const g = this._drag;
+        if (!g) return;
+        if (d.phase === 'cancel') {
+            if (g.kind === 'draw') zones.splice(g.i, 1);
+            else zones[g.i] = g.origin;
+            this._drag = null;
+            return this._selectionChanged();
+        }
+        const p = d.robot;
+        if (p) {
+            if (g.kind === 'move') zones[g.i] = { x0: g.origin.x0 + p.x - g.start.x, y0: g.origin.y0 + p.y - g.start.y, x1: g.origin.x1 + p.x - g.start.x, y1: g.origin.y1 + p.y - g.start.y };
+            else if (g.kind === 'corner') {
+                const o = g.origin, opposite = [[o.x0, o.y0], [o.x1, o.y0], [o.x1, o.y1], [o.x0, o.y1]][(g.j + 2) % 4];
+                zones[g.i] = { x0: opposite[0], y0: opposite[1], x1: p.x, y1: p.y };
+            } else zones[g.i] = { x0: g.start.x, y0: g.start.y, x1: p.x, y1: p.y };
+        }
+        if (d.phase === 'end') {
+            zones[g.i] = this._fitZone(zones[g.i]);
+            this._drag = null;
+            return this._selectionChanged();
+        }
+        // R20: while dragging only the own layer redraws.
+        this._map.refresh('tasks');
+    }
+
+    /** Zone panel: add, the list (R15/R16: name and size), edit buttons for the chosen zone, keys. */
+    _zonePanel(hass, model) {
+        const nodes = [];
+        const zones = this._selection.zones;
+        if (this._zoneActive !== null && this._zoneActive !== undefined && !zones[this._zoneActive]) this._zoneActive = null;
+        const tools = document.createElement('div');
+        tools.className = 'task-tools';
+        const centre = this._mapCentre();
+        const add = this._panelButton(hass, 'bereichHinzufuegen', 'mdi:plus-box-outline', 'zone-add', () => {
+            const c = this._mapCentre();
+            if (c) this._addZone({ x0: c.x - SPOT_MM / 2, y0: c.y - SPOT_MM / 2, x1: c.x + SPOT_MM / 2, y1: c.y + SPOT_MM / 2 });
+        }, !centre);
+        tools.appendChild(add);
+        if (zones.length) tools.appendChild(this._panelButton(hass, 'auswahlLeeren', 'mdi:selection-remove', 'zones-clear', () => this._clearSelection('zones')));
+        nodes.push(tools);
+        if (zones.length) {
+            const list = document.createElement('div');
+            list.className = 'task-list';
+            list.setAttribute('role', 'group');
+            list.setAttribute('aria-label', translate(hass, 'bereiche'));
+            const map = this._taskMap();
+            const size = (mm) => new Intl.NumberFormat(localeOf(hass).language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Math.abs(mm) / 1000);
+            zones.forEach((z, i) => {
+                const outside = !!map && zoneSamples(z).every((p) => map.passable(p) === false);
+                const text = translate(hass, 'bereichName', { n: i + 1, w: size(z.x1 - z.x0), h: size(z.y1 - z.y0) }) + (outside ? ' · ' + translate(hass, 'ausserhalb') : '');
+                const button = BuschUI.action({ label: text, text, icon: outside ? 'mdi:alert-outline' : 'mdi:vector-square', variant: 'secondary', onClick: () => {
+                    this._zoneActive = this._zoneActive === i ? null : i;
+                    this._update();
+                } });
+                button.classList.add('task-item');
+                button.setAttribute('data-action', 'zone-' + i);
+                button.setAttribute('aria-pressed', String(this._zoneActive === i));
+                button.addEventListener('keydown', (event) => this._zoneKey(event, i));
+                list.appendChild(button);
+            });
+            nodes.push(list);
+        }
+        const i = this._zoneActive;
+        if (i !== null && i !== undefined && zones[i]) {
+            const edit = document.createElement('div');
+            edit.className = 'task-edit';
+            edit.setAttribute('role', 'group');
+            edit.setAttribute('aria-label', translate(hass, 'bereichBearbeiten', { n: i + 1 }));
+            const step = (event) => (event && event.shiftKey ? 500 : 100);
+            for (const [dir, icon] of [['left', 'mdi:arrow-left'], ['up', 'mdi:arrow-up'], ['down', 'mdi:arrow-down'], ['right', 'mdi:arrow-right']]) {
+                const label = translate(hass, 'nach_' + dir);
+                const button = BuschUI.action({ label, icon, variant: 'secondary', onClick: (event) => this._moveZone(i, dir, step(event)) });
+                button.setAttribute('data-action', 'zone-' + dir);
+                edit.appendChild(button);
+            }
+            for (const [name, key, dir, sign, icon] of [['narrower', 'schmaler', 'right', -1, 'mdi:arrow-collapse-horizontal'], ['wider', 'breiter', 'right', 1, 'mdi:arrow-expand-horizontal'],
+                ['shorter', 'niedriger', 'up', -1, 'mdi:arrow-collapse-vertical'], ['taller', 'hoeher', 'up', 1, 'mdi:arrow-expand-vertical']]) {
+                const label = translate(hass, key);
+                const button = BuschUI.action({ label, text: label, icon, variant: 'secondary', onClick: (event) => this._resizeZone(i, dir, sign * step(event)) });
+                button.setAttribute('data-action', 'zone-' + name);
+                edit.appendChild(button);
+            }
+            const remove = this._panelButton(hass, 'entfernen', 'mdi:close', 'zone-remove', () => this._removeZone(i));
+            edit.appendChild(remove);
+            nodes.push(edit);
+            nodes.push(this._keyHint(hass, 'tastenBereich'));
+        }
+        return nodes;
+    }
+
+    /** Keys on a zone entry: arrows move (Shift 500 mm), Alt+arrows scale, Delete removes, Escape deselects (R03/R15). */
+    _zoneKey(event, i) {
+        const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[event.key];
+        if (dir) {
+            event.preventDefault();
+            this._zoneActive = i;
+            if (event.altKey) this._resizeZone(i, dir === 'left' || dir === 'right' ? 'right' : 'up', (dir === 'right' || dir === 'up' ? 1 : -1) * 100);
+            else this._moveZone(i, dir, event.shiftKey ? 500 : 100);
+        } else if (event.key === 'Delete' || event.key === 'Backspace') {
+            event.preventDefault();
+            this._removeZone(i);
+        } else if (event.key === 'Escape' && this._zoneActive === i) {
+            event.preventDefault();
+            this._zoneActive = null;
+            this._update();
+        }
+    }
+
+    _keyHint(hass, key) {
+        const note = this._note('task-note', 'mdi:keyboard-outline', translate(hass, key));
+        note.setAttribute('data-note', 'keys');
+        return note;
+    }
+
+    /** Taps on own targets: × first, then corner handles (44 px), then the area. */
+    _hitSelection(point) {
+        const model = this._model();
+        if (this._chosenTask(model) !== 'zone') return null;
+        const c = this._client(point);
+        if (!c) return null;
+        const near = (q) => q && Math.hypot(q.x - c.x, q.y - c.y) <= HANDLE_PX;
+        const zones = this._selection.zones;
+        for (let i = zones.length - 1; i >= 0; i--) {
+            const h = this._zoneHandles(i);
+            if (!h) continue;
+            if (near(h.remove)) return { id: 'zone-remove:' + i, object: zones[i] };
+            const j = h.corners.findIndex(near);
+            if (j >= 0) return { id: 'zone-corner:' + i + ':' + j, object: zones[i] };
+        }
+        for (let i = zones.length - 1; i >= 0; i--) {
+            const z = zones[i];
+            if (point.x >= Math.min(z.x0, z.x1) && point.x <= Math.max(z.x0, z.x1) && point.y >= Math.min(z.y0, z.y1) && point.y <= Math.max(z.y0, z.y1)) return { id: 'zone:' + i, object: z };
+        }
+        return null;
+    }
+
     /** Draws the own selection into the layer `tasks` (shape + number, R17). */
     _drawSelection(group, ctx) {
         const task = this._chosenTask(ctx.model);
+        if (task === 'zone') {
+            const map = this._taskMap();
+            this._selection.zones.forEach((z, i) => {
+                const outside = !!map && zoneSamples(z).every((p) => map.passable(p) === false);
+                group.appendChild(ctx.svgNode('polygon', { 'data-select': 'zone', 'data-zone': i, 'data-invalid': String(outside), 'data-chosen': String(this._zoneActive === i), points: boxPoints(ctx, z) }));
+                const label = group.appendChild(screenMark(ctx, { x: (z.x0 + z.x1) / 2, y: (z.y0 + z.y1) / 2 }, { 'data-select': 'zone-label' }));
+                label.appendChild(ctx.svgNode('text', { 'text-anchor': 'middle', y: 5, 'font-size': 14 })).textContent = String(i + 1) + (outside ? ' !' : '');
+                const h = this._zoneHandles(i);
+                [[z.x0, z.y0], [z.x1, z.y0], [z.x1, z.y1], [z.x0, z.y1]].forEach(([x, y], j) => {
+                    const g = group.appendChild(screenMark(ctx, { x, y }, { 'data-handle': 'corner' }));
+                    g.appendChild(ctx.svgNode('circle', { r: 8 }));
+                    if (h && j === h.k) {
+                        const x = g.appendChild(ctx.svgNode('g', { 'data-handle': 'remove', transform: 'translate(18 -18)' }));
+                        x.appendChild(ctx.svgNode('circle', { r: 11 }));
+                        x.appendChild(ctx.svgNode('path', { d: 'M-4 -4 L4 4 M4 -4 L-4 4' }));
+                    }
+                });
+            });
+            return;
+        }
         if (task === 'room') {
             const order = this._roomOrder(ctx.model);
             for (const id of this._selection.rooms) {
