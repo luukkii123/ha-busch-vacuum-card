@@ -14,8 +14,17 @@ const $$d = (u, sel) => dialogVon(u).shadowRoot.querySelectorAll(sel);
 const dienste = (haus) => haus.rufe.filter((r) => r.domain === 'dreame_vacuum').map((r) => r.service);
 
 /** Karte aus einer Fixture; `vac` ändert Attribute von vacuum.robo, `cam` die der Kartenkamera. */
-function aufbau({ name = 'voll', vac = {}, cam = {}, zustand, config = {}, abruf = null } = {}) {
+function aufbau({ name = 'voll', vac = {}, cam = {}, zustand, config = {}, abruf = null, bild = false } = {}) {
   const u = neueUmgebung(), haus = hausAus(name);
+  if (bild) {
+    // Kartenbild mit Größe und Bühne 400 × 400 (wie aufgaben.test.js): toScreen/fromScreen gehen.
+    const erzeuge = u.document.createElement.bind(u.document);
+    u.document.createElement = (tag) => {
+      const n = erzeuge(tag);
+      if (tag === 'img') { n.naturalWidth = 1444; n.naturalHeight = 1444; n.decode = () => Promise.resolve(); }
+      return n;
+    };
+  }
   const abrufe = abruf ? verlaufsAbruf(u, abruf) : null;
   const v = haus.states['vacuum.robo'];
   haus.states['vacuum.robo'] = Object.assign({}, v, { state: zustand || v.state, attributes: Object.assign({}, v.attributes, vac) });
@@ -25,6 +34,7 @@ function aufbau({ name = 'voll', vac = {}, cam = {}, zustand, config = {}, abruf
   }
   haus.antwort = () => Promise.resolve();
   const karte = neueKarte(u, haus, config);
+  if (bild && karte._map) karte._map.stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 400, bottom: 400, width: 400, height: 400 });
   const I = u.registry.get('busch-vacuum-card').__internals;
   const k = { u, haus, karte, I, abrufe };
   /** Neuer Zustand des Saugers (Attribute zusammengeführt). */
@@ -910,4 +920,169 @@ test('EDI-03 Boden: Richtung nur bei Holz und floor_direction_cleaning; ohne Fä
   assert.equal(raumFeldE(k2, 'floor_material'), null);
   assert.equal($d(k2.u, '[data-field="room-visible"]'), null);
   assert.ok(raumFeldE(k2, 'type'), 'Name/Typ bleiben');
+});
+
+// ── Task 6: Räume teilen und zusammenführen (EDI-03) ────────────────────────
+
+const tippeAuf = (k, robot) => k.karte._map._emit('map-tap', { robot, hit: null, passable: null, mode: k.karte._map._mode });
+const zieh = (k, phase, start, robot) => k.karte._map._emit('map-drag', { phase, mode: k.karte._map._mode, start, robot });
+const feldE = (k, name) => $d(k.u, '[data-field="' + name + '"]');
+const tippen = (k, node, wert) => { node.value = String(wert); node.dispatchEvent(k.u.neuesEreignis('change')); };
+
+test('EDI-03 gemeinsamer Baustein (R08): shapeFit/shapeStep/shapeDrag/shapeMove für Zonen von clean-tasks und Linien des Editors', () => {
+  const k = aufbau();
+  const { shapeFit, shapeDrag, shapeMove } = k.I;
+  assert.deepEqual(roh(shapeFit({ x0: 10, y0: 500, x1: 0, y1: 0 }, 150)), { x0: 0, y0: 0, x1: 150, y1: 500 });
+  const o = { x0: 0, y0: 0, x1: 100, y1: 200 };
+  assert.deepEqual(roh(shapeDrag({ kind: 'move', origin: o, start: { x: 10, y: 10 } }, { x: 60, y: 40 })), { x0: 50, y0: 30, x1: 150, y1: 230 });
+  assert.deepEqual(roh(shapeDrag({ kind: 'corner', origin: o, j: 2, start: { x: 100, y: 200 } }, { x: 300, y: 400 })), { x0: 0, y0: 0, x1: 300, y1: 400 });
+  assert.deepEqual(roh(shapeDrag({ kind: 'end', origin: o, j: 0 }, { x: -5, y: -6 })), { x0: -5, y0: -6, x1: 100, y1: 200 });
+  assert.deepEqual(roh(shapeDrag({ kind: 'end', origin: o, j: 1 }, { x: 7, y: 8 })), { x0: 0, y0: 0, x1: 7, y1: 8 });
+  assert.deepEqual(roh(shapeDrag({ kind: 'draw', start: { x: 1, y: 2 } }, { x: 3, y: 4 })), { x0: 1, y0: 2, x1: 3, y1: 4 });
+  assert.deepEqual(roh(shapeMove(o, { x: 50, y: -10 })), { x0: 50, y0: -10, x1: 150, y1: 190 });
+  const schritt = k.I.shapeStep(k.karte._map, 'right', 50);
+  assert.equal(Math.abs(schritt.x) + Math.abs(schritt.y), 50, 'ein Achsschritt in Roboter-mm');
+  // clean-tasks nutzt denselben Baustein (Quelltext): keine zweite Rechteck-/Schrittlogik.
+  const quelle = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'dist', 'busch-vacuum-card.js'), 'utf8');
+  for (const name of ['_fitZone', '_zoneStep', '_zoneDrag']) {
+    const start = quelle.indexOf('    ' + name + '(');
+    const rumpf = quelle.slice(start, quelle.indexOf('\n    }\n', start));
+    assert.match(rumpf, /shape(Fit|Step|Drag)\(/, name + ' nutzt den gemeinsamen Baustein');
+  }
+});
+
+test('EDI-03 Teilen: Linie per zwei Kartenpunkten oder Koordinatenfeldern (R15), Prüfungen, eigene Bestätigung (destruktiv, nicht umkehrbar) → vacuum_split_segments', async () => {
+  const k = aufbau();
+  const d = raeumeOffen(k);
+  await mikro(); await mikro();
+  k.karte._map._roomTap(5, 'map');
+  $d(k.u, '[data-action="room-split"]').click();
+  assert.equal(k.karte._map._mode, 'drag', 'Punkte setzen und Griffe ziehen');
+  assert.match(d.shadowRoot.textContent, /zwei Punkte auf der Karte/);
+  assert.equal($d(k.u, '[data-action="split-go"]').disabled, true);
+  assert.match(d.shadowRoot.textContent, /Die Linie braucht zwei Punkte/);
+  // Linie ganz im Raum: schneidet nicht.
+  tippeAuf(k, { x: -6000, y: -8496 });
+  tippeAuf(k, { x: -3000, y: -8496 });
+  assert.equal(feldE(k, 'split-x0').value, '-6000');
+  assert.equal(feldE(k, 'split-x1').value, '-3000');
+  assert.match(d.shadowRoot.textContent, /muss den Raum ganz durchqueren/);
+  assert.equal($d(k.u, '[data-action="split-go"]').disabled, true);
+  // Koordinatenfelder statt Ziehen (R15): Linie verlängern.
+  tippen(k, feldE(k, 'split-x0'), -9000);
+  tippen(k, feldE(k, 'split-x1'), -600);
+  assert.doesNotMatch(d.shadowRoot.textContent, /durchqueren/);
+  // Tastatur: Pfeil ±50 mm, mit Umschalt ±10 mm.
+  k.u.tasteAn(feldE(k, 'split-y0'), 'keydown', { key: 'ArrowUp' });
+  assert.equal(feldE(k, 'split-y0').value, '-8446');
+  k.u.tasteAn(feldE(k, 'split-y0'), 'keydown', { key: 'ArrowDown', shiftKey: true });
+  assert.equal(feldE(k, 'split-y0').value, '-8456');
+  tippen(k, feldE(k, 'split-y0'), -8496);
+  const linie = $d(k.u, '[data-action="split-line"]');
+  k.u.tasteAn(linie, 'keydown', { key: 'ArrowRight' });
+  k.u.tasteAn(linie, 'keydown', { key: 'ArrowLeft' });
+  assert.equal(feldE(k, 'split-x0').value, '-9000', 'Linie hin und zurück');
+  assert.ok(k.karte._map._layers.get('editor').group.querySelector('[data-edit="split-line"]'), 'Linie auf der Ebene editor');
+  assert.equal($d(k.u, '[data-action="split-go"]').disabled, false);
+  assert.deepEqual(k.haus.rufe, []);
+  $d(k.u, '[data-action="split-go"]').click();
+  const text = d.shadowRoot.textContent;
+  assert.equal(d._views.at(-1).kind, 'confirm');
+  assert.match(text, /„Bibliothek“ wird an der Linie \(-9000, -8496\) → \(-600, -8496\) in zwei Räume geteilt/);
+  assert.match(text, /Nicht per Rückgängig umkehrbar. Rückweg: Wiederherstellen in der Kartensicherung/);
+  assert.equal($d(k.u, '[data-action="confirm"]').getAttribute('data-variant'), 'destructive');
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(roh(k.haus.rufe.map((r) => [r.service, r.data])), [
+    ['vacuum_backup_map', { entity_id: 'vacuum.robo', map_id: 2 }],
+    ['vacuum_split_segments', { entity_id: 'vacuum.robo', segment: 5, line: [-9000, -8496, -600, -8496], map_id: 2 }],
+  ]);
+  assert.equal(k.karte._mapEdit.split, null);
+  assert.equal(k.karte._mapEdit.session.undo.length, 0, 'kein Rückgängig für Teilen');
+});
+
+test('EDI-03 Teilen: Punkte tippen, Endpunkt ziehen; Raumgrenze 49 bzw. 29 (map_v2); offene Änderungen sperren Teilen und Zusammenführen', async () => {
+  const k = aufbau({ bild: true });
+  const d = raeumeOffen(k);
+  await mikro(); await mikro();
+  k.karte._map._roomTap(5, 'map');
+  $d(k.u, '[data-action="room-split"]').click();
+  tippeAuf(k, { x: -9000, y: -8000 });
+  tippeAuf(k, { x: -700, y: -8000 });
+  // Endpunkt am Griff ziehen (Treffer über die Ebene editor).
+  zieh(k, 'start', { x: -700, y: -8000 }, { x: -700, y: -8000 });
+  zieh(k, 'move', { x: -700, y: -8000 }, { x: -600, y: -8100 });
+  zieh(k, 'end', { x: -700, y: -8000 }, { x: -600, y: -8100 });
+  assert.equal(feldE(k, 'split-x1').value, '-600');
+  assert.equal(feldE(k, 'split-y1').value, '-8100');
+  assert.equal(feldE(k, 'split-x0').value, '-9000', 'anderer Endpunkt bleibt');
+  // Raumgrenze: 49 ohne map_v2.
+  const viele = {};
+  for (let i = 1; i <= 49; i++) viele[i] = { room_id: i, name: 'R' + i, x0: i * 1000, y0: 0, x1: i * 1000 + 900, y1: 900, x: i * 1000 + 450, y: 450, visibility: 'Visible' };
+  const k2 = aufbau({ cam: { rooms: viele } });
+  raeumeOffen(k2);
+  await mikro(); await mikro();
+  k2.karte._map._roomTap(3, 'map');
+  $d(k2.u, '[data-action="room-split"]').click();
+  tippeAuf(k2, { x: 3450, y: -100 });
+  tippeAuf(k2, { x: 3450, y: 1000 });
+  assert.match(dialogVon(k2.u).shadowRoot.textContent, /Höchstens 49 Räume/);
+  assert.equal($d(k2.u, '[data-action="split-go"]').disabled, true);
+  assert.equal(k2.I.splitLimit(k2.karte._model()), 49);
+  const { fixture } = require('./kartendaten.js');
+  const k3 = aufbau({ vac: { capabilities: fixture('voll').states['vacuum.robo'].attributes.capabilities.concat(['map_v2']) } });
+  assert.equal(k3.I.splitLimit(k3.karte._model()), 29);
+  // Offene Änderungen: erst speichern oder verwerfen.
+  $d(k.u, '[data-action="split-cancel"]').click();
+  assert.equal(k.karte._map._mode, 'pick-room');
+  $d(k.u, '[data-field="room-visible"]').click();
+  assert.equal($d(k.u, '[data-action="room-split"]').disabled, true);
+  assert.equal($d(k.u, '[data-action="room-merge"]').disabled, true);
+  assert.match(d.shadowRoot.textContent, /Erst speichern oder verwerfen/);
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('EDI-03 Zusammenführen: genau zwei Räume (Fläche/Chip), Nachbarschaft aus den Daten, ohne Daten entscheidet das Gerät → vacuum_merge_segments', async () => {
+  const k = aufbau({ abruf: (url) => (/saved=1/.test(url) ? { json: raumdaten() } : { status: 404 }) });
+  await mikro();
+  const d = raeumeOffen(k);
+  await mikro(); await mikro(); await mikro();
+  const m = k.karte._map;
+  m._roomTap(1, 'map');
+  $d(k.u, '[data-action="room-merge"]').click();
+  assert.equal(m._mode, 'pick-room');
+  assert.match(d.shadowRoot.textContent, /Genau zwei Räume wählen/);
+  raumChip(k, 4).click();
+  assert.match(d.shadowRoot.textContent, /grenzen nicht aneinander/, '1 und 4 sind keine Nachbarn');
+  assert.equal($d(k.u, '[data-action="merge-go"]').disabled, true);
+  raumChip(k, 4).click();
+  m._roomTap(9, 'map');
+  assert.equal(raumChip(k, 1).getAttribute('aria-pressed'), 'true');
+  assert.equal(raumChip(k, 9).getAttribute('aria-pressed'), 'true');
+  assert.equal($d(k.u, '[data-action="merge-go"]').disabled, false);
+  m._roomTap(3, 'map');
+  assert.deepEqual(roh(k.karte._mapEdit.merge), [9, 3], 'ein dritter Raum ersetzt den ältesten: nie mehr als zwei');
+  m._roomTap(3, 'map');
+  m._roomTap(1, 'map');
+  $d(k.u, '[data-action="merge-go"]').click();
+  assert.match(d.shadowRoot.textContent, /Räume: Sauna \+ Atelier → ein Raum/);
+  assert.match(d.shadowRoot.textContent, /Wiederherstellen in der Kartensicherung/);
+  assert.deepEqual(k.haus.rufe, []);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(roh(k.haus.rufe.map((r) => [r.service, r.data])), [
+    ['vacuum_backup_map', { entity_id: 'vacuum.robo', map_id: 2 }],
+    ['vacuum_merge_segments', { entity_id: 'vacuum.robo', segments: [9, 1], map_id: 2 }],
+  ]);
+  // Ohne Bearbeitungsdaten: keine Nachbarprüfung, das Gerät entscheidet.
+  const k2 = aufbau();
+  raeumeOffen(k2);
+  await mikro(); await mikro();
+  k2.karte._map._roomTap(1, 'map');
+  $d(k2.u, '[data-action="room-merge"]').click();
+  raumChip(k2, 4).click();
+  assert.equal($d(k2.u, '[data-action="merge-go"]').disabled, false);
+  assert.equal(k2.I.mergeCheck(null, [1, 4]), '');
+  assert.equal(k2.I.mergeCheck(k2.I.editData(raumdaten()), [1, 4]), 'zusammenNachbarn');
+  assert.equal(k2.I.mergeCheck(null, [1]), 'zusammenZwei');
 });

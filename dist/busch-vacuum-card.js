@@ -2862,6 +2862,53 @@ const spotBox = (p) => ({ x0: p.x - SPOT_MM / 2, y0: p.y - SPOT_MM / 2, x1: p.x 
 
 const HANDLE_PX = 22; // half of a 44-px touch target (R06)
 
+/*
+ * Shapes in robot mm — one building block for the zones of clean-tasks and the
+ * rectangles/lines of map-editor (R08): `{ x0, y0, x1, y1 }` is a rectangle or
+ * a line from (x0, y0) to (x1, y1).
+ */
+
+/** Sorted, whole mm, every side at least `min`. */
+function shapeFit(z, min) {
+    const r = { x0: Math.min(z.x0, z.x1), y0: Math.min(z.y0, z.y1), x1: Math.max(z.x0, z.x1), y1: Math.max(z.y0, z.y1) };
+    if (r.x1 - r.x0 < min) r.x1 = r.x0 + min;
+    if (r.y1 - r.y0 < min) r.y1 = r.y0 + min;
+    return { x0: Math.round(r.x0), y0: Math.round(r.y0), x1: Math.round(r.x1), y1: Math.round(r.y1) };
+}
+
+/** A robot-mm step of `mm` in a screen direction, snapped to the map's nearest axis (keys and buttons match dragging). */
+function shapeStep(m, dir, mm) {
+    const unit = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[dir];
+    if (m && m._view) {
+        const rect = m._stageRect();
+        const c = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        const a = m.toRobot(m.fromScreen(c)), b = m.toRobot(m.fromScreen({ x: c.x + unit[0] * 10, y: c.y + unit[1] * 10 }));
+        if (a && b) {
+            const dx = b.x - a.x, dy = b.y - a.y;
+            return Math.abs(dx) >= Math.abs(dy) ? { x: Math.sign(dx) * mm, y: 0 } : { x: 0, y: Math.sign(dy) * mm };
+        }
+    }
+    return { x: unit[0] * mm, y: -unit[1] * mm };
+}
+
+const shapeMove = (z, d) => ({ x0: z.x0 + d.x, y0: z.y0 + d.y, x1: z.x1 + d.x, y1: z.y1 + d.y });
+
+/**
+ * One drag step: `drag` = { kind: move | corner | end | draw, origin, start, j }.
+ * move shifts by p − start, corner keeps the opposite corner of a rectangle,
+ * end moves one end j (0/1) of a line, draw spans start → p.
+ */
+function shapeDrag(drag, p) {
+    const o = drag.origin;
+    if (drag.kind === 'move') return shapeMove(o, { x: p.x - drag.start.x, y: p.y - drag.start.y });
+    if (drag.kind === 'corner') {
+        const opposite = [[o.x0, o.y0], [o.x1, o.y0], [o.x1, o.y1], [o.x0, o.y1]][(drag.j + 2) % 4];
+        return { x0: opposite[0], y0: opposite[1], x1: p.x, y1: p.y };
+    }
+    if (drag.kind === 'end') return drag.j === 0 ? { x0: p.x, y0: p.y, x1: o.x1, y1: o.y1 } : { x0: o.x0, y0: o.y0, x1: p.x, y1: p.y };
+    return { x0: drag.start.x, y0: drag.start.y, x1: p.x, y1: p.y };
+}
+
 function insidePolygon(p, corners) {
     let inside = false;
     for (let i = 0, j = corners.length - 1; i < corners.length; j = i++) {
@@ -10227,11 +10274,7 @@ class BuschVacuumCard extends HTMLElement {
     }
 
     _fitZone(z) {
-        const min = this._zoneMin();
-        const r = { x0: Math.min(z.x0, z.x1), y0: Math.min(z.y0, z.y1), x1: Math.max(z.x0, z.x1), y1: Math.max(z.y0, z.y1) };
-        if (r.x1 - r.x0 < min) r.x1 = r.x0 + min;
-        if (r.y1 - r.y0 < min) r.y1 = r.y0 + min;
-        return { x0: Math.round(r.x0), y0: Math.round(r.y0), x1: Math.round(r.x1), y1: Math.round(r.y1) };
+        return shapeFit(z, this._zoneMin());
     }
 
     _client(robot) {
@@ -10252,24 +10295,11 @@ class BuschVacuumCard extends HTMLElement {
 
     /** A robot-mm step of `mm` in a screen direction, snapped to the map's nearest axis (keys and buttons match dragging). */
     _zoneStep(dir, mm) {
-        const unit = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[dir];
-        const m = this._map;
-        if (m && m._view) {
-            const rect = m._stageRect();
-            const c = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-            const a = m.toRobot(m.fromScreen(c)), b = m.toRobot(m.fromScreen({ x: c.x + unit[0] * 10, y: c.y + unit[1] * 10 }));
-            if (a && b) {
-                const dx = b.x - a.x, dy = b.y - a.y;
-                return Math.abs(dx) >= Math.abs(dy) ? { x: Math.sign(dx) * mm, y: 0 } : { x: 0, y: Math.sign(dy) * mm };
-            }
-        }
-        return { x: unit[0] * mm, y: -unit[1] * mm };
+        return shapeStep(this._map, dir, mm);
     }
 
     _moveZone(i, dir, mm) {
-        const z = this._selection.zones[i];
-        const d = this._zoneStep(dir, mm);
-        this._selection.zones[i] = { x0: z.x0 + d.x, y0: z.y0 + d.y, x1: z.x1 + d.x, y1: z.y1 + d.y };
+        this._selection.zones[i] = shapeMove(this._selection.zones[i], this._zoneStep(dir, mm));
         this._selectionChanged();
     }
 
@@ -10350,14 +10380,7 @@ class BuschVacuumCard extends HTMLElement {
             this._drag = null;
             return this._selectionChanged();
         }
-        const p = d.robot;
-        if (p) {
-            if (g.kind === 'move') zones[g.i] = { x0: g.origin.x0 + p.x - g.start.x, y0: g.origin.y0 + p.y - g.start.y, x1: g.origin.x1 + p.x - g.start.x, y1: g.origin.y1 + p.y - g.start.y };
-            else if (g.kind === 'corner') {
-                const o = g.origin, opposite = [[o.x0, o.y0], [o.x1, o.y0], [o.x1, o.y1], [o.x0, o.y1]][(g.j + 2) % 4];
-                zones[g.i] = { x0: opposite[0], y0: opposite[1], x1: p.x, y1: p.y };
-            } else zones[g.i] = { x0: g.start.x, y0: g.start.y, x1: p.x, y1: p.y };
-        }
+        if (d.robot) zones[g.i] = shapeDrag(g, d.robot);
         if (d.phase === 'end') {
             zones[g.i] = this._fitZone(zones[g.i]);
             this._drag = null;
@@ -11192,7 +11215,31 @@ const EDIT_TEXTS = {
         raumZeileTyp: '{raum}: Typ {typ}',
         raumZeileVersteckt: '{raum}: ausgeblendet',
         raumZeileSichtbar: '{raum}: eingeblendet',
-        raumZeileBoden: '{raum}: Boden {boden}'
+        raumZeileBoden: '{raum}: Boden {boden}',
+        raumTeilen: 'Teilen',
+        raumZusammen: 'Zusammenführen',
+        raumOffenZuerst: 'Erst speichern oder verwerfen: Teilen und Zusammenführen ändern die Räume sofort.',
+        teilenHinweis: 'Teilungslinie: zwei Punkte auf der Karte tippen, einen Griff ziehen oder die Koordinaten eingeben (Roboter-mm).',
+        teilenTasten: 'Pfeiltasten in den Feldern und auf „Linie verschieben“: 50 mm, mit Umschalt 10 mm.',
+        feld_split_x0: 'Start x (mm)',
+        feld_split_y0: 'Start y (mm)',
+        feld_split_x1: 'Ende x (mm)',
+        feld_split_y1: 'Ende y (mm)',
+        teilenLinie: 'Linie verschieben',
+        teilenLinieFehlt: 'Die Linie braucht zwei Punkte.',
+        teilenLinieKurz: 'Die Linie ist zu kurz (mindestens zwei Kartenraster).',
+        teilenSchneidetNicht: 'Die Linie muss den Raum ganz durchqueren.',
+        teilenRaumgrenze: 'Höchstens {max} Räume: Das Gerät teilt keinen weiteren Raum.',
+        teilenWeiter: 'Teilen …',
+        teilenTitel: 'Raum teilen',
+        teilenZeile: '„{raum}“ wird an der Linie ({x0}, {y0}) → ({x1}, {y1}) in zwei Räume geteilt.',
+        zusammenHinweis: 'Zwei benachbarte Räume wählen (Fläche oder Chip). Für mehr Räume nacheinander zusammenführen.',
+        zusammenGewaehlt: 'Gewählt: {liste}',
+        zusammenZwei: 'Genau zwei Räume wählen.',
+        zusammenNachbarn: 'Die Räume grenzen nicht aneinander.',
+        zusammenWeiter: 'Zusammenführen …',
+        zusammenTitel: 'Räume zusammenführen',
+        zusammenZeile: 'Räume: {a} + {b} → ein Raum'
     },
     en: {
         kartenSicherungTitel: 'Save map',
@@ -11310,7 +11357,31 @@ const EDIT_TEXTS = {
         raumZeileTyp: '{raum}: type {typ}',
         raumZeileVersteckt: '{raum}: hidden',
         raumZeileSichtbar: '{raum}: shown',
-        raumZeileBoden: '{raum}: floor {boden}'
+        raumZeileBoden: '{raum}: floor {boden}',
+        raumTeilen: 'Split',
+        raumZusammen: 'Merge',
+        raumOffenZuerst: 'Save or discard first: split and merge change the rooms at once.',
+        teilenHinweis: 'Split line: tap two points on the map, drag a handle or enter the coordinates (robot mm).',
+        teilenTasten: 'Arrow keys in the fields and on “Move line”: 50 mm, with Shift 10 mm.',
+        feld_split_x0: 'Start x (mm)',
+        feld_split_y0: 'Start y (mm)',
+        feld_split_x1: 'End x (mm)',
+        feld_split_y1: 'End y (mm)',
+        teilenLinie: 'Move line',
+        teilenLinieFehlt: 'The line needs two points.',
+        teilenLinieKurz: 'The line is too short (at least two map cells).',
+        teilenSchneidetNicht: 'The line must cross the whole room.',
+        teilenRaumgrenze: 'At most {max} rooms: the device splits no further room.',
+        teilenWeiter: 'Split …',
+        teilenTitel: 'Split room',
+        teilenZeile: '“{raum}” is split into two rooms along the line ({x0}, {y0}) → ({x1}, {y1}).',
+        zusammenHinweis: 'Pick two neighbouring rooms (area or chip). For more rooms, merge one after the other.',
+        zusammenGewaehlt: 'Picked: {liste}',
+        zusammenZwei: 'Pick exactly two rooms.',
+        zusammenNachbarn: 'The rooms do not border each other.',
+        zusammenWeiter: 'Merge …',
+        zusammenTitel: 'Merge rooms',
+        zusammenZeile: 'Rooms: {a} + {b} → one room'
     }
 };
 for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
@@ -12182,7 +12253,8 @@ const EDIT_SHOWN_OBJECTS = new Set(['rooms', 'router', 'carpets', 'detected_carp
  */
 const EDIT_TOOLS = {
     rooms: { icon: 'mdi:floor-plan', lists: ['room_names', 'room_types', 'hidden_segments', 'floor_materials'], panel: (...a) => roomsPanel(...a),
-        enter: (card, editor) => card._map.setMode('pick-room', { selected: () => roomsPicked(editor) }), onMap: (...a) => roomsOnMap(...a) },
+        enter: (card, editor) => card._map.setMode(editor.split ? 'drag' : 'pick-room', { selected: () => roomsPicked(editor) }), onMap: (...a) => roomsOnMap(...a),
+        draw: (...a) => drawSplit(...a), hit: (...a) => hitSplit(...a) },
     walls: { icon: 'mdi:wall', lists: ['walls', 'doors'], panel: null },
     zones: { icon: 'mdi:vector-rectangle', lists: ['no_go_areas', 'no_mopping_areas', 'ramps'], panel: null },
     lines: { icon: 'mdi:vector-line', lists: ['virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'virtual_thresholds', 'curtains'], panel: null },
@@ -12597,7 +12669,7 @@ const roomTypeName = (hass, type, index) => translate(hass, 'raumTyp_' + type) +
 const floorText = (hass, material, direction) => translate(hass, 'boden_' + material) + (material === 1 && direction !== null && direction !== undefined ? ' · ' + translate(hass, 'richtung_' + direction) : '');
 
 /** Room ids on the chips (pick-room selected). */
-const roomsPicked = (editor) => (editor.room !== null && editor.room !== undefined ? [editor.room] : []);
+const roomsPicked = (editor) => (editor.merge ? editor.merge.slice() : editor.room !== null && editor.room !== undefined ? [editor.room] : []);
 
 /** The dock's room: station_segment of the edit data (0 = none found), else the room under the charger. */
 function dockRoom(card, editor) {
@@ -12617,9 +12689,19 @@ function setRoomEntry(editor, group, list, entry) {
 }
 
 function roomsOnMap(card, editor, e) {
+    if (editor.split) return splitOnMap(card, editor, e);
     if (e.type !== 'map-room-tap') return;
-    editor.room = Number(e.detail.room);
-    editor.roomError = '';
+    const id = Number(e.detail.room);
+    if (editor.merge) {
+        // Exactly two (device.py#L7116 takes only the first two): a third replaces the oldest.
+        const i = editor.merge.indexOf(id);
+        if (i >= 0) editor.merge.splice(i, 1);
+        else editor.merge.push(id);
+        if (editor.merge.length > 2) editor.merge.shift();
+    } else {
+        editor.room = id;
+        editor.roomError = '';
+    }
     editor.changed();
 }
 
@@ -12642,6 +12724,8 @@ function roomsPanel(card, editor, body, hass) {
         }
         body.appendChild(list);
     }
+    if (editor.split) return splitPanel(card, editor, body, hass, rooms);
+    if (editor.merge) return mergePanel(card, editor, body, hass, rooms);
     const room = rooms.find((r) => r.id === editor.room);
     if (!room) {
         body.appendChild(noteLine(translate(hass, 'raumWaehlenHinweis')));
@@ -12722,6 +12806,262 @@ function roomsPanel(card, editor, body, hass) {
         }
     }
     body.appendChild(form);
+    roomActions(card, editor, body, hass, id);
+}
+
+// ── Split and merge (map-editor Task 6: EDI-03) — not undoable: own confirmation at once ──
+
+/** Rooms the device may hold before it refuses a split (device.py#L7139). */
+const splitLimit = (model) => (model.can('map_v2') ? 29 : 49);
+
+/** Split and merge under the form; both wait for a clean draft (they change the rooms at once, the draft's ids would be stale). */
+function roomActions(card, editor, body, hass, id) {
+    const model = card._model();
+    const dirty = editor.dirty();
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const add = (service, key, name, icon, onClick) => {
+        if (!model.can('dreame_vacuum.' + service)) return;
+        const label = translate(hass, key);
+        const button = BuschUI.action({ label, text: label, icon, variant: 'secondary', disabled: dirty, onClick });
+        button.setAttribute('data-action', name);
+        actions.appendChild(button);
+    };
+    add('vacuum_split_segments', 'raumTeilen', 'room-split', 'mdi:call-split', () => {
+        editor.split = { room: id, line: { x0: null, y0: null, x1: null, y1: null } };
+        EDIT_TOOLS.rooms.enter(card, editor);
+        editor.changed();
+    });
+    add('vacuum_merge_segments', 'raumZusammen', 'room-merge', 'mdi:call-merge', () => {
+        editor.merge = [id];
+        EDIT_TOOLS.rooms.enter(card, editor);
+        editor.changed();
+    });
+    if (!actions.childNodes.length) return;
+    body.appendChild(actions);
+    if (dirty) body.appendChild(noteLine(translate(hass, 'raumOffenZuerst'), 'locked'));
+}
+
+/** Back to the room form (map mode pick-room). */
+function endRoomAction(card, editor) {
+    editor.split = null;
+    editor.merge = null;
+    EDIT_TOOLS.rooms.enter(card, editor);
+    editor.changed();
+}
+
+const lineComplete = (l) => [l.x0, l.y0, l.x1, l.y1].every((v) => v !== null && Number.isFinite(Number(v)));
+
+/**
+ * Why the split cannot be sent (text key + vars), or null (Sicherheitsrahmen 7):
+ * two points, length ≥ 2 grid cells, room limit, the line crosses the room —
+ * starts and ends outside it and runs through it (map.roomAt, exact with data).
+ */
+function splitCheck(card, editor) {
+    const m = card._map, l = editor.split.line;
+    if (!lineComplete(l)) return { key: 'teilenLinieFehlt' };
+    const grid = (m._data && m._data.grid.grid) || GRID_MM;
+    const length = Math.hypot(l.x1 - l.x0, l.y1 - l.y0);
+    if (length < 2 * grid) return { key: 'teilenLinieKurz' };
+    const max = splitLimit(card._model());
+    if (editRooms(m.current().objects, editor.data).length >= max) return { key: 'teilenRaumgrenze', vars: { max } };
+    const steps = Math.max(8, Math.ceil(length / (grid / 2)));
+    const inRoom = [];
+    for (let i = 0; i <= steps; i++) inRoom.push(m.roomAt({ x: l.x0 + (l.x1 - l.x0) * i / steps, y: l.y0 + (l.y1 - l.y0) * i / steps }) === editor.split.room);
+    if (!inRoom.some(Boolean) || inRoom[0] || inRoom[steps]) return { key: 'teilenSchneidetNicht' };
+    return null;
+}
+
+/** Why two rooms cannot merge, or '' — neighbours from the edit data; without them the device decides (R12 on failure). */
+function mergeCheck(data, ids) {
+    if (!ids || ids.length !== 2 || ids[0] === ids[1]) return 'zusammenZwei';
+    const n = data && data.neighbors ? data.neighbors : {};
+    const of = (id) => (n[id] || []).map(Number);
+    const known = of(ids[0]).length > 0 || of(ids[1]).length > 0;
+    return known && !of(ids[0]).includes(ids[1]) && !of(ids[1]).includes(ids[0]) ? 'zusammenNachbarn' : '';
+}
+
+function setSplitLine(card, editor, line) {
+    editor.split.line = Object.fromEntries(Object.entries(line).map(([k, v]) => [k, v === null ? null : Math.round(v)]));
+    editor.changed();
+}
+
+/** Line keys (R15): arrows 50 mm, with Shift 10 mm, along the screen's axes as dragging. */
+const splitKeyStep = (event) => (event.shiftKey ? 10 : 50);
+
+function splitPanel(card, editor, body, hass, rooms) {
+    const room = rooms.find((r) => r.id === editor.split.room);
+    const label = room ? room.label : String(editor.split.room);
+    body.appendChild(noteLine(translate(hass, 'raumGewaehltZeile', { raum: label })));
+    body.appendChild(noteLine(translate(hass, 'teilenHinweis')));
+    const line = editor.split.line;
+    const fields = document.createElement('div');
+    fields.className = 'edit-fields';
+    for (const key of ['x0', 'y0', 'x1', 'y1']) {
+        const input = document.createElement('input');
+        input.setAttribute('type', 'number');
+        input.setAttribute('inputmode', 'numeric');
+        input.setAttribute('step', '50');
+        input.value = line[key] === null ? '' : String(line[key]);
+        const field = formField('split-' + key, translate(hass, 'feld_split_' + key), input, '');
+        input.addEventListener('change', () => {
+            const value = input.value === '' ? null : Number(input.value);
+            setSplitLine(card, editor, Object.assign({}, editor.split.line, { [key]: Number.isFinite(value) ? value : null }));
+        });
+        input.addEventListener('keydown', (event) => {
+            const sign = { ArrowUp: 1, ArrowDown: -1 }[event.key];
+            if (!sign || editor.split.line[key] === null) return;
+            event.preventDefault();
+            setSplitLine(card, editor, Object.assign({}, editor.split.line, { [key]: editor.split.line[key] + sign * splitKeyStep(event) }));
+        });
+        fields.appendChild(field.wrap);
+    }
+    body.appendChild(fields);
+    const tools = document.createElement('div');
+    tools.className = 'actions';
+    const moveLabel = translate(hass, 'teilenLinie');
+    const move = BuschUI.action({ label: moveLabel, text: moveLabel, icon: 'mdi:cursor-move', variant: 'secondary', disabled: !lineComplete(line), onClick: () => {} });
+    move.setAttribute('data-action', 'split-line');
+    move.addEventListener('keydown', (event) => {
+        const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[event.key];
+        if (!dir || !lineComplete(editor.split.line)) return;
+        event.preventDefault();
+        setSplitLine(card, editor, shapeMove(editor.split.line, shapeStep(card._map, dir, splitKeyStep(event))));
+    });
+    tools.appendChild(move);
+    body.appendChild(tools);
+    body.appendChild(noteLine(translate(hass, 'teilenTasten')));
+    const problem = splitCheck(card, editor);
+    if (problem) body.appendChild(noteLine(translate(hass, problem.key, problem.vars), 'locked'));
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => endRoomAction(card, editor) });
+    cancel.setAttribute('data-action', 'split-cancel');
+    const goLabel = translate(hass, 'teilenWeiter');
+    const go = BuschUI.action({ label: goLabel, text: goLabel, icon: 'mdi:call-split', variant: 'destructive', disabled: !!problem, onClick: () => {
+        const l = editor.split.line;
+        const coords = [l.x0, l.y0, l.x1, l.y1].map(Math.round);
+        card._dialog.show(mapConfirm(card, editor.session, {
+            title: translate(hass, 'teilenTitel'),
+            lines: [translate(hass, 'teilenZeile', { raum: label, x0: coords[0], y0: coords[1], x1: coords[2], y1: coords[3] })],
+            action: translate(hass, 'raumTeilen'),
+            destructive: true,
+            irreversible: true,
+            calls: [{ service: 'vacuum_split_segments', data: { segment: editor.split.room, line: coords, map_id: card._map.current().mapId } }],
+            done: (d) => roomActionDone(card, editor, d)
+        }));
+    } });
+    go.setAttribute('data-action', 'split-go');
+    actions.append(cancel, go);
+    body.appendChild(actions);
+}
+
+function mergePanel(card, editor, body, hass, rooms) {
+    const name = (id) => {
+        const room = rooms.find((r) => r.id === id);
+        return room ? room.label : String(id);
+    };
+    body.appendChild(noteLine(translate(hass, 'zusammenHinweis')));
+    if (editor.merge.length) body.appendChild(noteLine(translate(hass, 'zusammenGewaehlt', { liste: editor.merge.map(name).join(' + ') })));
+    const problem = mergeCheck(editor.data, editor.merge);
+    if (problem) body.appendChild(noteLine(translate(hass, problem), 'locked'));
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => endRoomAction(card, editor) });
+    cancel.setAttribute('data-action', 'merge-cancel');
+    const goLabel = translate(hass, 'zusammenWeiter');
+    const go = BuschUI.action({ label: goLabel, text: goLabel, icon: 'mdi:call-merge', variant: 'destructive', disabled: !!problem, onClick: () => {
+        const [a, b] = editor.merge;
+        card._dialog.show(mapConfirm(card, editor.session, {
+            title: translate(hass, 'zusammenTitel'),
+            lines: [translate(hass, 'zusammenZeile', { a: name(a), b: name(b) })],
+            action: translate(hass, 'raumZusammen'),
+            destructive: true,
+            irreversible: true,
+            calls: [{ service: 'vacuum_merge_segments', data: { segments: [a, b], map_id: card._map.current().mapId } }],
+            done: (d) => roomActionDone(card, editor, d)
+        }));
+    } });
+    go.setAttribute('data-action', 'merge-go');
+    actions.append(cancel, go);
+    body.appendChild(actions);
+}
+
+/** After a split or merge: the rooms change on the device (own new frame, no "changed" note), back to the room form. */
+function roomActionDone(card, editor, dialog) {
+    editor.room = null;
+    editor.ownSave = true;
+    endRoomAction(card, editor);
+    backTo(dialog, editor.view);
+}
+
+/** Client point of a robot point, or null without calibration. */
+const clientOf = (m, p) => (p ? m.toScreen(m.toImage(p)) : null);
+
+/** Distance of client point c to the client segment a–b. */
+function segmentDistance(c, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const t = dx || dy ? Math.max(0, Math.min(1, ((c.x - a.x) * dx + (c.y - a.y) * dy) / (dx * dx + dy * dy))) : 0;
+    return Math.hypot(c.x - (a.x + t * dx), c.y - (a.y + t * dy));
+}
+
+/** Taps on the split line: its ends (44 px), then the line. */
+function hitSplit(card, editor, point) {
+    if (!editor.split) return null;
+    const m = card._map, l = editor.split.line;
+    const c = clientOf(m, point);
+    if (!c) return null;
+    const ends = [l.x0 === null ? null : { x: l.x0, y: l.y0 }, l.x1 === null ? null : { x: l.x1, y: l.y1 }].map((p) => clientOf(m, p));
+    for (let j = 0; j < 2; j++) if (ends[j] && Math.hypot(ends[j].x - c.x, ends[j].y - c.y) <= HANDLE_PX) return { id: 'split-end:' + j, object: l };
+    if (ends[0] && ends[1] && segmentDistance(c, ends[0], ends[1]) <= HANDLE_PX) return { id: 'split-line', object: l };
+    return null;
+}
+
+/** Split mode (map mode drag): taps set the two points, drags move an end or the line, or draw a new one (shapeDrag). */
+function splitOnMap(card, editor, e) {
+    const d = e.detail || {};
+    const l = editor.split.line;
+    if (e.type === 'map-tap' && d.robot) {
+        if (d.hit && d.hit.layer === 'editor') return undefined;
+        if (l.x0 === null) return setSplitLine(card, editor, Object.assign({}, l, { x0: d.robot.x, y0: d.robot.y }));
+        if (l.x1 === null) return setSplitLine(card, editor, Object.assign({}, l, { x1: d.robot.x, y1: d.robot.y }));
+        return setSplitLine(card, editor, { x0: d.robot.x, y0: d.robot.y, x1: null, y1: null });
+    }
+    if (e.type !== 'map-drag') return undefined;
+    if (d.phase === 'start') {
+        const [kind, j] = String((hitSplit(card, editor, d.start) || {}).id || '').split(':');
+        editor.splitDrag = { kind: kind === 'split-end' ? 'end' : kind === 'split-line' ? 'move' : 'draw', j: Number(j), origin: Object.assign({}, l), start: d.start };
+        return undefined;
+    }
+    const g = editor.splitDrag;
+    if (!g) return undefined;
+    if (d.phase === 'cancel') {
+        editor.splitDrag = null;
+        return setSplitLine(card, editor, g.origin);
+    }
+    if (d.robot) editor.split.line = shapeDrag(g, d.robot);
+    if (d.phase === 'end') {
+        editor.splitDrag = null;
+        return setSplitLine(card, editor, editor.split.line);
+    }
+    card._map.refresh('editor'); // R20: only the own layer while dragging
+    return undefined;
+}
+
+/** The split line on the layer editor: line in image px, ends as screen-sized handles. */
+function drawSplit(card, editor, group, ctx) {
+    if (!editor.split) return;
+    const l = editor.split.line;
+    const ends = [l.x0 === null ? null : { x: l.x0, y: l.y0 }, l.x1 === null ? null : { x: l.x1, y: l.y1 }];
+    if (ends[0] && ends[1]) {
+        const a = ctx.toImage(ends[0]), b = ctx.toImage(ends[1]);
+        if (a && b) group.appendChild(ctx.svgNode('line', { 'data-edit': 'split-line', x1: a.x, y1: a.y, x2: b.x, y2: b.y }));
+    }
+    ends.forEach((p, j) => {
+        if (!p || !ctx.toImage(p)) return;
+        const g = group.appendChild(screenMark(ctx, p, { 'data-handle': 'split-end', 'data-end': j }));
+        g.appendChild(ctx.svgNode('circle', { r: 8 }));
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -13325,6 +13665,13 @@ BuschVacuumCard.__internals = {
     editRooms,
     nextTypeIndex,
     groupCalls,
+    shapeFit,
+    shapeStep,
+    shapeMove,
+    shapeDrag,
+    splitLimit,
+    splitCheck,
+    mergeCheck,
     REMOTE,
     remoteValue,
     RemoteSender,
