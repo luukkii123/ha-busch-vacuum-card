@@ -185,3 +185,116 @@ test('CleanGenius selbst gesperrt (leere Liste: Aufgabe, Zone/Spot, Mop fehlt) m
   assert.match(grund(aufbau('voll', { attribute: { cleangenius_list: [] } }), 'cleangenius'), /Zone\/Spot|Mop/);
   assert.match(grund(aufbau('voll', { zustand: 'cleaning', attribute: { started: true } }), 'cleangenius'), /Während einer Aufgabe/);
 });
+
+// ── Task 3: Customized Cleaning je Raum ─────────────────────────────────────
+
+const custom = (data) => ({ domain: 'dreame_vacuum', service: 'vacuum_set_custom_cleaning', data: Object.assign({ entity_id: 'vacuum.robo' }, data) });
+const SYNTH = (c) => c.filter((x) => !['wetness_level', 'cleaning_route', 'custom_cleaning_mode'].includes(x)).concat('mop_pressure', 'mop_temperature');
+
+test('roomPayload X40: Raum mit allen Werten als Codes, nur Felder mit Fähigkeit', () => {
+  const k = aufbau();
+  const raum = k.haus.states[CAM].attributes.rooms['3'];
+  assert.deepEqual(roh(k.I.roomPayload(k.model(), raum, { suction_level: 0 })),
+    { segment_id: [3], suction_level: [0], repeats: [2], wetness_level: [16], cleaning_mode: [2], cleaning_route: [2] });
+  assert.deepEqual(roh(k.I.roomPayload(k.model(), raum, { cleaning_times: 3 })).repeats, [3]);
+});
+
+test('roomPayload synthetisch: water_volume, custom_mopping_route, mop_pressure/-temperature (Namen → Codes)', () => {
+  const k = aufbau('voll', { caps: SYNTH, raeume: { 3: { custom_mopping_route: 1, mop_pressure: 'Normal', mop_temperature: 'Warm' } } });
+  const raum = k.haus.states[CAM].attributes.rooms['3'];
+  assert.deepEqual(roh(k.I.roomPayload(k.model(), raum, { mop_pressure: 'Light' })),
+    { segment_id: [3], suction_level: [3], repeats: [2], water_volume: [2], custom_mopping_route: [1], mop_pressure: [0], mop_temperature: [1] });
+});
+
+test('roomPayload Grenzen: ungültig oder unbekannt → null (nie raten)', () => {
+  const k = aufbau();
+  const raum = k.haus.states[CAM].attributes.rooms['3'];
+  const p = (change, model = k.model(), r = raum) => k.I.roomPayload(model, r, change);
+  assert.equal(p({ suction_level: 4 }), null);
+  assert.equal(p({ cleaning_times: 0 }), null);
+  assert.equal(p({ wetness_level: 33 }), null);
+  assert.equal(p({ cleaning_mode: 3 }), null, '0–2 je Raum');
+  assert.equal(p({ cleaning_route: 4 }), null, 'mit segment_slow_clean_route 1–3');
+  const ohneSlow = aufbau('voll', { caps: (c) => c.filter((x) => x !== 'segment_slow_clean_route') });
+  assert.ok(p({ cleaning_route: 4 }, ohneSlow.model()), 'sonst 1–4');
+  const { cleaning_times: _weg, ...ohneDurchgaenge } = raum;
+  assert.equal(p({ suction_level: 1 }, k.model(), ohneDurchgaenge), null);
+});
+
+/** Einstellungen → Räume einstellen → Raum. */
+function raumSeite(id, optionen) {
+  const k = einstellungen('voll', optionen);
+  $d(k.u, '[data-action="rooms"]').click();
+  if (id !== undefined) $$d(k.u, '[data-room]').find((b) => b.getAttribute('data-room') === String(id)).click();
+  return k;
+}
+const raumFeld = (k, key) => $d(k.u, '[data-setting="room-' + key + '"]');
+function neueRaeume(k, werte) {
+  const c = k.haus.states[CAM], r = roh(c.attributes.rooms);
+  for (const [id, w] of Object.entries(werte)) Object.assign(r[id], w);
+  k.karte.hass = k.haus.setze({ [CAM]: Object.assign({}, c, { attributes: Object.assign({}, c.attributes, { rooms: r }) }) });
+}
+
+test('Räume einstellen: Liste in Reihenfolge mit Kurzwerten; Schalter Customized Cleaning schreibt', () => {
+  const k = einstellungen();
+  const schalter = zeileD(k, 'customized_cleaning').querySelector('[role="switch"]');
+  schalter.click();
+  assert.deepEqual(aufrufe(k), [setze('customized_cleaning', 1)]);
+  $d(k.u, '[data-action="rooms"]').click();
+  const liste = $$d(k.u, '[data-room]');
+  const folge = k.haus.states['vacuum.robo'].attributes.cleaning_sequence.map(String);
+  assert.deepEqual(liste.map((b) => b.getAttribute('data-room')), folge);
+  assert.match(liste[0].textContent, /Salon.*Turbo · 16 · 2×/);
+});
+
+test('Raumseite: Wert ändern sendet den Raum mit allen Werten; optimistisch bis Kamera bestätigt', () => {
+  const k = raumSeite(3);
+  assert.equal($d(k.u, 'h1').textContent, 'Salon');
+  const feld = () => raumFeld(k, 'suction_level').querySelector('select');
+  assert.equal(feld().value, '3', 'Wert = Code');
+  assert.equal(feld().childNodes.find((o) => o.value === '3').textContent, 'Turbo', 'Text aus der Code-Tabelle');
+  feld().value = '0';
+  feld().dispatchEvent(k.u.neuesEreignis('change'));
+  assert.deepEqual(aufrufe(k), [custom({ segment_id: [3], suction_level: [0], repeats: [2], wetness_level: [16], cleaning_mode: [2], cleaning_route: [2] })]);
+  assert.equal(feld().value, '0', 'optimistisch');
+  assert.equal(raumFeld(k, 'suction_level').getAttribute('data-state'), 'busy');
+  neueRaeume(k, { 3: { suction_level: 0 } });
+  assert.equal(raumFeld(k, 'suction_level').getAttribute('data-state'), 'ok', 'Kamera bestätigt');
+  const n = raumFeld(k, 'wetness_level').querySelector('input');
+  n.value = '20';
+  n.dispatchEvent(k.u.neuesEreignis('change'));
+  assert.deepEqual(aufrufe(k)[1].data.wetness_level, [20]);
+  assert.deepEqual(aufrufe(k)[1].data.suction_level, [0], 'bestätigter neuer Wert mitgesendet');
+  k.u.uhr.vor(5000);
+  assert.equal(raumFeld(k, 'wetness_level').querySelector('input').value, '16', 'ohne Bestätigung zurück');
+  assert.match(raumFeld(k, 'wetness_level').textContent, /nicht übernommen/);
+});
+
+test('Raumseite gesperrt mit Grund: Aufgabe läuft, temporäre Karte', () => {
+  for (const [opt, text] of [[{ zustand: 'cleaning', attribute: { started: true } }, /Während einer Aufgabe/], [{ attribute: { has_temporary_map: true } }, /temporären/]]) {
+    const k = raumSeite(3, opt);
+    assert.match($d(k.u, '.body').textContent, text);
+    assert.equal(raumFeld(k, 'suction_level').querySelector('select').disabled, true);
+    assert.equal($d(k.u, '[data-action="apply-all"]').disabled, true);
+  }
+});
+
+test('Auf alle Räume übertragen: Bestätigung mit Raumliste, nacheinander, Abbruch beim ersten Fehler', async () => {
+  const { mikro } = require('./attrappe.js');
+  const k = raumSeite(3);
+  $d(k.u, '[data-action="apply-all"]').click();
+  assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'confirm');
+  assert.match($d(k.u, '.body').textContent, /Werte von Salon ersetzen .*Räume: Bibliothek, Wintergarten, Atelier, Werkstatt, Sauna, Galerie\./, 'nur die anderen Räume, in Reihenfolge');
+  assert.deepEqual(aufrufe(k), []);
+  let n = 0;
+  k.haus.antwort = () => (++n === 3 ? Promise.reject(new Error('unavailable_while_running')) : Promise.resolve());
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.equal(aufrufe(k).length, 1, 'nacheinander, nicht parallel');
+  for (let i = 0; i < 10; i++) await mikro();
+  const r = aufrufe(k);
+  assert.equal(r.length, 3, 'Abbruch nach dem Fehler');
+  assert.deepEqual(r.map((c) => c.data.segment_id[0]), [5, 7, 1]);
+  assert.deepEqual(r[0].data, { entity_id: 'vacuum.robo', segment_id: [5], suction_level: [3], repeats: [2], wetness_level: [16], cleaning_mode: [2], cleaning_route: [2] });
+  assert.match($d(k.u, '.body').textContent, /unavailable_while_running/);
+  assert.match($d(k.u, '.body').textContent, /Bibliothek/, 'geänderte Räume genannt');
+});

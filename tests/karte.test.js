@@ -545,6 +545,13 @@ test('je Objektart eine Ebene aus den Kamera-Attributen', async () => {
   assert.equal(atelier.querySelectorAll('text').find((n) => n.getAttribute('data-role') === 'order').textContent, '4');
 });
 
+test('Raum-Symbole (cleaning_settings) nur bei aktivem Customized Cleaning (SET-04)', async () => {
+  const { haus, karte } = await kartenKarte();
+  assert.equal(ebene(karte, 'cleaning_settings').querySelectorAll('[data-object]').length, 0, 'aus');
+  karte.hass = haus.setze(sauger(haus, { customized_cleaning: true }));
+  assert.equal(ebene(karte, 'cleaning_settings').querySelectorAll('[data-object]').length, Object.keys(haus.states[CAM].attributes.rooms).length);
+});
+
 test('Roboter-Update ändert nur ein transform', async () => {
   const { haus, karte } = await kartenKarte();
   const m = karte._map;

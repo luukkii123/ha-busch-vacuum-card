@@ -647,6 +647,15 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             weitereReinigung: 'Weitere Reinigungseinstellungen',
             wiederholungenHinweis: 'Gilt für Raum ohne Customized Cleaning, Zone und Spot.',
             cleanGeniusRaeume: 'CleanGenius wählt die Einstellungen je Raum selbst.',
+            raeumeEinstellen: 'Räume einstellen',
+            keineRaeume: 'Keine Räume auf der aktiven Karte.',
+            durchgaenge: 'Durchgänge',
+            raumUnvollstaendig: 'Ein Wert dieses Raums ist unbekannt; die Karte sendet nichts, statt zu raten.',
+            aufAlleTitel: 'Auf alle Räume übertragen',
+            aufAlleFrage: 'Die Werte von {raum} ersetzen die Werte dieser Räume: {raeume}.',
+            aufAlleStand: '{n} von {gesamt} Räumen übertragen.',
+            aufAlleFehler: 'Abgebrochen: {grund}. Schon geändert: {raeume}. Erneut versuchen, sobald der Roboter ruht.',
+            uebertragen: 'Übertragen',
             status_washing: 'Mop wird gewaschen',
             status_washing_paused: 'Waschen pausiert',
             status_drying: 'Trocknet',
@@ -1157,6 +1166,15 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             weitereReinigung: 'More cleaning settings',
             wiederholungenHinweis: 'Applies to rooms without Customized Cleaning, zones and spots.',
             cleanGeniusRaeume: 'CleanGenius picks the settings per room itself.',
+            raeumeEinstellen: 'Room settings',
+            keineRaeume: 'No rooms on the active map.',
+            durchgaenge: 'Passes',
+            raumUnvollstaendig: 'A value of this room is unknown; the card sends nothing instead of guessing.',
+            aufAlleTitel: 'Apply to all rooms',
+            aufAlleFrage: 'The values of {raum} replace those of these rooms: {raeume}.',
+            aufAlleStand: '{n} of {gesamt} rooms done.',
+            aufAlleFehler: 'Stopped: {grund}. Already changed: {raeume}. Try again once the robot rests.',
+            uebertragen: 'Apply',
             status_washing: 'Mop washing',
             status_washing_paused: 'Washing paused',
             status_drying: 'Drying',
@@ -5269,7 +5287,9 @@ function cleanSettingsView(card) {
                 ['basic', rows(CLEAN_BASIC).concat(repeatsRow(card, { hint: true }))],
                 // SET-04: CleanGenius picks per room itself; the section says so instead of the switch.
                 ['customized', !model.can('customized_cleaning') ? []
-                    : model.attr('cleangenius_cleaning') === true ? [noteLine(translate(hass, 'cleanGeniusRaeume'))] : rows(['customized_cleaning'])],
+                    : model.attr('cleangenius_cleaning') === true ? [noteLine(translate(hass, 'cleanGeniusRaeume'))]
+                        : rows(['customized_cleaning']).concat(roomsInOrder(model).length
+                            ? [viewLink(translate(hass, 'raeumeEinstellen'), 'rooms', 'mdi:floor-plan', () => dialog.show(roomsView(card)))] : [])],
                 ['more', groupShown(model, 'cleaning')
                     ? [viewLink(translate(hass, 'weitereReinigung'), 'more-cleaning', 'mdi:robot-vacuum', () => dialog.show(groupView(card, 'cleaning')))] : []]
             ];
@@ -5277,6 +5297,314 @@ function cleanSettingsView(card) {
                 const section = viewSection(hass, name, nodes);
                 if (section) body.appendChild(section);
             }
+        }
+    };
+}
+
+/**
+ * Room values are codes (enums of types.py v2.0.3, #L485/495/515/717/728/864/872);
+ * code → name for the integration's select texts. mop_pressure/mop_temperature
+ * arrive as names (types.py#L3981) and go back as codes.
+ */
+const CODE_TABLES = {
+    suction_level: { 0: 'Quiet', 1: 'Standard', 2: 'Strong', 3: 'Turbo' },
+    water_volume: { 1: 'Low', 2: 'Medium', 3: 'High' },
+    mop_pad_humidity: { 1: 'Slightly dry', 2: 'Moist', 3: 'Wet' },
+    cleaning_mode: { 0: 'Sweeping', 1: 'Mopping', 2: 'Sweeping and mopping' },
+    cleaning_times: { 1: '1×', 2: '2×', 3: '3×' },
+    cleaning_route: { 1: 'Standard', 2: 'Intensive', 3: 'Deep', 4: 'Quick' },
+    custom_mopping_route: { '-1': 'Off', 0: 'Standard', 1: 'Intensive', 2: 'Deep' },
+    mop_pressure: { 0: 'Light', 2: 'Normal' },
+    mop_temperature: { 0: 'Normal', 1: 'Warm' }
+};
+
+/** The fields set_custom_cleaning takes on this device (device.py#L7234–L7294); others it refuses. */
+function roomFields(model) {
+    const fields = ['suction_level', model.can('wetness_level') ? 'wetness_level' : 'water_volume', 'cleaning_times'];
+    if (model.can('custom_cleaning_mode')) fields.push('cleaning_mode');
+    if (model.can('cleaning_route')) fields.push('cleaning_route');
+    else if (model.can('segment_mopping_settings')) fields.push('custom_mopping_route');
+    if (model.can('mop_pressure')) fields.push('mop_pressure');
+    if (model.can('mop_temperature')) fields.push('mop_temperature');
+    return fields;
+}
+
+/** A room field's display table: with a wash station the water is "mop pad humidity" (select.py#L563). */
+const roomTable = (model, key) => CODE_TABLES[key === 'water_volume' && model.can('self_wash_base') ? 'mop_pad_humidity' : key];
+
+/** Code of a room value (number, numeric text or the enum's name), else undefined. */
+function roomCode(key, value) {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (Number.isFinite(Number(value))) return Number(value);
+    const hit = Object.entries(CODE_TABLES[key] || {}).find(([, name]) => enumName(name) === enumName(value));
+    return hit ? Number(hit[0]) : undefined;
+}
+
+/** The ranges set_custom_cleaning checks (device.py#L7234–L7300). */
+function roomValid(model, key, code) {
+    if (!Number.isInteger(code)) return false;
+    if (key === 'wetness_level') return code >= 1 && code <= 32;
+    if (key === 'cleaning_route' && model.can('segment_slow_clean_route') && code > 3) return false;
+    return Object.keys(CODE_TABLES[key]).map(Number).includes(code);
+}
+
+/**
+ * Data for `vacuum_set_custom_cleaning` of one room: the change over all its
+ * current values (else they would fall back), as codes, only fields with
+ * capability. null when a value is unknown or out of range (never guessed).
+ */
+function roomPayload(model, room, change = {}) {
+    const id = Number(room && (room.room_id !== undefined ? room.room_id : room.id));
+    if (!Number.isInteger(id)) return null;
+    const data = { segment_id: [id] };
+    for (const key of roomFields(model)) {
+        const code = roomCode(key, key in change ? change[key] : room[key]);
+        if (!roomValid(model, key, code)) return null;
+        data[key === 'cleaning_times' ? 'repeats' : key] = [code];
+    }
+    return data;
+}
+
+/** Rooms of the active map camera (R20: only there), hidden ones never. */
+function roomsOf(model) {
+    const rooms = cameraAttrs(model).rooms || {};
+    return Object.fromEntries(Object.entries(rooms).filter(([, r]) => r && r.visibility !== 'Hidden'));
+}
+
+/** Room ids in cleaning order, then the rest. */
+function roomsInOrder(model) {
+    const rooms = roomsOf(model);
+    const sequence = (model.attr('cleaning_sequence') || []).map(String).filter((id) => rooms[id]);
+    return sequence.concat(Object.keys(rooms).filter((id) => !sequence.includes(id)));
+}
+
+const roomName = (room, id) => (room && (room.custom_name || room.name)) || String(id);
+
+/** Why room values cannot change now (device.py#L7228–L7232, L7304), or ''. */
+function roomLock(model) {
+    if (taskActive(model, model.state ? model.state.state : 'unavailable')) return 'sperre_idle';
+    if (model.attr('has_temporary_map') === true || model.attr('has_saved_map') === false) return 'sperre_savedMap';
+    return '';
+}
+
+/** A room value as text: the integration's option text, wetness as number, passes as n×. */
+function roomValueText(hass, model, key, code) {
+    if (code === undefined) return translate(hass, 'wertUnbekannt');
+    if (key === 'wetness_level') return String(code);
+    const name = (roomTable(model, key) || {})[code];
+    if (name === undefined) return String(code);
+    return key === 'cleaning_times' ? name : optionLabel(hass, key === 'water_volume' && model.can('self_wash_base') ? 'mop_pad_humidity' : key, name);
+}
+
+/** The room's values as one short line: "Turbo · 16 · 2×". */
+const roomShort = (hass, model, room) => ['suction_level', model.can('wetness_level') ? 'wetness_level' : 'water_volume', 'cleaning_times']
+    .map((key) => roomValueText(hass, model, key, roomCode(key, room[key]))).join(' · ');
+
+/** One room write until the camera shows it (R17), else back with a note (pattern writeSetting). */
+function writeRoom(card, id, change) {
+    const model = card._model();
+    const data = roomPayload(model, roomsOf(model)[id], change);
+    if (!data) {
+        card._settingNotes.set('room:' + id, translate(card._hass, 'raumUnvollstaendig'));
+        rerender(card);
+        return false;
+    }
+    return trackWrite(card, 'room:' + id, {
+        want: change,
+        label: roomName(roomsOf(model)[id], id),
+        check: (m) => Object.keys(change).every((key) => roomCode(key, (roomsOf(m)[id] || {})[key]) === roomCode(key, change[key])),
+        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, data))
+    });
+}
+
+/** A settings-style row for a room field: select of codes or number (same look as settingRow). */
+function roomFieldRow(hass, { key, label, value, options, number, state, words, disabled, onChange }) {
+    const row = document.createElement('div');
+    row.className = 'setting';
+    row.setAttribute('data-setting', 'room-' + key);
+    row.setAttribute('data-state', state);
+    const text = document.createElement('div');
+    text.className = 'setting-text';
+    const name = document.createElement('span');
+    name.className = 'setting-name';
+    name.id = 'room-' + key;
+    name.textContent = label;
+    const status = document.createElement('span');
+    status.className = 'setting-status';
+    status.id = 'room-status-' + key;
+    status.textContent = words;
+    text.append(name, status);
+    const control = document.createElement(number ? 'input' : 'select');
+    control.className = number ? 'setting-input' : 'setting-select';
+    control.setAttribute('aria-labelledby', name.id);
+    control.setAttribute('aria-describedby', status.id);
+    if (disabled) control.disabled = true;
+    if (number) {
+        control.setAttribute('type', 'number');
+        control.setAttribute('inputmode', 'numeric');
+        control.setAttribute('min', String(number.min));
+        control.setAttribute('max', String(number.max));
+        control.value = value === undefined ? '' : String(value);
+    } else {
+        if (!options.some(([v]) => v === value)) {
+            const unknown = document.createElement('option');
+            unknown.value = '';
+            unknown.disabled = true;
+            unknown.textContent = translate(hass, 'wertUnbekannt');
+            control.appendChild(unknown);
+        }
+        for (const [v, t] of options) {
+            const option = document.createElement('option');
+            option.value = String(v);
+            option.textContent = t;
+            control.appendChild(option);
+        }
+        control.value = value === undefined ? '' : String(value);
+    }
+    control.addEventListener('change', () => { if (control.value !== '') onChange(control.value); });
+    row.append(text, control);
+    return row;
+}
+
+/** Room list (SET-04): rooms in cleaning order with their short values; a tap opens the room. */
+function roomsView(card) {
+    return {
+        title: translate(card._hass, 'raeumeEinstellen'),
+        kind: 'editor',
+        watch: () => settingsWatch(card),
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const rooms = roomsOf(model);
+            const ids = roomsInOrder(model);
+            if (!ids.length) {
+                body.appendChild(noteLine(translate(hass, 'keineRaeume')));
+                return;
+            }
+            const list = document.createElement('div');
+            list.className = 'menu room-list';
+            for (const id of ids) {
+                const text = roomName(rooms[id], id) + ' · ' + roomShort(hass, model, rooms[id]);
+                const item = BuschUI.action({ label: text, text, icon: rooms[id].icon || 'mdi:floor-plan', variant: 'quiet', onClick: () => dialog.show(roomView(card, id)) });
+                item.classList.add('menu-item');
+                item.setAttribute('data-room', id);
+                list.appendChild(item);
+            }
+            body.appendChild(list);
+        }
+    };
+}
+
+/** One room's values, each field with capability (third level, R25). */
+function roomView(card, id) {
+    const model0 = card._model();
+    let field = null; // the field of the last change: its row shows the outcome (R17)
+    return {
+        title: roomName(roomsOf(model0)[id], id),
+        kind: 'editor',
+        watch: () => settingsWatch(card),
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const room = roomsOf(model)[id];
+            if (!room) {
+                body.appendChild(noteLine(translate(hass, 'keineRaeume')));
+                return;
+            }
+            const track = 'room:' + id;
+            const pending = card._settingWrites.get(track);
+            if (pending && pending.check(model)) settleWrite(card, track);
+            const busy = card._settingWrites.get(track);
+            const lock = roomLock(model);
+            if (lock) body.appendChild(noteLine(translate(hass, lock)));
+            const note = card._settingNotes.get(track);
+            const list = document.createElement('div');
+            list.className = 'settings-list';
+            for (const key of roomFields(model)) {
+                const shown = busy && key in busy.want ? busy.want[key] : room[key];
+                const code = roomCode(key, shown);
+                const state = busy && key in busy.want ? 'busy' : note && field === key ? 'error' : lock ? 'locked' : code === undefined ? 'unknown' : 'ok';
+                const words = state === 'busy' ? translate(hass, 'speichert') : state === 'error' ? note : state === 'unknown' ? translate(hass, 'wertUnbekannt') : '';
+                const table = roomTable(model, key) || {};
+                const options = Object.keys(table).map(Number).filter((c) => roomValid(model, key, c)).map((c) => [String(c), roomValueText(hass, model, key, c)]);
+                const label = key === 'cleaning_times' ? translate(hass, 'durchgaenge')
+                    : entityLabel(hass, key === 'wetness_level' ? 'number' : 'select', key === 'water_volume' && model.can('self_wash_base') ? 'mop_pad_humidity' : key);
+                list.appendChild(roomFieldRow(hass, {
+                    key, label, state, words, options,
+                    value: code === undefined ? undefined : String(code),
+                    number: key === 'wetness_level' ? { min: 1, max: 32 } : null,
+                    disabled: !!lock || !!busy,
+                    onChange: (value) => {
+                        const n = Number(value);
+                        field = key;
+                        if (!roomValid(model, key, n)) {
+                            card._settingNotes.set(track, translate(hass, 'bereich', { min: 1, max: 32 }));
+                            return rerender(card);
+                        }
+                        return writeRoom(card, id, { [key]: n });
+                    }
+                }));
+            }
+            body.appendChild(list);
+            if (note && !field) body.appendChild(noteLine(note, 'error'));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const all = BuschUI.action({ label: translate(hass, 'aufAlleTitel'), text: translate(hass, 'aufAlleTitel'), icon: 'mdi:content-copy', disabled: !!lock || !!busy,
+                onClick: () => dialog.show(applyAllView(card, id)) });
+            all.setAttribute('data-action', 'apply-all');
+            actions.appendChild(all);
+            body.appendChild(actions);
+        }
+    };
+}
+
+/**
+ * „Auf alle Räume übertragen“ (R02/R13): asks with the rooms it overwrites,
+ * then one call per room, one after the other, progress visible (R11), stops
+ * at the first error and names what changed (R12).
+ */
+function applyAllView(card, sourceId) {
+    let run = null;
+    return {
+        title: translate(card._hass, 'aufAlleTitel') + '?',
+        kind: 'confirm',
+        watch: () => [],
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const rooms = roomsOf(model);
+            const targets = roomsInOrder(model).filter((id) => id !== String(sourceId));
+            const names = (ids) => ids.map((id) => roomName(rooms[id], id)).join(', ') || '–';
+            if (!run) body.appendChild(noteLine(translate(hass, 'aufAlleFrage', { raum: roomName(rooms[sourceId], sourceId), raeume: names(targets) })));
+            else {
+                body.appendChild(noteLine(translate(hass, 'aufAlleStand', { n: run.done.length, gesamt: run.total })));
+                if (run.error) body.appendChild(noteLine(translate(hass, 'aufAlleFehler', { grund: run.error, raeume: names(run.done) }), 'error'));
+            }
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const close = BuschUI.action({ label: translate(hass, run ? 'zurueck' : 'abbrechen'), text: translate(hass, run ? 'zurueck' : 'abbrechen'), disabled: !!run && !run.finished, onClick: () => dialog._goBack() });
+            close.setAttribute('data-action', 'cancel');
+            actions.appendChild(close);
+            if (!run) {
+                const go = BuschUI.action({ label: translate(hass, 'uebertragen'), text: translate(hass, 'uebertragen'), variant: 'primary', onClick: async () => {
+                    const values = Object.fromEntries(roomFields(model).map((key) => [key, rooms[sourceId][key]]));
+                    run = { done: [], total: targets.length, error: '', finished: false };
+                    for (const id of targets) {
+                        const data = roomPayload(model, rooms[id], values);
+                        if (!data) { run.error = translate(hass, 'raumUnvollstaendig'); break; }
+                        dialog._render();
+                        try {
+                            await card._hass.callService('dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, data));
+                            run.done.push(id);
+                        } catch (error) {
+                            run.error = errorText(error);
+                            break;
+                        }
+                    }
+                    run.finished = true;
+                    if (dialog.isConnected) dialog._render();
+                } });
+                go.setAttribute('data-action', 'confirm');
+                actions.appendChild(go);
+            }
+            body.appendChild(actions);
         }
     };
 }
@@ -7029,7 +7357,8 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     margin: 0 0 var(--ha-space-3, 12px);
 }
 /* Shortcut names come from the app and can be long: they wrap instead of being cut. */
-.menu-item[data-shortcut] {
+.menu-item[data-shortcut],
+.menu-item[data-room] {
     white-space: normal;
     overflow-wrap: anywhere;
 }
@@ -8890,6 +9219,7 @@ BuschVacuumCard.__internals = {
     settingRow,
     MODULE_VIEWS,
     ROOM_KEYS,
+    roomPayload,
     daysOfMask,
     maskOfDays,
     maskOfRepeats,
