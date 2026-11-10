@@ -1112,4 +1112,67 @@ test('Aktionsplatz für andere Module: fremde Aktion erscheint und bekommt das H
   assert.equal(r.karte._map._obstacleActions.size, 0);
 });
 
+// ── Task 10: Karteninfo (CORE-19) ──────────────────────────────────────────
+const fakten = (u) => Object.fromEntries(dialogVon(u).shadowRoot.querySelectorAll('dt').map((dt, i) => [dt.textContent, dialogVon(u).shadowRoot.querySelectorAll('dd')[i].textContent]));
+
+test('Karteninfo über das Kartenwerkzeug: Rohgröße, Kalibrierung, Maßstab, Ursprung, Drehung', async () => {
+  const u = bildUmgebung(), haus = hausAus('voll');
+  const karte = neueKarte(u, haus, { map_config: { map_1: { rotation: 90 } } });
+  await mikro();
+  const knopf = werkzeug(karte, 'info');
+  assert.equal(knopf.getAttribute('aria-label'), 'Karteninfo');
+  knopf.click();
+  const d = dialogVon(u);
+  assert.equal(d._views.at(-1).kind, 'menu');
+  assert.equal($d(u, 'h1').textContent, 'Karteninfo');
+  const f = fakten(u);
+  assert.equal(f['Rohgröße'], '1444 × 1444 px');
+  assert.equal(f['Maßstab'], '12,5 mm/px');
+  assert.equal(f['Ursprung'], '(0, 0) mm → (748, 134) px');
+  assert.match(f['Kalibrierung'], /\(1000, 0\) mm → \(828, 134\) px/);
+  assert.equal(f['Drehung Gerät'], '0°');
+  assert.equal(f['Drehung Anzeige'], '90°');
+  assert.equal(f['Modus'], 'Kartenbild');
+  // Escape schließt (Regel 2).
+  u.document.dispatchEvent(u.neuesEreignis('keydown', { key: 'Escape' }));
+  assert.ok(u.verlauf.aufrufe.includes('go -1'));
+});
+
+test('Karteninfo im Datenmodus: Gitter in Zellen und mm', async () => {
+  const { u, karte, daten } = await datenKarte();
+  werkzeug(karte, 'info').click();
+  const f = fakten(u);
+  assert.equal(f['Rohgröße'], daten._breite + ' × ' + daten._hoehe + ' Zellen à 50 mm');
+  assert.equal(f['Maßstab'], '50 mm/px');
+  assert.equal(f['Modus'], 'Kartendaten (exakt)');
+});
+
+test('Koordinate wählen: Tipp → Roboter-mm und Objekt darunter, Kopieren; Escape bricht ab', async () => {
+  const { u, karte } = await datenKarte();
+  const kopiert = [];
+  u.kontext.navigator.clipboard = { writeText: async (s) => { kopiert.push(s); } };
+  werkzeug(karte, 'info').click();
+  $d(u, '[data-action="info-pick"]').click();
+  u.uhr.vor(400);
+  assert.equal(dialogVon(u), null, 'Dialog zu, Karte frei');
+  assert.deepEqual(hinweise(karte), ['pick']);
+  const r = raeume()['5'];
+  tippe(u, karte, bildschirm(karte, r));
+  assert.deepEqual(hinweise(karte), []);
+  const f = fakten(u);
+  assert.equal(f['Koordinate'], 'x ' + Math.round(r.x) + ' mm, y ' + Math.round(r.y) + ' mm');
+  assert.equal(f['Darunter'], 'Raum ' + r.name);
+  $d(u, '[data-action="info-copy"]').click();
+  await mikro();
+  assert.deepEqual(kopiert, [Math.round(r.x) + ', ' + Math.round(r.y)]);
+  // Abbrechen mit Escape auf der Karte.
+  dialogVon(u).close(); u.uhr.vor(400);
+  werkzeug(karte, 'info').click();
+  $d(u, '[data-action="info-pick"]').click();
+  u.uhr.vor(400);
+  karte._map.region.dispatchEvent(ev(u, 'keydown', { key: 'Escape' }));
+  assert.deepEqual(hinweise(karte), []);
+  assert.equal(karte._map._mode, 'view');
+});
+
 module.exports = { intern, raeume };

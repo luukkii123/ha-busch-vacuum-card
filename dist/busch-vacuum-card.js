@@ -382,6 +382,25 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             ignorierenGesperrt: 'Während einer Aufgabe lässt sich ein Hindernis nicht ignorieren.',
             autoIgnoriert: 'Der Roboter ignoriert dieses Hindernis selbst; das lässt sich nicht ändern.',
             hindernisWeg: 'Das Hindernis ist auf der aktuellen Karte nicht mehr vorhanden.',
+            karteninfo: 'Karteninfo',
+            rohgroesse: 'Rohgröße',
+            kalibrierung: 'Kalibrierung',
+            massstab: 'Maßstab',
+            ursprung: 'Ursprung',
+            rotationGeraet: 'Drehung Gerät',
+            rotationAnzeige: 'Drehung Anzeige',
+            modus: 'Modus',
+            modusDaten: 'Kartendaten (exakt)',
+            modusBild: 'Kartenbild',
+            zellen: '{w} × {h} Zellen à {g} mm',
+            koordinateWaehlen: 'Koordinate wählen',
+            koordinateHinweis: 'Tippe auf die Karte, um eine Koordinate zu wählen.',
+            koordinate: 'Koordinate',
+            darunter: 'Darunter',
+            kopieren: 'Kopieren',
+            boden: 'Boden',
+            ausserhalb: 'außerhalb der Karte',
+            waehlenGesperrt: 'Die Karte ist gesperrt; zum Wählen erst das Schloss halten.',
             stockwerkWaehlen: 'Stockwerk wählen',
             stockwerkGesperrt: 'Aufgabe läuft – das Stockwerk lässt sich erst danach wechseln.',
             aktiveKarte: 'aktiv'
@@ -536,6 +555,25 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             ignorierenGesperrt: 'An obstacle cannot be ignored while a task runs.',
             autoIgnoriert: 'The robot ignores this obstacle by itself; this cannot be changed.',
             hindernisWeg: 'The obstacle is no longer on the current map.',
+            karteninfo: 'Map info',
+            rohgroesse: 'Raw size',
+            kalibrierung: 'Calibration',
+            massstab: 'Scale',
+            ursprung: 'Origin',
+            rotationGeraet: 'Device rotation',
+            rotationAnzeige: 'Display rotation',
+            modus: 'Mode',
+            modusDaten: 'Map data (exact)',
+            modusBild: 'Map image',
+            zellen: '{w} × {h} cells of {g} mm',
+            koordinateWaehlen: 'Pick coordinate',
+            koordinateHinweis: 'Tap the map to pick a coordinate.',
+            koordinate: 'Coordinate',
+            darunter: 'Below',
+            kopieren: 'Copy',
+            boden: 'Floor',
+            ausserhalb: 'outside the map',
+            waehlenGesperrt: 'The map is locked; hold the lock first to pick.',
             stockwerkWaehlen: 'Choose floor',
             stockwerkGesperrt: 'Task running – the floor can be changed afterwards.',
             aktiveKarte: 'active'
@@ -1619,7 +1657,8 @@ class MapView {
         for (const [name, icon, key, act] of [
             ['zoom-in', 'mdi:plus', 'zoomIn', () => this._zoomAt(this._zoom * MAP_ZOOM.step)],
             ['zoom-out', 'mdi:minus', 'zoomOut', () => this._zoomAt(this._zoom / MAP_ZOOM.step)],
-            ['fit', 'mdi:fit-to-screen-outline', 'zoomFit', () => this._setView(1, 0, 0)]
+            ['fit', 'mdi:fit-to-screen-outline', 'zoomFit', () => this._setView(1, 0, 0)],
+            ['info', 'mdi:information-outline', 'karteninfo', () => this.card._openDialog(this._infoView())]
         ]) {
             const button = BuschUI.action({ label: translate(null, key), icon, variant: 'secondary', onClick: act });
             button.setAttribute('data-action', 'map-' + name);
@@ -1751,6 +1790,10 @@ class MapView {
         const hit = this.hitTest(client);
         if (!hit) return;
         this._closeBubble();
+        if (this._picking) {
+            this._endPick();
+            this.card._openDialog(this._infoView(hit));
+        }
         this._emit('map-tap', { client, robot: hit.robot, hit, passable: this.passable(hit.robot), mode: this._mode });
         if (hit.kind === 'object' && this._mode === 'view') {
             this._emit('map-object-tap', { id: hit.id, layer: hit.layer, object: hit.object, robot: hit.robot, client });
@@ -1914,6 +1957,11 @@ class MapView {
     }
 
     _onKey(e) {
+        if (e.key === 'Escape' && this._picking) {
+            e.preventDefault();
+            this._endPick();
+            return;
+        }
         if (e.key === 'Escape' && !this.bubble.hidden) {
             e.preventDefault();
             this._closeBubble();
@@ -2003,6 +2051,10 @@ class MapView {
         const locked = this._locked();
         this.lockReason.textContent = translate(this.hass, 'zoomGesperrt');
         for (const [name, tool] of Object.entries(this._tool)) {
+            if (name === 'info') {
+                BuschUI.action({ node: tool.button, label: translate(this.hass, tool.key), icon: tool.icon, variant: 'secondary', onClick: tool.act });
+                continue;
+            }
             const limit = (name === 'zoom-in' && this._zoom >= MAP_ZOOM.max) || (name !== 'zoom-in' && this._zoom <= MAP_ZOOM.min);
             BuschUI.action({ node: tool.button, label: translate(this.hass, tool.key), icon: tool.icon, variant: 'secondary', disabled: locked || limit, onClick: tool.act });
             if (locked) tool.button.setAttribute('aria-describedby', 'map-lock-reason');
@@ -2195,6 +2247,7 @@ class MapView {
             if (this.model.attr('has_temporary_map')) notes.push(['temporary', 'mdi:map-clock-outline', 'temporaereKarte']);
             if (this.model.attr('mapping')) notes.push(['mapping', 'mdi:map-plus', 'kartierungLaeuft']);
             if (!this._matrix && this._imageState === 'ready') notes.push(['uncalibrated', 'mdi:crosshairs-question', 'ohneKalibrierung']);
+            if (this._picking) notes.push(['pick', 'mdi:crosshairs-gps', 'koordinateHinweis']);
         }
         this.stage.hidden = !shows;
         this.el.toggleAttribute('data-mode-image', !this._data);
@@ -2272,6 +2325,11 @@ class MapView {
         const span = document.createElement('span');
         span.textContent = text;
         node.append(symbol, span);
+        if (kind === 'pick') {
+            const cancel = BuschUI.action({ label: translate(this.hass, 'abbrechen'), text: translate(this.hass, 'abbrechen'), variant: 'quiet', onClick: () => this._endPick() });
+            cancel.setAttribute('data-action', 'pick-cancel');
+            node.appendChild(cancel);
+        }
         if (kind === 'error') {
             const retry = BuschUI.action({ label: translate(this.hass, 'erneutLaden'), text: translate(this.hass, 'erneutLaden'), icon: 'mdi:refresh', variant: 'quiet', onClick: () => this._loadImage(this._imageUrl, true) });
             retry.setAttribute('data-action', 'map-retry');
@@ -2334,6 +2392,89 @@ class MapView {
             node.style.width = Math.abs(b.x - a.x) + 'px';
             node.style.height = Math.abs(b.y - a.y) + 'px';
         }
+    }
+
+    // ── Map info (CORE-19) ────────────────────────────────────────────────
+
+    _startPick() {
+        this._picking = { previous: this._mode };
+        this.setMode('pick-point');
+        this._render();
+        this.region.focus();
+    }
+
+    _endPick() {
+        const previous = this._picking ? this._picking.previous : 'view';
+        this._picking = null;
+        this.setMode(previous);
+        this._render();
+    }
+
+    /** Facts for own pictures and automations; with `picked` the coordinate and the object below it. */
+    _infoView(picked) {
+        return {
+            title: translate(this.hass, 'karteninfo'),
+            kind: 'menu',
+            watch: () => [this._cameraId],
+            render: (body, hass, dialog) => {
+                const locale = hass.locale && hass.locale.language;
+                const n = (v) => BuschUI.formatNumber(v, locale) || String(v);
+                const pt = (p) => '(' + Math.round(p.x) + ', ' + Math.round(p.y) + ')';
+                const a = this._attrs();
+                const rows = [];
+                if (picked) {
+                    rows.push(['koordinate', 'x ' + Math.round(picked.robot.x) + ' mm, y ' + Math.round(picked.robot.y) + ' mm']);
+                    const room = picked.kind === 'room' && this.current().rooms[picked.id];
+                    rows.push(['darunter', room ? translate(hass, 'taskRoom') + ' ' + (room.custom_name || room.name)
+                        : picked.kind === 'object' ? translate(hass, 'hindernis') + ' ' + picked.id
+                        : translate(hass, picked.kind === 'floor' ? 'boden' : 'ausserhalb')]);
+                }
+                const grid = this._data && this._data.grid;
+                rows.push(['rohgroesse', grid ? translate(hass, 'zellen', { w: grid.width, h: grid.height, g: grid.grid }) : this._size.width + ' × ' + this._size.height + ' px']);
+                if (this._matrix) {
+                    rows.push(['massstab', n(Math.round(1000 / Math.hypot(this._matrix.a, this._matrix.b)) / 1000) + ' mm/px']);
+                    rows.push(['ursprung', '(0, 0) mm → ' + pt(this.toImage({ x: 0, y: 0 })) + ' px']);
+                    rows.push(['kalibrierung', [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 0, y: 1000 }].map((p) => pt(p) + ' mm → ' + pt(this.toImage(p)) + ' px').join('; ')]);
+                }
+                rows.push(['rotationGeraet', (grid ? grid.rotation : Number(a.rotation) || 0) + '°']);
+                rows.push(['rotationAnzeige', (Number(this._display.rotation) || 0) + '°']);
+                rows.push(['modus', translate(hass, grid ? 'modusDaten' : 'modusBild')]);
+                const facts = document.createElement('dl');
+                facts.className = 'obstacle-facts';
+                for (const [key, value] of rows) {
+                    const dt = document.createElement('dt');
+                    dt.textContent = translate(hass, key);
+                    const dd = document.createElement('dd');
+                    dd.textContent = value;
+                    facts.append(dt, dd);
+                }
+                body.appendChild(facts);
+                const actions = document.createElement('div');
+                actions.className = 'actions';
+                if (picked) {
+                    const copy = BuschUI.action({ label: translate(hass, 'kopieren'), text: translate(hass, 'kopieren'), icon: 'mdi:content-copy', variant: 'secondary', onClick: () => {
+                        const text = Math.round(picked.robot.x) + ', ' + Math.round(picked.robot.y);
+                        try { Promise.resolve(navigator.clipboard.writeText(text)).catch(() => {}); } catch (e) { /* no clipboard: the value stays readable above */ }
+                    } });
+                    copy.setAttribute('data-action', 'info-copy');
+                    actions.appendChild(copy);
+                }
+                const locked = this._locked();
+                const pick = BuschUI.action({ label: translate(hass, 'koordinateWaehlen'), text: translate(hass, 'koordinateWaehlen'), icon: 'mdi:crosshairs-gps', variant: 'primary', disabled: locked || !this._matrix, onClick: () => {
+                    dialog.close();
+                    this._startPick();
+                } });
+                pick.setAttribute('data-action', 'info-pick');
+                actions.appendChild(pick);
+                if (locked) {
+                    const note = document.createElement('div');
+                    note.className = 'obstacle-note';
+                    note.textContent = translate(hass, 'waehlenGesperrt');
+                    body.appendChild(note);
+                }
+                body.appendChild(actions);
+            }
+        };
     }
 
     // ── Obstacles (MAP-04) ────────────────────────────────────────────────
@@ -2861,20 +3002,6 @@ const CARD_STYLES = BuschUI.cardStyles + `
 .map-overlay {
     position: absolute;
     pointer-events: none;
-}
-.floor-preview {
-    flex: none;
-    width: 56px;
-    height: 40px;
-    object-fit: contain;
-    border-radius: var(--ha-space-1, 4px);
-    background: var(--secondary-background-color, #eeeeee);
-}
-.floor-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 canvas.map-base {
     image-rendering: pixelated;
