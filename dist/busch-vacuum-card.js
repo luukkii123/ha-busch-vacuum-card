@@ -524,6 +524,15 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sperre_dnd: 'Nur bei aktivem „Nicht stören“.',
             sperre_manualLight: 'Die Helligkeit regelt gerade die Automatik.',
             sperre_liste: 'Die Integration erlaubt die Änderung gerade nicht.',
+            ja: 'Ja',
+            nein: 'Nein',
+            status_washing: 'Mop wird gewaschen',
+            status_washing_paused: 'Waschen pausiert',
+            status_drying: 'Trocknet',
+            status_draining_available: 'Ablassen möglich',
+            status_washing_available: 'Waschen möglich',
+            status_drying_available: 'Trocknen möglich',
+            status_dust_collection_available: 'Entleeren möglich',
             gruppe_cleaning: 'Reinigung',
             gruppe_mopping: 'Wischen',
             gruppe_carpet: 'Teppich',
@@ -906,6 +915,15 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sperre_dnd: 'Only while “Do not disturb” is active.',
             sperre_manualLight: 'Brightness is currently set automatically.',
             sperre_liste: 'The integration does not allow this change right now.',
+            ja: 'Yes',
+            nein: 'No',
+            status_washing: 'Mop washing',
+            status_washing_paused: 'Washing paused',
+            status_drying: 'Drying',
+            status_draining_available: 'Draining possible',
+            status_washing_available: 'Washing possible',
+            status_drying_available: 'Drying possible',
+            status_dust_collection_available: 'Emptying possible',
             gruppe_cleaning: 'Cleaning',
             gruppe_mopping: 'Mopping',
             gruppe_carpet: 'Carpet',
@@ -1434,7 +1452,17 @@ class VacuumModel {
         }
         switch (name) {
             case 'map': return this.related.maps.map.length > 0;
-            case 'dock': return this.caps.has('self_wash_base') || this.caps.has('auto_empty_base');
+            // Drying alone (dust bag) is a station too (DOCK-01).
+            case 'dock': return ['self_wash_base', 'auto_empty_base', 'dust_bag_drying', 'manual_dust_bag_drying'].some((c) => this.caps.has(c));
+            // Station actions (dock): the capability of the integration's button (button.py#L196–L296)
+            // plus vacuum_call_action — never the button itself, it may be disabled.
+            case 'wash': case 'dry': case 'self_repair': return this.caps.has('self_wash_base') && this.can('dreame_vacuum.vacuum_call_action');
+            case 'dust_bag_dry': return (this.caps.has('dust_bag_drying') || this.caps.has('manual_dust_bag_drying')) && this.can('dreame_vacuum.vacuum_call_action');
+            case 'empty': return this.caps.has('auto_empty_base') && this.can('dreame_vacuum.vacuum_call_action');
+            case 'drain': return this.caps.has('drainage') && this.can('dreame_vacuum.vacuum_call_action');
+            case 'empty_tank': return this.caps.has('water_tank_draining') && this.can('dreame_vacuum.vacuum_call_action');
+            case 'station_cleaning': return this.caps.has('station_cleaning') && this.can('dreame_vacuum.vacuum_call_action');
+            case 'recleaning': return this.caps.has('auto_recleaning') && this.caps.has('map') && this.can('dreame_vacuum.vacuum_call_action');
             case 'history': return !!this.entity('sensor.cleaning_history');
             // CORE-10: the button is what v2.0.3 offers; the documented service only if present.
             case 'clear_warning': return !!this.entity('button.clear_warning') || this.can('dreame_vacuum.vacuum_clear_warning');
@@ -1575,10 +1603,20 @@ const SETTING_NEEDS = {
     manualLight: ['camera_light_brightness']
 };
 
+/** Dock's tabs (DOCK-02…04), in order; a station key not named in STATION_TAB_OF washes. */
+const STATION_TABS = ['wash', 'dry', 'empty'];
+const STATION_TAB_OF = {
+    auto_drying: 'dry', drying_time: 'dry', silent_drying: 'dry', smart_drying: 'dry', dust_bag_drying: 'dry',
+    auto_dust_collecting: 'empty', auto_empty_mode: 'empty', auto_empty_frequency: 'empty', auto_empty_area: 'empty'
+};
+
 const SETTINGS = {};
 for (const [group, controls] of Object.entries(SETTING_KEYS)) {
     for (const [control, keys] of Object.entries(controls)) {
-        for (const key of keys) SETTINGS[key] = Object.assign({ group, control, platform: control, needs: [] }, SETTING_EXTRA[key]);
+        for (const key of keys) {
+            SETTINGS[key] = Object.assign({ group, control, platform: control, needs: [] }, SETTING_EXTRA[key]);
+            if (group === 'station') SETTINGS[key].tab = STATION_TAB_OF[key] || 'wash';
+        }
     }
 }
 for (const [need, keys] of Object.entries(SETTING_NEEDS)) keys.forEach((key) => SETTINGS[key].needs.push(need));
@@ -1660,8 +1698,9 @@ function settingState(card, model, key) {
         source: current.source,
         value,
         known: value !== undefined,
-        min: def.min !== undefined ? def.min : entity ? entity.attributes.min : undefined,
-        max: def.max !== undefined ? def.max : entity ? entity.attributes.max : undefined,
+        // Ranges: the card's table, else the vacuum's `<key>_min/_max` (self_clean_area), else the entity's.
+        min: def.min !== undefined ? def.min : model.attr(key + '_min') !== undefined ? model.attr(key + '_min') : entity ? entity.attributes.min : undefined,
+        max: def.max !== undefined ? def.max : model.attr(key + '_max') !== undefined ? model.attr(key + '_max') : entity ? entity.attributes.max : undefined,
         step: entity && entity.attributes.step ? entity.attributes.step : 1,
         locked: !!reason,
         reason,
@@ -2161,6 +2200,44 @@ const enumName = (value) => String(value === undefined || value === null ? '' : 
 function dockStatus(model) {
     const hit = DOCK_CHECKS.find(([attribute, value]) => enumName(model.attr(attribute)) === value);
     return hit ? { level: hit[2], key: hit[3] } : { level: 'ok', key: null };
+}
+
+/** Station values (DOCK-06, ALL-04/05 display): attribute, else the sensor (also for disabled sensors). */
+const STATION_VALUES = ['clean_water_tank_status', 'dirty_water_tank_status', 'dust_bag_status', 'detergent_status', 'hot_water_status',
+    'station_drainage_status', 'self_wash_base_status', 'auto_empty_status', 'low_water_warning', 'dust_collection', 'drying_left', 'drying_progress'];
+/** Station flags of the vacuum; the first three are something running. */
+const STATION_FLAGS = ['washing', 'washing_paused', 'drying', 'draining_available', 'washing_available', 'drying_available', 'dust_collection_available'];
+const LEVEL_ICON = { error: 'mdi:alert-circle-outline', warning: 'mdi:alert-outline', info: 'mdi:progress-clock', ok: 'mdi:check-circle-outline' };
+const LEVEL_ORDER = ['error', 'warning', 'info', 'ok'];
+
+/**
+ * The whole station status (DOCK-06): [{ key, level, label, text, icon }],
+ * problems first. Levels as dockStatus judges them; text in HA's words when
+ * the sensor says the same (R17: symbol and text, never colour alone).
+ */
+function stationStatus(model) {
+    if (!model.can('dock')) return [];
+    const hass = model.hass;
+    const list = [];
+    for (const key of STATION_VALUES) {
+        const id = model.entity('sensor.' + key);
+        const sensor = id && hass.states[id] && !UNUSABLE.includes(hass.states[id].state) ? hass.states[id] : null;
+        const raw = model.attr(key);
+        const has = raw !== undefined && raw !== null && raw !== '';
+        if (!has && !sensor) continue;
+        const name = enumName(has ? raw : sensor.state);
+        const check = DOCK_CHECKS.find(([attribute, value]) => attribute === key && value === name);
+        const level = check ? check[2] : key === 'low_water_warning' && name !== 'no_warning' ? 'warning' : 'ok';
+        const text = sensor && enumName(sensor.state) === name ? formatState(hass, sensor) : String(raw);
+        list.push({ key, level, label: entityLabel(hass, 'sensor', key), text, icon: LEVEL_ICON[level] });
+    }
+    for (const key of STATION_FLAGS) {
+        const raw = model.attr(key);
+        if (typeof raw !== 'boolean') continue;
+        const level = raw && STATION_FLAGS.indexOf(key) < 3 ? 'info' : 'ok';
+        list.push({ key, level, label: translate(hass, 'status_' + key), text: translate(hass, raw ? 'ja' : 'nein'), icon: LEVEL_ICON[level] });
+    }
+    return list.sort((a, b) => LEVEL_ORDER.indexOf(a.level) - LEVEL_ORDER.indexOf(b.level));
 }
 
 // ---------------------------------------------------------------------------
@@ -4328,8 +4405,9 @@ function deviceInfo(card, model, body, hass) {
         add(key, entityLabel(hass, 'sensor', key), value === null ? null : String(value).trim());
     }
     if (model.can('dock')) {
-        const status = dockStatus(model);
-        add('station', translate(hass, 'station'), translate(hass, status.key || 'stationOk'));
+        // ALL-12: the station's problems from dock's status function, else "all right".
+        const problems = stationStatus(model).filter((s) => s.level === 'error' || s.level === 'warning').map((s) => s.label + ': ' + s.text);
+        add('station', translate(hass, 'station'), problems.length ? problems.join('; ') : translate(hass, 'stationOk'));
     }
     const faults = model.attr('faults');
     if (faults !== undefined) {
@@ -6596,6 +6674,9 @@ BuschVacuumCard.__internals = {
     VacuumModel,
     SETTINGS,
     SETTING_GROUPS,
+    STATION_TABS,
+    stationStatus,
+    dockStatus,
     settingState,
     settingRow,
     MODULE_VIEWS,
