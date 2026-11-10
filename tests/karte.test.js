@@ -777,4 +777,134 @@ test('Beispiel späteres Modul: Ebene anlegen, pick-room, map-room-tap, Ebene en
   assert.equal(ebene(karte, 'beispiel-auswahl'), null);
 });
 
+// ── Task 7: Stockwerke und map_config ──────────────────────────────────────
+const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
+/** Zwei Stockwerke: Karte 1 (aktiv, id 3) und Karte 2 (id 7) mit eigener Kamera camera.robo_map_2. */
+function zweiStockwerke(haus, vacuum = {}, zustand) {
+  const maps = [
+    { id: 3, index: 1, name: 'Karte 1', custom_name: 'Erdgeschoss' },
+    { id: 7, index: 2, name: 'Karte 2', custom_name: null },
+  ];
+  const zwei = JSON.parse(JSON.stringify(haus.states['camera.robo_map_1']));
+  zwei.entity_id = 'camera.robo_map_2';
+  Object.assign(zwei.attributes, { map_index: 2, map_id: 7, selected: false, entity_picture: '/api/camera_proxy/camera.robo_map_2?token=testtoken&v=9' });
+  haus.states = Object.assign({}, haus.states, sauger(haus, Object.assign({ maps, map_count: 2, selected_map: 'Erdgeschoss', multi_floor_map: true }, vacuum), zustand), { 'camera.robo_map_2': zwei });
+  haus.entities = Object.assign({}, haus.entities, { 'camera.robo_map_2': Object.assign({}, haus.entities['camera.robo_map_1'], { entity_id: 'camera.robo_map_2', translation_key: 'map_2' }) });
+}
+async function stockwerkKarte({ config = {}, vacuum, zustand } = {}) {
+  const u = bildUmgebung(), haus = hausAus('voll');
+  zweiStockwerke(haus, vacuum, zustand);
+  const karte = neueKarte(u, haus, config);
+  await mikro();
+  return { u, haus, karte };
+}
+
+test('Stockwerkswahl erst ab map_count > 1, mit Vorschau je Stockwerk', async () => {
+  const { karte: eins } = await kartenKarte();
+  assert.equal(werkzeug(eins, 'floors'), null, 'eine Karte: keine Wahl');
+  const { u, karte } = await stockwerkKarte();
+  const knopf = werkzeug(karte, 'floors');
+  assert.ok(knopf);
+  assert.equal(knopf.getAttribute('aria-label'), 'Stockwerk wählen');
+  knopf.click();
+  const d = dialogVon(u);
+  assert.ok(d, 'Dialog offen');
+  const eintraege = d.shadowRoot.querySelectorAll('.floor');
+  assert.deepEqual(eintraege.map((e) => e.getAttribute('data-map')), ['3', '7']);
+  assert.match(eintraege[0].textContent, /Erdgeschoss/);
+  assert.match(eintraege[1].textContent, /Karte 2/);
+  assert.equal(eintraege[0].getAttribute('aria-current'), 'true', 'aktive Karte markiert');
+  const vorschau = eintraege[1].querySelector('img');
+  assert.equal(vorschau.getAttribute('src'), '/api/camera_proxy/camera.robo_map_2?token=testtoken&v=9');
+  assert.equal(vorschau.getAttribute('alt'), '');
+});
+
+test('Wechsel nur über _confirmMapChange, dann genau vacuum_select_map { entity_id, map_id }', async () => {
+  const { u, haus, karte } = await stockwerkKarte();
+  werkzeug(karte, 'floors').click();
+  dialogVon(u).shadowRoot.querySelectorAll('.floor')[1].click();
+  const d = dialogVon(u);
+  assert.match(d.shadowRoot.querySelector('.placeholder').textContent, /Karte 2/, 'Bestätigung von core');
+  assert.deepEqual(haus.rufe, [], 'erst nach Bestätigung');
+  d.shadowRoot.querySelector('[data-action="confirm"]').click();
+  assert.deepEqual(JSON.parse(JSON.stringify(haus.rufe)), [{ domain: 'dreame_vacuum', service: 'vacuum_select_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
+  // Abbrechen ruft nichts.
+  const b = await stockwerkKarte();
+  b.karte._map.selectMap(7);
+  dialogVon(b.u).shadowRoot.querySelector('[data-action="cancel"]').click();
+  b.u.uhr.vor(400);
+  assert.deepEqual(b.haus.rufe, []);
+  // Die aktive Karte noch einmal wählen tut nichts.
+  b.karte._map.selectMap(3);
+  assert.equal(dialogVon(b.u), null);
+});
+
+test('ohne Bestätigung (hidden_card_objects) sofortiger Wechsel', async () => {
+  const { haus, karte } = await stockwerkKarte({ config: { hidden_card_objects: ['map_change_confirmation'] } });
+  assert.equal(karte._map.selectMap(7), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(haus.rufe)), [{ domain: 'dreame_vacuum', service: 'vacuum_select_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
+});
+
+test('Stockwerkswahl gesperrt bei laufender Aufgabe, Grund sichtbar', async () => {
+  const { haus, karte } = await stockwerkKarte({ vacuum: { started: true }, zustand: 'cleaning' });
+  const knopf = werkzeug(karte, 'floors');
+  assert.equal(knopf.disabled, true);
+  assert.equal(knopf.getAttribute('aria-describedby'), 'map-floor-reason');
+  assert.match(karte.shadowRoot.querySelector('#map-floor-reason').textContent, /Aufgabe läuft/);
+  assert.equal(karte._map.selectMap(7), false);
+  assert.deepEqual(haus.rufe, []);
+});
+
+test('map-changed bei anderem Kartenindex', async () => {
+  const { haus, karte } = await stockwerkKarte();
+  const liste = ereignisse(karte, 'map-changed');
+  karte.hass = haus.setze(kamera(haus, { frame_id: 5 }));
+  assert.equal(liste.length, 0);
+  karte.hass = haus.setze(kamera(haus, { map_index: 2, map_id: 7 }));
+  assert.deepEqual(liste.map((e) => e[1].index), [2]);
+  assert.equal(karte._map.current().name, 'Karte 2');
+});
+
+test('config(index): map_config.map_<index> mit rotation, scale, opacity, crop über den Kartenwerten', async () => {
+  const cfg = { map_config: { map_1: { rotation: 90, scale: 0.5, opacity: 0.6, crop: { left: 10, right: 20, top: 0, bottom: 5 } }, map_2: { rotation: 180 } } };
+  const { karte } = await kartenKarte('voll', cfg);
+  const m = karte._map;
+  const c = m.config(1);
+  assert.equal(c.rotation, 90);
+  assert.equal(c.scale, 0.5);
+  assert.equal(c.opacity, 0.6);
+  assert.deepEqual(JSON.parse(JSON.stringify(c.crop)), { left: 10, right: 20, top: 0, bottom: 5 });
+  assert.equal(m.config(2).rotation, 180);
+  assert.equal(m.config(3).rotation, 0, 'Vorgabe');
+  assert.deepEqual(JSON.parse(JSON.stringify(m._display)), { rotation: 90, scale: 0.5, crop: { left: 10, right: 20, top: 0, bottom: 5 } });
+  assert.equal(karte.shadowRoot.querySelector('.map-base').style.opacity, '0.6');
+  const { viewMatrix } = intern();
+  const erwartet = viewMatrix({ width: 1444, height: 1444, stageWidth: 200, stageHeight: 100, rotation: 90, scale: 0.5, crop: c.crop });
+  assert.deepEqual([m._view.a, m._view.b, m._view.c, m._view.d].map((v) => v.toFixed(6)), [erwartet.a, erwartet.b, erwartet.c, erwartet.d].map((v) => v.toFixed(6)), 'gedreht');
+  // Unsinn wird verworfen.
+  const { karte: k2 } = await kartenKarte('voll', { map_config: { map_1: { rotation: 45, scale: 'x', opacity: 7 }, fremd: { rotation: 90 } } });
+  assert.deepEqual([k2._map.config(1).rotation, k2._map.config(1).scale, k2._map.config(1).opacity], [0, 1, 1]);
+  assert.deepEqual(Object.keys(k2._opts.map_config), ['map_1']);
+});
+
+test('background_image/overlay_image: Ecken in Roboter-mm, unter bzw. über der Karte', async () => {
+  const bild = { url: '/local/grundriss.png', x0: -1000, y0: -2000, x1: 3000, y1: 1000 };
+  const { karte } = await kartenKarte('voll', { map_config: { map_1: { background_image: bild, overlay_image: Object.assign({}, bild, { url: '/local/oben.svg' }) } } });
+  const m = karte._map;
+  const unten = karte.shadowRoot.querySelector('.map-background');
+  const oben = karte.shadowRoot.querySelector('.map-overlay');
+  assert.equal(unten.getAttribute('src'), '/local/grundriss.png');
+  assert.equal(oben.getAttribute('src'), '/local/oben.svg');
+  const kinder = m.pan.childNodes;
+  assert.ok(kinder.indexOf(unten) < kinder.indexOf(karte.shadowRoot.querySelector('.map-base')), 'Hintergrund unter dem Kartenbild');
+  assert.ok(kinder.indexOf(oben) > kinder.indexOf(karte.shadowRoot.querySelector('.map-base')) && kinder.indexOf(oben) < kinder.indexOf(m.svg), 'Überlagerung über dem Bild, unter den Symbolen');
+  const a = m.toImage({ x: -1000, y: 1000 }), b = m.toImage({ x: 3000, y: -2000 });
+  assert.equal(unten.style.left, Math.min(a.x, b.x) + 'px');
+  assert.equal(unten.style.top, Math.min(a.y, b.y) + 'px');
+  assert.equal(unten.style.width, Math.abs(b.x - a.x) + 'px');
+  assert.equal(unten.style.height, Math.abs(b.y - a.y) + 'px');
+  const { karte: boese } = await kartenKarte('voll', { map_config: { map_1: { background_image: { url: 'javascript:alert(1)', x0: 0, y0: 0, x1: 1, y1: 1 } } } });
+  assert.equal(boese.shadowRoot.querySelector('.map-background'), null, 'unsichere URL verworfen');
+});
+
 module.exports = { intern, raeume };

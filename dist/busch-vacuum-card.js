@@ -364,7 +364,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zoomFit: 'Einpassen',
             zoomGesperrt: 'Karte gesperrt – das Schloss oben halten, um Zoomen und Verschieben freizugeben.',
             raeume: 'Räume',
-            raumPosition: '{name}, Position {n}'
+            raumPosition: '{name}, Position {n}',
+            stockwerkWaehlen: 'Stockwerk wählen',
+            stockwerkGesperrt: 'Aufgabe läuft – das Stockwerk lässt sich erst danach wechseln.',
+            aktiveKarte: 'aktiv'
         }
     },
     en: {
@@ -498,7 +501,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zoomFit: 'Fit',
             zoomGesperrt: 'Map locked – hold the lock at the top to allow zooming and moving.',
             raeume: 'Rooms',
-            raumPosition: '{name}, position {n}'
+            raumPosition: '{name}, position {n}',
+            stockwerkWaehlen: 'Choose floor',
+            stockwerkGesperrt: 'Task running – the floor can be changed afterwards.',
+            aktiveKarte: 'active'
         }
     }
 };
@@ -557,7 +563,21 @@ const MAP_OBJECTS = [
 ];
 
 /** Per map (`map_config.map_<index>`, MAP-06) with what applies when a value is missing. */
-const MAP_CONFIG_DEFAULTS = { object_scale: 1, object_opacity: 1, font_size: 12, hidden_objects: [] };
+const MAP_CONFIG_DEFAULTS = {
+    rotation: 0, scale: 1, opacity: 1, object_scale: 1, object_opacity: 1, font_size: 12, crop: null,
+    background_image: null, overlay_image: null, hidden_objects: []
+};
+const MAP_ROTATIONS = [0, 90, 180, 270];
+
+/** An own picture on the map: a safe URL and its corners in robot mm (values from the map info). */
+function mapPicture(value) {
+    if (!value || typeof value !== 'object' || typeof value.url !== 'string') return null;
+    const url = value.url.trim();
+    if (!url || /^(?:javascript|vbscript|file|data:text):/i.test(url)) return null;
+    const corners = ['x0', 'y0', 'x1', 'y1'].map((k) => numberOf(value[k]));
+    if (!corners.every(Number.isFinite)) return null;
+    return { url, x0: corners[0], y0: corners[1], x1: corners[2], y1: corners[3] };
+}
 
 const inRange = (value, min, max, standard) => {
     const n = numberOf(value);
@@ -571,6 +591,16 @@ function normalizeMapConfig(raw) {
     for (const [key, value] of Object.entries(raw)) {
         if (!/^map_\d+$/.test(key) || !value || typeof value !== 'object') continue;
         const entry = {};
+        if (value.rotation !== undefined) entry.rotation = MAP_ROTATIONS.includes(Number(value.rotation)) ? Number(value.rotation) : 0;
+        if (value.scale !== undefined) entry.scale = inRange(value.scale, 0.25, 4, 1);
+        if (value.opacity !== undefined) entry.opacity = inRange(value.opacity, 0, 1, 1);
+        if (value.crop && typeof value.crop === 'object') {
+            entry.crop = Object.fromEntries(['top', 'right', 'bottom', 'left'].map((side) => [side, inRange(value.crop[side], 0, 45, 0)]));
+        }
+        for (const key of ['background_image', 'overlay_image']) {
+            const picture = mapPicture(value[key]);
+            if (picture) entry[key] = picture;
+        }
         if (value.object_scale !== undefined) entry.object_scale = inRange(value.object_scale, 0.25, 4, 1);
         if (value.object_opacity !== undefined) entry.object_opacity = inRange(value.object_opacity, 0, 1, 1);
         if (value.font_size !== undefined) entry.font_size = inRange(value.font_size, 6, 40, 12);
@@ -1163,7 +1193,7 @@ function snapshotUnchanged(snapshot, hass) {
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /** Vacuum attributes the map shows (ALL-13 display); a change of any redraws the map's frame. */
-const MAP_VACUUM_KEYS = ['maps', 'map_count', 'selected_map', 'has_saved_map', 'has_temporary_map', 'mapping'];
+const MAP_VACUUM_KEYS = ['maps', 'map_count', 'selected_map', 'has_saved_map', 'has_temporary_map', 'mapping', 'started', 'customized_cleaning', 'skipped_segments', 'cleaning_sequence'];
 
 /** MAP-02: zoom limits, button/key step, wheel speed, tap and double tap tolerances. */
 const MAP_ZOOM = { min: 1, max: 8, step: 2, wheel: 0.0015 };
@@ -1400,6 +1430,7 @@ class MapView {
         this._mode = 'view';
         this._layers = new Map(); // id → { z, render, hit, group, renders, sig, builtIn }
         this._data = null; // decoded map data (data mode)
+        this._pictures = {}; // map_config background_image / overlay_image elements
         this._build();
         this._bindGestures();
         for (const [name, z, kind] of MAP_LAYERS) this._addBuiltIn(name, z, kind);
@@ -1785,6 +1816,29 @@ class MapView {
     }
 
     _renderTools() {
+        const many = Number(this.model && this.model.attr('map_count')) > 1 && this._maps().length > 1;
+        if (many && !this._floorButton) {
+            this._floorReason = document.createElement('span');
+            this._floorReason.id = 'map-floor-reason';
+            this._floorReason.className = 'visually-hidden';
+            this._floorButton = BuschUI.action({ label: translate(this.hass, 'stockwerkWaehlen'), icon: 'mdi:layers-triple-outline', variant: 'secondary', onClick: () => this.card._openDialog(this._floorsView()) });
+            this._floorButton.setAttribute('data-action', 'map-floors');
+            this._floorButton.setAttribute('aria-haspopup', 'dialog');
+            this._floorButton.classList.add('map-tool');
+            this.tools.insertBefore(this._floorReason, this.tools.firstChild);
+            this.tools.insertBefore(this._floorButton, this._floorReason);
+        } else if (!many && this._floorButton) {
+            this._floorButton.remove();
+            this._floorReason.remove();
+            this._floorButton = null;
+        }
+        if (this._floorButton) {
+            const busy = this._busy();
+            this._floorReason.textContent = translate(this.hass, 'stockwerkGesperrt');
+            BuschUI.action({ node: this._floorButton, label: translate(this.hass, 'stockwerkWaehlen'), icon: 'mdi:layers-triple-outline', variant: 'secondary', disabled: busy, onClick: () => this.card._openDialog(this._floorsView()) });
+            if (busy) this._floorButton.setAttribute('aria-describedby', 'map-floor-reason');
+            else this._floorButton.removeAttribute('aria-describedby');
+        }
         const locked = this._locked();
         this.lockReason.textContent = translate(this.hass, 'zoomGesperrt');
         for (const [name, tool] of Object.entries(this._tool)) {
@@ -1850,14 +1904,24 @@ class MapView {
         this.model = model;
         const id = model.related.maps.map[0];
         const cam = (hass.states && hass.states[id]) || null;
-        const key = JSON.stringify([BuschUI.language(hass, { legacy: true }), ...MAP_VACUUM_KEYS.map((k) => model.attr(k))]);
+        const key = JSON.stringify([BuschUI.language(hass, { legacy: true }), model.state && model.state.state, ...MAP_VACUUM_KEYS.map((k) => model.attr(k))]);
         if (cam === this._cam && key === this._key) return;
+        const before = this._cam ? this._attrs().map_index : undefined;
         this._cam = cam;
         this._key = key;
         this._cameraId = id;
         this.stats.renders++;
         const a = this._attrs();
         this._matrix = affineFrom(a.calibration_points);
+        const options = this.config(a.map_index);
+        this._display = { rotation: options.rotation, scale: options.scale, crop: options.crop };
+        if (before !== undefined && before !== a.map_index) {
+            // Another floor: it starts fitted (R21), the module layers learn it from the event.
+            this._zoom = 1;
+            this._panX = 0;
+            this._panY = 0;
+            this._emit('map-changed', { index: a.map_index, mapId: a.map_id });
+        }
         this.region.setAttribute('aria-label', translate(hass, 'karteAlt', { karte: this._mapName() }));
         if (this._showsMap()) {
             this._loadImage(a.entity_picture);
@@ -1930,7 +1994,7 @@ class MapView {
             if (this._image) this._image.remove();
             this._image = img;
             this._size = { width: img.naturalWidth || 0, height: img.naturalHeight || 0 };
-            this.pan.insertBefore(img, this.svg);
+            this.pan.insertBefore(img, this._pictures.overlay || this.svg);
             this._imageState = 'ready';
             this._render();
             this._renderLayers();
@@ -1992,6 +2056,7 @@ class MapView {
         const rect = this._stageRect();
         this._view = viewMatrix(Object.assign({ width, height, stageWidth: rect.width, stageHeight: rect.height, zoom: this._zoom, panX: this._panX, panY: this._panY }, this._display));
         this._renderTools();
+        this._placePictures();
         const m = this._view;
         this.pan.style.width = width + 'px';
         this.pan.style.height = height + 'px';
@@ -2002,6 +2067,106 @@ class MapView {
         this.svg.style.setProperty('--bvc-map-symbol', String(options.object_scale / Math.hypot(m.a, m.b)));
         this.svg.style.setProperty('--bvc-map-turn', -(Number(this._display.rotation) || 0) + 'deg');
         this.svg.style.opacity = String(options.object_opacity);
+    }
+
+    /** MAP-06: the map's opacity and own pictures under/over it, placed by their robot-mm corners. */
+    _placePictures() {
+        const options = this.config(this._attrs().map_index);
+        if (this._image) this._image.style.opacity = String(options.opacity);
+        for (const [kind, key] of [['background', 'background_image'], ['overlay', 'overlay_image']]) {
+            const picture = options[key];
+            let node = this._pictures[kind];
+            const a = picture && this.toImage({ x: picture.x0, y: picture.y1 }), b = picture && this.toImage({ x: picture.x1, y: picture.y0 });
+            if (!a || !b) {
+                if (node) node.remove();
+                delete this._pictures[kind];
+                continue;
+            }
+            if (!node) {
+                node = document.createElement('img');
+                node.className = 'map-' + kind;
+                node.setAttribute('alt', '');
+                this._pictures[kind] = node;
+                if (kind === 'background') this.pan.insertBefore(node, this.pan.firstChild);
+                else this.pan.insertBefore(node, this.svg);
+            }
+            if (node.getAttribute('src') !== picture.url) node.setAttribute('src', this._url(picture.url));
+            node.style.left = Math.min(a.x, b.x) + 'px';
+            node.style.top = Math.min(a.y, b.y) + 'px';
+            node.style.width = Math.abs(b.x - a.x) + 'px';
+            node.style.height = Math.abs(b.y - a.y) + 'px';
+        }
+    }
+
+    // ── Floors (MAP-07) ───────────────────────────────────────────────────
+
+    _maps() {
+        const maps = this.model && this.model.attr('maps');
+        return Array.isArray(maps) ? maps.filter((m) => m && m.id !== undefined) : [];
+    }
+
+    _activeMapId() {
+        const entry = this._maps().find((m) => m.index === this._attrs().map_index);
+        return entry ? entry.id : null;
+    }
+
+    _busy() {
+        return !!this.model && taskActive(this.model, this.model.state ? this.model.state.state : 'unavailable');
+    }
+
+    /** Contract: change the floor, only through core's confirmation (CORE-20); false when refused. */
+    selectMap(mapId) {
+        const entry = this._maps().find((m) => String(m.id) === String(mapId));
+        if (!entry || this._busy() || entry.id === this._activeMapId()) return false;
+        const name = entry.custom_name || entry.name || String(entry.id);
+        this.card._confirmMapChange(name, () => this.hass.callService('dreame_vacuum', 'vacuum_select_map', { entity_id: this.card._opts.entity, map_id: entry.id }));
+        return true;
+    }
+
+    /** Saved-map camera of a floor (camera.*_map_N), for its preview. */
+    _floorCamera(index) {
+        return this.model.related.maps.saved_map.find((id) => this.hass.states[id] && this.hass.states[id].attributes.map_index === index) || null;
+    }
+
+    _floorsView() {
+        return {
+            title: translate(this.hass, 'stockwerkWaehlen'),
+            kind: 'menu',
+            // Other cameras are watched only while this dialog is open.
+            watch: () => [this.card._opts.entity, ...this._maps().map((m) => this._floorCamera(m.index)).filter(Boolean)],
+            render: (body, hass, dialog) => {
+                const list = document.createElement('div');
+                list.className = 'menu floors';
+                const active = this._activeMapId();
+                for (const entry of this._maps()) {
+                    const name = entry.custom_name || entry.name || String(entry.id);
+                    const current = entry.id === active;
+                    const button = BuschUI.action({ label: current ? name + ' · ' + translate(hass, 'aktiveKarte') : name, variant: 'quiet', disabled: this._busy() && !current, onClick: () => {
+                        if (current) dialog.close();
+                        else this.selectMap(entry.id);
+                    } });
+                    button.classList.add('menu-item', 'floor');
+                    button.setAttribute('data-map', String(entry.id));
+                    if (current) button.setAttribute('aria-current', 'true');
+                    const cam = this._floorCamera(entry.index);
+                    const picture = cam && hass.states[cam].attributes.entity_picture;
+                    if (picture) {
+                        const img = document.createElement('img');
+                        img.className = 'floor-preview';
+                        img.setAttribute('src', this._url(picture));
+                        img.setAttribute('alt', '');
+                        img.setAttribute('loading', 'lazy');
+                        button.appendChild(img);
+                    }
+                    const text = document.createElement('span');
+                    text.className = 'floor-name';
+                    text.textContent = current ? name + ' · ' + translate(hass, 'aktiveKarte') : name;
+                    button.appendChild(text);
+                    list.appendChild(button);
+                }
+                body.appendChild(list);
+            }
+        };
     }
 
     // ── Layers (MAP-03) ───────────────────────────────────────────────────
@@ -2267,6 +2432,25 @@ const CARD_STYLES = BuschUI.cardStyles + `
 .map-loupe-content > * {
     width: 100%;
     height: 100%;
+}
+.map-background,
+.map-overlay {
+    position: absolute;
+    pointer-events: none;
+}
+.floor-preview {
+    flex: none;
+    width: 56px;
+    height: 40px;
+    object-fit: contain;
+    border-radius: var(--ha-space-1, 4px);
+    background: var(--secondary-background-color, #eeeeee);
+}
+.floor-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .map-base {
     position: absolute;
