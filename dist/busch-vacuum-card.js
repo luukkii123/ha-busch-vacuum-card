@@ -767,7 +767,9 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zeitraumLoeschenTitel: 'Zeitraum löschen?',
             zeitraumLoeschenFrage: 'Zeitraum {zeitraum} endgültig löschen?',
             treffer: '{n} Treffer',
-            keineTreffer: 'Keine Einstellung gefunden. Versuche einen anderen Begriff.'
+            keineTreffer: 'Keine Einstellung gefunden. Versuche einen anderen Begriff.',
+            dauerMin: '{m} min',
+            dauerStdMin: '{h} h {m} min'
         }
     },
     en: {
@@ -1304,7 +1306,9 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zeitraumLoeschenTitel: 'Delete period?',
             zeitraumLoeschenFrage: 'Permanently delete period {zeitraum}?',
             treffer: '{n} results',
-            keineTreffer: 'No setting found. Try another term.'
+            keineTreffer: 'No setting found. Try another term.',
+            dauerMin: '{m} min',
+            dauerStdMin: '{h} h {m} min'
         }
     }
 };
@@ -6436,6 +6440,66 @@ function shortcutDeleteView(card, entry) {
     };
 }
 
+// ---------------------------------------------------------------------------
+// History (history): runs of the history sensors (HIS-01…03); map and data of
+// one run are fetched only while its detail is open
+// ---------------------------------------------------------------------------
+
+const SQFT_PER_SQM = 10.7639;
+
+/** HA's unit system: US customary shows ft² (CORE-04). */
+const areaFeet = (hass) => !!(hass && hass.config && hass.config.unit_system && hass.config.unit_system.length === 'mi');
+
+/** The number of a text like "34 m²" or "51 min", else null. */
+function leadingNumber(text) {
+    const value = parseFloat(String(text === undefined || text === null ? '' : text).replace(',', '.'));
+    return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Runs of a history sensor, newest first by `timestamp` (the attribute keys
+ * are display text without a year). `level`: interrupted (`completed: false`),
+ * notice (blocked rooms or an interrupt reason), done. `group`: the shared
+ * `multiple_cleaning_time` of a cleaning and its re-cleaning, only for two or more.
+ */
+function historyRuns(stateObj) {
+    const attrs = (stateObj && stateObj.attributes) || {};
+    const runs = Object.entries(attrs)
+        .filter(([, e]) => e && typeof e === 'object' && !Array.isArray(e) && Number.isFinite(Number(e.timestamp)))
+        .map(([key, e]) => {
+            const blocked = e.blocked_rooms && typeof e.blocked_rooms === 'object' ? Object.keys(e.blocked_rooms) : [];
+            const level = e.completed === false ? 'interrupted' : blocked.length || e.interrupt_reason ? 'notice' : 'done';
+            const mct = e.multiple_cleaning_time;
+            return { key, timestamp: Number(e.timestamp), level, group: mct === undefined || mct === null ? null : String(mct), entry: e };
+        })
+        .sort((a, b) => b.timestamp - a.timestamp);
+    const count = new Map();
+    for (const r of runs) if (r.group) count.set(r.group, (count.get(r.group) || 0) + 1);
+    for (const r of runs) if (r.group && count.get(r.group) < 2) r.group = null;
+    return runs;
+}
+
+/** An area in m² as text in HA's units. */
+function areaText(hass, sqm) {
+    return areaFeet(hass) ? Math.round(sqm * SQFT_PER_SQM) + ' ft²' : Math.round(sqm) + ' m²';
+}
+
+/** Minutes as "1 h 15 min" / "25 min". */
+function minutesText(hass, minutes) {
+    const m = Math.round(minutes);
+    return m >= 60 ? translate(hass, 'dauerStdMin', { h: Math.floor(m / 60), m: m % 60 }) : translate(hass, 'dauerMin', { m });
+}
+
+/** Area, time and count of the runs shown; numbers read from "<n> m²" / "<n> min". */
+function historySums(runs, hass) {
+    let area = 0, minutes = 0;
+    for (const r of runs) {
+        area += leadingNumber(r.entry.cleaned_area) || 0;
+        minutes += leadingNumber(r.entry.cleaning_time !== undefined ? r.entry.cleaning_time : r.entry.cruising_time) || 0;
+    }
+    return { count: runs.length, area, minutes, areaText: areaText(hass, area), timeText: minutesText(hass, minutes) };
+}
+
 const CARD_STYLES = BuschUI.cardStyles + `
 :host {
     display: block;
@@ -9665,6 +9729,8 @@ BuschVacuumCard.__internals = {
     parseColor,
     taskPayload,
     taskReady,
+    historyRuns,
+    historySums,
     version: CARD_VERSION
 };
 
