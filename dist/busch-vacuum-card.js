@@ -448,6 +448,17 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             remoteWarnung: 'Rückwärts fährt ohne Kollisionsschutz. Loslassen hält sofort an.',
             remoteStarten: 'Steuerung starten',
             remoteStopp: 'Stopp',
+            remoteTempo: 'Tempo',
+            remoteLenken: 'Lenken',
+            remoteMitte: 'Mitte',
+            remoteVor: 'vorwärts {n} %',
+            remoteZurueck: 'rückwärts {n} %',
+            remoteLinks: 'links {n} %',
+            remoteRechts: 'rechts {n} %',
+            remoteHalten_forward: 'Vorwärts (halten)',
+            remoteHalten_backward: 'Rückwärts (halten)',
+            remoteHalten_left: 'Links drehen (halten)',
+            remoteHalten_right: 'Rechts drehen (halten)',
             remoteStatus_unarmed: 'Nicht freigegeben — erst „Steuerung starten“, dann bewegen Regler und Tasten den Roboter.',
             remoteStatus_ready: 'Bereit — Regler halten oder Taste drücken.',
             remoteStatus_moving: 'Fährt — Loslassen hält an.',
@@ -1048,6 +1059,17 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             remoteWarnung: 'Reversing has no collision guard. Letting go stops at once.',
             remoteStarten: 'Start control',
             remoteStopp: 'Stop',
+            remoteTempo: 'Speed',
+            remoteLenken: 'Steering',
+            remoteMitte: 'centre',
+            remoteVor: 'forward {n} %',
+            remoteZurueck: 'backward {n} %',
+            remoteLinks: 'left {n} %',
+            remoteRechts: 'right {n} %',
+            remoteHalten_forward: 'Forward (hold)',
+            remoteHalten_backward: 'Backward (hold)',
+            remoteHalten_left: 'Turn left (hold)',
+            remoteHalten_right: 'Turn right (hold)',
             remoteStatus_unarmed: 'Not armed — tap “Start control” first, then sticks and keys move the robot.',
             remoteStatus_ready: 'Ready — hold a stick or press a key.',
             remoteStatus_moving: 'Moving — let go to stop.',
@@ -8977,6 +8999,54 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     gap: var(--ha-space-1, 4px);
     margin-top: var(--ha-space-1, 4px);
 }
+/* remote: sticks are thumb-sized tracks; the browser must not pan or zoom under them. */
+.remote-pad {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--ha-space-3, 12px);
+    margin: var(--ha-space-3, 12px) 0;
+}
+.remote-stick {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: center;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    box-sizing: border-box;
+    border-radius: 999px;
+    background: var(--secondary-background-color, #e5e5e5);
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+}
+.remote-stick[data-axis=velocity] { width: 72px; height: 216px; }
+.remote-stick[data-axis=turn] { width: 216px; max-width: 100%; height: 72px; }
+.remote-stick:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 2px; }
+.remote-knob {
+    width: 72px;
+    height: 72px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    background: var(--primary-color, #03a9f4);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+}
+.remote-stick[data-axis=turn] .remote-knob { width: 33.34%; height: 100%; }
+.remote-stick[data-axis=velocity] .remote-knob { width: 100%; height: 33.34%; }
+.remote-stick:not([data-held]) .remote-knob {
+    transition: transform 0.15s ease-out;
+}
+.remote-holds {
+    display: grid;
+    grid-template-columns: repeat(2, 48px);
+    gap: var(--ha-space-2, 8px);
+}
+.remote-hold { min-width: 48px; min-height: 48px; touch-action: none; }
+@media (prefers-reduced-motion: reduce) {
+    .remote-knob { transition: none !important; }
+}
 `;
 
 /**
@@ -10908,7 +10978,7 @@ function remoteBlock(model, hass) {
 function remoteView(card) {
     const view = { title: translate(card._hass, 'entryRemote'), kind: 'editor', watch: () => [] };
     // R21 on purpose: arming lives only while the view is open; a remembered arming would let a stray touch move the robot.
-    const ctl = view.remote = { armed: false, note: null, block: null, moving: false, sources: new Map(), mods: {}, precision: false, root: null, parts: {}, listening: false };
+    const ctl = view.remote = { armed: false, note: null, block: null, moving: false, sources: new Map(), mods: {}, precision: false, root: null, parts: {}, listening: false, sticks: [], holds: [] };
     const hass = () => card._hass;
     const text = (key, vars) => translate(hass(), key, vars);
     ctl.sender = new RemoteSender(hass, card._opts.entity, () => {
@@ -10942,6 +11012,8 @@ function remoteView(card) {
     /** Auto-stop: all input released at once. */
     const halt = () => {
         ctl.sources.clear();
+        for (const one of ctl.sticks) one.reset();
+        for (const reset of ctl.holds) reset();
         if (ctl.moving) card._haptic();
         ctl.moving = false;
         ctl.sender.stop();
@@ -11002,6 +11074,91 @@ function remoteView(card) {
         if (role) node.setAttribute('role', role);
         return node;
     };
+    /** Screen-reader text and value of a stick: what the robot gets, in % of the limit (R16). */
+    const describe = (axis, raw) => {
+        const mods = Object.assign({ precision: ctl.precision }, ctl.mods);
+        const value = remoteValue(axis === 'velocity' ? 'velocity' : 'rotation', raw, mods);
+        const limit = axis === 'turn' ? REMOTE.rotation : value > 0 ? REMOTE.forward : -REMOTE.backward;
+        const percent = Math.round(Math.abs(value) / limit * 100);
+        const word = !value ? null : axis === 'velocity' ? (value > 0 ? 'remoteVor' : 'remoteZurueck') : (value > 0 ? 'remoteLinks' : 'remoteRechts');
+        return { now: Math.sign(value) * percent || 0, text: word ? text(word, { n: percent }) : text('remoteMitte') };
+    };
+    /** A stick: one pointer of its own (pointerId + capture), so both work at once with two fingers. */
+    const stick = (axis) => {
+        const node = document.createElement('div');
+        node.className = 'remote-stick';
+        node.setAttribute('data-axis', axis);
+        node.setAttribute('role', 'slider');
+        node.setAttribute('aria-label', text(axis === 'velocity' ? 'remoteTempo' : 'remoteLenken'));
+        node.setAttribute('aria-orientation', axis === 'velocity' ? 'vertical' : 'horizontal');
+        node.setAttribute('aria-valuemin', '-100');
+        node.setAttribute('aria-valuemax', '100');
+        node.tabIndex = 0;
+        const knob = document.createElement('span');
+        knob.className = 'remote-knob';
+        knob.setAttribute('aria-hidden', 'true');
+        node.appendChild(knob);
+        let pointer = null, raw = 0;
+        const show = () => {
+            const d = describe(axis, axis === 'turn' ? -raw : raw);
+            node.setAttribute('aria-valuenow', String(d.now));
+            node.setAttribute('aria-valuetext', d.text);
+            // The knob is a third of the track: ±100 % of its own size reaches the edge (R20: transform only).
+            knob.style.transform = axis === 'velocity' ? 'translate(0%, ' + Math.round(-raw * 100) + '%)' : 'translate(' + Math.round(raw * 100) + '%, 0%)';
+        };
+        const at = (event) => {
+            const r = node.getBoundingClientRect();
+            const x = axis === 'velocity' ? (r.top + r.height / 2 - event.clientY) / (r.height / 2) : (event.clientX - r.left - r.width / 2) / (r.width / 2);
+            raw = Math.max(-1, Math.min(1, x || 0));
+            show();
+            // The turn stick reads right as positive; the sender's axis t counts left.
+            ctl.input('stick:' + axis, axis === 'velocity' ? { v: raw } : { t: -raw });
+        };
+        node.addEventListener('pointerdown', (event) => {
+            if (!ctl.armed || pointer !== null) return;
+            pointer = event.pointerId;
+            if (typeof node.setPointerCapture === 'function') node.setPointerCapture(pointer);
+            if (event.preventDefault) event.preventDefault();
+            node.setAttribute('data-held', '');
+            at(event);
+        });
+        node.addEventListener('pointermove', (event) => { if (event.pointerId === pointer) at(event); });
+        const release = (event) => {
+            if (event.pointerId !== pointer) return;
+            pointer = null;
+            raw = 0;
+            node.removeAttribute('data-held');
+            show();
+            ctl.input('stick:' + axis, null);
+        };
+        for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) node.addEventListener(type, release);
+        ctl.sticks.push({ show, reset: () => { pointer = null; raw = 0; node.removeAttribute('data-held'); show(); } });
+        show();
+        return node;
+    };
+    /** Hold buttons: the way without dragging (R15/R22), 50 % while pressed. */
+    const hold = (name, icon, axes) => {
+        const label = text('remoteHalten_' + name);
+        const button = BuschUI.action({ label, icon, variant: 'icon-only', onClick: () => {} });
+        button.classList.add('remote-hold');
+        button.setAttribute('data-hold', name);
+        let pointer = null;
+        button.addEventListener('pointerdown', (event) => {
+            if (!ctl.armed || pointer !== null) return;
+            pointer = event.pointerId;
+            if (typeof button.setPointerCapture === 'function') button.setPointerCapture(pointer);
+            if (event.preventDefault) event.preventDefault();
+            ctl.input('hold:' + name, axes);
+        });
+        const release = (event) => {
+            if (event.pointerId !== pointer) return;
+            pointer = null;
+            ctl.input('hold:' + name, null);
+        };
+        for (const type of ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture']) button.addEventListener(type, release);
+        ctl.holds.push(() => { pointer = null; });
+        return button;
+    };
     const build = () => {
         const root = document.createElement('div');
         root.className = 'remote';
@@ -11020,7 +11177,15 @@ function remoteView(card) {
         p.stop = BuschUI.action({ label: text('remoteStopp'), text: text('remoteStopp'), icon: 'mdi:stop', onClick: () => halt() });
         p.stop.setAttribute('data-action', 'stop');
         actions.append(p.arm, p.stop);
-        root.append(p.warning, p.status, p.blocked, p.note, actions);
+        const pad = document.createElement('div');
+        pad.className = 'remote-pad';
+        const holds = document.createElement('div');
+        holds.className = 'remote-holds';
+        const half = REMOTE.deadzone + (1 - REMOTE.deadzone) / 2; // 50 % after the dead zone
+        holds.append(hold('forward', 'mdi:arrow-up-bold', { v: half }), hold('left', 'mdi:rotate-left', { t: half }),
+            hold('right', 'mdi:rotate-right', { t: -half }), hold('backward', 'mdi:arrow-down-bold', { v: -half }));
+        pad.append(stick('velocity'), holds, stick('turn'));
+        root.append(p.warning, p.status, p.blocked, p.note, pad, actions);
         ctl.root = root;
     };
 

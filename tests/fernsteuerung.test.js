@@ -387,3 +387,166 @@ test('Schließen: Stopp-Folge genau Stopp + eine Wiederholung, auch wenn mehrere
   assert.deepEqual(schritte(k.haus), [[100, 0], [0, 0], [0, 0]]);
   assert.equal(dialogVon(k.u), null);
 });
+
+// ── Task 3: Regler und Halte-Knöpfe (REM-01) ────────────────────────────────
+
+const zeiger = (k, el, typ, id, x = 100, y = 50) => el.dispatchEvent(k.u.neuesEreignis(typ, { pointerId: id, clientX: x, clientY: y }));
+/** Regler mit protokolliertem setPointerCapture (Rechteck der Attrappe: 200 × 100, Mitte 100/50). */
+function regler(k, achse) {
+  const el = $d(k.u, '[data-axis="' + achse + '"]');
+  el.gefangen = [];
+  el.setPointerCapture = (id) => el.gefangen.push(id);
+  return el;
+}
+const halte = (k, richtung) => { const el = $d(k.u, '[data-hold="' + richtung + '"]'); el.gefangen = []; el.setPointerCapture = (id) => el.gefangen.push(id); return el; };
+
+test('Regler: role=slider mit Namen, Ausrichtung, Grenzen und Text „Mitte“; touch-action none', () => {
+  const k = ansicht();
+  const v = regler(k, 'velocity'), t = regler(k, 'turn');
+  for (const [el, name, lage] of [[v, 'Tempo', 'vertical'], [t, 'Lenken', 'horizontal']]) {
+    assert.equal(el.getAttribute('role'), 'slider');
+    assert.equal(el.getAttribute('aria-label'), name);
+    assert.equal(el.getAttribute('aria-orientation'), lage);
+    assert.equal(el.getAttribute('aria-valuemin'), '-100');
+    assert.equal(el.getAttribute('aria-valuemax'), '100');
+    assert.equal(el.getAttribute('aria-valuenow'), '0');
+    assert.equal(el.getAttribute('aria-valuetext'), 'Mitte');
+    assert.equal(el.tabIndex, 0);
+  }
+  assert.match(k.I.DIALOG_STYLES, /\.remote-stick\s*\{[^}]*touch-action:\s*none/);
+});
+
+test('Regler ohne Freigabe: kein Aufruf, kein Zeigerfang', () => {
+  const k = ansicht();
+  const v = regler(k, 'velocity'), h = halte(k, 'forward');
+  zeiger(k, v, 'pointerdown', 1, 100, 0);
+  zeiger(k, v, 'pointermove', 1, 100, 0);
+  zeiger(k, h, 'pointerdown', 2);
+  k.u.uhr.vor(1000);
+  assert.deepEqual(k.haus.rufe, []);
+  assert.deepEqual(v.gefangen, []);
+  assert.equal(v.getAttribute('aria-valuetext'), 'Mitte');
+});
+
+test('Regler: Zeigerfang, Wert aus der Position, Text „vorwärts 41 %“, neuester Wert', async () => {
+  const k = ansicht();
+  k.starten();
+  const v = regler(k, 'velocity');
+  zeiger(k, v, 'pointerdown', 7, 100, 0);
+  assert.deepEqual(v.gefangen, [7]);
+  assert.deepEqual(schritte(k.haus), [[100, 0]]);
+  assert.equal(v.getAttribute('aria-valuetext'), 'vorwärts 100 %');
+  assert.ok(v.hasAttribute('data-held'));
+  assert.notEqual(regler(k, 'velocity').querySelector('.remote-knob').style.transform, 'translate(0%, 0%)');
+  zeiger(k, v, 'pointermove', 7, 100, 75);
+  zeiger(k, v, 'pointermove', 7, 100, 25);
+  assert.equal(v.getAttribute('aria-valuetext'), 'vorwärts 41 %');
+  assert.equal(v.getAttribute('aria-valuenow'), '41');
+  await k.antworte();
+  k.u.uhr.vor(200);
+  assert.deepEqual(schritte(k.haus), [[100, 0], [41, 0]], 'Zwischenwert rückwärts verfallen');
+  const t = regler(k, 'turn');
+  zeiger(k, t, 'pointerdown', 8, 50, 50);
+  assert.equal(t.getAttribute('aria-valuetext'), 'links 41 %');
+  zeiger(k, t, 'pointermove', 8, 150, 50);
+  assert.equal(t.getAttribute('aria-valuetext'), 'rechts 41 %');
+});
+
+test('zwei Zeiger gleichzeitig: Tempo und Lenken in einem Schritt, Loslassen einzeln', async () => {
+  const k = ansicht();
+  k.starten();
+  const v = regler(k, 'velocity'), t = regler(k, 'turn');
+  zeiger(k, v, 'pointerdown', 1, 100, 0);
+  zeiger(k, t, 'pointerdown', 2, 200, 50);
+  zeiger(k, t, 'pointermove', 1, 0, 50); // fremder Zeiger auf dem Lenkregler zählt nicht
+  zeiger(k, v, 'pointerdown', 3, 100, 100); // zweiter Finger auf demselben Regler zählt nicht
+  await k.antworte();
+  k.u.uhr.vor(200);
+  assert.deepEqual(schritte(k.haus), [[100, 0], [100, -128]]);
+  assert.deepEqual(v.gefangen, [1]);
+  zeiger(k, v, 'pointerup', 1);
+  await k.antworte();
+  k.u.uhr.vor(200);
+  assert.deepEqual(schritte(k.haus).at(-1), [0, -128], 'Lenken läuft weiter');
+  assert.equal(v.getAttribute('aria-valuetext'), 'Mitte');
+  zeiger(k, t, 'pointerup', 2);
+  await k.antworte();
+  letzterIstStopp(k.haus);
+});
+
+for (const ende of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+  test('Auto-Stopp: ' + ende + ' am Regler', async () => {
+    const k = ansicht();
+    k.starten();
+    const t = regler(k, 'turn');
+    zeiger(k, t, 'pointerdown', 4, 0, 50);
+    await k.antworte();
+    zeiger(k, t, ende, 4);
+    assert.deepEqual(schritte(k.haus), [[0, 128], [0, 0]]);
+    assert.equal(t.hasAttribute('data-held'), false);
+    assert.equal(t.querySelector('.remote-knob').style.transform, 'translate(0%, 0%)', 'federt zur Mitte zurück');
+  });
+}
+
+test('Zurückfedern: Übergang nur beim Loslassen, keiner bei reduzierter Bewegung', () => {
+  const { I } = ansicht();
+  assert.match(I.DIALOG_STYLES, /\.remote-stick:not\(\[data-held\]\) \.remote-knob\s*\{[^}]*transition:/);
+  assert.match(I.DIALOG_STYLES, /prefers-reduced-motion: reduce\)\s*\{[^}]*\.remote-knob\s*\{\s*transition: none/);
+});
+
+test('Haptik beim Verlassen der Totzone und beim Stopp, nicht in der Totzone; disable_haptic schaltet ab', async () => {
+  for (const [aus, erwartet] of [[false, 2], [true, 0]]) {
+    const u = neueUmgebung(), haus = hausAus('voll');
+    steuerbar(haus);
+    const vib = [];
+    u.kontext.navigator.vibrate = (ms) => { vib.push(ms); return true; };
+    const karte = neueKarte(u, haus, { disable_haptic: aus });
+    karte.shadowRoot.querySelector('.menu-button').click();
+    eintrag(u, 'remote').click();
+    const k = { u };
+    vib.length = 0;
+    $d(u, '[data-action="arm"]').click();
+    vib.length = 0;
+    const v = regler(k, 'velocity');
+    zeiger(k, v, 'pointerdown', 1, 100, 45); // in der Totzone
+    assert.equal(vib.length, 0);
+    zeiger(k, v, 'pointermove', 1, 100, 10);
+    zeiger(k, v, 'pointermove', 1, 100, 5);
+    zeiger(k, v, 'pointerup', 1);
+    assert.equal(vib.length, erwartet, aus ? 'abgeschaltet' : 'raus aus der Totzone + Stopp');
+  }
+});
+
+test('Halte-Knöpfe ▲▼◀▶ fahren mit 50 % über dieselbe Sende-Logik; Stopp-Knopf hält an', async () => {
+  const k = ansicht();
+  k.starten();
+  const namen = ['forward', 'backward', 'left', 'right'].map((r) => $d(k.u, '[data-hold="' + r + '"]').getAttribute('aria-label'));
+  assert.deepEqual(namen, ['Vorwärts (halten)', 'Rückwärts (halten)', 'Links drehen (halten)', 'Rechts drehen (halten)']);
+  const vor = halte(k, 'forward');
+  zeiger(k, vor, 'pointerdown', 5);
+  assert.deepEqual(vor.gefangen, [5]);
+  await k.antworte();
+  const links = halte(k, 'left');
+  zeiger(k, links, 'pointerdown', 6);
+  k.u.uhr.vor(200);
+  assert.deepEqual(schritte(k.haus), [[50, 0], [50, 64]]);
+  zeiger(k, vor, 'pointerleave', 5);
+  await k.antworte();
+  k.u.uhr.vor(200);
+  assert.deepEqual(schritte(k.haus).at(-1), [0, 64]);
+  vor.click(); // Klick nach dem Loslassen stoppt den anderen Knopf nicht
+  assert.deepEqual(schritte(k.haus).at(-1), [0, 64]);
+  await k.antworte();
+  $d(k.u, '[data-action="stop"]').click();
+  letzterIstStopp(k.haus);
+  const zurueck = halte(k, 'backward');
+  await k.antworte();
+  k.u.uhr.vor(400);
+  await k.antworte();
+  zeiger(k, zurueck, 'pointerdown', 9);
+  k.u.uhr.vor(200);
+  assert.deepEqual(schritte(k.haus).at(-1), [-50, 0]);
+  zeiger(k, zurueck, 'lostpointercapture', 9);
+  await k.antworte();
+  letzterIstStopp(k.haus);
+});
