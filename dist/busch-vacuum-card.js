@@ -6614,7 +6614,8 @@ function integrationState(hass, sensor, raw) {
         const text = hass && typeof hass.localize === 'function' ? hass.localize(id) : '';
         if (text && text !== id) return text;
     }
-    return String(raw);
+    const words = String(raw).replace(/_/g, ' ');
+    return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /** Date and time of a run as HA shows them (CORE-16); the year only when it is not this one. */
@@ -8876,7 +8877,19 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 .history-pager {
     margin-top: var(--ha-space-4, 16px);
 }
+.history-detail .busch-ui-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-2, 8px);
+}
+.history-detail .busch-ui-action ha-icon {
+    order: -1;
+}
+.history-detail [data-action=older] ha-icon {
+    order: 1;
+}
 .history-pager .busch-ui-action {
+    justify-content: center;
     flex: 1 1 0;
     min-width: 0;
     min-height: 44px;

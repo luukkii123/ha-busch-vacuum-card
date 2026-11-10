@@ -130,6 +130,12 @@ const ECHTE_KARTENDATEN = new Set([
   'ENTFERNT-M7',
   'ENTFERNT-M7',
   'ENTFERNT-M7',
+  // history: Größe und Lauflängen einer echten Verlaufskarte samt WLAN-Karte (live lesend 10.11.2026)
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
 ]);
 const kartenWert = (s) => crypto.scryptSync(s, 'busch-vacuum-kartendaten', 32).toString('hex');
 
@@ -180,4 +186,23 @@ test('Gegenprobe: die Kartendaten-Prüfung schlägt an', () => {
     kartenWert('lauf:3:' + crypto.createHash('sha256').update(JSON.stringify([0, 0, 5])).digest('hex'))]);
   assert.deepEqual(echteKartendaten({ antwort: probe }, werte), ['.antwort: Kartengröße', '.antwort: Segment 3', '.antwort: Pixel 3']);
   assert.deepEqual(echteKartendaten({ ...probe, size: [-101, -200, 0, 0, 30, 40, 50, 0], segments: [], data: {} }, werte), []);
+});
+
+test('synthetische Verlaufsdaten der Tests sind keine echten (auch die eingebettete WLAN-Karte)', () => {
+  const { verlaufsdaten } = require('./kartendaten.js');
+  const daten = verlaufsdaten();
+  assert.ok(daten.wifi_map_data && daten.wifi_map_data.size, 'WLAN-Karte wird mitgeprüft');
+  assert.deepEqual(echteKartendaten(daten), []);
+  assert.deepEqual(privateFunde(JSON.stringify(daten)), []);
+});
+
+test('Verlaufsbilder der Fixtures tragen nur den Test-Token', () => {
+  for (const name of ERWARTET.filter((n) => n !== 'integration-schluessel.json')) {
+    const f = JSON.parse(fs.readFileSync(path.join(ORDNER, name), 'utf8'));
+    for (const s of Object.values(f.states || {})) {
+      for (const key of ['cleaning_history_picture', 'cruising_history_picture']) {
+        for (const url of Object.values((s.attributes || {})[key] || {})) assert.match(url, /[?&]token=testtoken&/, name + ' ' + key);
+      }
+    }
+  }
 });

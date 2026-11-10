@@ -242,6 +242,35 @@ settings) only in the Dreame app; the integration offers no service for that.
 Hide the button with `hidden_card_objects: shortcuts`. A configured script
 that Home Assistant does not know is left out, and the editor names it.
 
+## History
+
+*Cleaning history* in the menu lists the last runs the integration keeps (up
+to 30, loaded from the Dreame cloud — without a cloud connection the list is
+empty): newest first, date and time as Home Assistant shows them, status,
+area and duration in your units, and a status mark with symbol and word —
+*Done*, *Notice* (blocked rooms or an interrupt reason) or *Interrupted*. A
+cleaning and its re-cleaning form one group with their sums (tap or `+`/`−`
+to open it); the line on top sums area, time and count.
+
+A run opens its details: area, duration, suction, mop/water tank, cleaning
+type, interrupt reason, pet, and — once the run's data has loaded — start
+method, emptying and mop-wash counts; blocked rooms with their reason; the
+map of the run (cleaning map, or the WiFi map when the robot recorded one)
+with its path, zoom buttons and the run's obstacles (photo and download when
+the robot reported one; old obstacles cannot be ignored). *Newer*/*Older* or
+←/→ turn the pages; Back returns to the list where you left it. Only the
+open run is fetched, once (`/api/camera_history_map_proxy/…&data=1`).
+
+For the newest run with blocked rooms, *Re-clean* lets you pick the rooms:
+all of them start the robot's own re-cleaning (`start_recleaning`, the same
+as the station action); a part starts a new room cleaning of just those
+rooms (it appears as a new run). Both ask first and name the rooms; locked
+while a task runs or when the run was on another map.
+
+*Cruising history* (robots with cruising) works the same with duration,
+cruising type and map, without area sums or re-cleaning. Hide its menu entry
+with `hidden_card_objects: cruising_history`.
+
 ## Theming
 
 The card follows your Home Assistant theme. These optional theme variables

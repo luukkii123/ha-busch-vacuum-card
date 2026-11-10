@@ -251,6 +251,48 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 - Bewusst: Raumwahl und Antipp-Modus im Dialog (Liste/Knöpfe), nicht über die
   Karte — der modale Dialog liegt mit Scrim davor (R04).
 
+## Verlauf (Modul history)
+
+- Menü: `MODULE_VIEWS.history` / `.cruising_history` → `historyView(card,
+  name)`; `HISTORY_KINDS` nennt Sensor und Kamera-Attribut. `can('history')`
+  = Sensor, `can('cruising_history')` = Fähigkeit `cruising` + Sensor;
+  `hidden_card_objects: cruising_history` filtert weiter im core-Menü.
+- Reine Funktionen (über `__internals`): `historyRuns(stateObj)` (nach
+  `timestamp`, Stufe `interrupted`/`notice`/`done`, Gruppe über
+  `multiple_cleaning_time` ab zwei Läufen), `historySums(runs, hass)`
+  (m²/ft² nach `unit_system.length`), `historyUrl(camera, run, { kind, data,
+  wifi })` (Zuordnung über `v=` aus dem **aktuellen** Attribut, Token wechselt
+  mit), `recleanState(model, run, { newest, load, mapId })`.
+- Liste: Gruppen zu, Antippen/`+`/`−` öffnet; Summenzeile; Leerzustand.
+  Neuberechnung nur bei neuem Sensorobjekt; `watch` nur Sensor (+ Kamera im
+  Detail). Rückkehr aus dem Detail: gleiche Scrollposition, Fokus auf dem
+  zuletzt gesehenen Lauf (R14, nur in der Sitzung).
+- Detail `historyDetail`: eine Unterseite, Blättern ändert nur den Lauf
+  (←/→, Älter/Neuer), Zurück = Liste. **Ein Abruf je Lauf und Ansicht:**
+  `&data=1` (gzip-JSON, der Browser entpackt über `Content-Encoding`) trägt
+  Zähler, Startmethode, `blocked_segments`, `obstacles`, `path`, `map_id` und
+  die eingebettete `wifi_map_data` — Reinigungs- und WLAN-Karte kommen aus
+  demselben Abruf. `AbortController` beim Blättern und Schließen; nichts wird
+  vorgeladen.
+- Karte: Datenmodus (Spike) — `decodeMapData` + `paintMapPixels` mit den
+  Farben der einen `MapView` (`card._map._colors`), einmal je Lauf/Karte in
+  ein behaltenes Canvas; Pfad und Hindernismarker als SVG darüber
+  (`gridAffine`). Bildmodus (`info=0` + `cleaning=1`/`wifi=1`) nur, wenn das
+  JSON keine Karte trägt — dann gilt die R24-Ausnahme wie map-view. Keine
+  zweite `MapView`; Zoom über die Breite der Bühne (+/−/Einpassen).
+- Hindernisse alter Läufe: Liste + Marker, Foto nur bei `picture_status` 2
+  über `camera_map_obstacle_history_proxy` (`history_index` = `index` der
+  Lauf-URL); kein Ignorieren (wirkt nur auf die aktuelle Karte).
+- „Nochmal reinigen“ (Text = Stationsaktion „Nachreinigen“): alle blockierten
+  Räume → `STATION_ACTIONS` `start_recleaning`; Teilauswahl → `taskPayload`
+  Raum (`vacuum_clean_segment`, neuer Lauf, Hinweis im Bestätigungstext).
+- Live-Datenform 10.11.2026 lesend geprüft (ein Lauf, `data=1`, PNG
+  Reinigung/WLAN): Felder wie oben, `cleaning_map_data` beim X40 leer
+  (Rückfall: Hauptkarte des JSON), Hindernisse des Laufs nur blockierte Räume
+  (kein Foto am Gerät — Fotoweg nur synthetisch belegt). Rohdaten privat,
+  danach gelöscht; Größe/Lauflängen als scrypt-Werte in
+  `tests/datenschutz.test.js`.
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):
@@ -316,6 +358,27 @@ echten HA-Selektoren. Die Abnahme mit `karten-alle.sh` und E2E läuft einmal
 am Ende aller Module.
 
 ## Geprüft
+
+**10.11.2026 · 0.1.0, Modul history (#882, Tasks 1–7, nicht getaggt)**
+
+1. `node --check` grün; `node --test` 435/435 (27 Tests `tests/verlauf.test.js`,
+   2 neue in `tests/datenschutz.test.js`).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. `render.py`: 54/54, UI-Regeln 0 (Regel 1 Liste, Detail, Bestätigung,
+   Cruising; Regel 2 Liste und Cruising als erste Ebene), 0 Konsolen-/
+   Seitenfehler, 0 Fremdanfragen, 0 Dienstaufrufe. 9 Ansichten (Liste,
+   Gruppe offen, Detail, WLAN-Karte, Hindernisfoto, Bestätigung, Cruising,
+   Cruising-Detail, leer) × 360/390/800/1280 × hell/dunkel ohne Überlauf,
+   Knöpfe ≥ 44 px; echte Tastatur (Enter, →, Escape mit Fokus zurück). Der
+   Lauf fand: `route.fulfill` entpackt gzip nicht (Harness liefert das JSON
+   jetzt ungepackt, der gzip-Weg ist in der Attrappe belegt), Symbole rechts
+   vom Text in Erneut/Neuer, Startmethode ohne HA-Übersetzung als „app“ —
+   behoben und in den Bildern nachgesehen.
+4. Live lesend (Nutzer-OK): `/api/states` (Sensorattribute wie `voll.json`,
+   30 Läufe, Kamera-URLs mit `v=`), einmal `data=1` sowie PNG Reinigung/WLAN
+   des neuesten Laufs; kein Hindernis mit Foto am Gerät, daher kein
+   Hindernisfoto-Abruf. Rohdaten gelöscht. „Nochmal reinigen“ live nicht
+   ausgelöst (fährt den Roboter).
 
 **10.11.2026 · 0.1.0, Modul clean-settings (#882, Tasks 1–6, nicht getaggt)**
 

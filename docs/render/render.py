@@ -24,6 +24,10 @@ Covered (plan 2026-11-09-busch-vacuum-card-core, Task 8):
     Data mode and image fallback, overlays on the expected pixels, zoom
     buttons/keys/wheel, lock, motion, obstacle bubble and dialog, map info,
     floor choice, touch targets, no foreign requests, a lab timing
+  * history (plan 2026-11-10-busch-vacuum-card-history, Task 7): the history
+    endpoints answer with a SYNTHETIC run (gzip JSON like the integration, an
+    SVG picture, an SVG obstacle photo): list, groups, detail with cleaning and
+    WiFi map, photo, re-clean confirmation, cruising, empty; keyboard
 
 The page is served over HTTP so that any sub-resource would show up as a
 real 404. The harness HTML is written into the output directory, which must
@@ -147,7 +151,8 @@ def synthetic_map_svg(cam_attrs, grid):
 
 OBSTACLE_PHOTO = ('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="#cfd8dc"/>'
                   '<circle cx="160" cy="120" r="60" fill="#90a4ae"/></svg>')
-CAMERA_ROUTES = ("/api/camera_proxy/", "/api/camera_map_data_proxy/", "/api/camera_map_obstacle_proxy/")
+CAMERA_ROUTES = ("/api/camera_proxy/", "/api/camera_map_data_proxy/", "/api/camera_map_obstacle_proxy/",
+                 "/api/camera_history_map_proxy/", "/api/camera_map_obstacle_history_proxy/")
 
 
 def serve(directory, port_holder):
@@ -303,6 +308,10 @@ def scenario(fixture, name):
         # clean-settings: a device without cleaning_sequence_v2 and two rooms in order (synthetic).
         vac["attributes"]["capabilities"] = [c for c in vac["attributes"]["capabilities"] if c != "cleaning_sequence_v2"]
         vac["attributes"]["cleaning_sequence"] = [3, 5]
+    elif name == "history_empty":
+        # history: the sensor without runs (no cloud connection), R18.
+        sensor = states["sensor.robo_cleaning_history"]
+        sensor["attributes"] = {k: v for k, v in sensor["attributes"].items() if not isinstance(v, dict)}
     elif name == "error":
         vac["state"] = "error"
         vac["attributes"].update({"has_error": True, "error": "Wheel stuck", "charging": False})
@@ -321,11 +330,20 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     repo_root = card_file.parent.parent
     fixture = json.loads((repo_root / "tests" / "fixtures" / "voll.json").read_text(encoding="utf-8"))
-    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict")}
+    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty")}
     cam = fixture["states"]["camera.robo_map"]["attributes"]
     grid = synthetic_map_data(cam["rooms"], frame_id=cam["frame_id"])
     svg, svg_size = synthetic_map_svg(cam, grid)
     routing = {"data": True}
+    # history: SYNTHETIC run data in the form of map.py get_data for a history map (fields checked
+    # read-only on the device 10.11.2026), built from the same anonymised rooms -- never a real run.
+    rs = sorted((r for r in cam["rooms"].values() if r.get("x0") is not None), key=lambda r: r["room_id"])
+    history_data = dict(grid, history_map=True, map_id=cam["map_id"], completed=True, startup_method=1, cleanup_method=0,
+                        mop_wash_count=3, dust_collection_count=1, task_interrupt_reason=None,
+                        blocked_segments={"4": [3, 0, 0], "5": [4, 0, 0], "9": [3, 0, 0]},
+                        obstacles=[["1", rs[2]["x"], rs[2]["y"], 200, None, 0, 0, "0", None, None, None, None, "Bibliothek", 1, 5, "Blocked by threshold"],
+                                   ["2", rs[1]["x"] + 200, rs[1]["y"] + 200, 133, 80, 0, 2, "ab12", None, None, 40, 40, "Salon", 2, None, None]],
+                        cleaning_map_data=None, wifi_map_data=dict(grid, wifi_map=True, path=[]))
 
     ports = []
     httpd = serve(repo_root, ports)
@@ -348,6 +366,15 @@ def main():
 
         def camera_route(route):
             url = route.request.url
+            if "/api/camera_history_map_proxy/" in url:
+                if "data=1" in url:
+                    # The integration sends gzip with Content-Encoding (camera.py#L271) and the browser unpacks it;
+                    # route.fulfill hands the bytes over undecoded, so the harness sends the JSON plain (tests/attrappe.js
+                    # covers the gzip path).
+                    return route.fulfill(status=200, content_type="application/json", body=json.dumps(history_data))
+                return route.fulfill(status=200, content_type="image/svg+xml", body=svg)
+            if "/api/camera_map_obstacle_history_proxy/" in url:
+                return route.fulfill(status=200, content_type="image/svg+xml", body=OBSTACLE_PHOTO)
             if "/api/camera_map_data_proxy/" in url:
                 body = grid if routing["data"] else {"empty_map": True, "size": [0, 0, 0, 0, 1, 1, 0, 0, [0, 0, 0, 0]]}
                 return route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
@@ -1133,6 +1160,92 @@ def main():
         #     Customized, rooms, room page, confirmation, sequence strict/not strict/
         #     tap mode; keyboard and mouse drag on the sequence; no service call
         # ------------------------------------------------------------------
+        # 3h. History (history Task 7): list, group open, detail with cleaning and WiFi
+        #     map, obstacle photo, re-clean confirmation, cruising list/detail, empty;
+        #     keyboard; no service call (the confirmation is only opened)
+        # ------------------------------------------------------------------
+        # Opened as the dialog's first view (the menu entry itself is covered in tests/verlauf.test.js).
+        hist_open = """async (a) => { window.closeDialogs(); const c = window.card(); const I = customElements.get('busch-vacuum-card').__internals;
+            const sr = () => window.dialog().shadowRoot; const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+            c._openDialog(I.MODULE_VIEWS[a.entry](c));
+            for (const sel of a.steps) { await wait(120); const n = sr().querySelector(sel); if (!n) return 'missing ' + sel; n.click(); }
+            await wait(250); return sr().querySelector('h1').textContent; }"""
+        detail_steps = ["[data-group='1794228271']", "[data-run='1794228429']"]
+        hist_views = [
+            ("liste", "docked", "history", []),
+            ("liste-gruppe", "docked", "history", ["[data-group='1794228271']"]),
+            ("detail", "docked", "history", detail_steps),
+            ("detail-wlan", "docked", "history", detail_steps + ["[data-tab=wifi]"]),
+            ("hindernisfoto", "docked", "history", detail_steps + ["[data-obstacle='2']"]),
+            ("bestaetigung", "docked", "history", detail_steps + ["[data-reclean-room='4']", "[data-reclean-room='5']", "[data-reclean-room='9']", "[data-action=reclean]"]),
+            ("cruising", "docked", "cruising_history", []),
+            ("cruising-detail", "docked", "cruising_history", ["[data-run='1745078136']"]),
+            ("leer", "history_empty", "history", []),
+        ]
+        hist_geo = []
+        for w, h in ((360, 640), (390, 844), (800, 600), (1280, 800)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                for label, state, entry, steps in hist_views:
+                    build(state)
+                    page.wait_for_timeout(150)
+                    title = page.evaluate(hist_open, {"entry": entry, "steps": steps})
+                    page.wait_for_timeout(350)
+                    g = page.evaluate("""() => { const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet'), r = sheet.getBoundingClientRect();
+                        const c = sr.querySelector('.history-map-canvas'), img = sr.querySelector('.obstacle-photo');
+                        return { kind: sheet.getAttribute('data-kind'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, W: innerWidth, H: innerHeight,
+                                 overflowX: sheet.scrollWidth - sheet.clientWidth, small: window.smallTargets(sr),
+                                 runs: sr.querySelectorAll('[data-run]').length, groups: sr.querySelectorAll('[data-group]').length,
+                                 canvas: c ? { w: c.width, h: c.height, shown: c.getBoundingClientRect().width, alt: c.getAttribute('aria-label') } : null,
+                                 tabs: Array.from(sr.querySelectorAll('[role=tab]')).map((t) => t.getAttribute('aria-selected')),
+                                 paths: sr.querySelectorAll('[data-path]').length, markers: sr.querySelectorAll('[data-marker]').length,
+                                 facts: Object.fromEntries(Array.from(sr.querySelectorAll('[data-fact]')).map((n) => [n.getAttribute('data-fact'), n.textContent])),
+                                 photo: img ? img.naturalWidth : null, chips: sr.querySelectorAll('[data-reclean-room]').length,
+                                 empty: !!sr.querySelector('.history-empty'), loading: !!sr.querySelector('[data-load=loading]') }; }""")
+                    if (w, th) in ((360, "light"), (1280, "dark")) or (w == 390 and th == "dark"):
+                        shot(f"verlauf-{label}-{w}x{h}-{th}.png")
+                    page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                    hist_geo.append({"label": label, "w": w, "h": h, "theme": th, "title": title, **g})
+        report["historyDialogs"] = hist_geo
+        bad = [x for x in hist_geo if not inside(x) or x["small"] or x["overflowX"] > 1 or str(x["title"]).startswith("missing")]
+        check("history: 9 views x 4 sizes x 2 themes inside the viewport, no sideways overflow, 44 px buttons",
+              not bad, json.dumps(bad[:4]))
+        by = {x["label"]: x for x in hist_geo if x["w"] == 390 and x["theme"] == "light"}
+        d = by["detail"]
+        check("history: list/groups, detail with painted map, path and obstacle marker, counters from the gzip data, WiFi tab, photo, confirmation, cruising, empty",
+              by["liste"]["title"] == "Reinigungsverlauf" and by["liste"]["groups"] >= 10 and by["liste-gruppe"]["runs"] > by["liste"]["runs"]
+              and d["canvas"] and d["canvas"]["w"] > 0 and d["canvas"]["shown"] > 200 and d["canvas"]["alt"].startswith("Karte des Laufs vom")
+              and d["paths"] == 1 and d["markers"] == 1 and d["facts"].get("startup_method") == "App" and d["facts"].get("mop_wash_count") == "3"
+              and not d["loading"] and d["chips"] == 3 and d["tabs"] == ["true", "false"]
+              and by["detail-wlan"]["tabs"] == ["false", "true"] and by["detail-wlan"]["canvas"]["alt"].startswith("WLAN-Karte") and by["detail-wlan"]["paths"] == 0
+              and by["hindernisfoto"]["photo"] == 320 and by["bestaetigung"]["kind"] == "confirm"
+              and by["cruising"]["title"] == "Cruising-Verlauf" and by["cruising"]["runs"] == 1 and by["cruising-detail"]["tabs"] == []
+              and by["cruising-detail"]["chips"] == 0 and by["leer"]["empty"] and by["leer"]["runs"] == 0,
+              json.dumps({k: {kk: v[kk] for kk in ("title", "runs", "groups", "canvas", "tabs", "paths", "markers", "facts", "photo", "chips", "empty", "kind")} for k, v in by.items()}))
+        # Real keyboard: Enter opens a run, → pages to the older one, Escape returns to the list with the focus on that run.
+        page.set_viewport_size({"width": 390, "height": 844})
+        theme("light")
+        build("docked")
+        page.wait_for_timeout(150)
+        page.evaluate(hist_open, {"entry": "history", "steps": []})
+        page.evaluate("() => window.dialog().shadowRoot.querySelector('[data-run=\"1794047923\"]').focus()")
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(300)
+        first = page.evaluate("() => window.dialog().shadowRoot.querySelector('h1').textContent")
+        page.evaluate("() => window.dialog().shadowRoot.querySelector('[data-action=older]').focus()")
+        page.keyboard.press("ArrowRight")
+        page.wait_for_timeout(300)
+        second = page.evaluate("() => window.dialog().shadowRoot.querySelector('h1').textContent")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(400)
+        back = page.evaluate("() => { const sr = window.dialog().shadowRoot, a = sr.activeElement; return [sr.querySelector('h1').textContent, a && (a.getAttribute('data-run') || a.getAttribute('data-group'))]; }")
+        page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+        check("history keyboard: Enter opens the run, ArrowRight pages to the older one, Escape back to the list with the focus on the run seen last",
+              first != second and ":" in first and back[0] == "Reinigungsverlauf" and back[1] is not None,
+              json.dumps({"first": first, "second": second, "back": back}))
+
+        # ------------------------------------------------------------------
         clean_open = """(steps) => { window.closeDialogs(); const b = window.card().shadowRoot.querySelector('[data-action=clean-settings]');
             if (!b) return 'missing settings button'; b.click(); const sr = () => window.dialog().shadowRoot;
             for (const sel of steps) { const n = sr().querySelector(sel); if (!n) return 'missing ' + sel; n.click(); }
@@ -1329,6 +1442,21 @@ def main():
                     page, breiten=(390, 960), hoehe=900,
                     messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
                     vor_messung=lambda pg, s=state: (build(s), page.wait_for_timeout(150)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            for label, entry, steps, kind in (("verlauf", "history", [], "bearbeitung"), ("verlauf_detail", "history", detail_steps, "bearbeitung"),
+                                              ("verlauf_bestaetigung", "history", detail_steps + ["[data-reclean-room='4']", "[data-action=reclean]"], "bestaetigung"),
+                                              ("cruising", "cruising_history", [], "bearbeitung")):
+                opener = lambda e=entry, st=steps: page.evaluate(hist_open, {"entry": e, "steps": st})
+                r["regel1_dialog_" + label] = lauf_breiten(
+                    page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, ".sheet"),
+                    vor_messung=lambda pg, o=opener: (build("docked"), page.wait_for_timeout(150), o(), page.wait_for_timeout(350)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                if steps:
+                    continue
+                r["regel2_dialog_" + label] = lauf_breiten(
+                    page, breiten=(390, 960), hoehe=900,
+                    messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
+                    vor_messung=lambda pg: (build("docked"), page.wait_for_timeout(150)))
                 page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
             r["regel1_karte_shortcuts"] = lauf_breiten(
                 page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
