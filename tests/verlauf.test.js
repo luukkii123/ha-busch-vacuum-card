@@ -325,3 +325,94 @@ test('Schließen bricht den laufenden Abruf ab', async () => {
   k.u.zurueck();
   assert.equal(a.signal.aborted, true);
 });
+
+// ── Task 4: Karte des Laufs, Reinigungs-/WLAN-Umschalter, Hindernisse ──────
+
+async function geladen(optionen, ts) {
+  const k = detail(optionen, ts);
+  await mikro(); await mikro();
+  return k;
+}
+const leinwand = (k) => $d(k.u, '.history-map-canvas');
+
+test('Datenmodus: Karte des Laufs als Canvas aus dem Daten-JSON, Alternativtext, Pfad; kein weiterer Abruf', async () => {
+  const k = await geladen();
+  const c = leinwand(k);
+  assert.ok(c, 'Canvas');
+  assert.equal(c.getAttribute('role'), 'img');
+  assert.match(c.getAttribute('aria-label'), /^Karte des Laufs vom /);
+  const daten = k.I.decodeMapData(verlaufsdaten());
+  assert.equal(c.width, daten.width);
+  assert.equal(c.height, daten.height);
+  assert.equal($$d(k.u, '[data-path]').length, 2, 'zwei Pfadstriche');
+  assert.equal($d(k.u, '.history-map-img'), null, 'kein PNG im Datenmodus');
+  assert.equal(verlaufAbrufe(k).length, 1);
+});
+
+test('Umschalter Reinigungs-/WLAN-Karte nur mit wifi_map_data; Tastatur; WLAN ohne Pfad', async () => {
+  const k = await geladen();
+  const tabs = $$d(k.u, '[role="tab"]');
+  assert.deepEqual(tabs.map((t) => t.textContent), ['Reinigungskarte', 'WLAN-Karte']);
+  assert.equal($d(k.u, '[role="tablist"]').getAttribute('aria-label'), 'Karte des Laufs');
+  assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+  taste(tabs[0], 'ArrowRight');
+  const wlan = $$d(k.u, '[role="tab"]')[1];
+  assert.equal(wlan.getAttribute('aria-selected'), 'true');
+  assert.match(leinwand(k).getAttribute('aria-label'), /^WLAN-Karte des Laufs vom /);
+  assert.equal($$d(k.u, '[data-path]').length, 0);
+  assert.equal(verlaufAbrufe(k).length, 1, 'WLAN-Karte steckt im selben Daten-JSON');
+  const ohne = await geladen({ antwort: datenAntwort({ [NEUESTER]: { json: verlaufsdaten({ wifi_map_data: null }) } }) });
+  assert.equal($d(ohne.u, '[role="tablist"]'), null);
+});
+
+test('Bildmodus-Rückfall: PNG mit info=0 und cleaning=1 bzw. wifi=1; Bildfehler → keine Karte', async () => {
+  const kaputt = { size: null, data: null };
+  const k = await geladen({ antwort: datenAntwort({ [NEUESTER]: { json: verlaufsdaten(Object.assign({}, kaputt, { wifi_map_data: Object.assign({}, kaputt) })) } }) });
+  assert.equal(leinwand(k), null);
+  const img = $d(k.u, '.history-map-img');
+  assert.match(img.getAttribute('src'), /^\/api\/camera_history_map_proxy\/camera\.robo_map\?token=testtoken&index=\d+&v=1794228429&info=0&cleaning=1$/);
+  assert.match(img.getAttribute('alt'), /^Karte des Laufs vom /);
+  $$d(k.u, '[role="tab"]')[1].click();
+  const w = $d(k.u, '.history-map-img');
+  assert.match(w.getAttribute('src'), /&info=0&wifi=1$/);
+  w.dispatchEvent({ type: 'error' });
+  assert.equal($d(k.u, '.history-map-img'), null);
+  assert.match($d(k.u, '[data-map="missing"]').textContent, /Keine WLAN-Karte/);
+  assert.equal(verlaufAbrufe(k).length, 1, 'Bilder lädt der Browser, nicht fetch');
+});
+
+test('Zoom per Knopf: +, −, Einpassen', async () => {
+  const k = await geladen();
+  const stufe = () => $d(k.u, '.history-map-stage').getAttribute('data-zoom');
+  assert.equal(stufe(), '1');
+  assert.equal($d(k.u, '[data-action="zoom-out"]').disabled, true);
+  $d(k.u, '[data-action="zoom-in"]').click();
+  $d(k.u, '[data-action="zoom-in"]').click();
+  assert.equal(stufe(), '2');
+  $d(k.u, '[data-action="zoom-out"]').click();
+  assert.equal(stufe(), '1.5');
+  $d(k.u, '[data-action="zoom-fit"]').click();
+  assert.equal(stufe(), '1');
+});
+
+test('Hindernisse des Laufs: Liste und Marker, Foto nur mit gemeldetem Bild über den Verlaufs-Endpunkt, kein Ignorieren', async () => {
+  const k = await geladen();
+  const eintraege = $$d(k.u, '[data-obstacle]');
+  assert.equal(eintraege.length, 1, 'blockierte Räume stehen schon oben');
+  assert.match(eintraege[0].textContent, /Shoes/);
+  assert.match(eintraege[0].textContent, /Salon/);
+  assert.equal($$d(k.u, '[data-marker]').length, 1);
+  const n = /index=(\d+)&v=1794228429/.exec(verlaufAbrufe(k)[0].url)[1];
+  eintraege[0].click();
+  const foto = $d(k.u, '.obstacle-photo');
+  assert.equal(foto.getAttribute('src'), '/api/camera_map_obstacle_history_proxy/camera.robo_map?token=testtoken&index=2&history_index=' + n);
+  assert.match($d(k.u, '[data-action="obstacle-download"]').getAttribute('href'), /&file=1$/);
+  assert.equal($d(k.u, '[data-action="obstacle-ignore"]'), null);
+  // ohne gemeldetes Bild kein Foto
+  const ohne = verlaufsdaten();
+  ohne.obstacles[1][6] = 0;
+  const k2 = await geladen({ antwort: datenAntwort({ [NEUESTER]: { json: ohne } }) });
+  $$d(k2.u, '[data-obstacle]')[0].click();
+  assert.equal($d(k2.u, '.obstacle-photo'), null);
+  assert.match($d(k2.u, '.obstacle-note').textContent, /kein Foto/);
+});

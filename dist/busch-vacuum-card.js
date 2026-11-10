@@ -797,7 +797,15 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             laufWeg: 'Diesen Lauf gibt es im Verlauf nicht mehr.',
             neuer: 'Neuer',
             aelter: 'Älter',
-            blockierteRaeume: 'Blockierte Räume'
+            blockierteRaeume: 'Blockierte Räume',
+            laufKarte: 'Karte des Laufs',
+            laufKarteAlt: 'Karte des Laufs vom {datum}',
+            wlanKarteAlt: 'WLAN-Karte des Laufs vom {datum}',
+            reinigungsKarte: 'Reinigungskarte',
+            wlanKarte: 'WLAN-Karte',
+            keineLaufKarte: 'Keine Karte für diesen Lauf.',
+            keineWlanKarte: 'Keine WLAN-Karte für diesen Lauf.',
+            laufHindernisse: 'Hindernisse'
         }
     },
     en: {
@@ -1364,7 +1372,15 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             laufWeg: 'This run is no longer in the history.',
             neuer: 'Newer',
             aelter: 'Older',
-            blockierteRaeume: 'Blocked rooms'
+            blockierteRaeume: 'Blocked rooms',
+            laufKarte: 'Map of the run',
+            laufKarteAlt: 'Map of the run on {datum}',
+            wlanKarteAlt: 'WiFi map of the run on {datum}',
+            reinigungsKarte: 'Cleaning map',
+            wlanKarte: 'WiFi map',
+            keineLaufKarte: 'No map for this run.',
+            keineWlanKarte: 'No WiFi map for this run.',
+            laufHindernisse: 'Obstacles'
         }
     }
 };
@@ -6879,6 +6895,233 @@ function runLoadNote(hass, load, retry) {
     return note;
 }
 
+/** ObstacleType of the map data (types.py#L2749), named as the integration names them in the camera's attributes. */
+const OBSTACLE_TYPES = {
+    128: 'base', 129: 'scale', 130: 'thread', 131: 'wire', 132: 'toy', 133: 'shoes', 134: 'sock', 135: 'fece',
+    136: 'trash_can', 137: 'fabric', 138: 'power_strip', 139: 'liquid_stain', 142: 'obstacle', 158: 'pet',
+    163: 'cleaning_tools', 169: 'detected_stain', 200: 'blocked_room', 201: 'easy_to_stuck_furniture',
+    202: 'uncleanable_stain', 204: 'leg', 205: 'large_particles', 206: 'dried_stain', 209: 'food_bowl', 210: 'pet_bed',
+    214: 'cleaned_stain', 215: 'skipped_uncleanable_stain', 216: 'cleaned_dried_stain', 217: 'cleaned_large_particles',
+    225: 'hair', 226: 'paper', 228: 'cleaned_hair', 229: 'sundry'
+};
+const obstacleTypeText = (code) => (OBSTACLE_TYPES[code] || 'unknown').split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+/**
+ * Obstacles of a run from its map data (map.py get_data: [key, x, y, type,
+ * possibility, ignore, picture_status, id, …, room name, colour, segment, reason]);
+ * blocked rooms are listed above already.
+ */
+function runObstacles(data, rooms) {
+    return (Array.isArray(data && data.obstacles) ? data.obstacles : []).filter((o) => Array.isArray(o) && Number(o[3]) !== 200).map((o) => ({
+        key: String(o[0]), x: Number(o[1]), y: Number(o[2]), type: obstacleTypeText(Number(o[3])),
+        photo: Number(o[6]) === 2, // ObstaclePictureStatus.UPLOADED: only then is there a picture (map.py#L1233)
+        room: (o[14] !== null && o[14] !== undefined && rooms[o[14]] ? roomName(rooms[o[14]], o[14]) : o[12]) || '', reason: o[15] || ''
+    }));
+}
+
+const svgNode = (tag, attrs) => MapView.prototype.svgNode(tag, attrs);
+const HISTORY_ZOOMS = [1, 1.5, 2, 3, 4];
+
+/** The run's picture in data mode: painted once per run, map and colours into a canvas kept by the view (R20). */
+function runCanvas(card, hass, detail, key, grid, segments) {
+    const c = (card._map && card._map._colors) || MAP_SCHEMES[darkMode(hass) ? 'dark' : 'light'];
+    const id = key + ':' + JSON.stringify(c);
+    const kept = detail.canvases.get(key);
+    if (kept && kept.id === id) return kept.canvas;
+    const picture = paintMapPixels(grid, {
+        floor: parseColor(c.floor), wall: parseColor(c.wall), carpet: parseColor(c.carpet),
+        rooms: c.room.map((v) => parseColor(v)), room: parseColor(c.room[0])
+    }, { rooms: Object.fromEntries((Array.isArray(segments) ? segments : []).filter(Array.isArray).map((g) => [g[0], { color_index: g[6] }])) });
+    const canvas = (kept && kept.canvas) || document.createElement('canvas');
+    canvas.className = 'history-map-canvas';
+    canvas.setAttribute('role', 'img');
+    canvas.width = picture.width;
+    canvas.height = picture.height;
+    const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+    if (ctx && typeof ImageData === 'function') ctx.putImageData(new ImageData(picture.data, picture.width, picture.height), 0, 0);
+    detail.canvases.set(key, { id, canvas });
+    return canvas;
+}
+
+/**
+ * HIS-02 map: cleaning or WiFi map of the run (tabs only with `wifi_map_data`),
+ * data mode from the loaded map data, image mode (PNG `info=0`) only when the
+ * data holds no map; zoom by buttons (R22); obstacles as list and markers.
+ */
+function runMapSection(card, hass, kind, run, load, detail, dialog) {
+    const section = document.createElement('div');
+    section.className = 'history-map';
+    if (load.status !== 'ready') return null;
+    const data = load.data || {};
+    const wifiData = !kind.cruising && data.wifi_map_data && typeof data.wifi_map_data === 'object' ? data.wifi_map_data : null;
+    const tab = wifiData && detail.tab === 'wifi' ? 'wifi' : 'cleaning';
+    const date = runDateText(hass, run.timestamp);
+    const alt = translate(hass, tab === 'wifi' ? 'wlanKarteAlt' : 'laufKarteAlt', { datum: date });
+    if (wifiData) {
+        const tabs = ['cleaning', 'wifi'];
+        const list = document.createElement('div');
+        list.className = 'station-tabs';
+        list.setAttribute('role', 'tablist');
+        list.setAttribute('aria-label', translate(hass, 'laufKarte'));
+        const select = (name, focus) => {
+            detail.tab = name;
+            dialog._render();
+            const node = focus && dialog.shadowRoot.querySelector('[data-tab="' + name + '"]');
+            if (node) node.focus();
+        };
+        tabs.forEach((name, i) => {
+            const label = translate(hass, name === 'wifi' ? 'wlanKarte' : 'reinigungsKarte');
+            const button = BuschUI.action({ label, text: label, variant: name === tab ? 'primary' : 'quiet', onClick: () => select(name, false) });
+            button.setAttribute('role', 'tab');
+            button.setAttribute('data-tab', name);
+            button.setAttribute('aria-selected', String(name === tab));
+            button.tabIndex = name === tab ? 0 : -1;
+            button.addEventListener('keydown', (event) => {
+                const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[event.key];
+                if (next === undefined) return;
+                event.preventDefault();
+                event.stopPropagation(); // ←/→ here switch maps, not runs
+                select(tabs[(next + tabs.length) % tabs.length], true);
+            });
+            list.appendChild(button);
+        });
+        section.appendChild(list);
+    }
+    const source = tab === 'wifi' ? wifiData : data.cleaning_map_data && typeof data.cleaning_map_data === 'object' ? data.cleaning_map_data : data;
+    const grid = decodeMapData(source);
+    const key = run.timestamp + ':' + tab;
+    const stage = document.createElement('div');
+    stage.className = 'history-map-stage';
+    const zoom = detail.zoom || 1;
+    stage.setAttribute('data-zoom', String(zoom));
+    stage.style.width = zoom * 100 + '%';
+    const rooms = cameraAttrs(card._model()).rooms || {};
+    const obstacles = tab === 'cleaning' ? runObstacles(data, rooms) : [];
+    if (grid) {
+        const canvas = runCanvas(card, hass, detail, key, grid, source.segments);
+        canvas.setAttribute('aria-label', alt);
+        stage.appendChild(canvas);
+        // Path and obstacle markers over the canvas, in its pixels (gridAffine as the live map).
+        const m = gridAffine(grid).matrix;
+        const svg = svgNode('svg', { class: 'history-map-overlay', viewBox: '0 0 ' + canvas.width + ' ' + canvas.height, 'aria-hidden': 'true' });
+        if (tab === 'cleaning') {
+            (Array.isArray(source.path) ? source.path : []).forEach((stroke, i) => {
+                const pts = [];
+                for (let j = 1; j + 1 < stroke.length; j += 2) {
+                    const p = applyAffine(m, { x: stroke[j], y: stroke[j + 1] });
+                    pts.push(p.x + ',' + p.y);
+                }
+                svg.appendChild(svgNode('polyline', { 'data-path': i, 'data-kind': stroke[0], points: pts.join(' ') }));
+            });
+        }
+        for (const o of obstacles) {
+            const p = applyAffine(m, o);
+            svg.appendChild(svgNode('rect', { 'data-marker': o.key, x: p.x - 2, y: p.y - 2, width: 4, height: 4, transform: 'rotate(45 ' + p.x + ' ' + p.y + ')' }));
+        }
+        stage.appendChild(svg);
+    } else if (!(detail.failed && detail.failed.has(key))) {
+        const img = document.createElement('img');
+        img.className = 'history-map-img';
+        img.setAttribute('src', hassUrl(hass, historyUrl(hass.states[historyCamera(card)], run, { kind: kind.name, wifi: tab === 'wifi' })));
+        img.setAttribute('alt', alt);
+        img.addEventListener('error', () => {
+            (detail.failed || (detail.failed = new Set())).add(key);
+            dialog._render();
+        });
+        stage.appendChild(img);
+    } else {
+        const note = noteLine(translate(hass, tab === 'wifi' ? 'keineWlanKarte' : 'keineLaufKarte'));
+        note.setAttribute('data-map', 'missing');
+        section.appendChild(note);
+        return section;
+    }
+    const frame = document.createElement('div');
+    frame.className = 'history-map-frame';
+    frame.appendChild(stage);
+    const tools = document.createElement('div');
+    tools.className = 'history-zoom';
+    const step = (to) => {
+        detail.zoom = HISTORY_ZOOMS[Math.max(0, Math.min(HISTORY_ZOOMS.length - 1, to))];
+        dialog._render();
+    };
+    const at = HISTORY_ZOOMS.indexOf(zoom);
+    for (const [action, icon, label, to, off] of [['zoom-out', 'mdi:minus', 'zoomOut', at - 1, at <= 0], ['zoom-fit', 'mdi:fit-to-screen-outline', 'zoomFit', 0, at <= 0],
+        ['zoom-in', 'mdi:plus', 'zoomIn', at + 1, at >= HISTORY_ZOOMS.length - 1]]) {
+        const button = BuschUI.action({ label: translate(hass, label), icon, variant: 'icon-only', disabled: off, onClick: () => step(to) });
+        button.setAttribute('data-action', action);
+        tools.appendChild(button);
+    }
+    section.append(frame, tools);
+    if (obstacles.length) {
+        const heading = document.createElement('h2');
+        heading.className = 'settings-heading';
+        heading.textContent = translate(hass, 'laufHindernisse');
+        const list = document.createElement('div');
+        list.className = 'menu';
+        for (const o of obstacles) {
+            const label = [o.type, o.room].filter(Boolean).join(' · ');
+            const item = BuschUI.action({ label, text: label, icon: o.photo ? 'mdi:camera-outline' : 'mdi:alert-outline', variant: 'quiet',
+                onClick: () => dialog.show(runObstacleView(card, kind, run, o)) });
+            item.classList.add('menu-item');
+            item.setAttribute('data-obstacle', o.key);
+            list.appendChild(item);
+        }
+        section.append(heading, list);
+    }
+    return section;
+}
+
+/** Photo endpoint of a run's obstacle (camera.py#L210): index of the obstacle, history_index of the run. */
+function runObstacleUrl(hass, card, kind, run, key, file) {
+    const camera = hass.states[historyCamera(card)];
+    const n = historyIndex(historyUrl(camera, run, { kind: kind.name }));
+    const token = (camera && camera.attributes.access_token) || '';
+    return hassUrl(hass, '/api/camera_map_obstacle_history_proxy/' + historyCamera(card) + '?token=' + encodeURIComponent(token) + '&index=' + encodeURIComponent(key)
+        + '&history_index=' + n + (kind.cruising ? '&cruising=1' : '') + (file ? '&file=1' : ''));
+}
+
+/** An obstacle of an old run: facts and photo with download, no ignoring (works only on the current map, MAP-04). */
+function runObstacleView(card, kind, run, o) {
+    return {
+        title: translate(card._hass, 'hindernis'),
+        kind: 'editor',
+        render: (body, hass) => {
+            const facts = document.createElement('dl');
+            facts.className = 'obstacle-facts';
+            for (const [key, value] of [['hindernisTyp', o.type], ['hindernisRaum', o.room], ['hindernisGrund', o.reason]]) {
+                if (!value) continue;
+                const dt = document.createElement('dt');
+                dt.textContent = translate(hass, key);
+                const dd = document.createElement('dd');
+                dd.textContent = String(value);
+                facts.append(dt, dd);
+            }
+            body.appendChild(facts);
+            if (!o.photo) {
+                const notes = document.createElement('div');
+                notes.className = 'obstacle-note';
+                notes.appendChild(noteLine(translate(hass, 'fotoFehlt')));
+                body.appendChild(notes);
+                return;
+            }
+            const img = document.createElement('img');
+            img.className = 'obstacle-photo';
+            img.setAttribute('src', runObstacleUrl(hass, card, kind, run, o.key));
+            img.setAttribute('alt', translate(hass, 'fotoAlt'));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const link = document.createElement('a');
+            link.className = 'busch-ui-action link-action';
+            link.setAttribute('data-action', 'obstacle-download');
+            link.setAttribute('href', runObstacleUrl(hass, card, kind, run, o.key, true));
+            link.setAttribute('download', '');
+            link.textContent = translate(hass, 'fotoLaden');
+            actions.appendChild(link);
+            body.append(img, actions);
+        }
+    };
+}
+
 /**
  * HIS-02/03: one run. Facts from the sensor at once, the map data's (counters,
  * start) as "—" until loaded; Older/Newer and ←/→ turn pages within the view
@@ -6886,7 +7129,7 @@ function runLoadNote(hass, load, retry) {
  */
 function historyDetail(card, name, list, ts) {
     const kind = Object.assign({ name }, HISTORY_KINDS[name]);
-    const detail = list.detail || (list.detail = { loads: new Map(), controller: null });
+    const detail = list.detail || (list.detail = { loads: new Map(), controller: null, canvases: new Map(), tab: 'cleaning', zoom: 1, failed: new Set() });
     let current = ts;
     let closing = false;
     const runAt = (hass) => historyRunsOf(card, kind, list, hass).find((r) => r.timestamp === current);
@@ -6984,6 +7227,8 @@ function historyDetail(card, name, list, ts) {
                 }
                 wrap.append(heading, ul);
             }
+            const map = runMapSection(card, hass, kind, run, load, detail, dialog);
+            if (map) wrap.appendChild(map);
             wrap.appendChild(pager);
         }
     };
@@ -8508,6 +8753,54 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     flex: 1 1 0;
     min-width: 0;
     min-height: 44px;
+}
+.history-map {
+    margin-top: var(--ha-space-3, 12px);
+}
+.history-map .station-tabs {
+    margin-bottom: var(--ha-space-2, 8px);
+}
+.history-map-frame {
+    overflow: auto;
+    max-height: 60vh;
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--secondary-background-color, #eeeeee);
+}
+.history-map-stage {
+    position: relative;
+    min-width: 100%;
+}
+.history-map-canvas,
+.history-map-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    image-rendering: pixelated;
+}
+.history-map-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+.history-map-overlay polyline {
+    fill: none;
+    stroke: var(--bvc-map-path, #5c6670);
+    stroke-width: 0.6;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+.history-map-overlay rect {
+    fill: var(--bvc-warning-color, var(--warning-color, #ffa600));
+    stroke: var(--card-background-color, #ffffff);
+    stroke-width: 0.5;
+}
+.history-zoom {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--ha-space-1, 4px);
+    margin-top: var(--ha-space-1, 4px);
 }
 `;
 
