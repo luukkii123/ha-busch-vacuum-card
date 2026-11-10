@@ -365,6 +365,23 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zoomGesperrt: 'Karte gesperrt – das Schloss oben halten, um Zoomen und Verschieben freizugeben.',
             raeume: 'Räume',
             raumPosition: '{name}, Position {n}',
+            hindernis: 'Hindernis',
+            hindernisTyp: 'Art',
+            hindernisRaum: 'Raum',
+            hindernisGrund: 'Grund',
+            hindernisStatus: 'Status',
+            details: 'Details',
+            fotoAlt: 'Foto des Hindernisses',
+            fotoFehlt: 'Für dieses Hindernis gibt es kein Foto.',
+            fotoLaedt: 'Das Foto wird noch hochgeladen.',
+            fotoLaden: 'Foto herunterladen',
+            ignorieren: 'Ignorieren',
+            nichtIgnorieren: 'Nicht mehr ignorieren',
+            ignoriert: 'ignoriert',
+            nichtIgnoriert: 'beachtet',
+            ignorierenGesperrt: 'Während einer Aufgabe lässt sich ein Hindernis nicht ignorieren.',
+            autoIgnoriert: 'Der Roboter ignoriert dieses Hindernis selbst; das lässt sich nicht ändern.',
+            hindernisWeg: 'Das Hindernis ist auf der aktuellen Karte nicht mehr vorhanden.',
             stockwerkWaehlen: 'Stockwerk wählen',
             stockwerkGesperrt: 'Aufgabe läuft – das Stockwerk lässt sich erst danach wechseln.',
             aktiveKarte: 'aktiv'
@@ -502,6 +519,23 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zoomGesperrt: 'Map locked – hold the lock at the top to allow zooming and moving.',
             raeume: 'Rooms',
             raumPosition: '{name}, position {n}',
+            hindernis: 'Obstacle',
+            hindernisTyp: 'Type',
+            hindernisRaum: 'Room',
+            hindernisGrund: 'Reason',
+            hindernisStatus: 'Status',
+            details: 'Details',
+            fotoAlt: 'Photo of the obstacle',
+            fotoFehlt: 'There is no photo of this obstacle.',
+            fotoLaedt: 'The photo is still uploading.',
+            fotoLaden: 'Download photo',
+            ignorieren: 'Ignore',
+            nichtIgnorieren: 'Stop ignoring',
+            ignoriert: 'ignored',
+            nichtIgnoriert: 'considered',
+            ignorierenGesperrt: 'An obstacle cannot be ignored while a task runs.',
+            autoIgnoriert: 'The robot ignores this obstacle by itself; this cannot be changed.',
+            hindernisWeg: 'The obstacle is no longer on the current map.',
             stockwerkWaehlen: 'Choose floor',
             stockwerkGesperrt: 'Task running – the floor can be changed afterwards.',
             aktiveKarte: 'active'
@@ -1543,6 +1577,8 @@ class MapView {
         this._layers = new Map(); // id → { z, render, hit, group, renders, sig, builtIn }
         this._data = null; // decoded map data (data mode)
         this._pictures = {}; // map_config background_image / overlay_image elements
+        this._obstacleActions = new Map(); // id → { label, icon, run(obstacle) } of other modules
+        this._ignorePending = null; // { id, wanted, timer }: one ignore call at a time (R11)
         this._build();
         this._bindGestures();
         for (const [name, z, kind] of MAP_LAYERS) this._addBuiltIn(name, z, kind);
@@ -1591,7 +1627,11 @@ class MapView {
             this._tool[name] = { button, icon, key, act };
             this.tools.appendChild(button);
         }
-        this.region.append(this.stage, this.tools, this.loupe);
+        this.bubble = document.createElement('div');
+        this.bubble.className = 'map-bubble';
+        this.bubble.hidden = true;
+        this.bubble.setAttribute('role', 'dialog');
+        this.region.append(this.stage, this.tools, this.loupe, this.bubble);
         this.el.append(this.region, this.notes);
     }
 
@@ -1710,8 +1750,12 @@ class MapView {
         if (this._locked()) return;
         const hit = this.hitTest(client);
         if (!hit) return;
+        this._closeBubble();
         this._emit('map-tap', { client, robot: hit.robot, hit, passable: this.passable(hit.robot), mode: this._mode });
-        if (hit.kind === 'object' && this._mode === 'view') this._emit('map-object-tap', { id: hit.id, layer: hit.layer, object: hit.object, robot: hit.robot, client });
+        if (hit.kind === 'object' && this._mode === 'view') {
+            this._emit('map-object-tap', { id: hit.id, layer: hit.layer, object: hit.object, robot: hit.robot, client });
+            if (['obstacles', 'stains', 'pets', 'blocked_rooms'].includes(hit.layer)) this._openBubble(hit.id, hit.object);
+        }
         else if (hit.kind === 'room' && ['view', 'pick-room'].includes(this._mode)) this._roomTap(hit.id, 'map');
     }
 
@@ -1870,6 +1914,11 @@ class MapView {
     }
 
     _onKey(e) {
+        if (e.key === 'Escape' && !this.bubble.hidden) {
+            e.preventDefault();
+            this._closeBubble();
+            return;
+        }
         if (this._locked() || !this._view) return;
         const rect = this._stageRect();
         const stepX = rect.width / 10, stepY = rect.height / 10;
@@ -2022,6 +2071,12 @@ class MapView {
         const key = JSON.stringify([BuschUI.language(hass, { legacy: true }), darkMode(hass), model.state && model.state.state, ...MAP_VACUUM_KEYS.map((k) => model.attr(k))]);
         if (cam === this._cam && key === this._key) return;
         const before = this._cam ? this._attrs().map_index : undefined;
+        const pend = this._ignorePending;
+        const seen = pend && cam && cam.attributes.obstacles && cam.attributes.obstacles[pend.id];
+        if (seen && (/ignored/i.test(String(seen.ignore_status)) && !/not/i.test(String(seen.ignore_status))) === pend.wanted) {
+            clearTimeout(pend.timer);
+            this._ignorePending = null;
+        }
         this._cam = cam;
         this._key = key;
         this._cameraId = id;
@@ -2279,6 +2334,150 @@ class MapView {
             node.style.width = Math.abs(b.x - a.x) + 'px';
             node.style.height = Math.abs(b.y - a.y) + 'px';
         }
+    }
+
+    // ── Obstacles (MAP-04) ────────────────────────────────────────────────
+
+    /** Contract: an action of another module in the obstacle dialog (clean-tasks: "Spot hier"). */
+    addObstacleAction(id, { label, icon, run }) {
+        this._obstacleActions.set(id, { label, icon, run });
+    }
+
+    removeObstacleAction(id) {
+        this._obstacleActions.delete(id);
+    }
+
+    /** The transient bubble at the symbol: type, room, reason; details open the dialog. */
+    _openBubble(id, item) {
+        const hass = this.hass;
+        const s = this.toScreen(this.toImage(item));
+        const rect = this._stageRect();
+        const lines = [item.type, [item.room, item.reason].filter(Boolean).join(' · ')].filter(Boolean).map((text, i) => {
+            const line = document.createElement(i ? 'span' : 'strong');
+            line.className = 'map-bubble-line';
+            line.textContent = String(text);
+            return line;
+        });
+        const details = BuschUI.action({ label: translate(hass, 'details'), text: translate(hass, 'details'), variant: 'quiet', onClick: () => {
+            this._closeBubble();
+            this.card._openDialog(this._obstacleView(id));
+        } });
+        details.setAttribute('data-action', 'obstacle-details');
+        const close = BuschUI.action({ label: translate(hass, 'schliessen'), icon: 'mdi:close', variant: 'icon-only', onClick: () => this._closeBubble() });
+        close.setAttribute('data-action', 'bubble-close');
+        const text = document.createElement('div');
+        text.className = 'map-bubble-text';
+        text.append(...lines);
+        this.bubble.replaceChildren(text, details, close);
+        this.bubble.setAttribute('aria-label', translate(hass, 'hindernis'));
+        this.bubble.setAttribute('data-obstacle', String(id));
+        // Above the symbol, kept inside the stage.
+        const x = s ? Math.min(Math.max(8, s.x - rect.left), Math.max(8, rect.width - 8)) : 8;
+        const y = s ? s.y - rect.top : 8;
+        this.bubble.style.setProperty('--bvc-bubble-x', x + 'px');
+        this.bubble.style.setProperty('--bvc-bubble-y', y + 'px');
+        this.bubble.toggleAttribute('data-below', y < rect.height / 2);
+        this.bubble.hidden = false;
+    }
+
+    _closeBubble() {
+        this.bubble.hidden = true;
+    }
+
+    _obstacleUrl(id, file) {
+        const a = this._attrs();
+        return this._url('/api/camera_map_obstacle_proxy/' + this._cameraId + '?token=' + encodeURIComponent(a.access_token || '') + '&index=' + encodeURIComponent(id) + (file ? '&file=1' : ''));
+    }
+
+    /** Details: facts, photo only when there is one, download, ignore/undo, actions of other modules. */
+    _obstacleView(id) {
+        return {
+            title: translate(this.hass, 'hindernis'),
+            kind: 'menu',
+            watch: () => [this._cameraId, this.card._opts.entity],
+            render: (body, hass) => {
+                const model = this.card._model();
+                const cam = hass.states[this._cameraId];
+                const item = cam && cam.attributes.obstacles && cam.attributes.obstacles[id];
+                const notes = document.createElement('div');
+                notes.className = 'obstacle-note';
+                const note = (key) => {
+                    const p = document.createElement('p');
+                    p.textContent = translate(hass, key);
+                    notes.appendChild(p);
+                };
+                if (!item) {
+                    note('hindernisWeg');
+                    body.appendChild(notes);
+                    return;
+                }
+                const status = String(item.ignore_status || '');
+                const ignored = /ignored/i.test(status) && !/not/i.test(status);
+                const auto = /automatic/i.test(status);
+                const facts = document.createElement('dl');
+                facts.className = 'obstacle-facts';
+                for (const [key, value] of [['hindernisTyp', item.type], ['hindernisRaum', item.room], ['hindernisGrund', item.reason], ['hindernisStatus', translate(hass, ignored ? 'ignoriert' : 'nichtIgnoriert')]]) {
+                    if (value === undefined || value === null || value === '') continue;
+                    const dt = document.createElement('dt');
+                    dt.textContent = translate(hass, key);
+                    const dd = document.createElement('dd');
+                    dd.textContent = String(value);
+                    facts.append(dt, dd);
+                }
+                body.appendChild(facts);
+                const picture = String(item.picture_status || '').toLowerCase();
+                const actions = document.createElement('div');
+                actions.className = 'actions';
+                if (picture === 'uploaded') {
+                    const img = document.createElement('img');
+                    img.className = 'obstacle-photo';
+                    img.setAttribute('src', this._obstacleUrl(id));
+                    img.setAttribute('alt', translate(hass, 'fotoAlt'));
+                    body.appendChild(img);
+                    const link = document.createElement('a');
+                    link.className = 'busch-ui-action link-action';
+                    link.setAttribute('data-action', 'obstacle-download');
+                    link.setAttribute('href', this._obstacleUrl(id, true));
+                    link.setAttribute('download', '');
+                    link.textContent = translate(hass, 'fotoLaden');
+                    actions.appendChild(link);
+                } else note(picture === 'uploading' ? 'fotoLaedt' : 'fotoFehlt');
+                if (model.can('dreame_vacuum.vacuum_set_obstacle_ignore')) {
+                    const busy = taskActive(model, model.state ? model.state.state : 'unavailable');
+                    const pending = this._ignorePending && this._ignorePending.id === id && this._ignorePending.wanted !== ignored;
+                    if (busy) note('ignorierenGesperrt');
+                    if (auto) note('autoIgnoriert');
+                    const label = translate(hass, ignored ? 'nichtIgnorieren' : 'ignorieren');
+                    const button = BuschUI.action({ label, text: label, variant: 'secondary', disabled: busy || auto || pending, onClick: () => this._setIgnore(id, item, !ignored) });
+                    button.setAttribute('data-action', 'obstacle-ignore');
+                    if (pending) button.setAttribute('aria-busy', 'true');
+                    actions.appendChild(button);
+                }
+                for (const [name, action] of this._obstacleActions) {
+                    const button = BuschUI.action({ label: action.label, text: action.label, icon: action.icon, variant: 'secondary', onClick: () => action.run(Object.assign({ id }, item)) });
+                    button.setAttribute('data-action', 'obstacle-' + name);
+                    actions.appendChild(button);
+                }
+                if (notes.childNodes.length) body.appendChild(notes);
+                if (actions.childNodes.length) body.appendChild(actions);
+            }
+        };
+    }
+
+    /** Ignore or undo at once (R13: reversible instead of asking); one call until the device answers (R11). */
+    _setIgnore(id, item, wanted) {
+        if (this._ignorePending && this._ignorePending.id === id) return;
+        const pending = { id, wanted, timer: null };
+        const done = () => {
+            if (this._ignorePending !== pending) return;
+            clearTimeout(pending.timer);
+            this._ignorePending = null;
+            if (this.card._dialog) this.card._dialog._render();
+        };
+        pending.timer = setTimeout(done, OPTIMISTIC_HOLD_MS * 2);
+        this._ignorePending = pending;
+        Promise.resolve(this.hass.callService('dreame_vacuum', 'vacuum_set_obstacle_ignore', { entity_id: this.card._opts.entity, x: item.x, y: item.y, obstacle_ignored: wanted })).catch(done);
+        if (this.card._dialog) this.card._dialog._render();
     }
 
     // ── Floors (MAP-07) ───────────────────────────────────────────────────
@@ -2601,6 +2800,39 @@ const CARD_STYLES = BuschUI.cardStyles + `
     clip: rect(0 0 0 0);
     white-space: nowrap;
     text-overflow: ellipsis;
+}
+.map-bubble {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    max-width: min(280px, calc(100% - 16px));
+    padding: var(--ha-space-1, 4px) var(--ha-space-1, 4px) var(--ha-space-1, 4px) var(--ha-space-3, 12px);
+    box-sizing: border-box;
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    color: var(--primary-text-color, #212121);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transform: translate(clamp(8px, calc(var(--bvc-bubble-x, 0px) - 50%), calc(100% - 8px)), calc(var(--bvc-bubble-y, 0px) - 100% - 16px));
+}
+.map-bubble[data-below] {
+    transform: translate(clamp(8px, calc(var(--bvc-bubble-x, 0px) - 50%), calc(100% - 8px)), calc(var(--bvc-bubble-y, 0px) + 16px));
+}
+.map-bubble-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    font-size: var(--ha-font-size-s, 14px);
+}
+.map-bubble-line {
+    overflow-wrap: anywhere;
+}
+.map-bubble .busch-ui-action {
+    flex: none;
 }
 .map-loupe {
     position: absolute;
@@ -3347,6 +3579,61 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     color: var(--secondary-text-color, #727272);
     overflow-wrap: anywhere;
 }
+.obstacle-facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--ha-space-1, 4px) var(--ha-space-3, 12px);
+    margin: 0;
+}
+.obstacle-facts dt {
+    color: var(--secondary-text-color, #727272);
+    overflow-wrap: anywhere;
+}
+.obstacle-facts dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.obstacle-photo {
+    display: block;
+    width: 100%;
+    max-height: 50vh;
+    object-fit: contain;
+    margin-top: var(--ha-space-3, 12px);
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--secondary-background-color, #eeeeee);
+}
+.obstacle-note {
+    margin-top: var(--ha-space-3, 12px);
+    color: var(--secondary-text-color, #727272);
+}
+.obstacle-note p {
+    margin: 0 0 var(--ha-space-1, 4px);
+    overflow-wrap: anywhere;
+}
+.link-action {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.floor-preview {
+    flex: none;
+    width: 56px;
+    height: 40px;
+    object-fit: contain;
+    border-radius: var(--ha-space-1, 4px);
+    background: var(--secondary-background-color, #eeeeee);
+}
+.floor-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 `;
 
 /**
@@ -3697,8 +3984,9 @@ class BuschVacuumCard extends HTMLElement {
         // the house. Only the vacuum and the few sensors shown redraw.
         const unchanged = snapshotUnchanged(this._seen, hass) && (!hass || hass.entities === this._relatedFrom);
         this._hass = hass;
-        if (this._dialog) this._dialog.hass = hass;
+        // The card first: the map's state (e.g. a finished ignore) is current when the dialog draws.
         if (!unchanged) this._update();
+        if (this._dialog) this._dialog.hass = hass;
     }
 
     get hass() {

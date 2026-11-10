@@ -1011,4 +1011,105 @@ test('icon_set busch (eigene Formen) oder material (mdi:)', async () => {
   assert.equal(ebene(mat, 'obstacles').querySelector('ha-icon').getAttribute('icon'), 'mdi:alert');
 });
 
+// ── Task 9: Hindernisse ────────────────────────────────────────────────────
+const blase = (karte) => karte.shadowRoot.querySelector('.map-bubble');
+const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
+async function hindernisKarte({ obstacle = {}, vacuum, zustand, config } = {}) {
+  const r = await datenKarte({ config });
+  const { haus, karte } = r;
+  const alt = haus.states[CAM].attributes.obstacles;
+  const obstacles = Object.assign({}, alt, { 2: Object.assign({}, alt['2'], obstacle) });
+  haus.states = Object.assign({}, haus.states, kamera(haus, { obstacles }), vacuum || zustand ? sauger(haus, vacuum || {}, zustand) : {});
+  karte.hass = haus.hass();
+  await mikro();
+  tippe(r.u, karte, bildschirm(karte, obstacles['2']));
+  return Object.assign(r, { obstacles });
+}
+const oeffneDetails = (r) => blase(r.karte).querySelector('[data-action="obstacle-details"]').click();
+
+test('Hindernis antippen → Blase mit Typ, Raum, Grund; Escape und Tipp daneben schließen', async () => {
+  const r = await hindernisKarte();
+  const b = blase(r.karte);
+  assert.equal(b.hidden, false);
+  const text = b.textContent;
+  for (const teil of [r.obstacles['2'].type, r.obstacles['2'].room, r.obstacles['2'].reason]) assert.ok(text.includes(teil), teil);
+  r.karte._map.region.dispatchEvent(ev(r.u, 'keydown', { key: 'Escape' }));
+  assert.equal(b.hidden, true, 'Escape (R03)');
+  tippe(r.u, r.karte, bildschirm(r.karte, r.obstacles['2']));
+  assert.equal(blase(r.karte).hidden, false);
+  tippe(r.u, r.karte, bildschirm(r.karte, raeume()['5']));
+  assert.equal(blase(r.karte).hidden, true, 'Tipp daneben');
+});
+
+test('Dialog (menu) mit Foto nur bei vorhandenem Bild, Download &file=1; sonst Hinweis', async () => {
+  const r = await hindernisKarte({ obstacle: { picture_status: 'Uploaded' } });
+  oeffneDetails(r);
+  const d = dialogVon(r.u);
+  assert.equal(d._views.at(-1).kind, 'menu', 'flüchtig (R04)');
+  assert.equal($d(r.u, 'h1').textContent, 'Hindernis');
+  const foto = $d(r.u, '.obstacle-photo');
+  assert.equal(foto.getAttribute('src'), '/api/camera_map_obstacle_proxy/camera.robo_map?token=testtoken&index=2');
+  assert.equal(foto.getAttribute('alt'), 'Foto des Hindernisses');
+  const laden = $d(r.u, '[data-action="obstacle-download"]');
+  assert.equal(laden.getAttribute('href'), '/api/camera_map_obstacle_proxy/camera.robo_map?token=testtoken&index=2&file=1');
+  assert.ok(laden.hasAttribute('download'));
+  const ohne = await hindernisKarte({ obstacle: { picture_status: 'Disabled' } });
+  oeffneDetails(ohne);
+  assert.equal($d(ohne.u, '.obstacle-photo'), null);
+  assert.equal($d(ohne.u, '[data-action="obstacle-download"]'), null);
+  assert.match($d(ohne.u, '.obstacle-note').textContent, /kein Foto/);
+});
+
+test('Ignorieren/Rückgängig: genau vacuum_set_obstacle_ignore { x, y, obstacle_ignored }, kein Doppelaufruf (R11/R13)', async () => {
+  const r = await hindernisKarte();
+  oeffneDetails(r);
+  const knopf = () => $d(r.u, '[data-action="obstacle-ignore"]');
+  assert.equal(knopf().textContent, 'Ignorieren');
+  knopf().click();
+  knopf().click();
+  const o = r.obstacles['2'];
+  assert.deepEqual(JSON.parse(JSON.stringify(r.haus.rufe)), [{ domain: 'dreame_vacuum', service: 'vacuum_set_obstacle_ignore', data: { entity_id: 'vacuum.robo', x: o.x, y: o.y, obstacle_ignored: true } }]);
+  assert.equal(knopf().disabled, true, 'läuft: gesperrt bis zur Antwort');
+  // Das Gerät meldet: ignoriert → Rückgängig.
+  const obstacles = Object.assign({}, r.obstacles, { 2: Object.assign({}, o, { ignore_status: 'Manually Ignored' }) });
+  r.karte.hass = r.haus.setze(kamera(r.haus, { obstacles }));
+  assert.equal(knopf().disabled, false);
+  assert.equal(knopf().textContent, 'Nicht mehr ignorieren');
+  knopf().click();
+  assert.deepEqual(r.haus.rufe[1].data, { entity_id: 'vacuum.robo', x: o.x, y: o.y, obstacle_ignored: false });
+  assert.equal(ebene(r.karte, 'obstacles').querySelector('[data-object="2"]').getAttribute('data-ignored'), 'true', 'ignoriert sichtbar blass');
+});
+
+test('Ignorieren gesperrt bei laufender Aufgabe und bei Selbst-Ignoriert, mit Grund; ohne Dienst kein Knopf', async () => {
+  const lauf = await hindernisKarte({ vacuum: { started: true }, zustand: 'cleaning' });
+  oeffneDetails(lauf);
+  assert.equal($d(lauf.u, '[data-action="obstacle-ignore"]').disabled, true);
+  assert.match($d(lauf.u, '.obstacle-note').textContent, /Aufgabe/);
+  const auto = await hindernisKarte({ obstacle: { ignore_status: 'Automatically Ignored' } });
+  oeffneDetails(auto);
+  assert.equal($d(auto.u, '[data-action="obstacle-ignore"]').disabled, true);
+  assert.match($d(auto.u, '.obstacle-note').textContent, /selbst/);
+  const r = await datenKarte();
+  r.haus.services = Object.assign({}, r.haus.services, { dreame_vacuum: Object.fromEntries(Object.entries(r.haus.services.dreame_vacuum).filter(([k]) => k !== 'vacuum_set_obstacle_ignore')) });
+  r.karte.hass = r.haus.hass();
+  tippe(r.u, r.karte, bildschirm(r.karte, r.haus.states[CAM].attributes.obstacles['2']));
+  oeffneDetails(r);
+  assert.equal($d(r.u, '[data-action="obstacle-ignore"]'), null);
+});
+
+test('Aktionsplatz für andere Module: fremde Aktion erscheint und bekommt das Hindernis', async () => {
+  const r = await hindernisKarte();
+  const erhalten = [];
+  r.karte._map.addObstacleAction('spot', { label: 'Spot hier', icon: 'mdi:target', run: (o) => erhalten.push(o) });
+  oeffneDetails(r);
+  const aktion = $d(r.u, '[data-action="obstacle-spot"]');
+  assert.equal(aktion.textContent, 'Spot hier');
+  aktion.click();
+  assert.equal(erhalten.length, 1);
+  assert.equal(erhalten[0].id, '2');
+  assert.equal(erhalten[0].x, r.obstacles['2'].x);
+  r.karte._map.removeObstacleAction('spot');
+  assert.equal(r.karte._map._obstacleActions.size, 0);
+});
+
 module.exports = { intern, raeume };
