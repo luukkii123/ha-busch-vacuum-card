@@ -1,5 +1,5 @@
 {
- "beschreibung": "Abgeleitet aus einem Dreame X40 Ultra (dreame_vacuum 2.0.3, lesend 09.11.2026); Namen, Netzwerk, Tokens ersetzt. Vollständig.",
+ "beschreibung": "Abgeleitet aus einem Dreame X40 Ultra (dreame_vacuum 2.0.3, lesend 09.11.2026; die sieben am 10.11.2026 aktivierten Schalter lesend 10.11.2026); Namen, Netzwerk, Tokens ersetzt. Vollständig.",
  "disabled": [
   "button.robo_start_mapping",
   "camera.robo_map_data",
@@ -10,8 +10,6 @@
   "select.robo_mop_extend_frequency",
   "select.robo_voice_assistant_language",
   "sensor.robo_firmware_version",
-  "switch.robo_ai_fluid_detection",
-  "switch.robo_ai_furniture_detection",
   "switch.robo_ai_obstacle_detection",
   "switch.robo_ai_obstacle_image_upload",
   "switch.robo_ai_obstacle_picture",
@@ -19,7 +17,6 @@
   "switch.robo_auto_drying",
   "switch.robo_auto_mount_mop",
   "switch.robo_auto_water_refilling",
-  "switch.robo_camera_light_brightness_auto",
   "switch.robo_carpet_boost",
   "switch.robo_child_lock",
   "switch.robo_collision_avoidance",
@@ -29,17 +26,13 @@
   "switch.robo_dnd_reduce_volume",
   "switch.robo_fill_light",
   "switch.robo_floor_direction_cleaning",
-  "switch.robo_fuzzy_obstacle_detection",
   "switch.robo_gap_cleaning_extension",
-  "switch.robo_human_follow",
   "switch.robo_intensive_carpet_cleaning",
   "switch.robo_mop_extend",
   "switch.robo_mopping_under_furnitures",
   "switch.robo_multi_floor_map",
   "switch.robo_off_peak_charging",
-  "switch.robo_side_reach",
   "switch.robo_smart_mop_washing",
-  "switch.robo_stain_avoidance",
   "switch.robo_streaming_voice_prompt",
   "switch.robo_voice_assistant",
   "time.robo_dnd_end",
@@ -2102,6 +2095,32 @@
    "platform": "dreame_vacuum",
    "translation_key": "total_cleaning_time"
   },
+  "switch.robo_ai_fluid_detection": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_ai_fluid_detection",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "ai_fluid_detection"
+  },
+  "switch.robo_ai_furniture_detection": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_ai_furniture_detection",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "ai_furniture_detection"
+  },
   "switch.robo_auto_add_detergent": {
    "area_id": null,
    "device_id": "geraet_robo",
@@ -2114,6 +2133,19 @@
    "name": null,
    "platform": "dreame_vacuum",
    "translation_key": "auto_add_detergent"
+  },
+  "switch.robo_camera_light_brightness_auto": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_camera_light_brightness_auto",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "camera_light_brightness_auto"
   },
   "switch.robo_clean_carpets_first": {
    "area_id": null,
@@ -2140,6 +2172,32 @@
    "name": null,
    "platform": "dreame_vacuum",
    "translation_key": "customized_cleaning"
+  },
+  "switch.robo_fuzzy_obstacle_detection": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_fuzzy_obstacle_detection",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "fuzzy_obstacle_detection"
+  },
+  "switch.robo_human_follow": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_human_follow",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "human_follow"
   },
   "switch.robo_large_particles_boost": {
    "area_id": null,
@@ -2244,6 +2302,32 @@
    "name": null,
    "platform": "dreame_vacuum",
    "translation_key": "side_brush_carpet_rotate"
+  },
+  "switch.robo_side_reach": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_side_reach",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "side_reach"
+  },
+  "switch.robo_stain_avoidance": {
+   "area_id": null,
+   "device_id": "geraet_robo",
+   "entity_category": "config",
+   "entity_id": "switch.robo_stain_avoidance",
+   "has_entity_name": true,
+   "hidden": false,
+   "icon": null,
+   "labels": [],
+   "name": null,
+   "platform": "dreame_vacuum",
+   "translation_key": "stain_avoidance"
   },
   "vacuum.robo": {
    "area_id": null,
@@ -5684,6 +5768,22 @@
    "entity_id": "sensor.robo_total_cleaning_time",
    "state": "39334"
   },
+  "switch.robo_ai_fluid_detection": {
+   "attributes": {
+    "friendly_name": "Robo KI-Flüssigkeitserkennung",
+    "icon": "mdi:water-off-outline"
+   },
+   "entity_id": "switch.robo_ai_fluid_detection",
+   "state": "unavailable"
+  },
+  "switch.robo_ai_furniture_detection": {
+   "attributes": {
+    "friendly_name": "Robo KI-Möbelerkennung",
+    "icon": "mdi:table-furniture"
+   },
+   "entity_id": "switch.robo_ai_furniture_detection",
+   "state": "unavailable"
+  },
   "switch.robo_auto_add_detergent": {
    "attributes": {
     "friendly_name": "Robo Auto-Add Detergent",
@@ -5692,6 +5792,14 @@
    },
    "entity_id": "switch.robo_auto_add_detergent",
    "state": "on"
+  },
+  "switch.robo_camera_light_brightness_auto": {
+   "attributes": {
+    "friendly_name": "Robo Kameralicht-Helligkeit automatisch",
+    "icon": "mdi:brightness-auto"
+   },
+   "entity_id": "switch.robo_camera_light_brightness_auto",
+   "state": "unavailable"
   },
   "switch.robo_clean_carpets_first": {
    "attributes": {
@@ -5708,6 +5816,22 @@
     "value": 0
    },
    "entity_id": "switch.robo_customized_cleaning",
+   "state": "off"
+  },
+  "switch.robo_fuzzy_obstacle_detection": {
+   "attributes": {
+    "friendly_name": "Robo Unscharfe Hinderniserkennung",
+    "icon": "mdi:blur-linear"
+   },
+   "entity_id": "switch.robo_fuzzy_obstacle_detection",
+   "state": "unavailable"
+  },
+  "switch.robo_human_follow": {
+   "attributes": {
+    "friendly_name": "Robo Personenverfolgung",
+    "icon": "mdi:account-off"
+   },
+   "entity_id": "switch.robo_human_follow",
    "state": "off"
   },
   "switch.robo_large_particles_boost": {
@@ -5776,6 +5900,22 @@
    },
    "entity_id": "switch.robo_side_brush_carpet_rotate",
    "state": "off"
+  },
+  "switch.robo_side_reach": {
+   "attributes": {
+    "friendly_name": "Robo Seitenbürsten-Ausfahren",
+    "icon": "mdi:selection-ellipse-arrow-inside"
+   },
+   "entity_id": "switch.robo_side_reach",
+   "state": "on"
+  },
+  "switch.robo_stain_avoidance": {
+   "attributes": {
+    "friendly_name": "Robo Fleckenvermeidung",
+    "icon": "mdi:liquid-spot"
+   },
+   "entity_id": "switch.robo_stain_avoidance",
+   "state": "unavailable"
   },
   "vacuum.robo": {
    "attributes": {

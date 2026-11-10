@@ -263,3 +263,72 @@ test('Suche bleibt beim Neuzeichnen erhalten und nutzt HA-Namen der Integration'
   assert.equal($d(k.u, '.settings-search').value, 'kinder');
   assert.deepEqual($$d(k.u, '.setting').map((z) => z.getAttribute('data-setting')), ['child_lock']);
 });
+
+// ── Task 3: Reinigung, Wischen, Teppich (ALL-01 Anteil, ALL-02, DEV-03/04) ────
+
+const zeilen = (k) => $$d(k.u, '.setting').map((z) => z.getAttribute('data-setting'));
+const wert = (z) => {
+  const s = z.querySelector('[role="switch"]');
+  return s ? s.getAttribute('aria-checked') === 'true' : z.querySelector('select').value;
+};
+const ERWARTET_GRUPPEN = {
+  cleaning: { resume_cleaning: true, max_suction_power: false, large_particles_boost: true, pet_focused_cleaning: false, floor_direction_cleaning: true, side_reach: true, gap_cleaning_extension: true },
+  mopping: { custom_mopping_mode: true, tight_mopping: false, mop_extend: true, mopping_under_furnitures: true, mop_extend_frequency: 'High' },
+  carpet: { carpet_recognition: true, carpet_avoidance: false, carpet_boost: true, intensive_carpet_cleaning: true, clean_carpets_first: false, side_brush_carpet_rotate: false, carpet_cleaning: 'Remove mop' }
+};
+
+for (const [name, erwartet] of Object.entries(ERWARTET_GRUPPEN)) {
+  test(`${name}: jede Zeile der Spec-Tabelle mit Fixture-Wert und eigenem Schreibaufruf`, () => {
+    const k = einstellungen();
+    gruppe(k, name).click();
+    assert.deepEqual(zeilen(k), Object.keys(erwartet));
+    for (const z of $$d(k.u, '.setting')) assert.deepEqual([z.getAttribute('data-setting'), wert(z)], [z.getAttribute('data-setting'), erwartet[z.getAttribute('data-setting')]]);
+    const soll = [];
+    for (const key of Object.keys(erwartet)) {
+      const z = $$d(k.u, '.setting').find((x) => x.getAttribute('data-setting') === key);
+      const s = z.querySelector('[role="switch"]');
+      if (s) { s.click(); soll.push(setze(k, key, erwartet[key] ? 0 : 1)); }
+      else {
+        const sel = z.querySelector('select');
+        sel.value = sel.childNodes[0].value;
+        sel.dispatchEvent(k.u.neuesEreignis('change'));
+        soll.push(setze(k, key, sel.childNodes[0].value));
+      }
+    }
+    assert.deepEqual(aufrufe(k), soll);
+  });
+}
+
+test('side_reach: Wert aus der seit 10.11.2026 aktivierten Entität', () => {
+  const k = aufbau();
+  const s = k.I.settingState(k.karte, k.model(), 'side_reach');
+  assert.deepEqual([s.source, s.value], ['entity', true]);
+});
+
+test('Teppich-Unterpunkte gesperrt mit Grund: Erkennung aus, Meiden an, Aufgabe läuft', () => {
+  const unter = ['carpet_boost', 'intensive_carpet_cleaning', 'clean_carpets_first', 'side_brush_carpet_rotate', 'carpet_cleaning'];
+  for (const [attribute, grund, zustand] of [[{ carpet_recognition: 0 }, /Teppicherkennung/], [{ carpet_avoidance: true }, /Teppich-Meiden/], [{ started: true }, /Aufgabe/, 'cleaning']]) {
+    const k = aufbau('voll', { attribute, zustand });
+    for (const key of unter) {
+      const z = zeile(k, key);
+      assert.equal(z.getAttribute('data-state'), 'locked', key);
+      assert.match(z.querySelector('.setting-status').textContent, grund, key);
+      assert.equal((z.querySelector('[role="switch"]') || z.querySelector('select')).disabled, true, key);
+    }
+    for (const key of ['carpet_recognition', 'carpet_avoidance']) assert.notEqual(zeile(k, key).getAttribute('data-state'), 'locked', key);
+  }
+  const frei = aufbau();
+  for (const key of unter) assert.equal(zeile(frei, key).getAttribute('data-state'), 'ok', key);
+});
+
+test('Wischen verweist auf Station → Waschen (gleiche Zeilen, Abnahme dock); ohne Dock kein Verweis', () => {
+  const k = einstellungen();
+  gruppe(k, 'mopping').click();
+  const link = $d(k.u, '[data-action="station"]');
+  assert.match(link.textContent, /Station/);
+  link.click();
+  assert.equal($d(k.u, 'h1').textContent, 'Station');
+  const o = einstellungen('ohne-dock');
+  gruppe(o, 'mopping').click();
+  assert.equal($d(o.u, '[data-action="station"]'), null);
+});

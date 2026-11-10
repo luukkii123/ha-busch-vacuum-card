@@ -20,17 +20,17 @@ function rollen(m) {
   return [...Object.values(r.device), ...Object.values(r.rooms).flatMap(Object.values), ...Object.values(r.maps).flat()];
 }
 
-test('voll: alle 170 Entitäten des Geräts gefunden, jede genau einer Rolle zugeordnet', () => {
+test('voll: alle 177 Entitäten des Geräts gefunden, jede genau einer Rolle zugeordnet', () => {
   const m = modell('voll'), f = fixture('voll');
   const ids = roh(m.related.ids);
-  assert.equal(ids.length, 170);
+  assert.equal(ids.length, 177);
   assert.deepEqual([...ids].sort(), Object.keys(f.states).sort());
   const zugeordnet = rollen(m);
-  assert.equal(zugeordnet.length, 169, 'alle außer dem Sauger selbst');
-  assert.equal(new Set(zugeordnet).size, 169, 'keine doppelt');
+  assert.equal(zugeordnet.length, 176, 'alle außer dem Sauger selbst');
+  assert.equal(new Set(zugeordnet).size, 176, 'keine doppelt');
   const domains = {};
   for (const id of ids) domains[id.split('.')[0]] = (domains[id.split('.')[0]] || 0) + 1;
-  assert.deepEqual(domains, { binary_sensor: 3, button: 16, camera: 3, number: 10, select: 84, sensor: 42, switch: 11, vacuum: 1 });
+  assert.deepEqual(domains, { binary_sensor: 3, button: 16, camera: 3, number: 10, select: 84, sensor: 42, switch: 18, vacuum: 1 });
 });
 
 test('voll: Rollen nach Register-Schlüssel, Räume und Karten getrennt', () => {
@@ -50,14 +50,14 @@ test('fremde Entitäten und ein zweites Dreame-Gerät gehören nicht dazu', () =
   const states = Object.assign({}, f.states, { 'sensor.anderer_battery_level': { entity_id: 'sensor.anderer_battery_level', state: '5', attributes: {} } });
   const entities = Object.assign({}, f.entities, { 'sensor.anderer_battery_level': Object.assign({}, f.entities['sensor.robo_battery_level'], { entity_id: 'sensor.anderer_battery_level', device_id: 'geraet_anderer' }) });
   const ids = roh(modell('voll', { states, entities }).related.ids);
-  assert.equal(ids.length, 170);
+  assert.equal(ids.length, 177);
   assert.ok(!ids.includes('sensor.anderer_battery_level'));
   assert.ok(!ids.some((id) => id.startsWith('sensor.fremd_')));
 });
 
 test('ohne device_id im Register: Rückfall über das Präfix der Entitäts-ID', () => {
   const r = roh(modell('voll', { entities: {} }).related);
-  assert.equal(r.ids.length, 170);
+  assert.equal(r.ids.length, 177);
   assert.equal(r.device['select.suction_level'], 'select.robo_suction_level');
   assert.equal(Object.keys(r.rooms).length, 7);
   assert.deepEqual(r.maps, { map: ['camera.robo_map'], saved_map: ['camera.robo_map_1'], wifi_map: ['camera.robo_wifi_map_1'], map_data: [] });
@@ -74,7 +74,7 @@ test('minimal: nur der Sauger, nichts fehlt-gemeldet, Karte ohne Fehler', () => 
 
 test('deaktivierte Entitäten: nicht im Frontend-Register, Wert aber über die Sauger-Attribute lesbar', () => {
   const f = fixture('voll');
-  assert.equal(f.disabled.length, 45);
+  assert.equal(f.disabled.length, 38, "sieben Schalter seit 10.11.2026 aktiviert");
   assert.ok(f.disabled.includes('number.robo_volume'));
   const m = modell('voll');
   assert.equal(m.entity('number.volume'), null);

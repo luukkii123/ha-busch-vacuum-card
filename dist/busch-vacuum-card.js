@@ -538,6 +538,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             gruppe_other: 'Sonstiges',
             set_custom_mopping_mode: 'Eigener Wischmodus',
             sucheLabel: 'Einstellungen durchsuchen',
+            stationWaschen: 'Station: Waschen, Wassertemperatur, Waschfrequenz',
             treffer: '{n} Treffer',
             keineTreffer: 'Keine Einstellung gefunden. Versuche einen anderen Begriff.'
         }
@@ -847,6 +848,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             gruppe_other: 'Other',
             set_custom_mopping_mode: 'Custom mopping mode',
             sucheLabel: 'Search settings',
+            stationWaschen: 'Station: washing, water temperature, washing frequency',
             treffer: '{n} results',
             keineTreffer: 'No setting found. Try another term.'
         }
@@ -3697,7 +3699,7 @@ function groupView(card, name) {
         title: translate(card._hass, 'gruppe_' + name),
         kind: 'editor',
         watch: () => settingsWatch(card),
-        render: (body, hass) => {
+        render: (body, hass, dialog) => {
             const model = card._model();
             if (group.module) {
                 const note = document.createElement('p');
@@ -3713,6 +3715,14 @@ function groupView(card, name) {
                 if (row) list.appendChild(row);
             }
             body.appendChild(list);
+            // Water temperature, washing mode and frequency are dock's rows (ALL-03): one place, linked (R08).
+            if (name === 'mopping' && model.can('dock')) {
+                const label = translate(hass, 'stationWaschen');
+                const link = BuschUI.action({ label, text: label, icon: 'mdi:chevron-right', variant: 'quiet', onClick: () => dialog.show(groupView(card, 'station')) });
+                link.classList.add('menu-item');
+                link.setAttribute('data-action', 'station');
+                body.appendChild(link);
+            }
         }
     };
 }
