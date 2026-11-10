@@ -201,3 +201,195 @@ test('Station-Einstellungen aus dem Dock-Menü', () => {
   assert.equal($d(k.u, 'h1').textContent, 'Station');
   assert.notEqual($d(k.u, '.sheet').getAttribute('data-kind'), 'menu');
 });
+
+// ── Task 3: Station-Dialog mit Reitern (DOCK-01…04) ──────────────────────────
+
+/** Station-Ansicht über Dock-Menü → Station-Einstellungen. */
+function station(name = 'voll', optionen) {
+  const k = dockMenue(name, optionen);
+  menueEintrag(k, 'settings').click();
+  return k;
+}
+const reiter = (k) => $$d(k.u, '[role="tab"]').map((t) => t.getAttribute('data-tab'));
+const aktiv = (k) => $$d(k.u, '[role="tab"]').find((t) => t.getAttribute('aria-selected') === 'true').getAttribute('data-tab');
+/** Die Attrappe kennt keine Nachfahren-Selektoren: erst der Container, dann darin. */
+const $$in = (k, behaelter, sel) => $d(k.u, behaelter).querySelectorAll(sel);
+const $in = (k, behaelter, sel) => $$in(k, behaelter, sel)[0] || null;
+const zeilenIm = (k) => $$in(k, '[role="tabpanel"]', '[data-setting]').map((z) => z.getAttribute('data-setting'));
+const taste = (k, el, key) => el.dispatchEvent(k.u.neuesEreignis('keydown', { key }));
+function speicher(start = {}, { lesenWirft = false, schreibenWirft = false } = {}) {
+  const daten = Object.assign({}, start);
+  return {
+    daten,
+    getItem(key) { if (lesenWirft) throw new Error('SecurityError'); return key in daten ? daten[key] : null; },
+    setItem(key, value) { if (schreibenWirft) throw new Error('QuotaExceededError'); daten[key] = String(value); }
+  };
+}
+const SPEICHER_KEY = 'busch-vacuum-card:dock-tab:vacuum.robo';
+
+test('Gleiche Ansicht aus Dock-Menü und Geräteeinstellungen → Station; Reiter als tablist', () => {
+  const k = station();
+  assert.equal($d(k.u, 'h1').textContent, 'Station');
+  assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'editor');
+  assert.ok($d(k.u, '[role="tablist"]'));
+  assert.deepEqual(reiter(k), ['wash', 'dry', 'empty']);
+  assert.equal(aktiv(k), 'wash');
+  const tab = $$d(k.u, '[role="tab"]')[0];
+  assert.equal(tab.getAttribute('aria-controls'), $d(k.u, '[role="tabpanel"]').id);
+  assert.match(tab.textContent, /Waschen/);
+  const e = aufbau();
+  e.karte._openDialog(e.I.MODULE_VIEWS.settings(e.karte));
+  $$d(e.u, '[data-group]').find((b) => b.getAttribute('data-group') === 'station').click();
+  assert.deepEqual(reiter(e), ['wash', 'dry', 'empty']);
+  assert.equal($d(e.u, '.placeholder'), null);
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('Reiter nur je Fähigkeit: nur Entleeren, nur Waschen', () => {
+  const basis = caps(aufbau());
+  const nurLeeren = station('voll', { attribute: { capabilities: basis.filter((c) => c !== 'self_wash_base') } });
+  assert.deepEqual(reiter(nurLeeren), ['empty']);
+  const nurWaschen = station('voll', { attribute: { capabilities: basis.filter((c) => c !== 'auto_empty_base') } });
+  assert.deepEqual(reiter(nurWaschen), ['wash', 'dry']);
+});
+
+test('Pfeiltasten, Home und End wechseln den Reiter und den Fokus', () => {
+  const k = station('voll', { speicher: speicher() });
+  const erster = $$d(k.u, '[role="tab"]')[0];
+  assert.equal(erster.tabIndex, 0);
+  assert.equal($$d(k.u, '[role="tab"]')[1].tabIndex, -1);
+  taste(k, erster, 'ArrowRight');
+  assert.equal(aktiv(k), 'dry');
+  assert.equal(dialogVon(k.u).shadowRoot.activeElement.getAttribute('data-tab'), 'dry');
+  taste(k, $$d(k.u, '[role="tab"]')[1], 'End');
+  assert.equal(aktiv(k), 'empty');
+  taste(k, $$d(k.u, '[role="tab"]')[2], 'ArrowRight');
+  assert.equal(aktiv(k), 'wash', 'läuft rundum');
+  taste(k, $$d(k.u, '[role="tab"]')[0], 'ArrowLeft');
+  assert.equal(aktiv(k), 'empty');
+  taste(k, $$d(k.u, '[role="tab"]')[2], 'Home');
+  assert.equal(aktiv(k), 'wash');
+  $$d(k.u, '[role="tab"]')[1].click();
+  assert.equal(aktiv(k), 'dry');
+});
+
+test('Letzter Reiter je Sauger aus localStorage; fehlender oder defekter Speicher → erster, kein Fehler', () => {
+  const s = speicher();
+  const k = station('voll', { speicher: s });
+  $$d(k.u, '[role="tab"]')[2].click();
+  assert.equal(s.daten[SPEICHER_KEY], 'empty');
+  assert.equal(aktiv(station('voll', { speicher: s })), 'empty', 'beim nächsten Öffnen wieder da');
+  assert.equal(aktiv(station('voll', { speicher: speicher({ [SPEICHER_KEY]: 'gibtsnicht' }) })), 'wash');
+  const ohne = station('voll');
+  assert.equal(aktiv(ohne), 'wash');
+  const kaputt = station('voll', { speicher: speicher({}, { lesenWirft: true, schreibenWirft: true }) });
+  assert.equal(aktiv(kaputt), 'wash');
+  $$d(kaputt.u, '[role="tab"]')[1].click();
+  assert.equal(aktiv(kaputt), 'dry', 'Wechsel geht auch ohne Speicher');
+  assert.deepEqual(kaputt.u.fehler, []);
+  const nurLeeren = station('voll', { speicher: speicher({ [SPEICHER_KEY]: 'dry' }), attribute: { capabilities: caps(aufbau()).filter((c) => c !== 'self_wash_base') } });
+  assert.equal(aktiv(nurLeeren), 'empty', 'gemerkter Reiter fehlt auf diesem Gerät');
+});
+
+test('Statusliste oben mit Symbol und Text, Probleme zuerst', () => {
+  const k = station('voll', { attribute: { dust_bag_status: 'Check' } });
+  const punkte = $$in(k, '.station-status', '[data-status]');
+  assert.ok(punkte.length >= 15);
+  assert.equal(punkte[0].getAttribute('data-status'), 'dust_bag_status');
+  assert.equal(punkte[0].getAttribute('data-level'), 'warning');
+  assert.match(punkte[0].textContent, /Check/);
+  assert.ok(punkte[0].querySelector('ha-icon'), 'Symbol + Text (R17)');
+});
+
+// Spec-Tabellen Waschen/Trocknen/Entleeren: Fixture voll (X40) — Wert und Schreibaufruf je Zeile.
+const REITER_ZEILEN = {
+  wash: { self_clean: true, auto_add_detergent: true, auto_water_refilling: false, auto_mount_mop: true, smart_mop_washing: true,
+    washing_mode: 'Standard', water_temperature: null, self_clean_frequency: 'By room', auto_recleaning: 'In all modes', auto_rewashing: 'In all modes',
+    self_clean_area: 20, self_clean_time: null },
+  dry: { auto_drying: true, drying_time: '3' },
+  empty: { auto_dust_collecting: true, auto_empty_mode: 'High frequency' }
+};
+const setze = (key, value) => ({ domain: 'dreame_vacuum', service: 'vacuum_set_property', data: { entity_id: 'vacuum.robo', key, value } });
+
+for (const [name, erwartet] of Object.entries(REITER_ZEILEN)) {
+  test(`Reiter ${name}: jede Zeile mit Fixture-Wert und eigenem Schreibaufruf (settingRow)`, () => {
+    const k = station('voll', { speicher: speicher({ [SPEICHER_KEY]: name }) });
+    assert.deepEqual(zeilenIm(k).slice().sort(), Object.keys(erwartet).sort());
+    const soll = [];
+    for (const [key, wert] of Object.entries(erwartet)) {
+      const z = $$in(k, '[role="tabpanel"]', '[data-setting]').find((x) => x.getAttribute('data-setting') === key);
+      if (wert === null) { assert.equal(z.getAttribute('data-state'), 'locked', key); continue; }
+      const schalter = z.querySelector('[role="switch"]');
+      const feld = z.querySelector('select') || z.querySelector('input');
+      if (schalter) {
+        assert.equal(schalter.getAttribute('aria-checked'), String(wert), key);
+        schalter.click();
+        soll.push(setze(key, wert ? 0 : 1));
+      } else if (feld.tagName === 'SELECT') {
+        assert.equal(feld.value, String(wert), key);
+        const anders = feld.childNodes.map((o) => o.value).find((v) => v && v !== String(wert));
+        feld.value = anders;
+        feld.dispatchEvent(k.u.neuesEreignis('change'));
+        soll.push(setze(key, anders));
+      } else {
+        assert.equal(feld.value, String(wert), key);
+        assert.deepEqual([feld.getAttribute('min'), feld.getAttribute('max')], ['10', '35'], key + ': Grenzen aus _min/_max');
+        feld.value = '25';
+        feld.dispatchEvent(k.u.neuesEreignis('change'));
+        soll.push(setze(key, 25));
+      }
+    }
+    assert.deepEqual(aufrufe(k), soll);
+  });
+}
+
+test('Aktionen im Reiter: gleicher Text, gleiches Symbol, gleicher Aufruf wie im Dock-Menü (R01)', () => {
+  const k = station('voll', { speicher: speicher({ [SPEICHER_KEY]: 'dry' }) });
+  const knopf = $in(k, '[role="tabpanel"]', '[data-station-action="dry"]');
+  assert.match(knopf.textContent, /Trocknen starten/);
+  knopf.click();
+  assert.deepEqual(aufrufe(k), [aktion('toggle_drying')]);
+});
+
+test('Wartung: Station reinigen, Nachreinigen direkt; Ablassen/Tank leeren/Selbstreparatur nach Bestätigung mit Folgetext', () => {
+  const wartung = (k) => $$in(k, '.station-upkeep', '[data-station-action]').map((b) => b.getAttribute('data-station-action'));
+  assert.deepEqual(wartung(station()), ['drain', 'empty_tank', 'station_cleaning', 'self_repair', 'recleaning']);
+  for (const [name, soll] of [['station_cleaning', aktion('start_station_cleaning')], ['recleaning', aktion('start_recleaning')]]) {
+    const k = station();
+    $in(k, '.station-upkeep', '[data-station-action="' + name + '"]').click();
+    assert.deepEqual(aufrufe(k), [soll], name);
+  }
+  for (const [name, soll, folge] of [['drain', aktion('start_draining'), /lässt ihr Wasser ab/], ['empty_tank', aktion('start_draining', '1'), /verworfen/],
+    ['self_repair', aktion('start_self_repairing'), /repariert sich selbst/]]) {
+    const k = station();
+    $in(k, '.station-upkeep', '[data-station-action="' + name + '"]').click();
+    assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'confirm', name);
+    assert.match($d(k.u, '.body').textContent, folge, name);
+    assert.deepEqual(aufrufe(k), [], name + ': erst nach Bestätigung');
+    $d(k.u, '[data-action="cancel"]').click();
+    k.u.zurueck();
+    assert.deepEqual(aufrufe(k), [], name + ': Abbrechen ruft nichts');
+    $in(k, '.station-upkeep', '[data-station-action="' + name + '"]').click();
+    $d(k.u, '[data-action="confirm"]').click();
+    assert.deepEqual(aufrufe(k), [soll], name);
+  }
+  const k = station('voll', { attribute: { draining_available: false } });
+  assert.deepEqual(wartung(k), ['station_cleaning', 'self_repair', 'recleaning'], 'Ablassen nur wenn möglich');
+});
+
+test('Sperrgründe sichtbar: Wassertemperatur, Waschmodus, Selbstreinigungsfläche, Trocknungsdauer', () => {
+  const grund = (k, key) => {
+    const z = k.I.settingRow(k.karte, k.model(), key);
+    return z.getAttribute('data-state') === 'locked' ? z.querySelector('.setting-status').textContent : '';
+  };
+  assert.match(grund(aufbau(), 'water_temperature'), /intelligente/i);
+  assert.match(grund(aufbau('voll', { attribute: { self_clean: false } }), 'water_temperature'), /Selbstreinigung/);
+  assert.match(grund(aufbau('voll', { attribute: { self_clean: false } }), 'washing_mode'), /Selbstreinigung/);
+  assert.equal(grund(aufbau(), 'washing_mode'), '');
+  assert.equal(grund(aufbau(), 'self_clean_area'), '');
+  assert.match(grund(aufbau('voll', { attribute: { cleangenius_cleaning: true } }), 'self_clean_area'), /CleanGenius/);
+  assert.match(grund(aufbau('voll', { attribute: { self_clean_frequency: 'By time' } }), 'self_clean_area'), /nach Zeit/);
+  assert.match(grund(aufbau(), 'self_clean_time'), /nach Zeit/);
+  assert.match(grund(aufbau('voll', { attribute: { auto_drying: false } }), 'drying_time'), /automatisch/i);
+  assert.match(grund(aufbau('voll', { attribute: { auto_dust_collecting: false, auto_empty_frequency: 1 } }), 'auto_empty_frequency'), /Auto-Entleeren/);
+});

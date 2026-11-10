@@ -545,6 +545,19 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             wirdGestartet: 'Wird gestartet …',
             aktionFehler: '{name} wurde nicht gestartet ({grund}). An der Station hat sich nichts geändert. Prüfe Station und Roboter und versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
             stationEinstellungen: 'Station-Einstellungen',
+            stationStatus: 'Stationsstatus',
+            reiter_wash: 'Waschen',
+            reiter_dry: 'Trocknen',
+            reiter_empty: 'Entleeren',
+            wartung: 'Wartung',
+            sperre_selfClean: 'Nur bei eingeschalteter Mop-Selbstreinigung.',
+            sperre_smartWash: 'Nur bei ausgeschalteter intelligenter Mop-Wäsche; die wählt die Temperatur selbst.',
+            sperre_cleanGenius: 'Während einer CleanGenius-Reinigung nicht änderbar.',
+            sperre_notByTime: 'Nur wenn die Selbstreinigung nach Fläche oder Raum läuft, nicht nach Zeit.',
+            sperre_byTime: 'Nur wenn die Selbstreinigung nach Zeit läuft.',
+            sperre_notDrying: 'Während des Trocknens nicht änderbar.',
+            sperre_autoDrying: 'Nur bei automatischem Trocknen ohne intelligentes Trocknen.',
+            sperre_autoEmpty: 'Nur bei eingeschaltetem Auto-Entleeren.',
             status_washing: 'Mop wird gewaschen',
             status_washing_paused: 'Waschen pausiert',
             status_drying: 'Trocknet',
@@ -955,6 +968,19 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             wirdGestartet: 'Starting …',
             aktionFehler: '{name} did not start ({grund}). Nothing changed at the station. Check station and robot and try again; if that does not help, check the dreame_vacuum integration.',
             stationEinstellungen: 'Station settings',
+            stationStatus: 'Station status',
+            reiter_wash: 'Washing',
+            reiter_dry: 'Drying',
+            reiter_empty: 'Emptying',
+            wartung: 'Maintenance',
+            sperre_selfClean: 'Only with mop self-cleaning on.',
+            sperre_smartWash: 'Only with smart mop washing off; it picks the temperature itself.',
+            sperre_cleanGenius: 'Cannot change during a CleanGenius cleaning.',
+            sperre_notByTime: 'Only when self-cleaning runs by area or room, not by time.',
+            sperre_byTime: 'Only when self-cleaning runs by time.',
+            sperre_notDrying: 'Cannot change while drying.',
+            sperre_autoDrying: 'Only with automatic drying on and smart drying off.',
+            sperre_autoEmpty: 'Only with auto-emptying on.',
             status_washing: 'Mop washing',
             status_washing_paused: 'Washing paused',
             status_drying: 'Drying',
@@ -1524,7 +1550,7 @@ const SETTING_GROUPS = [
     { name: 'cleaning', icon: 'mdi:robot-vacuum' },
     { name: 'mopping', icon: 'mdi:water-outline' },
     { name: 'carpet', icon: 'mdi:rug' },
-    { name: 'station', icon: 'mdi:home-variant-outline', module: 'dock' },
+    { name: 'station', icon: 'mdi:home-variant-outline' },
     { name: 'camera', icon: 'mdi:camera-outline' },
     { name: 'audio', icon: 'mdi:volume-high' },
     { name: 'dnd', icon: 'mdi:minus-circle-outline' },
@@ -1638,8 +1664,19 @@ const SETTING_NEEDS = {
     carpet: ['carpet_boost', 'intensive_carpet_cleaning', 'clean_carpets_first', 'side_brush_carpet_rotate', 'lift_chassis_on_carpet',
         'close_roller_cover_on_carpet', 'carpet_cleaning', 'carpet_sensitivity'],
     dnd: ['dnd_disable_auto_empty', 'dnd_disable_resume_cleaning', 'dnd_reduce_volume'],
-    manualLight: ['camera_light_brightness']
+    manualLight: ['camera_light_brightness'],
+    // Station (dock), types.py#L2101–L2245; the first failed need gives the reason.
+    selfClean: ['washing_mode', 'water_temperature', 'smart_mop_washing', 'mop_wash_level', 'self_clean_frequency', 'self_clean_area', 'self_clean_time',
+        'self_clean_by_zone', 'mop_clean_frequency'],
+    smartWash: ['water_temperature'],
+    cleanGenius: ['self_clean_frequency', 'self_clean_area', 'self_clean_time', 'self_clean_by_zone', 'mop_clean_frequency'],
+    notByTime: ['self_clean_area'],
+    byTime: ['self_clean_time'],
+    notDrying: ['silent_drying'],
+    autoDrying: ['drying_time'],
+    autoEmpty: ['auto_empty_frequency']
 };
+SETTING_NEEDS.idle.push('self_clean_frequency', 'auto_recleaning', 'auto_rewashing');
 
 /** Dock's tabs (DOCK-02…04), in order; a station key not named in STATION_TAB_OF washes. */
 const STATION_TABS = ['wash', 'dry', 'empty'];
@@ -1705,7 +1742,15 @@ const SETTING_LOCKS = {
     fluid: (model) => settingValue(model, 'ai_fluid_detection').value !== false,
     carpet: (model) => settingValue(model, 'carpet_recognition').value !== false && settingValue(model, 'carpet_avoidance').value !== true,
     dnd: dndActive,
-    manualLight: (model) => settingValue(model, 'camera_light_brightness').value !== 101
+    manualLight: (model) => settingValue(model, 'camera_light_brightness').value !== 101,
+    selfClean: (model) => settingValue(model, 'self_clean').value !== false,
+    smartWash: (model) => settingValue(model, 'smart_mop_washing').value !== true,
+    cleanGenius: (model) => model.attr('cleangenius_cleaning') !== true,
+    notByTime: (model) => !['by_time', 'intelligent'].includes(enumName(settingValue(model, 'self_clean_frequency').value)),
+    byTime: (model) => enumName(settingValue(model, 'self_clean_frequency').value) === 'by_time',
+    notDrying: (model) => model.attr('drying') !== true,
+    autoDrying: (model) => settingValue(model, 'auto_drying').value !== false && settingValue(model, 'smart_drying').value !== true,
+    autoEmpty: (model) => settingValue(model, 'auto_dust_collecting').value !== false
 };
 
 /**
@@ -4026,6 +4071,7 @@ function settingsView(card) {
 }
 
 function groupView(card, name) {
+    if (name === 'station') return stationView(card);
     loadSettingTexts(card);
     const group = SETTING_GROUPS.find((g) => g.name === name);
     return {
@@ -4884,10 +4930,128 @@ function stationMenu(card) {
                 back.setAttribute('data-station-action', 'return');
                 list.appendChild(back);
             }
-            const settings = viewLink(translate(hass, 'stationEinstellungen'), 'station-settings', 'mdi:tune-variant', () => dialog.show(groupView(card, 'station')));
+            const settings = viewLink(translate(hass, 'stationEinstellungen'), 'station-settings', 'mdi:tune-variant', () => dialog.show(stationView(card)));
             settings.setAttribute('data-station-action', 'settings');
             list.appendChild(settings);
             body.appendChild(list);
+        }
+    };
+}
+
+/** Which capability a tab needs (R18); it shows only with rows or actions too. */
+const STATION_TAB_NEEDS = { wash: ['self_wash_base'], dry: ['self_wash_base', 'dust_bag_drying', 'manual_dust_bag_drying'], empty: ['auto_empty_base'] };
+
+/** The last tab per vacuum and browser (R21); a blocked or full storage only forgets it. */
+function storedTab(key, value) {
+    try {
+        const store = globalThis.localStorage;
+        if (!store) return null;
+        if (value === undefined) return store.getItem(key);
+        store.setItem(key, value);
+    } catch (error) {
+        // shortcut: no storage (private mode, quota) = no memory; the view works without it.
+    }
+    return null;
+}
+
+/**
+ * Station settings (DOCK-01…04): status on top, tabs wash/dry/empty with the
+ * rows of device-settings (R08) and their actions, maintenance below.
+ * Reached from the dock menu and from device settings → Station (same view).
+ */
+function stationView(card) {
+    loadSettingTexts(card);
+    const storeKey = 'busch-vacuum-card:dock-tab:' + card._opts.entity;
+    let tab = storedTab(storeKey);
+    return {
+        title: translate(card._hass, 'gruppe_station'),
+        kind: 'editor',
+        watch: () => settingsWatch(card),
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const status = document.createElement('ul');
+            status.className = 'station-status';
+            status.setAttribute('aria-label', translate(hass, 'stationStatus'));
+            for (const item of stationStatus(model)) {
+                const line = document.createElement('li');
+                line.setAttribute('data-status', item.key);
+                line.setAttribute('data-level', item.level);
+                const symbol = BuschUI.ha.icon(item.icon);
+                symbol.setAttribute('aria-hidden', 'true');
+                const label = document.createElement('span');
+                label.className = 'setting-name';
+                label.textContent = item.label;
+                const value = document.createElement('span');
+                value.className = 'setting-value';
+                value.textContent = item.text;
+                line.append(symbol, label, value);
+                status.appendChild(line);
+            }
+            if (status.childNodes.length) body.appendChild(status);
+
+            const tabs = STATION_TABS.filter((name) => STATION_TAB_NEEDS[name].some((need) => model.can(need))
+                && (groupKeys('station').some((key) => SETTINGS[key].tab === name && settingState(card, model, key).present) || stationActions(model, (a) => a.tab === name).length));
+            if (!tabs.includes(tab)) tab = tabs[0];
+            if (tab) {
+                const select = (name, focus) => {
+                    tab = name;
+                    storedTab(storeKey, name);
+                    dialog._render();
+                    const node = focus && dialog.shadowRoot.querySelector('[data-tab="' + name + '"]');
+                    if (node) node.focus();
+                };
+                const list = document.createElement('div');
+                list.className = 'station-tabs';
+                list.setAttribute('role', 'tablist');
+                list.setAttribute('aria-label', translate(hass, 'gruppe_station'));
+                tabs.forEach((name, index) => {
+                    const label = translate(hass, 'reiter_' + name);
+                    const button = BuschUI.action({ label, text: label, variant: name === tab ? 'primary' : 'quiet', onClick: () => select(name, false) });
+                    button.setAttribute('role', 'tab');
+                    button.setAttribute('data-tab', name);
+                    button.id = 'station-tab-' + name;
+                    button.setAttribute('aria-selected', String(name === tab));
+                    button.setAttribute('aria-controls', 'station-panel');
+                    button.tabIndex = name === tab ? 0 : -1;
+                    button.addEventListener('keydown', (event) => {
+                        const next = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: tabs.length - 1 }[event.key];
+                        if (next === undefined) return;
+                        event.preventDefault();
+                        select(tabs[(next + tabs.length) % tabs.length], true);
+                    });
+                    list.appendChild(button);
+                });
+                const panel = document.createElement('div');
+                panel.id = 'station-panel';
+                panel.setAttribute('role', 'tabpanel');
+                panel.setAttribute('aria-labelledby', 'station-tab-' + tab);
+                const rows = document.createElement('div');
+                rows.className = 'settings-list';
+                for (const key of groupKeys('station').filter((k) => SETTINGS[k].tab === tab)) {
+                    const row = settingRow(card, model, key);
+                    if (row) rows.appendChild(row);
+                }
+                panel.appendChild(rows);
+                const actions = stationActions(model, (a) => a.tab === tab);
+                if (actions.length) {
+                    const menu = document.createElement('div');
+                    menu.className = 'menu station-actions';
+                    for (const action of actions) menu.append(...stationActionItem(card, model, hass, action));
+                    panel.appendChild(menu);
+                }
+                body.append(list, panel);
+            }
+
+            const upkeep = stationActions(model, (a) => !a.tab);
+            if (upkeep.length) {
+                const heading = document.createElement('h2');
+                heading.className = 'settings-heading';
+                heading.textContent = translate(hass, 'wartung');
+                const menu = document.createElement('div');
+                menu.className = 'menu station-upkeep';
+                for (const action of upkeep) menu.append(...stationActionItem(card, model, hass, action));
+                body.append(heading, menu);
+            }
         }
     };
 }
@@ -5917,6 +6081,53 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 }
 .field-label {
     overflow-wrap: anywhere;
+}
+.station-status {
+    list-style: none;
+    margin: 0 0 var(--ha-space-3, 12px);
+    padding: 0;
+}
+.station-status li {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--ha-space-1, 4px) var(--ha-space-2, 8px);
+    min-height: 32px;
+    padding: var(--ha-space-1, 4px) 0;
+}
+.station-status ha-icon {
+    flex: none;
+    color: var(--bvc-success-color, var(--success-color, #43a047));
+}
+.station-status .setting-name {
+    flex: 1 1 10em;
+    min-width: 0;
+}
+.station-status [data-level=info] ha-icon {
+    color: var(--bvc-info-color, var(--info-color, #039be5));
+}
+.station-status [data-level=warning] ha-icon {
+    color: var(--bvc-warning-color, var(--warning-color, #ffa600));
+}
+.station-status [data-level=error] ha-icon {
+    color: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.station-tabs {
+    display: flex;
+    gap: var(--ha-space-1, 4px);
+    border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+    padding-bottom: var(--ha-space-2, 8px);
+}
+.station-tabs .busch-ui-action {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.station-actions {
+    margin-top: var(--ha-space-2, 8px);
 }
 .settings-heading {
     margin: var(--ha-space-4, 16px) 0 0;

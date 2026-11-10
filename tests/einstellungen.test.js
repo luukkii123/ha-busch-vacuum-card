@@ -210,11 +210,12 @@ test('Übersicht: Gruppen nur mit Inhalt (voll, ohne Dock, minimal)', () => {
   assert.deepEqual(gruppen(uebersicht('minimal')), ['info'], 'fremder Sauger: nur Geräteinfo');
 });
 
-test('Station führt in die Dock-Ansicht (Platzhalter bis Modul dock)', () => {
+test('Station führt in die Dock-Ansicht (Modul dock, Reiter statt Platzhalter)', () => {
   const k = einstellungen();
   gruppe(k, 'station').click();
   assert.equal($d(k.u, 'h1').textContent, 'Station');
-  assert.match($d(k.u, '.placeholder').textContent, /dock/);
+  assert.equal($d(k.u, '.placeholder'), null);
+  assert.ok($d(k.u, '[role="tablist"]'));
 });
 
 test('Gruppe als Unterseite; Escape geht genau eine Ebene zurück', () => {
