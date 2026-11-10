@@ -508,7 +508,35 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             waehlenGesperrt: 'Die Karte ist gesperrt; zum Wählen erst das Schloss halten.',
             stockwerkWaehlen: 'Stockwerk wählen',
             stockwerkGesperrt: 'Aufgabe läuft – das Stockwerk lässt sich erst danach wechseln.',
-            aktiveKarte: 'aktiv'
+            aktiveKarte: 'aktiv',
+            an: 'An',
+            aus: 'Aus',
+            speichert: 'Speichert …',
+            wertUnbekannt: 'Wert unbekannt',
+            aenderung: 'Änderung',
+            nichtUebernommen: '{name}: Das Gerät hat die Änderung nicht übernommen. Der bisherige Wert gilt weiter. Versuche es erneut.',
+            schreibFehler: '{name} wurde nicht geändert ({grund}). Der bisherige Wert gilt weiter. Versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
+            bereich: 'Erlaubt sind Werte von {min} bis {max}.',
+            sperre_idle: 'Während einer Aufgabe nicht änderbar.',
+            sperre_ai: 'Erst die KI-Hinderniserkennung einschalten.',
+            sperre_fluid: 'Erst die Flüssigkeitserkennung einschalten.',
+            sperre_carpet: 'Nur bei eingeschalteter Teppicherkennung und ausgeschaltetem Teppich-Meiden.',
+            sperre_dnd: 'Nur bei aktivem „Nicht stören“.',
+            sperre_manualLight: 'Die Helligkeit regelt gerade die Automatik.',
+            sperre_liste: 'Die Integration erlaubt die Änderung gerade nicht.',
+            gruppe_cleaning: 'Reinigung',
+            gruppe_mopping: 'Wischen',
+            gruppe_carpet: 'Teppich',
+            gruppe_station: 'Station',
+            gruppe_camera: 'Kamera und KI',
+            gruppe_audio: 'Audio',
+            gruppe_dnd: 'Nicht stören',
+            gruppe_schedule: 'Zeitpläne',
+            gruppe_battery: 'Akku',
+            gruppe_consumables: 'Zubehör',
+            gruppe_info: 'Geräteinfo',
+            gruppe_other: 'Sonstiges',
+            set_custom_mopping_mode: 'Eigener Wischmodus'
         }
     },
     en: {
@@ -786,7 +814,35 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             waehlenGesperrt: 'The map is locked; hold the lock first to pick.',
             stockwerkWaehlen: 'Choose floor',
             stockwerkGesperrt: 'Task running – the floor can be changed afterwards.',
-            aktiveKarte: 'active'
+            aktiveKarte: 'active',
+            an: 'On',
+            aus: 'Off',
+            speichert: 'Saving …',
+            wertUnbekannt: 'Value unknown',
+            aenderung: 'Change',
+            nichtUebernommen: '{name}: The device did not take the change. The previous value still applies. Try again.',
+            schreibFehler: '{name} was not changed ({grund}). The previous value still applies. Try again; if that does not help, check the dreame_vacuum integration.',
+            bereich: 'Allowed values are {min} to {max}.',
+            sperre_idle: 'Cannot change during a task.',
+            sperre_ai: 'Turn on AI obstacle detection first.',
+            sperre_fluid: 'Turn on fluid detection first.',
+            sperre_carpet: 'Only with carpet recognition on and carpet avoidance off.',
+            sperre_dnd: 'Only while “Do not disturb” is active.',
+            sperre_manualLight: 'Brightness is currently set automatically.',
+            sperre_liste: 'The integration does not allow this change right now.',
+            gruppe_cleaning: 'Cleaning',
+            gruppe_mopping: 'Mopping',
+            gruppe_carpet: 'Carpet',
+            gruppe_station: 'Station',
+            gruppe_camera: 'Camera and AI',
+            gruppe_audio: 'Audio',
+            gruppe_dnd: 'Do not disturb',
+            gruppe_schedule: 'Schedules',
+            gruppe_battery: 'Battery',
+            gruppe_consumables: 'Consumables',
+            gruppe_info: 'Device info',
+            gruppe_other: 'Other',
+            set_custom_mopping_mode: 'Custom mopping mode'
         }
     }
 };
@@ -1222,6 +1278,410 @@ class VacuumModel {
                 return this.caps.has(name);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Settings (device-settings): one table, one row, one write path — also for
+// dock and clean-settings (R08)
+// ---------------------------------------------------------------------------
+
+/** Groups of the settings overview, in order. `module`: the view belongs to another module. */
+const SETTING_GROUPS = [
+    { name: 'cleaning', icon: 'mdi:robot-vacuum' },
+    { name: 'mopping', icon: 'mdi:water-outline' },
+    { name: 'carpet', icon: 'mdi:rug' },
+    { name: 'station', icon: 'mdi:home-variant-outline', module: 'dock' },
+    { name: 'camera', icon: 'mdi:camera-outline' },
+    { name: 'audio', icon: 'mdi:volume-high' },
+    { name: 'dnd', icon: 'mdi:minus-circle-outline' },
+    { name: 'schedule', icon: 'mdi:calendar-clock' },
+    { name: 'battery', icon: 'mdi:battery-charging-outline' },
+    { name: 'consumables', icon: 'mdi:wrench-clock' },
+    { name: 'info', icon: 'mdi:information-outline' },
+    { name: 'other', icon: 'mdi:tune-variant' }
+];
+
+/**
+ * Every device-level switch/select/number/time of dreame_vacuum v2.0.3
+ * (switch.py SWITCHES, select.py SELECTS, number.py NUMBERS, time.py TIMES),
+ * by group and control; tests/einstellungen.test.js checks it against the
+ * source's key list. All write through `vacuum_set_property` (vacuum.py#L901),
+ * the integration turns list names into its values (device.py#L2692).
+ * Group `clean` is clean-settings', `station` dock's: same row, same writer.
+ */
+const SETTING_KEYS = {
+    cleaning: {
+        switch: ['resume_cleaning', 'max_suction_power', 'large_particles_boost', 'pet_focused_cleaning', 'floor_direction_cleaning',
+            'side_reach', 'gap_cleaning_extension', 'intelligent_recognition', 'hair_compression', 'obstacle_crossing',
+            'active_suspension_crossing', 'dynamic_obstacle_cleaning'],
+        select: ['low_lying_area_frequency']
+    },
+    mopping: {
+        // custom_mopping_mode has no entity, only the attribute (types.py:1495).
+        switch: ['custom_mopping_mode', 'tight_mopping', 'mop_extend', 'mopping_under_furnitures', 'wider_corner_coverage',
+            'auto_change_mop', 'water_electrolysis', 'pressurized_cleaning'],
+        select: ['mop_extend_frequency', 'mop_pad_swing', 'mopping_type', 'custom_mopping_route', 'mop_pressure', 'mop_temperature',
+            'scraper_frequency'],
+        number: ['mop_cleaning_remainder']
+    },
+    carpet: {
+        switch: ['carpet_recognition', 'carpet_avoidance', 'carpet_boost', 'intensive_carpet_cleaning', 'clean_carpets_first',
+            'side_brush_carpet_rotate', 'lift_chassis_on_carpet', 'close_roller_cover_on_carpet'],
+        select: ['carpet_cleaning', 'carpet_sensitivity']
+    },
+    station: {
+        switch: ['self_clean', 'auto_dust_collecting', 'auto_water_refilling', 'auto_drying', 'auto_add_detergent', 'mop_washing_with_detergent',
+            'mopping_with_detergent', 'auto_mount_mop', 'self_clean_by_zone', 'smart_drying', 'hot_washing', 'uv_sterilization',
+            'ultra_clean_mode', 'smart_mop_washing', 'silent_drying', 'dust_bag_drying'],
+        select: ['washing_mode', 'water_temperature', 'self_clean_frequency', 'auto_recleaning', 'auto_rewashing', 'auto_empty_mode',
+            'auto_empty_frequency', 'drying_time', 'mop_wash_level', 'mop_clean_frequency'],
+        number: ['self_clean_area', 'self_clean_time', 'auto_empty_area']
+    },
+    camera: {
+        switch: ['obstacle_avoidance', 'ai_obstacle_detection', 'ai_obstacle_image_upload', 'ai_obstacle_picture', 'ai_pet_detection',
+            'ai_human_detection', 'ai_furniture_detection', 'ai_fluid_detection', 'fuzzy_obstacle_detection', 'ai_pet_avoidance',
+            'pet_focused_detection', 'pet_picture', 'stain_avoidance', 'collision_avoidance', 'fill_light', 'human_follow',
+            'camera_light_brightness_auto'],
+        number: ['camera_light_brightness']
+    },
+    audio: {
+        switch: ['voice_assistant', 'streaming_voice_prompt'],
+        select: ['voice_assistant_language'],
+        number: ['volume']
+    },
+    dnd: {
+        switch: ['dnd', 'dnd_disable_auto_empty', 'dnd_disable_resume_cleaning', 'dnd_reduce_volume'],
+        time: ['dnd_start', 'dnd_end']
+    },
+    battery: {
+        switch: ['off_peak_charging', 'auto_charging'],
+        select: ['battery_charge_level'],
+        time: ['off_peak_charging_start', 'off_peak_charging_end']
+    },
+    other: {
+        switch: ['child_lock', 'multi_floor_map', 'map_saving', 'ring_light_always_on', 'lds_state'],
+        select: ['selected_map', 'map_rotation', 'auto_lds_coverage']
+    },
+    clean: {
+        switch: ['customized_cleaning', 'cleaning_sequence'],
+        select: ['suction_level', 'water_volume', 'cleaning_mode', 'mop_pad_humidity', 'cleaning_route', 'cleangenius', 'cleangenius_mode'],
+        number: ['wetness_level']
+    }
+};
+
+/** Ranges as `set_property_value` checks them (device.py#L2930ff), and the rows that need more than a value. */
+const SETTING_EXTRA = {
+    volume: { min: 0, max: 100 },
+    camera_light_brightness: { min: 40, max: 100 },
+    mop_cleaning_remainder: { min: 0, max: 180 },
+    wetness_level: { min: 1, max: 32 },
+    auto_empty_area: { min: 5, max: 15 },
+    map_rotation: { options: ['0', '90', '180', '270'] }
+};
+
+/**
+ * Locks the card can see coming, a subset of PROPERTY_AVAILABILITY
+ * (types.py#L2022); everything else the service error reports (R12).
+ */
+const SETTING_NEEDS = {
+    idle: ['wider_corner_coverage', 'mop_pad_swing', 'mop_extend_frequency', 'mopping_type', 'intensive_carpet_cleaning', 'side_brush_carpet_rotate',
+        'clean_carpets_first', 'lift_chassis_on_carpet', 'close_roller_cover_on_carpet', 'auto_lds_coverage', 'lds_state', 'carpet_boost',
+        'carpet_cleaning', 'carpet_sensitivity'],
+    ai: ['ai_human_detection', 'ai_obstacle_image_upload', 'ai_obstacle_picture', 'ai_pet_detection', 'ai_furniture_detection',
+        'ai_fluid_detection', 'fuzzy_obstacle_detection', 'ai_pet_avoidance', 'pet_picture', 'pet_focused_detection'],
+    fluid: ['stain_avoidance'],
+    carpet: ['carpet_boost', 'intensive_carpet_cleaning', 'clean_carpets_first', 'side_brush_carpet_rotate', 'lift_chassis_on_carpet',
+        'close_roller_cover_on_carpet', 'carpet_cleaning', 'carpet_sensitivity'],
+    dnd: ['dnd_disable_auto_empty', 'dnd_disable_resume_cleaning', 'dnd_reduce_volume'],
+    manualLight: ['camera_light_brightness']
+};
+
+const SETTINGS = {};
+for (const [group, controls] of Object.entries(SETTING_KEYS)) {
+    for (const [control, keys] of Object.entries(controls)) {
+        for (const key of keys) SETTINGS[key] = Object.assign({ group, control, platform: control, needs: [] }, SETTING_EXTRA[key]);
+    }
+}
+for (const [need, keys] of Object.entries(SETTING_NEEDS)) keys.forEach((key) => SETTINGS[key].needs.push(need));
+
+/** A switch value of the attribute (true/1) or entity ('on'), else undefined. */
+function toBool(value) {
+    if (value === true || value === 1 || value === 'on' || value === '1' || value === 'true') return true;
+    if (value === false || value === 0 || value === 'off' || value === '0' || value === 'false') return false;
+    return undefined;
+}
+
+/** A value in the row's form, or undefined: switch boolean, number Number, else text. */
+function normalizeSetting(control, value) {
+    if (value === undefined || value === null || value === '' || UNUSABLE.includes(value)) return undefined;
+    if (control === 'switch') return toBool(value);
+    if (control === 'number') return Number.isFinite(Number(value)) ? Number(value) : undefined;
+    return String(value);
+}
+
+const sameSetting = (control, a, b) => (control === 'select' ? enumName(a) === enumName(b) : a === b);
+
+/** The active map camera's rotation: `map_rotation` has no attribute at the vacuum. */
+function mapRotation(model) {
+    const camera = model.related.maps.map[0];
+    const stateObj = camera && model.hass.states[camera];
+    return stateObj ? stateObj.attributes.rotation : undefined;
+}
+
+/** Current value of a key and where it came from: attribute, enabled entity, or none. */
+function settingValue(model, key) {
+    const def = SETTINGS[key];
+    const raw = key === 'map_rotation' ? mapRotation(model) : model.attr(key);
+    if (raw !== undefined) return { value: normalizeSetting(def.control, raw), source: 'attr' };
+    const id = model.entity(def.platform + '.' + key);
+    if (id) return { value: normalizeSetting(def.control, model.hass.states[id] && model.hass.states[id].state), source: 'entity' };
+    return { value: undefined, source: null };
+}
+
+const dndActive = (model) => {
+    const list = model.attr('dnd');
+    return Array.isArray(list) ? list.some((d) => d && d.enabled) : settingValue(model, 'dnd').value !== false;
+};
+
+/** Each need: true when the setting may change now. Unknown counts as allowed — the service decides. */
+const SETTING_LOCKS = {
+    idle: (model) => !taskActive(model, model.state ? model.state.state : 'unavailable'),
+    ai: (model) => settingValue(model, 'ai_obstacle_detection').value !== false,
+    fluid: (model) => settingValue(model, 'ai_fluid_detection').value !== false,
+    carpet: (model) => settingValue(model, 'carpet_recognition').value !== false && settingValue(model, 'carpet_avoidance').value !== true,
+    dnd: dndActive,
+    manualLight: (model) => settingValue(model, 'camera_light_brightness').value !== 101
+};
+
+/**
+ * Everything a row needs to know: present (attribute or entity, R18), value
+ * (shown optimistically while a write runs), options, range, lock reason,
+ * and the note of a failed write. A pending write the device confirmed ends here.
+ */
+function settingState(card, model, key) {
+    const hass = model.hass;
+    const def = SETTINGS[key];
+    const current = settingValue(model, key);
+    const entityId = model.entity(def.platform + '.' + key);
+    const entity = entityId ? hass.states[entityId] : null;
+    const pending = card._settingWrites.get(key);
+    if (pending && pending.check(model)) settleWrite(card, key);
+    const busy = card._settingWrites.get(key);
+    const list = model.attr(key + '_list');
+    let options = def.options || (Array.isArray(list) ? list : entity && Array.isArray(entity.attributes.options) ? entity.attributes.options : null);
+    if (key === 'selected_map') options = (model.attr('maps') || []).map((m) => m.custom_name || m.name || String(m.id));
+    const value = busy && busy.want !== undefined ? busy.want : current.value;
+    const failed = def.needs.find((need) => !SETTING_LOCKS[need](model));
+    const reason = failed ? translate(hass, 'sperre_' + failed)
+        : def.control === 'select' && options && !options.length ? translate(hass, 'sperre_liste') : '';
+    return {
+        key, def, entityId, options,
+        label: settingLabel(hass, key),
+        present: current.source !== null,
+        source: current.source,
+        value,
+        known: value !== undefined,
+        min: def.min !== undefined ? def.min : entity ? entity.attributes.min : undefined,
+        max: def.max !== undefined ? def.max : entity ? entity.attributes.max : undefined,
+        step: entity && entity.attributes.step ? entity.attributes.step : 1,
+        locked: !!reason,
+        reason,
+        busy: !!busy,
+        note: card._settingNotes.get(key) || ''
+    };
+}
+
+/**
+ * Names from the integration's own HA translation (R26), loaded once per
+ * settings view (`loadBackendTranslation`). Without it the card's dictionary
+ * (`set_<key>`, only for what has no entity), else the key in words.
+ */
+function settingLabel(hass, key) {
+    const def = SETTINGS[key];
+    const id = 'component.dreame_vacuum.entity.' + def.platform + '.' + key + '.name';
+    const fromHa = hass && typeof hass.localize === 'function' ? hass.localize(id) : '';
+    if (fromHa && fromHa !== id) return fromHa;
+    const own = translate(hass, 'set_' + key);
+    if (own !== 'set_' + key) return own;
+    const words = key.replace(/_/g, ' ');
+    return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function optionLabel(hass, key, option) {
+    if (key === 'map_rotation') return option + '°';
+    const id = 'component.dreame_vacuum.entity.select.' + key + '.state.' + enumName(option);
+    const fromHa = hass && typeof hass.localize === 'function' ? hass.localize(id) : '';
+    return fromHa && fromHa !== id ? fromHa : String(option);
+}
+
+function rerender(card) {
+    if (card._dialog) card._dialog._render();
+}
+
+function settleWrite(card, key) {
+    const pending = card._settingWrites.get(key);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    card._settingWrites.delete(key);
+}
+
+/** Why a service failed, for the R12 text: HA's message, else the code. */
+const errorText = (error) => String((error && (error.message || error.code)) || error || '?');
+
+/**
+ * Tracks one write until the device confirms it (`check`), or reports why not:
+ * a service error at once, no confirmation after OPTIMISTIC_HOLD_MS (some
+ * setters end silently). A second tap while one runs is ignored (R11).
+ */
+function trackWrite(card, key, { want, check, call }) {
+    if (card._settingWrites.has(key)) return false;
+    card._settingNotes.delete(key);
+    const pending = { want, check: check || (() => false), timer: null };
+    const label = SETTINGS[key] ? settingLabel(card._hass, key) : translate(card._hass, 'aenderung');
+    const fail = (text) => {
+        if (card._settingWrites.get(key) !== pending) return;
+        settleWrite(card, key);
+        if (text) card._settingNotes.set(key, text);
+        rerender(card);
+    };
+    pending.timer = setTimeout(() => fail(pending.check(card._model()) ? '' : translate(card._hass, 'nichtUebernommen', { name: label })), OPTIMISTIC_HOLD_MS);
+    card._settingWrites.set(key, pending);
+    Promise.resolve(call()).then(() => {
+        // Actions have nothing to compare: the service's answer is the confirmation.
+        if (!check && card._settingWrites.get(key) === pending) fail('');
+    }, (error) => fail(translate(card._hass, 'schreibFehler', { name: label, grund: errorText(error) })));
+    rerender(card);
+    return true;
+}
+
+/** The one writer of a setting: `vacuum_set_property { entity_id, key, value[, params] }`. */
+function writeSetting(card, key, value, params) {
+    const def = SETTINGS[key];
+    const want = normalizeSetting(def.control, value);
+    const data = { entity_id: card._opts.entity, key, value: def.control === 'switch' ? (want ? 1 : 0) : value };
+    if (params) data.params = params;
+    return trackWrite(card, key, {
+        want,
+        check: (model) => sameSetting(def.control, settingValue(model, key).value, want),
+        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_property', data)
+    });
+}
+
+/** `vacuum_call_action { entity_id, key[, value] }`, busy until the service answers. */
+function callAction(card, key, value, check) {
+    const data = { entity_id: card._opts.entity, key };
+    if (value !== undefined) data.value = String(value);
+    return trackWrite(card, key, { check, call: () => card._hass.callService('dreame_vacuum', 'vacuum_call_action', data) });
+}
+
+/** Status line under a setting's name: always words, never colour alone (R17). */
+function settingStatus(hass, s) {
+    if (s.busy) return ['busy', translate(hass, 'speichert')];
+    if (s.note) return ['error', s.note];
+    if (s.locked) return ['locked', s.reason];
+    if (!s.known) return ['unknown', translate(hass, 'wertUnbekannt')];
+    return ['ok', ''];
+}
+
+/**
+ * The one settings row (switch / select / number / time), or null when the
+ * device lacks the key. Used by device-settings, dock and clean-settings.
+ */
+function settingRow(card, model, key) {
+    const hass = card._hass;
+    const s = settingState(card, model, key);
+    if (!s.present) return null;
+    const row = document.createElement('div');
+    row.className = 'setting';
+    row.setAttribute('data-setting', key);
+    const text = document.createElement('div');
+    text.className = 'setting-text';
+    const name = document.createElement('span');
+    name.className = 'setting-name';
+    name.id = 'setting-' + key;
+    name.textContent = s.label;
+    const status = document.createElement('span');
+    status.className = 'setting-status';
+    status.id = 'setting-status-' + key;
+    const [state, words] = settingStatus(hass, s);
+    text.append(name, status);
+    row.appendChild(text);
+    const blocked = s.locked || s.busy;
+    const write = (value) => writeSetting(card, key, value);
+    const describe = (node) => {
+        node.setAttribute('aria-labelledby', name.id);
+        node.setAttribute('aria-describedby', status.id);
+        if (s.busy) node.setAttribute('aria-busy', 'true');
+        if (blocked) node.disabled = true;
+        return node;
+    };
+    const control = s.def.control;
+    if (control === 'switch' && s.known) {
+        const word = translate(hass, s.value ? 'an' : 'aus');
+        const toggle = describe(BuschUI.action({ label: s.label, text: word, variant: s.value ? 'primary' : 'secondary', onClick: () => write(!s.value) }));
+        toggle.classList.add('setting-switch');
+        toggle.setAttribute('role', 'switch');
+        toggle.setAttribute('aria-checked', String(!!s.value));
+        row.appendChild(toggle);
+    } else if (control === 'switch') {
+        // Unknown stays unknown (spec: never guess): both ways offered.
+        const pair = document.createElement('div');
+        pair.className = 'setting-pair';
+        for (const [word, value] of [['an', true], ['aus', false]]) {
+            const button = describe(BuschUI.action({ label: s.label + ': ' + translate(hass, word), text: translate(hass, word), onClick: () => write(value) }));
+            button.setAttribute('data-action', word === 'an' ? 'on' : 'off');
+            pair.appendChild(button);
+        }
+        row.appendChild(pair);
+    } else if (control === 'select') {
+        const select = describe(document.createElement('select'));
+        select.className = 'setting-select';
+        const options = (s.options || []).map(String);
+        if (!s.known || !options.some((o) => sameSetting('select', o, s.value))) {
+            const unknown = document.createElement('option');
+            unknown.value = '';
+            unknown.disabled = true;
+            unknown.textContent = s.known ? String(s.value) : translate(hass, 'wertUnbekannt');
+            select.appendChild(unknown);
+        }
+        for (const option of options) {
+            const node = document.createElement('option');
+            node.value = option;
+            node.textContent = optionLabel(hass, key, option);
+            select.appendChild(node);
+        }
+        select.value = options.find((o) => sameSetting('select', o, s.value)) || '';
+        select.addEventListener('change', () => { if (select.value) write(select.value); });
+        row.appendChild(select);
+    } else {
+        const input = describe(document.createElement('input'));
+        input.className = 'setting-input';
+        input.setAttribute('type', control === 'time' ? 'time' : 'number');
+        if (control === 'number') {
+            if (s.min !== undefined) input.setAttribute('min', String(s.min));
+            if (s.max !== undefined) input.setAttribute('max', String(s.max));
+            input.setAttribute('step', String(s.step));
+            input.setAttribute('inputmode', 'numeric');
+        }
+        input.value = s.known ? String(s.value) : '';
+        input.addEventListener('change', () => {
+            if (control === 'time') {
+                if (/^([01]\d|2[0-3]):[0-5]\d$/.test(input.value)) write(input.value);
+                return;
+            }
+            const number = Number(input.value);
+            if (input.value === '' || !Number.isFinite(number) || (s.min !== undefined && number < s.min) || (s.max !== undefined && number > s.max)) {
+                card._settingNotes.set(key, translate(hass, 'bereich', { min: s.min, max: s.max }));
+                rerender(card);
+                return;
+            }
+            write(number);
+        });
+        row.appendChild(input);
+    }
+    row.setAttribute('data-state', state);
+    status.textContent = words;
+    return row;
 }
 
 // ---------------------------------------------------------------------------
@@ -3133,6 +3593,91 @@ class MapView {
 // Card
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Settings views (device-settings): overview → group → entry, at most three levels (R25)
+// ---------------------------------------------------------------------------
+
+const groupKeys = (name) => Object.keys(SETTINGS).filter((key) => SETTINGS[key].group === name);
+
+/** Whether a group has anything on this device; empty groups do not appear (R18). */
+function groupShown(model, name) {
+    switch (name) {
+        case 'station': return model.can('dock');
+        case 'consumables': return model.can('consumables');
+        case 'info': return !!model.state;
+        case 'schedule': return Array.isArray(model.attr('schedule'));
+        default: return groupKeys(name).some((key) => settingValue(model, key).source !== null);
+    }
+}
+
+/** The integration's entity names (R26) arrive once per card; the dialog redraws when they are there. */
+function loadSettingTexts(card) {
+    const hass = card._hass;
+    if (card._settingTexts || !hass || typeof hass.loadBackendTranslation !== 'function') return;
+    card._settingTexts = Promise.resolve(hass.loadBackendTranslation('entity', 'dreame_vacuum')).then(() => rerender(card), () => {});
+}
+
+/** A settings view redraws when the vacuum or any entity of its device changes. */
+const settingsWatch = (card) => {
+    const model = card._model();
+    return [card._opts.entity, ...Object.values(model.related.device), ...model.related.maps.map.slice(0, 1)];
+};
+
+/** Menu entries filled by a module; the others keep core's placeholder until theirs arrives. */
+const MODULE_VIEWS = {
+    settings: (card) => settingsView(card),
+    consumables: (card) => groupView(card, 'consumables')
+};
+
+function settingsView(card) {
+    loadSettingTexts(card);
+    return {
+        title: translate(card._hass, 'entrySettings'),
+        kind: 'editor',
+        watch: () => settingsWatch(card),
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const list = document.createElement('div');
+            list.className = 'menu settings-groups';
+            for (const group of SETTING_GROUPS.filter((g) => groupShown(model, g.name))) {
+                const label = translate(hass, 'gruppe_' + group.name);
+                const item = BuschUI.action({ label, text: label, icon: group.icon, variant: 'quiet', onClick: () => dialog.show(groupView(card, group.name)) });
+                item.classList.add('menu-item');
+                item.setAttribute('data-group', group.name);
+                list.appendChild(item);
+            }
+            body.appendChild(list);
+        }
+    };
+}
+
+function groupView(card, name) {
+    loadSettingTexts(card);
+    const group = SETTING_GROUPS.find((g) => g.name === name);
+    return {
+        title: translate(card._hass, 'gruppe_' + name),
+        kind: 'editor',
+        watch: () => settingsWatch(card),
+        render: (body, hass) => {
+            const model = card._model();
+            if (group.module) {
+                const note = document.createElement('p');
+                note.className = 'placeholder';
+                note.textContent = translate(hass, 'platzhalter', { modul: group.module });
+                body.appendChild(note);
+                return;
+            }
+            const list = document.createElement('div');
+            list.className = 'settings-list';
+            for (const key of groupKeys(name)) {
+                const row = settingRow(card, model, key);
+                if (row) list.appendChild(row);
+            }
+            body.appendChild(list);
+        }
+    };
+}
+
 const CARD_STYLES = BuschUI.cardStyles + `
 :host {
     display: block;
@@ -4039,6 +4584,70 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     white-space: nowrap;
     min-width: 0;
 }
+.settings-list {
+    display: flex;
+    flex-direction: column;
+}
+.setting {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
+    min-height: 44px;
+    padding: var(--ha-space-2, 8px) 0;
+    border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+}
+.setting-text {
+    flex: 1 1 12em;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.setting-name {
+    overflow-wrap: anywhere;
+}
+.setting-status {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 12px);
+    overflow-wrap: anywhere;
+}
+.setting-status:empty {
+    display: none;
+}
+.setting[data-state=error] .setting-status {
+    color: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.setting-switch {
+    flex: none;
+    min-width: 72px;
+}
+.setting-pair {
+    display: flex;
+    gap: var(--ha-space-2, 8px);
+}
+.setting-select,
+.setting-input {
+    flex: 0 1 14em;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 0 var(--ha-space-2, 8px);
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+    border-radius: var(--ha-space-2, 8px);
+    background: var(--card-background-color, #ffffff);
+    color: var(--primary-text-color, #212121);
+    font: inherit;
+}
+.setting-select:focus-visible,
+.setting-input:focus-visible {
+    outline: 2px solid var(--primary-color, #03a9f4);
+    outline-offset: 2px;
+}
+.setting-select:disabled,
+.setting-input:disabled {
+    opacity: 0.5;
+}
 .floor-preview {
     flex: none;
     width: 56px;
@@ -4287,6 +4896,9 @@ class BuschVacuumCard extends HTMLElement {
         this._locked = null; // null: not decided yet; the user's choice survives updates
         this._lockTimer = null;
         this._lockHeld = false;
+        this._settingWrites = new Map(); // setting key → write waiting for the device (writeSetting)
+        this._settingNotes = new Map(); // setting key → why the last write failed (R12)
+        this._settingTexts = null;
     }
 
     /** Set by Home Assistant in a panel view. */
@@ -4582,7 +5194,7 @@ class BuschVacuumCard extends HTMLElement {
                         if (entry.name === 'locate') {
                             hass.callService('vacuum', 'locate', { entity_id: this._opts.entity });
                             dialog.close();
-                        } else dialog.show(this._placeholderView(entry));
+                        } else dialog.show(MODULE_VIEWS[entry.name] ? MODULE_VIEWS[entry.name](this) : this._placeholderView(entry));
                     } });
                     item.classList.add('menu-item');
                     item.setAttribute('data-entry', entry.name);
@@ -4922,6 +5534,12 @@ BuschVacuumCard.__internals = {
     MAP_CONFIG_FIELDS,
     findRelated,
     VacuumModel,
+    SETTINGS,
+    SETTING_GROUPS,
+    settingState,
+    settingRow,
+    writeSetting,
+    callAction,
     DIALOG_STYLES,
     CARD_STYLES,
     clockText,

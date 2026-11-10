@@ -70,9 +70,9 @@ test('Orten ruft genau vacuum.locate und schließt das Menü', () => {
 
 test('andere Einträge öffnen eine Platzhalter-Ansicht mit Titel und Modulhinweis', () => {
   const { u, haus } = offen();
-  eintrag(u, 'settings').click();
-  assert.equal($d(u, 'h1').textContent, 'Geräteeinstellungen');
-  assert.match($d(u, '.placeholder').textContent, /device-settings/);
+  eintrag(u, 'remote').click();
+  assert.equal($d(u, 'h1').textContent, 'Fernsteuerung');
+  assert.match($d(u, '.placeholder').textContent, /remote/);
   assert.deepEqual(haus.rufe, []);
   assert.deepEqual(u.verlauf.aufrufe, ['push', 'push'], 'eigener Verlaufseintrag je Ansicht');
 });

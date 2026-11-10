@@ -9,7 +9,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const ORDNER = path.join(__dirname, 'fixtures');
-const ERWARTET = ['minimal.json', 'ohne-dock.json', 'ohne-karte.json', 'voll.json'];
+const ERWARTET = ['integration-schluessel.json', 'minimal.json', 'ohne-dock.json', 'ohne-karte.json', 'voll.json'];
 const VERBOTENE_WOERTER = new Set([
   'ENTFERNT-M7',
   'ENTFERNT-M7',
@@ -39,7 +39,7 @@ function privateFunde(text, woerter = VERBOTENE_WOERTER) {
   return funde;
 }
 
-test('alle vier Fixture-Varianten liegen vor', () => {
+test('alle Fixture-Dateien liegen vor (vier Varianten und die Schlüsselliste)', () => {
   assert.deepEqual(fs.readdirSync(ORDNER).filter((f) => f.endsWith('.json')).sort(), ERWARTET);
 });
 
@@ -72,7 +72,7 @@ const raumWert = (r) => crypto.scryptSync(`${r.x0},${r.y0},${r.x1},${r.y1}`, 'bu
 /** Räume der Kartenkameras, deren Rechteck dem echten Grundriss entspricht. */
 function echteRaeume(fixture, werte = ECHTE_RAEUME) {
   const funde = [];
-  for (const [id, s] of Object.entries(fixture.states)) {
+  for (const [id, s] of Object.entries(fixture.states || {})) {
     if (!id.startsWith('camera.')) continue;
     for (const [nr, r] of Object.entries(s.attributes.rooms || {})) if (werte.has(raumWert(r))) funde.push(`${id} Raum ${nr}`);
   }
