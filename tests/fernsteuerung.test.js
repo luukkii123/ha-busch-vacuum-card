@@ -175,3 +175,215 @@ test('RemoteSender: neue Bewegung nach Stopp setzt die Wiederholung aus', async 
   u.uhr.vor(150);
   assert.deepEqual(schritte(haus).at(-1), [30, 0], 'keine verspätete Stopp-Wiederholung mitten in der Fahrt');
 });
+
+// ── Task 2: Ansicht, Freigabe, Auto-Stopp ───────────────────────────────────
+
+const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
+const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
+const eintrag = (u, name) => dialogVon(u).shadowRoot.querySelectorAll('.menu-item').find((b) => b.getAttribute('data-entry') === name);
+const taste = (u, key, extra = {}, typ = 'keydown') => u.document.dispatchEvent(u.neuesEreignis(typ, Object.assign({ key }, extra)));
+
+/** Karte, Menü → Fernsteuerung; `sauger` ändert vacuum.robo vor dem Öffnen. */
+function ansicht(name = 'voll', sauger) {
+  const u = neueUmgebung(), haus = hausAus(name);
+  if (sauger) {
+    const alt = haus.states['vacuum.robo'];
+    haus.states = Object.assign({}, haus.states, { 'vacuum.robo': Object.assign({}, alt, sauger(alt), { attributes: Object.assign({}, alt.attributes, (sauger(alt) || {}).attributes) }) });
+  }
+  const offen = steuerbar(haus);
+  const karte = neueKarte(u, haus);
+  karte.shadowRoot.querySelector('.menu-button').click();
+  eintrag(u, 'remote').click();
+  const k = { u, haus, karte, offen, I: u.registry.get('busch-vacuum-card').__internals };
+  k.ctl = () => dialogVon(u)._views.at(-1).remote;
+  k.zustand = () => $d(u, '.remote').getAttribute('data-state');
+  k.antworte = async (fehler) => { const a = offen.shift(); if (fehler) a.fehler(fehler); else a.ok(); await mikro(); };
+  k.starten = () => $d(u, '[data-action="arm"]').click();
+  /** Freigeben, vorwärts, erster Schritt beantwortet: der Roboter „fährt“. */
+  k.faehrt = async () => { k.starten(); k.ctl().input('probe', { v: 1, t: 0 }); await k.antworte(); assert.deepEqual(schritte(haus), [[100, 0]]); };
+  k.sauger = (z, attribute = {}) => { const alt = haus.states['vacuum.robo']; karte.hass = haus.setze({ 'vacuum.robo': Object.assign({}, alt, { state: z || alt.state, attributes: Object.assign({}, alt.attributes, attribute) }) }); };
+  return k;
+}
+const letzterIstStopp = (haus) => assert.deepEqual(schritte(haus).at(-1), [0, 0]);
+
+test('Menü → Fernsteuerung: eigene Ansicht statt Platzhalter, unscharf mit Warnhinweis', () => {
+  const { u, haus, I, zustand } = ansicht();
+  assert.equal(typeof I.MODULE_VIEWS.remote, 'function');
+  assert.equal($d(u, 'h1').textContent, 'Fernsteuerung');
+  assert.equal($d(u, '.placeholder'), null);
+  assert.equal(dialogVon(u)._views.at(-1).kind, 'editor', 'kein Außenklick-Schließen (R04)');
+  assert.equal(zustand(), 'unarmed');
+  assert.match($d(u, '.remote-warning').textContent, /Rückwärts fährt ohne Kollisionsschutz\. Loslassen hält sofort an\./);
+  const arm = $d(u, '[data-action="arm"]');
+  assert.equal(arm.disabled, false);
+  assert.match(arm.textContent, /Steuerung starten/);
+  assert.match($d(u, '.remote-status').textContent, /nicht freigegeben/i);
+  assert.deepEqual(haus.rufe, []);
+  assert.deepEqual(u.fehler, []);
+});
+
+test('ohne Freigabe: kein Aufruf über Eingabe, Stopp-Knopf, Fokusverlust und Schließen', () => {
+  const { u, haus, ctl } = ansicht();
+  ctl().input('probe', { v: 1, t: 1 });
+  $d(u, '[data-action="stop"]').click();
+  for (const fn of u.kontext.window.listeners.blur || []) fn({});
+  u.document.hidden = true;
+  u.document.dispatchEvent(u.neuesEreignis('visibilitychange'));
+  u.uhr.vor(1000);
+  $d(u, '[data-action="close"]').click();
+  u.uhr.vor(1000);
+  assert.deepEqual(haus.rufe, []);
+});
+
+test('Freigabe je Öffnen: nach Schließen und neuem Öffnen wieder unscharf', async () => {
+  const k = ansicht();
+  k.starten();
+  assert.equal(k.zustand(), 'ready');
+  assert.equal($d(k.u, '[data-action="arm"]').hidden, true);
+  k.ctl().input('probe', { v: 0.575, t: 0 });
+  assert.deepEqual(schritte(k.haus), [[50, 0]]);
+  await k.antworte();
+  assert.equal(k.zustand(), 'moving');
+  $d(k.u, '[data-action="back"]').click();
+  k.u.zurueck();
+  eintrag(k.u, 'remote').click();
+  assert.equal(k.zustand(), 'unarmed', 'nichts gemerkt (R21)');
+  k.ctl().input('probe', { v: 1, t: 0 });
+  assert.equal(schritte(k.haus).filter(([v]) => v).length, 1, 'neue Ansicht ohne Freigabe sendet nicht');
+});
+
+for (const [name, sauger, grund] of [
+  ['Mop-Wäsche', () => ({ attributes: { washing: true } }), /Mopp/],
+  ['Schnellkartierung', () => ({ attributes: { mapping: true } }), /Schnellkartierung/],
+  ['Fehler', () => ({ state: 'error' }), /Fehler/],
+  ['nicht verfügbar', () => ({ state: 'unavailable' }), /nicht verfügbar/]
+]) {
+  test('gesperrt beim Öffnen: ' + name + ' → Starten aus mit Grund, 0 Aufrufe', () => {
+    const { u, haus, ctl, zustand } = ansicht('voll', sauger);
+    const arm = $d(u, '[data-action="arm"]');
+    assert.equal(arm.disabled, true);
+    assert.match($d(u, '.remote-blocked').textContent, grund);
+    assert.equal(zustand(), 'blocked');
+    arm.click();
+    ctl().input('probe', { v: 1, t: 0 });
+    assert.deepEqual(haus.rufe, []);
+  });
+}
+
+// Auto-Stopp: jeder Auslöser einzeln, jeweils während der Fahrt.
+const AUSLOESER = [
+  ['Schließen ×', (k) => $d(k.u, '[data-action="close"]').click()],
+  ['Zurück-Pfeil', (k) => $d(k.u, '[data-action="back"]').click()],
+  ['Escape', (k) => taste(k.u, 'Escape')],
+  ['Zurück-Geste (popstate)', (k) => k.u.zurueck()],
+  ['window blur', (k) => { for (const fn of k.u.kontext.window.listeners.blur || []) fn({}); }],
+  ['visibilitychange verborgen', (k) => { k.u.document.hidden = true; k.u.document.dispatchEvent(k.u.neuesEreignis('visibilitychange')); }]
+];
+for (const [name, ausloesen] of AUSLOESER) {
+  test('Auto-Stopp: ' + name, async () => {
+    const k = await (async () => { const k = ansicht(); await k.faehrt(); return k; })();
+    ausloesen(k);
+    letzterIstStopp(k.haus);
+    assert.equal(schritte(k.haus).length, 2, 'sofort, ohne Mindestabstand');
+  });
+}
+
+test('Auto-Stopp: blur/visibilitychange lassen die Ansicht freigegeben', async () => {
+  const k = ansicht();
+  await k.faehrt();
+  for (const fn of k.u.kontext.window.listeners.blur || []) fn({});
+  await k.antworte();
+  k.u.uhr.vor(400);
+  await k.antworte();
+  assert.equal(k.zustand(), 'stopped');
+  assert.match($d(k.u, '.remote-status').textContent, /Gestoppt/);
+  k.ctl().input('probe', { v: 1, t: 0 });
+  k.u.uhr.vor(200);
+  assert.deepEqual(schritte(k.haus).at(-1), [100, 0], 'weiter ohne neue Freigabe');
+});
+
+test('visibilitychange sichtbar stoppt nicht', async () => {
+  const k = ansicht();
+  await k.faehrt();
+  k.u.document.hidden = false;
+  k.u.document.dispatchEvent(k.u.neuesEreignis('visibilitychange'));
+  assert.equal(schritte(k.haus).length, 1);
+});
+
+test('Auto-Stopp: Verbindungsverlust → Stopp-Versuch, Hinweis, Freigabe zurückgenommen', async () => {
+  const k = ansicht();
+  await k.faehrt();
+  k.karte.hass = Object.assign(k.haus.hass(), { connected: false });
+  letzterIstStopp(k.haus);
+  assert.match($d(k.u, '.remote-note').textContent, /Verbindung.*Dreame-App/);
+  assert.notEqual(k.zustand(), 'ready');
+  assert.equal($d(k.u, '[data-action="arm"]').disabled, true, 'ohne Verbindung kein Neustart');
+  k.ctl().input('probe', { v: 1, t: 0 });
+  assert.equal(schritte(k.haus).filter(([v]) => v).length, 1);
+  k.karte.hass = Object.assign(k.haus.hass(), { connected: true });
+  assert.equal(k.zustand(), 'unarmed', 'neu starten nötig');
+  assert.equal($d(k.u, '[data-action="arm"]').disabled, false);
+});
+
+test('Auto-Stopp: Dienstfehler → Stopp-Versuch, R12-Text, Freigabe zurückgenommen', async () => {
+  const k = ansicht();
+  k.starten();
+  k.ctl().input('probe', { v: 1, t: 0 });
+  await k.antworte(new Error('Gerät nicht erreichbar'));
+  letzterIstStopp(k.haus);
+  assert.equal(k.zustand(), 'unarmed');
+  assert.match($d(k.u, '.remote-note').textContent, /Gerät nicht erreichbar.*neu starten/);
+  k.ctl().input('probe', { v: 1, t: 0 });
+  assert.equal(schritte(k.haus).filter(([v]) => v).length, 1);
+  k.starten();
+  await k.antworte();
+  k.u.uhr.vor(400);
+  await k.antworte();
+  k.ctl().input('probe', { v: 1, t: 0 });
+  k.u.uhr.vor(200);
+  assert.deepEqual(schritte(k.haus).at(-1), [100, 0], 'nach neuem Start wieder bereit');
+});
+
+test('Auto-Stopp: Zeitüberschreitung → Stopp-Versuch, Text, Freigabe zurückgenommen', async () => {
+  const k = ansicht();
+  k.starten();
+  k.ctl().input('probe', { v: 1, t: 0 });
+  k.u.uhr.vor(2000);
+  letzterIstStopp(k.haus);
+  assert.equal(k.zustand(), 'unarmed');
+  assert.match($d(k.u, '.remote-note').textContent, /2 s/);
+});
+
+test('Auto-Stopp: Zustand error → Stopp, gesperrt mit Grund', async () => {
+  const k = ansicht();
+  await k.faehrt();
+  k.sauger('error');
+  letzterIstStopp(k.haus);
+  assert.equal(k.zustand(), 'blocked');
+  assert.match($d(k.u, '.remote-blocked').textContent, /Fehler/);
+});
+
+test('fremde Updates zeichnen die Ansicht nicht neu (Regler bleiben unter dem Finger)', async () => {
+  const k = ansicht();
+  k.starten();
+  const wurzel = $d(k.u, '.remote');
+  k.karte.hass = k.haus.fremd();
+  k.sauger(null, { battery_level: 50 });
+  assert.equal($d(k.u, '.remote'), wurzel);
+});
+
+test('Schließen: Stopp-Folge genau Stopp + eine Wiederholung, auch wenn mehrere Wege gleichzeitig stoppen', async () => {
+  const k = ansicht();
+  await k.faehrt();
+  $d(k.u, '[data-action="close"]').click();
+  for (const fn of k.u.kontext.window.listeners.blur || []) fn({});
+  await k.antworte();
+  k.u.zurueck();
+  k.u.uhr.vor(299);
+  assert.equal(schritte(k.haus).length, 2, 'kein vorgezogener zweiter Stopp');
+  k.u.uhr.vor(1);
+  await k.antworte();
+  k.u.uhr.vor(2000);
+  assert.deepEqual(schritte(k.haus), [[100, 0], [0, 0], [0, 0]]);
+  assert.equal(dialogVon(k.u), null);
+});

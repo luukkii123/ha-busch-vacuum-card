@@ -180,8 +180,8 @@ test('Menü: Geräteeinstellungen und Zubehör öffnen Registry-Ansichten, ander
   assert.equal($d(k2.u, 'h1').textContent, 'Zubehör');
   const k3 = aufbau();
   menue(k3);
-  eintrag(k3.u, 'remote').click();
-  assert.match($d(k3.u, '.placeholder').textContent, /remote/);
+  eintrag(k3.u, 'maps').click();
+  assert.match($d(k3.u, '.placeholder').textContent, /map-editor/);
   assert.deepEqual(k.haus.rufe, []);
 });
 

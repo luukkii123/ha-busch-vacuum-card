@@ -445,6 +445,23 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             entryConsumables: 'Zubehör',
             entrySequence: 'Reinigungsreihenfolge',
             entryRemote: 'Fernsteuerung',
+            remoteWarnung: 'Rückwärts fährt ohne Kollisionsschutz. Loslassen hält sofort an.',
+            remoteStarten: 'Steuerung starten',
+            remoteStopp: 'Stopp',
+            remoteStatus_unarmed: 'Nicht freigegeben — erst „Steuerung starten“, dann bewegen Regler und Tasten den Roboter.',
+            remoteStatus_ready: 'Bereit — Regler halten oder Taste drücken.',
+            remoteStatus_moving: 'Fährt — Loslassen hält an.',
+            remoteStatus_stopping: 'Hält an …',
+            remoteStatus_stopped: 'Gestoppt.',
+            remoteStatus_blocked: 'Gesperrt.',
+            remoteGesperrt_washing: 'Gesperrt: Die Station wäscht gerade den Mopp.',
+            remoteGesperrt_mapping: 'Gesperrt: Die Schnellkartierung läuft.',
+            remoteGesperrt_error: 'Gesperrt: Der Roboter meldet einen Fehler.',
+            remoteGesperrt_unavailable: 'Gesperrt: Der Roboter ist nicht verfügbar.',
+            remoteGesperrt_connection: 'Gesperrt: keine Verbindung zu Home Assistant.',
+            remoteFehler: 'Gestoppt nach einem Fehler: {grund}. Zum Weiterfahren Steuerung neu starten.',
+            remoteZeit: 'keine Antwort innerhalb von 2 s',
+            remoteVerbindung: 'Verbindung zu Home Assistant verloren — der Stopp kam vielleicht nicht an. Roboter mit der Taste am Gerät oder in der Dreame-App anhalten; danach Steuerung neu starten.',
             entryMaps: 'Kartenverwaltung',
             entrySettings: 'Geräteeinstellungen',
             zubehoerNiedrig: '{n} unter 30 %',
@@ -1028,6 +1045,23 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             entryConsumables: 'Accessories',
             entrySequence: 'Cleaning sequence',
             entryRemote: 'Remote control',
+            remoteWarnung: 'Reversing has no collision guard. Letting go stops at once.',
+            remoteStarten: 'Start control',
+            remoteStopp: 'Stop',
+            remoteStatus_unarmed: 'Not armed — tap “Start control” first, then sticks and keys move the robot.',
+            remoteStatus_ready: 'Ready — hold a stick or press a key.',
+            remoteStatus_moving: 'Moving — let go to stop.',
+            remoteStatus_stopping: 'Stopping …',
+            remoteStatus_stopped: 'Stopped.',
+            remoteStatus_blocked: 'Locked.',
+            remoteGesperrt_washing: 'Locked: the station is washing the mop.',
+            remoteGesperrt_mapping: 'Locked: fast mapping is running.',
+            remoteGesperrt_error: 'Locked: the robot reports an error.',
+            remoteGesperrt_unavailable: 'Locked: the robot is unavailable.',
+            remoteGesperrt_connection: 'Locked: no connection to Home Assistant.',
+            remoteFehler: 'Stopped after an error: {grund}. Start control again to go on.',
+            remoteZeit: 'no answer within 2 s',
+            remoteVerbindung: 'Connection to Home Assistant lost — the stop may not have arrived. Stop the robot with its button or in the Dreame app; then start control again.',
             entryMaps: 'Map management',
             entrySettings: 'Device settings',
             zubehoerNiedrig: '{n} below 30 %',
@@ -4522,7 +4556,8 @@ const MODULE_VIEWS = {
     consumables: (card) => groupView(card, 'consumables'),
     cleaning_sequence: (card) => sequenceView(card),
     history: (card) => historyView(card, 'history'),
-    cruising_history: (card) => historyView(card, 'cruising_history')
+    cruising_history: (card) => historyView(card, 'cruising_history'),
+    remote: (card) => remoteView(card)
 };
 
 /** Rows of device-settings (not dock's or clean-settings'), for the search (R14). */
@@ -8996,7 +9031,7 @@ class BuschVacuumDialog extends HTMLElement {
                 const steps = Math.min(this._popSteps || 1, this._views.length - 1);
                 this._popSteps = 0;
                 this._depth = Math.max(0, this._depth - steps);
-                this._views.splice(-steps);
+                this._leave(this._views.splice(-steps));
                 this._render();
                 return;
             }
@@ -9009,6 +9044,14 @@ class BuschVacuumDialog extends HTMLElement {
         const unchanged = snapshotUnchanged(this._seen, hass);
         this._hass = hass;
         if (!unchanged) this._render();
+        // A view with `update` (remote) repaints itself in place on every hass.
+        const view = this._views[this._views.length - 1];
+        if (view && view.update && this._sheet) view.update(hass);
+    }
+
+    /** Views that leave the stack hear it first (remote stops before anything else happens). */
+    _leave(views) {
+        for (const view of views) if (view.leave) view.leave();
     }
 
     get hass() {
@@ -9060,6 +9103,7 @@ class BuschVacuumDialog extends HTMLElement {
     /** Escape and the back arrow: one view back, out only from the first. */
     _goBack() {
         if (this._views.length > 1) {
+            this._leave(this._views.slice(-1));
             if (this._depth > 1) {
                 history.back(); // popstate returns to the view below
                 return;
@@ -9075,6 +9119,7 @@ class BuschVacuumDialog extends HTMLElement {
     back(steps) {
         const n = Math.min(steps, this._views.length - 1);
         if (n < 1) return;
+        this._leave(this._views.slice(-n));
         if (this._depth > n) {
             this._popSteps = n;
             history.go(-n); // one popstate returns n views
@@ -9085,6 +9130,7 @@ class BuschVacuumDialog extends HTMLElement {
     }
 
     close() {
+        this._leave(this._views);
         if (this._depth > 0) {
             const steps = this._depth;
             this._depth = 0;
@@ -9100,6 +9146,7 @@ class BuschVacuumDialog extends HTMLElement {
     _dismiss() {
         if (this._closed) return;
         this._closed = true;
+        this._leave(this._views);
         this.dispatchEvent(new CustomEvent('dialog-closed'));
         this.remove();
     }
@@ -10765,6 +10812,7 @@ class RemoteSender {
 
     stop() {
         this._want = null;
+        if (this._stop || this._round) return; // a stop sequence is already under way; its repeat stays at stopRepeatMs
         if (!this._dirty) {
             clearTimeout(this._timer);
             if (this.state === 'moving') this._to('stopped');
@@ -10840,6 +10888,157 @@ class RemoteSender {
     }
 }
 
+/** Why remote control is refused right now (R18), or null. The device refuses mop washing and fast mapping itself. */
+function remoteBlock(model, hass) {
+    if (hass && hass.connected === false) return 'connection';
+    if (!model.state || UNUSABLE.includes(model.state.state)) return 'unavailable';
+    if (model.state.state === 'error') return 'error';
+    if (model.attr('washing')) return 'washing';
+    if (model.attr('mapping')) return 'mapping';
+    return null;
+}
+
+/**
+ * The remote view (REM-01…03). It opens unarmed; only "Start control" lets
+ * input through, anew on every opening. Its DOM is built once per opening and
+ * never redrawn by state updates (`watch` is empty, `update` repaints in place),
+ * so a held stick keeps its pointer. Every loss of control stops: release,
+ * blur, hidden tab, leaving the view, an error, a lost connection.
+ */
+function remoteView(card) {
+    const view = { title: translate(card._hass, 'entryRemote'), kind: 'editor', watch: () => [] };
+    // R21 on purpose: arming lives only while the view is open; a remembered arming would let a stray touch move the robot.
+    const ctl = view.remote = { armed: false, note: null, block: null, moving: false, sources: new Map(), mods: {}, precision: false, root: null, parts: {}, listening: false };
+    const hass = () => card._hass;
+    const text = (key, vars) => translate(hass(), key, vars);
+    ctl.sender = new RemoteSender(hass, card._opts.entity, () => {
+        if (ctl.sender.state === 'error' && ctl.armed) {
+            const reason = ctl.sender.error === 'timeout' ? text('remoteZeit') : ctl.sender.error;
+            disarm(text('remoteFehler', { grund: reason }));
+        }
+        paint();
+    });
+
+    /** The one input of sticks, hold buttons and keys (R08): axes −1…1 per source, v forward, t left. */
+    ctl.input = (source, axes) => {
+        if (axes) ctl.sources.set(source, axes);
+        else ctl.sources.delete(source);
+        drive();
+    };
+    const sum = (key) => Math.max(-1, Math.min(1, [...ctl.sources.values()].reduce((s, a) => s + (a[key] || 0), 0)));
+    const drive = () => {
+        if (!ctl.armed) return;
+        const mods = Object.assign({ precision: ctl.precision }, ctl.mods);
+        const v = remoteValue('velocity', sum('v'), mods);
+        // shortcut: positive rotation = left (counter-clockwise) is assumed from the docs; live run 2 confirms the sign.
+        const r = remoteValue('rotation', sum('t'), mods);
+        const moving = !!(v || r);
+        if (moving !== ctl.moving) card._haptic(); // leaving the dead zone and stopping
+        ctl.moving = moving;
+        if (moving) ctl.sender.set({ v, r });
+        else ctl.sender.stop();
+        paint();
+    };
+    /** Auto-stop: all input released at once. */
+    const halt = () => {
+        ctl.sources.clear();
+        if (ctl.moving) card._haptic();
+        ctl.moving = false;
+        ctl.sender.stop();
+        paint();
+    };
+    const disarm = (note) => {
+        halt();
+        ctl.armed = false;
+        ctl.note = note;
+        paint();
+    };
+    ctl.halt = halt;
+    const arm = () => {
+        if (ctl.block) return;
+        ctl.sender.reset();
+        ctl.note = null;
+        ctl.armed = true;
+        paint();
+    };
+
+    const onBlur = () => halt();
+    const onVisibility = () => { if (document.hidden) halt(); };
+    const listen = (on) => {
+        if (ctl.listening === on) return;
+        ctl.listening = on;
+        const method = on ? 'addEventListener' : 'removeEventListener';
+        window[method]('blur', onBlur);
+        document[method]('visibilitychange', onVisibility);
+    };
+    view.leave = () => {
+        ctl.armed = false;
+        halt();
+        listen(false);
+    };
+
+    const stateName = () => {
+        if (ctl.block) return 'blocked';
+        if (!ctl.armed) return 'unarmed';
+        const s = ctl.sender.state;
+        return s === 'moving' || s === 'stopping' || s === 'stopped' ? s : 'ready';
+    };
+    const paint = () => {
+        const p = ctl.parts;
+        if (!ctl.root) return;
+        const state = stateName();
+        ctl.root.setAttribute('data-state', state);
+        p.status.textContent = text('remoteStatus_' + state);
+        p.blocked.hidden = !ctl.block;
+        p.blocked.textContent = ctl.block ? text('remoteGesperrt_' + ctl.block) : '';
+        p.note.hidden = !ctl.note;
+        p.note.textContent = ctl.note || '';
+        p.arm.hidden = ctl.armed;
+        p.arm.disabled = !!ctl.block;
+    };
+    const line = (cls, role) => {
+        const node = document.createElement('p');
+        node.className = cls;
+        if (role) node.setAttribute('role', role);
+        return node;
+    };
+    const build = () => {
+        const root = document.createElement('div');
+        root.className = 'remote';
+        const p = ctl.parts;
+        p.warning = line('remote-warning form-note');
+        p.warning.setAttribute('data-kind', 'warning');
+        p.warning.textContent = text('remoteWarnung');
+        p.status = line('remote-status', 'status');
+        p.blocked = line('remote-blocked form-note', 'status');
+        p.note = line('remote-note form-note', 'alert');
+        p.note.setAttribute('data-kind', 'error');
+        const actions = document.createElement('div');
+        actions.className = 'remote-actions';
+        p.arm = BuschUI.action({ label: text('remoteStarten'), text: text('remoteStarten'), icon: 'mdi:gamepad-round-outline', variant: 'primary', onClick: () => arm() });
+        p.arm.setAttribute('data-action', 'arm');
+        p.stop = BuschUI.action({ label: text('remoteStopp'), text: text('remoteStopp'), icon: 'mdi:stop', onClick: () => halt() });
+        p.stop.setAttribute('data-action', 'stop');
+        actions.append(p.arm, p.stop);
+        root.append(p.warning, p.status, p.blocked, p.note, actions);
+        ctl.root = root;
+    };
+
+    view.update = (h) => {
+        const block = remoteBlock(card._model(), h);
+        if (block && !ctl.block && (ctl.armed || ctl.moving)) disarm(block === 'connection' ? text('remoteVerbindung') : null);
+        ctl.block = block;
+        paint();
+    };
+    view.render = (body, h) => {
+        if (!ctl.root) build();
+        listen(true);
+        body.appendChild(ctl.root);
+        view.update(h);
+    };
+    return view;
+}
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
@@ -10896,6 +11095,7 @@ BuschVacuumCard.__internals = {
     REMOTE,
     remoteValue,
     RemoteSender,
+    remoteBlock,
     version: CARD_VERSION
 };
 
