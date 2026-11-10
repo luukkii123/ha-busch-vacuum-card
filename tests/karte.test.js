@@ -337,4 +337,162 @@ test('current(): Kamera, Karte, Kalibrierung, Räume, Frame', async () => {
   assert.deepEqual([Math.round(r.x), Math.round(r.y)], [0, 1000]);
 });
 
+// ── Task 4: Zoom, Verschieben, Sperre, Lupe ────────────────────────────────
+const ev = (u, typ, init) => u.neuesEreignis(typ, Object.assign({ pointerType: 'mouse', pointerId: 1 }, init));
+const zeiger = (u, karte, typ, x, y, id = 1) => karte._map.stage.dispatchEvent(ev(u, typ, { clientX: x, clientY: y, pointerId: id }));
+const werkzeug = (karte, name) => karte.shadowRoot.querySelector('[data-action="map-' + name + '"]');
+const taste = (u, karte, key) => { const e = ev(u, 'keydown', { key }); karte._map.region.dispatchEvent(e); return e; };
+const ansichtZustand = (karte) => ({ zoom: karte._map._zoom, x: Math.round(karte._map._panX), y: Math.round(karte._map._panY) });
+
+test('sichtbare Knöpfe Vergrößern/Verkleinern/Einpassen mit Namen (R22)', async () => {
+  const { karte } = await kartenKarte();
+  for (const [name, label] of [['zoom-in', 'Vergrößern'], ['zoom-out', 'Verkleinern'], ['fit', 'Einpassen']]) {
+    const knopf = werkzeug(karte, name);
+    assert.ok(knopf, name);
+    assert.equal(knopf.getAttribute('aria-label'), label);
+    assert.ok(knopf.classList.contains('busch-ui-action'), '44-px-Grundstil');
+  }
+  assert.equal(werkzeug(karte, 'zoom-out').disabled, true, 'bei 1× nicht kleiner');
+  werkzeug(karte, 'zoom-in').click();
+  assert.equal(karte._map._zoom, 2);
+  werkzeug(karte, 'zoom-in').click(); werkzeug(karte, 'zoom-in').click(); werkzeug(karte, 'zoom-in').click();
+  assert.equal(karte._map._zoom, 8, 'Grenze 8×');
+  assert.equal(werkzeug(karte, 'zoom-in').disabled, true);
+  werkzeug(karte, 'zoom-out').click();
+  assert.equal(karte._map._zoom, 4);
+  werkzeug(karte, 'fit').click();
+  assert.deepEqual(ansichtZustand(karte), { zoom: 1, x: 0, y: 0 });
+});
+
+test('Ziehen verschiebt, transform ändert sich', async () => {
+  const { u, karte } = await kartenKarte();
+  werkzeug(karte, 'zoom-in').click();
+  const vorher = karte._map.pan.style.transform;
+  zeiger(u, karte, 'pointerdown', 100, 50);
+  zeiger(u, karte, 'pointermove', 120, 60);
+  assert.ok(karte._map.el.hasAttribute('data-gesture'), 'während der Geste ohne Übergang');
+  zeiger(u, karte, 'pointermove', 130, 70);
+  zeiger(u, karte, 'pointerup', 130, 70);
+  assert.deepEqual(ansichtZustand(karte), { zoom: 2, x: 30, y: 20 });
+  assert.notEqual(karte._map.pan.style.transform, vorher);
+  assert.ok(!karte._map.el.hasAttribute('data-gesture'));
+});
+
+test('Zwei Finger zoomen um ihre Mitte', async () => {
+  const { u, karte } = await kartenKarte();
+  const unter = karte._map.fromScreen({ x: 100, y: 50 });
+  zeiger(u, karte, 'pointerdown', 90, 50, 1);
+  zeiger(u, karte, 'pointerdown', 110, 50, 2);
+  zeiger(u, karte, 'pointermove', 80, 50, 1);
+  zeiger(u, karte, 'pointermove', 120, 50, 2);
+  assert.equal(karte._map._zoom, 2);
+  const nachher = karte._map.fromScreen({ x: 100, y: 50 });
+  assert.ok(Math.abs(nachher.x - unter.x) < 1e-6 && Math.abs(nachher.y - unter.y) < 1e-6, 'Mitte bleibt');
+  zeiger(u, karte, 'pointerup', 80, 50, 1);
+  zeiger(u, karte, 'pointerup', 120, 50, 2);
+});
+
+test('Doppeltipp vergrößert um den Punkt, Mausrad um den Zeiger', async () => {
+  const { u, karte } = await kartenKarte();
+  const unter = karte._map.fromScreen({ x: 150, y: 30 });
+  for (let i = 0; i < 2; i++) { zeiger(u, karte, 'pointerdown', 150, 30); zeiger(u, karte, 'pointerup', 150, 30); u.uhr.vor(100); }
+  assert.equal(karte._map._zoom, 2);
+  const nach = karte._map.fromScreen({ x: 150, y: 30 });
+  assert.ok(Math.abs(nach.x - unter.x) < 1e-6 && Math.abs(nach.y - unter.y) < 1e-6);
+  const rad = ev(u, 'wheel', { clientX: 40, clientY: 80, deltaY: -200 });
+  const vorRad = karte._map.fromScreen({ x: 40, y: 80 });
+  karte._map.stage.dispatchEvent(rad);
+  assert.ok(karte._map._zoom > 2 && karte._map._zoom <= 8);
+  assert.ok(rad.defaultPrevented, 'Seite scrollt nicht mit');
+  const nachRad = karte._map.fromScreen({ x: 40, y: 80 });
+  assert.ok(Math.abs(nachRad.x - vorRad.x) < 1e-6 && Math.abs(nachRad.y - vorRad.y) < 1e-6, 'um den Zeiger');
+  for (let i = 0; i < 30; i++) karte._map.stage.dispatchEvent(ev(u, 'wheel', { clientX: 40, clientY: 80, deltaY: 500 }));
+  assert.equal(karte._map._zoom, 1, 'Grenze 1×');
+});
+
+test('Tastatur bei fokussierter Karte: + - 0 und Pfeile', async () => {
+  const { u, karte } = await kartenKarte();
+  assert.equal(karte._map.region.tabIndex, 0, 'fokussierbar (R03)');
+  assert.ok(taste(u, karte, '+').defaultPrevented);
+  assert.equal(karte._map._zoom, 2);
+  taste(u, karte, 'ArrowRight');
+  assert.ok(karte._map._panX < 0, 'Pfeil rechts zeigt mehr rechts');
+  taste(u, karte, 'ArrowUp');
+  assert.ok(karte._map._panY > 0);
+  taste(u, karte, '-');
+  assert.equal(karte._map._zoom, 1);
+  taste(u, karte, '+'); taste(u, karte, '0');
+  assert.deepEqual(ansichtZustand(karte), { zoom: 1, x: 0, y: 0 });
+  assert.equal(taste(u, karte, 'a').defaultPrevented, false, 'andere Tasten bleiben frei');
+});
+
+test('gesperrt: keine Geste wirkt, Knöpfe mit Grund deaktiviert, Seite scrollt (pan-y)', async () => {
+  const { u, karte } = await kartenKarte('voll', { locked: 'always' });
+  assert.equal(karte.getAttribute('data-locked'), 'true');
+  zeiger(u, karte, 'pointerdown', 100, 50); zeiger(u, karte, 'pointermove', 150, 90); zeiger(u, karte, 'pointerup', 150, 90);
+  const rad = ev(u, 'wheel', { clientX: 40, clientY: 80, deltaY: -200 });
+  karte._map.stage.dispatchEvent(rad);
+  assert.equal(rad.defaultPrevented, false, 'Rad scrollt die Seite');
+  taste(u, karte, '+');
+  assert.deepEqual(ansichtZustand(karte), { zoom: 1, x: 0, y: 0 });
+  for (const name of ['zoom-in', 'zoom-out', 'fit']) {
+    const knopf = werkzeug(karte, name);
+    assert.equal(knopf.disabled, true, name);
+    assert.equal(knopf.getAttribute('aria-describedby'), 'map-lock-reason');
+  }
+  assert.match(karte.shadowRoot.querySelector('#map-lock-reason').textContent, /gesperrt/);
+  const css = karte.shadowRoot.querySelector('style').textContent;
+  assert.match(css, /:host\(\[data-locked=true\]\) \.map-stage \{\s*touch-action: pan-y;/);
+  // Entsperren (core) gibt die Gesten frei, ohne Neuaufbau der Karte.
+  const schloss = karte.shadowRoot.querySelector('.lock');
+  schloss.dispatchEvent(u.neuesEreignis('pointerdown')); u.uhr.vor(400);
+  assert.equal(karte.getAttribute('data-locked'), 'false');
+  assert.equal(werkzeug(karte, 'zoom-in').disabled, false);
+  taste(u, karte, '+');
+  assert.equal(karte._map._zoom, 2);
+});
+
+test('animiert über transform; sofort bei reduzierter Bewegung und animations ausgeblendet', async () => {
+  const { karte } = await kartenKarte();
+  const css = karte.shadowRoot.querySelector('style').textContent;
+  assert.match(css, /\.map-pan \{[^}]*transition: transform/);
+  assert.match(css, /prefers-reduced-motion: reduce\)[^@]*\.map-pan[^}]*transition: none/);
+  assert.match(css, /\.map-view\[data-still\] \.map-pan/);
+  assert.equal(karte._map.el.hasAttribute('data-still'), false);
+  const { karte: still } = await kartenKarte('voll', { hidden_card_objects: ['animations'] });
+  assert.equal(still._map.el.hasAttribute('data-still'), true);
+});
+
+test('toScreen/fromScreen mit Zoom und Verschiebung, Karte startet eingepasst (R21)', async () => {
+  const { u, karte } = await kartenKarte();
+  const m = karte._map;
+  const p = { x: 700, y: 300 };
+  let s = m.toScreen(p);
+  assert.ok(Math.abs(m.fromScreen(s).x - p.x) < 1e-6);
+  werkzeug(karte, 'zoom-in').click();
+  zeiger(u, karte, 'pointerdown', 10, 10); zeiger(u, karte, 'pointermove', 40, 30); zeiger(u, karte, 'pointerup', 40, 30);
+  s = m.toScreen(p);
+  const r = m.fromScreen(s);
+  assert.ok(Math.abs(r.x - p.x) < 1e-6 && Math.abs(r.y - p.y) < 1e-6);
+  // Neuer Aufbau (neue Konfiguration): wieder eingepasst, nichts gemerkt.
+  karte.setConfig({ type: 'custom:busch-vacuum-card', entity: 'vacuum.robo', title: 'neu' });
+  await mikro();
+  assert.deepEqual(ansichtZustand(karte), { zoom: 1, x: 0, y: 0 });
+});
+
+test('showLoupe/hideLoupe zeigt den Ausschnitt unter dem Zeiger', async () => {
+  const { karte } = await kartenKarte();
+  const m = karte._map;
+  const lupe = karte.shadowRoot.querySelector('.map-loupe');
+  assert.equal(lupe.hidden, true);
+  m.showLoupe({ x: 120, y: 40 });
+  assert.equal(lupe.hidden, false);
+  const q = m.fromScreen({ x: 120, y: 40 });
+  assert.equal(lupe.getAttribute('data-image-x'), String(Math.round(q.x)));
+  assert.equal(lupe.getAttribute('data-image-y'), String(Math.round(q.y)));
+  assert.ok(lupe.querySelector('.map-loupe-content').childNodes.length > 0, 'Kartenbild in der Lupe');
+  m.hideLoupe();
+  assert.equal(lupe.hidden, true);
+});
+
 module.exports = { intern, raeume };

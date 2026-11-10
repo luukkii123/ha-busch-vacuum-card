@@ -358,7 +358,11 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             erneutLaden: 'Erneut laden',
             temporaereKarte: 'Temporäre Karte: noch nicht gespeichert.',
             kartierungLaeuft: 'Kartierung läuft – die Karte wächst mit.',
-            ohneKalibrierung: 'Die Karte hat noch keine Kalibrierung: Roboter, Station und Räume lassen sich nicht einzeichnen.'
+            ohneKalibrierung: 'Die Karte hat noch keine Kalibrierung: Roboter, Station und Räume lassen sich nicht einzeichnen.',
+            zoomIn: 'Vergrößern',
+            zoomOut: 'Verkleinern',
+            zoomFit: 'Einpassen',
+            zoomGesperrt: 'Karte gesperrt – das Schloss oben halten, um Zoomen und Verschieben freizugeben.'
         }
     },
     en: {
@@ -486,7 +490,11 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             erneutLaden: 'Load again',
             temporaereKarte: 'Temporary map: not saved yet.',
             kartierungLaeuft: 'Mapping in progress – the map grows along.',
-            ohneKalibrierung: 'The map has no calibration yet: robot, station and rooms cannot be drawn.'
+            ohneKalibrierung: 'The map has no calibration yet: robot, station and rooms cannot be drawn.',
+            zoomIn: 'Zoom in',
+            zoomOut: 'Zoom out',
+            zoomFit: 'Fit',
+            zoomGesperrt: 'Map locked – hold the lock at the top to allow zooming and moving.'
         }
     }
 };
@@ -1116,6 +1124,11 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 /** Vacuum attributes the map shows (ALL-13 display); a change of any redraws the map's frame. */
 const MAP_VACUUM_KEYS = ['maps', 'map_count', 'selected_map', 'has_saved_map', 'has_temporary_map', 'mapping'];
 
+/** MAP-02: zoom limits, button/key step, wheel speed, tap and double tap tolerances. */
+const MAP_ZOOM = { min: 1, max: 8, step: 2, wheel: 0.0015 };
+const TAP = { slop: 6, doubleMs: 300, doubleSlop: 24 };
+const LOUPE = { size: 120, magnify: 2 };
+
 /**
  * One per card (spec map-view, "Kartenvertrag"). Lives in the card's shadow
  * root and is never rebuilt on foreign updates: `update()` returns at once
@@ -1135,7 +1148,17 @@ class MapView {
         this._imageState = 'loading';
         this._matrix = null; // robot mm → image px
         this._size = { width: 0, height: 0 };
+        // R21: zoom and pan are never remembered; every map starts fitted.
+        this._zoom = 1;
+        this._panX = 0;
+        this._panY = 0;
+        this._display = {}; // map_config rotation/scale/crop of the shown map
+        this._pointers = new Map();
+        this._gesture = null;
+        this._lastTap = null;
+        this._mode = 'view';
         this._build();
+        this._bindGestures();
     }
 
     _build() {
@@ -1156,8 +1179,231 @@ class MapView {
         this.stage.appendChild(this.pan);
         this.notes = document.createElement('div');
         this.notes.className = 'map-notes';
-        this.region.append(this.stage);
+        this.loupe = document.createElement('div');
+        this.loupe.className = 'map-loupe';
+        this.loupe.hidden = true;
+        this.loupe.setAttribute('aria-hidden', 'true');
+        this.loupeContent = document.createElement('div');
+        this.loupeContent.className = 'map-loupe-content';
+        this.loupe.appendChild(this.loupeContent);
+        this.tools = document.createElement('div');
+        this.tools.className = 'map-tools';
+        this.lockReason = document.createElement('span');
+        this.lockReason.id = 'map-lock-reason';
+        this.lockReason.className = 'visually-hidden';
+        this.tools.appendChild(this.lockReason);
+        this._tool = {};
+        for (const [name, icon, key, act] of [
+            ['zoom-in', 'mdi:plus', 'zoomIn', () => this._zoomAt(this._zoom * MAP_ZOOM.step)],
+            ['zoom-out', 'mdi:minus', 'zoomOut', () => this._zoomAt(this._zoom / MAP_ZOOM.step)],
+            ['fit', 'mdi:fit-to-screen-outline', 'zoomFit', () => this._setView(1, 0, 0)]
+        ]) {
+            const button = BuschUI.action({ label: translate(null, key), icon, variant: 'secondary', onClick: act });
+            button.setAttribute('data-action', 'map-' + name);
+            button.classList.add('map-tool');
+            this._tool[name] = { button, icon, key, act };
+            this.tools.appendChild(button);
+        }
+        this.region.append(this.stage, this.tools, this.loupe);
         this.el.append(this.region, this.notes);
+    }
+
+    _locked() {
+        return this.card.getAttribute('data-locked') === 'true';
+    }
+
+    _bindGestures() {
+        const stage = this.stage;
+        stage.addEventListener('pointerdown', (e) => this._down(e));
+        stage.addEventListener('pointermove', (e) => this._move(e));
+        stage.addEventListener('pointerup', (e) => this._up(e, false));
+        stage.addEventListener('pointercancel', (e) => this._up(e, true));
+        stage.addEventListener('wheel', (e) => this._wheel(e), { passive: false });
+        this.region.addEventListener('keydown', (e) => this._onKey(e));
+        if (typeof ResizeObserver === 'function') new ResizeObserver(() => this._layout()).observe(stage);
+    }
+
+    _stageRect() {
+        return this.stage.getBoundingClientRect();
+    }
+
+    _down(e) {
+        if (this._locked() || !this._view) return;
+        try { this.stage.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+        this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const base = { zoom: this._zoom, panX: this._panX, panY: this._panY };
+        if (this._pointers.size === 1) this._gesture = Object.assign({ kind: 'press', start: { x: e.clientX, y: e.clientY } }, base);
+        else if (this._pointers.size === 2) {
+            const [a, b] = Array.from(this._pointers.values());
+            this._gesture = Object.assign({ kind: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } }, base);
+        }
+        this.el.setAttribute('data-gesture', '');
+    }
+
+    _move(e) {
+        const point = this._pointers.get(e.pointerId);
+        const g = this._gesture;
+        if (!point || !g) return;
+        point.x = e.clientX;
+        point.y = e.clientY;
+        if (g.kind === 'pinch' && this._pointers.size >= 2) {
+            const [a, b] = Array.from(this._pointers.values());
+            const zoom = g.zoom * Math.hypot(a.x - b.x, a.y - b.y) / g.dist;
+            const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+            const view = this._zoomed(g, zoom, g.mid);
+            this._setView(view.zoom, view.panX + mid.x - g.mid.x, view.panY + mid.y - g.mid.y);
+            return;
+        }
+        const dx = e.clientX - g.start.x, dy = e.clientY - g.start.y;
+        if (g.kind === 'press' && Math.hypot(dx, dy) < TAP.slop) return;
+        g.kind = 'pan';
+        this._setView(g.zoom, g.panX + dx, g.panY + dy);
+    }
+
+    _up(e, cancelled) {
+        const g = this._gesture;
+        if (!this._pointers.delete(e.pointerId)) return;
+        if (this._pointers.size === 1) {
+            // A pinch ends with one finger left: it pans on from here.
+            const [rest] = Array.from(this._pointers.values());
+            this._gesture = { kind: 'pan', start: { x: rest.x, y: rest.y }, zoom: this._zoom, panX: this._panX, panY: this._panY };
+            return;
+        }
+        if (this._pointers.size) return;
+        this._gesture = null;
+        this.el.removeAttribute('data-gesture');
+        if (g && g.kind === 'press' && !cancelled) this._tap({ x: e.clientX, y: e.clientY });
+    }
+
+    _tap(client) {
+        const now = Date.now();
+        const last = this._lastTap;
+        if (last && now - last.t < TAP.doubleMs && Math.hypot(client.x - last.x, client.y - last.y) < TAP.doubleSlop) {
+            this._lastTap = null;
+            if (this._mode === 'view') this._zoomAt(this._zoom * MAP_ZOOM.step, client);
+            return;
+        }
+        this._lastTap = { t: now, x: client.x, y: client.y };
+    }
+
+    _wheel(e) {
+        if (this._locked() || !this._view) return;
+        e.preventDefault();
+        this._zoomAt(this._zoom * Math.exp(-e.deltaY * MAP_ZOOM.wheel), { x: e.clientX, y: e.clientY });
+    }
+
+    _onKey(e) {
+        if (this._locked() || !this._view) return;
+        const rect = this._stageRect();
+        const stepX = rect.width / 10, stepY = rect.height / 10;
+        const act = {
+            '+': () => this._zoomAt(this._zoom * MAP_ZOOM.step), '=': () => this._zoomAt(this._zoom * MAP_ZOOM.step),
+            '-': () => this._zoomAt(this._zoom / MAP_ZOOM.step), '0': () => this._setView(1, 0, 0),
+            ArrowLeft: () => this._setView(this._zoom, this._panX + stepX, this._panY),
+            ArrowRight: () => this._setView(this._zoom, this._panX - stepX, this._panY),
+            ArrowUp: () => this._setView(this._zoom, this._panX, this._panY + stepY),
+            ArrowDown: () => this._setView(this._zoom, this._panX, this._panY - stepY)
+        }[e.key];
+        if (!act) return;
+        e.preventDefault();
+        act();
+    }
+
+    /** The view after zooming `from` to `zoom` with the image point under `client` kept in place. */
+    _zoomed(from, zoom, client) {
+        const z = Math.min(MAP_ZOOM.max, Math.max(MAP_ZOOM.min, zoom));
+        const rect = this._stageRect();
+        const sx = (client ? client.x - rect.left : rect.width / 2) - rect.width / 2;
+        const sy = (client ? client.y - rect.top : rect.height / 2) - rect.height / 2;
+        const f = z / from.zoom;
+        return { zoom: z, panX: sx * (1 - f) + from.panX * f, panY: sy * (1 - f) + from.panY * f };
+    }
+
+    _zoomAt(zoom, client) {
+        const view = this._zoomed({ zoom: this._zoom, panX: this._panX, panY: this._panY }, zoom, client);
+        this._setView(view.zoom, view.panX, view.panY);
+    }
+
+    /** New zoom and pan within limits: 1×–8×, the map's centre never leaves the stage, 1× is centred. */
+    _setView(zoom, panX, panY) {
+        this._zoom = Math.min(MAP_ZOOM.max, Math.max(MAP_ZOOM.min, zoom));
+        const rect = this._stageRect();
+        const fitted = this._fitted(rect);
+        const limitX = fitted ? fitted.width * this._zoom / 2 : 0, limitY = fitted ? fitted.height * this._zoom / 2 : 0;
+        this._panX = this._zoom === 1 ? 0 : Math.min(limitX, Math.max(-limitX, panX));
+        this._panY = this._zoom === 1 ? 0 : Math.min(limitY, Math.max(-limitY, panY));
+        this._layout();
+    }
+
+    /** Size of the fitted map at 1× in stage px. */
+    _fitted(rect) {
+        const { width, height } = this._size;
+        if (!width || !height) return null;
+        const m = viewMatrix(Object.assign({ width, height, stageWidth: rect.width, stageHeight: rect.height }, this._display));
+        const k = Math.hypot(m.a, m.b);
+        const turned = [90, 270].includes(Number(this._display.rotation) % 360);
+        return { width: (turned ? height : width) * k, height: (turned ? width : height) * k };
+    }
+
+    /** Called by the card when the lock changes: gestures and buttons follow data-locked. */
+    lockChanged() {
+        this._renderTools();
+    }
+
+    _renderTools() {
+        const locked = this._locked();
+        this.lockReason.textContent = translate(this.hass, 'zoomGesperrt');
+        for (const [name, tool] of Object.entries(this._tool)) {
+            const limit = (name === 'zoom-in' && this._zoom >= MAP_ZOOM.max) || (name !== 'zoom-in' && this._zoom <= MAP_ZOOM.min);
+            BuschUI.action({ node: tool.button, label: translate(this.hass, tool.key), icon: tool.icon, variant: 'secondary', disabled: locked || limit, onClick: tool.act });
+            if (locked) tool.button.setAttribute('aria-describedby', 'map-lock-reason');
+            else tool.button.removeAttribute('aria-describedby');
+        }
+        this.tools.hidden = !this._view;
+    }
+
+    toScreen(p) {
+        if (!this._view || !p) return null;
+        const rect = this._stageRect();
+        const s = applyAffine(this._view, p);
+        return { x: s.x + rect.left, y: s.y + rect.top };
+    }
+
+    fromScreen(p) {
+        const inverse = this._view && invertAffine(this._view);
+        if (!inverse || !p) return null;
+        const rect = this._stageRect();
+        return applyAffine(inverse, { x: p.x - rect.left, y: p.y - rect.top });
+    }
+
+    /** Magnified cut-out under a pointer, e.g. while another module drags on the map. */
+    showLoupe(client) {
+        const q = this.fromScreen(client);
+        if (!q || !this._image) return;
+        if (this._loupeSource !== this._image) {
+            this._loupeSource = this._image;
+            this.loupeContent.replaceChildren(this._image.cloneNode ? this._image.cloneNode(true) : document.createElement('img'));
+        }
+        const rect = this._stageRect();
+        // The view's turn and scale, magnified, with the point under the pointer in the loupe's centre.
+        const v = this._view, s = LOUPE.magnify;
+        const m = { a: v.a * s, b: v.b * s, c: v.c * s, d: v.d * s, e: 0, f: 0 };
+        const centre = applyAffine(m, q);
+        m.e = LOUPE.size / 2 - centre.x;
+        m.f = LOUPE.size / 2 - centre.y;
+        this.loupeContent.style.width = this._size.width + 'px';
+        this.loupeContent.style.height = this._size.height + 'px';
+        this.loupeContent.style.transform = 'matrix(' + [m.a, m.b, m.c, m.d, m.e, m.f].join(',') + ')';
+        // Above and left of the finger, so the finger does not cover it.
+        const x = Math.max(0, client.x - rect.left - LOUPE.size - 16), y = Math.max(0, client.y - rect.top - LOUPE.size - 16);
+        this.loupe.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+        this.loupe.setAttribute('data-image-x', String(Math.round(q.x)));
+        this.loupe.setAttribute('data-image-y', String(Math.round(q.y)));
+        this.loupe.hidden = false;
+    }
+
+    hideLoupe() {
+        this.loupe.hidden = true;
     }
 
     _attrs() {
@@ -1266,13 +1512,20 @@ class MapView {
         return node;
     }
 
-    /** Places the image in the stage: fitted now, zoom and pan follow with the gesture task. */
+    /** Places the map in the stage: fitted, then zoom and pan; one transform on one element (R20). */
     _layout() {
         const { width, height } = this._size;
-        if (!width || !height) return;
-        this.stage.style.setProperty('--bvc-map-aspect', width + ' / ' + height);
-        const rect = this.stage.getBoundingClientRect();
-        this._view = viewMatrix({ width, height, stageWidth: rect.width, stageHeight: rect.height });
+        this.el.toggleAttribute('data-still', !!(this.card._opts && this.card._hidden('animations')));
+        if (!width || !height) {
+            this._view = null;
+            this._renderTools();
+            return;
+        }
+        const turned = [90, 270].includes(Number(this._display.rotation) % 360);
+        this.stage.style.setProperty('--bvc-map-aspect', turned ? height + ' / ' + width : width + ' / ' + height);
+        const rect = this._stageRect();
+        this._view = viewMatrix(Object.assign({ width, height, stageWidth: rect.width, stageHeight: rect.height, zoom: this._zoom, panX: this._panX, panY: this._panY }, this._display));
+        this._renderTools();
         const m = this._view;
         this.pan.style.width = width + 'px';
         this.pan.style.height = height + 'px';
@@ -1366,12 +1619,73 @@ const CARD_STYLES = BuschUI.cardStyles + `
     max-height: none;
     min-height: 200px;
 }
+.map {
+    position: relative;
+}
 .map-pan {
     position: absolute;
     left: 0;
     top: 0;
     transform-origin: 0 0;
     will-change: transform;
+    transition: transform 0.2s ease-out;
+}
+/* Fingers move the map directly; animations hidden (CORE-18) or reduced motion: no tween. */
+.map-view[data-gesture] .map-pan,
+.map-view[data-still] .map-pan {
+    transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    .map-pan { transition: none; }
+}
+.map-tools {
+    position: absolute;
+    right: var(--ha-space-2, 8px);
+    bottom: var(--ha-space-2, 8px);
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-1, 4px);
+}
+:host([data-hand=left]) .map-tools {
+    right: auto;
+    left: var(--ha-space-2, 8px);
+}
+.map-tool {
+    padding: 0;
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.map-loupe {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 120px;
+    height: 120px;
+    overflow: hidden;
+    border-radius: 50%;
+    border: 2px solid var(--primary-color, #03a9f4);
+    background: var(--secondary-background-color, #eeeeee);
+    pointer-events: none;
+    z-index: 2;
+}
+.map-loupe-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 0 0;
+}
+.map-loupe-content > * {
+    width: 100%;
+    height: 100%;
 }
 .map-base {
     position: absolute;
@@ -2116,6 +2430,7 @@ class BuschVacuumCard extends HTMLElement {
         }
         this.setAttribute('data-locked', String(this._locked));
         if (this._lock) this._renderLock();
+        if (this._map) this._map.lockChanged();
     }
 
     /** hidden_card_objects (CORE-18). */
@@ -2142,6 +2457,7 @@ class BuschVacuumCard extends HTMLElement {
         this._haptic();
         this.setAttribute('data-locked', String(this._locked));
         this._renderLock();
+        if (this._map) this._map.lockChanged();
     }
 
     _renderLock() {

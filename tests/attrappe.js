@@ -101,6 +101,7 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
       const attr = sel.match(/^\[([\w-]+)\]$/);
       if (attr) return attr[1] in this.attributes;
       if (sel.startsWith('.')) return this.classList.contains(sel.slice(1));
+      if (sel.startsWith('#')) return this.id === sel.slice(1);
       return this.tagName === sel.toUpperCase();
     }
     matches(sel) { return sel.split(',').some((s) => this._passt(s)); }
