@@ -5732,7 +5732,7 @@ function sequenceView(card) {
             const name = (id) => roomName(rooms[id], id);
             const redraw = (focusId) => {
                 dialog._render();
-                const node = focusId && dialog.shadowRoot.querySelectorAll('[role="option"]').find((n) => n.getAttribute('data-room') === focusId);
+                const node = focusId && Array.from(dialog.shadowRoot.querySelectorAll('[role="option"]')).find((n) => n.getAttribute('data-room') === focusId);
                 if (node) node.focus();
             };
             const change = (ordered, unordered = current.unordered, focusId) => {
@@ -5850,7 +5850,7 @@ function sequenceView(card) {
                     } else if (step) {
                         event.preventDefault();
                         const next = current.ordered[index + step];
-                        const node = next && dialog.shadowRoot.querySelectorAll('[role="option"]').find((n) => n.getAttribute('data-room') === next);
+                        const node = next && Array.from(dialog.shadowRoot.querySelectorAll('[role="option"]')).find((n) => n.getAttribute('data-room') === next);
                         if (node) node.focus();
                     } else if (event.key === 'Escape' && grab) {
                         event.preventDefault();
@@ -5869,7 +5869,7 @@ function sequenceView(card) {
                     const timer = active ? null : setTimeout(() => { active = true; row.setAttribute('data-dragging', ''); }, TOUCH_HOLD_MS);
                     if (active) row.setAttribute('data-dragging', '');
                     try { handle.setPointerCapture(event.pointerId); } catch (e) { /* attrappe or lost pointer: events still reach the handle */ }
-                    const others = () => dialog.shadowRoot.querySelectorAll('[role="option"]').filter((n) => n !== row);
+                    const others = () => Array.from(dialog.shadowRoot.querySelectorAll('[role="option"]')).filter((n) => n !== row);
                     const move = (e) => {
                         if (!active) { clearTimeout(timer); return end(); }
                         e.preventDefault && e.preventDefault();
@@ -7188,6 +7188,7 @@ ha-card {
 }
 .task-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: flex-start;
     gap: var(--ha-space-1, 4px);
 }
@@ -7195,11 +7196,13 @@ ha-card {
     display: flex;
     flex-wrap: wrap;
     gap: var(--ha-space-1, 4px);
-    flex: 1 1 auto;
+    /* Narrow cards put the settings button on its own line instead of squeezing the types. */
+    flex: 1 1 22em;
     min-width: 0;
 }
 .task-settings {
     flex: none;
+    margin-inline-start: auto;
     display: inline-flex;
     align-items: center;
     gap: var(--ha-space-1, 4px);
@@ -7758,6 +7761,7 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 }
 .seq-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--ha-space-2, 8px);
     min-height: 44px;
@@ -7791,9 +7795,26 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
     font-weight: var(--ha-font-weight-medium, 500);
 }
 .seq-name {
-    flex: 1 1 auto;
+    /* Whole words; the move buttons wrap below on a phone. */
+    flex: 1 1 6em;
     min-width: 0;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+}
+.seq-chips .busch-ui-action,
+.actions [data-action=apply-all],
+.actions [data-action=tap-mode],
+.form-note [data-action=undo],
+.setting [data-action=add] {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-2, 8px);
+}
+.actions [data-action=apply-all] ha-icon,
+.actions [data-action=tap-mode] ha-icon,
+.form-note [data-action=undo] ha-icon,
+.setting [data-action=add] ha-icon,
+.seq-chips ha-icon {
+    order: -1;
 }
 .seq-chips {
     display: flex;

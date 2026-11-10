@@ -198,6 +198,34 @@ itself the card goes back to *All*; after your own Stop it keeps the
 selection. Patrols along several points (`vacuum_follow_path`) are not part
 of the reference card and not offered.
 
+## Cleaning settings
+
+*Settings* next to the task types opens the cleaning settings with what the
+robot allows right now; a locked row says why (task running, CleanGenius,
+Customized Cleaning, no saved map). The button is hidden while a scheduled,
+shortcut or CleanGenius task runs, and with `hidden_card_objects: task_type`.
+
+- **CleanGenius** on/off and its mode (mode only while CleanGenius is on).
+  While CleanGenius cleans, it picks the values per room itself.
+- **Basics:** cleaning mode, suction, mop pad humidity, wetness (1–32),
+  water volume, route and mop pressure — each a row of the device settings
+  (`dreame_vacuum.vacuum_set_property`, the value counts once the robot reports
+  it) — and *Repeats* 1–3, the same row as in the task panel.
+- **Customized Cleaning:** the switch and *Room settings*: rooms in cleaning
+  order with their values; a room's page has exactly the fields the robot
+  takes (suction, wetness or water, passes, mode, route or mopping route, mop
+  pressure/temperature, mop type A/B/C with auto mop change). Each change
+  sends that room with all its values (`vacuum_set_custom_cleaning`, mop type
+  `vacuum_set_mop_type` without `map_id`). *Apply to all rooms* asks first,
+  then writes room by room and stops at the first error.
+- **Cleaning sequence** (also in the menu): drag the grip (touch: hold
+  300 ms), use ↑/↓/*Move to the top*, the keyboard (Space grabs and drops,
+  arrows move, Escape cancels) or *Tap in order*. *Save* sends the list once
+  (`vacuum_set_cleaning_sequence`); an unsaved draft stays until you discard
+  it. Robots with a strict sequence (X40) always give every room a place;
+  others can leave rooms without order or turn the sequence off (with Undo).
+- *More cleaning settings* opens *Device settings → Cleaning*.
+
 ## Shortcuts
 
 The *Shortcuts* button (ahead of the station button) appears once there is

@@ -224,6 +224,33 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 - Wiederholungen: lokaler Stepper (`shortcut:`-Notiz), bis `clean-settings`
   die geteilte Zeile SET-02 bringt.
 
+## Reinigungseinstellungen (Modul clean-settings)
+
+- Knopf „Einstellungen“ (`[data-action=clean-settings]`) in `.task-head`
+  neben der Aufgabenwahl, nur mit `vacuum_set_property` und nicht während
+  geplanter, Shortcut- oder CleanGenius-Aufgaben (SET-01). Dialog
+  `cleanSettingsView` mit Abschnitten `cleangenius`, `basic`, `customized`,
+  `sequence`, `more` (`[data-section]`, leere entfallen).
+- Globale Zeilen sind Einträge der `SETTINGS`-Gruppe `clean` (auch
+  `mop_pressure`), also `settingRow`/`writeSetting` aus device-settings. Neu
+  in der Tabelle: `max` als Funktion (`wetness_level` 1–15 mit
+  `mop_clean_frequency`), `shownIf` (`cleangenius_mode`), `emptyReason`
+  (`cleangenius`), Sperren `customized`, `customizedMode`, `savedMap`.
+- `repeatsRow(card, { hint })`: die eine Wiederholungen-Zeile (Aufgabenwahl
+  und Dialog), Wert `card._repeats`.
+- Je Raum: `roomFields(model)` (Felder mit Fähigkeit), `CODE_TABLES`,
+  `roomPayload(model, room, change)` → Daten für `vacuum_set_custom_cleaning`
+  oder `null` (Wert unbekannt/außerhalb). Schreiben über `trackWrite`
+  (`room:<id>`, `mop:<id>`), bestätigt durch die Kamera-`rooms`. `ROOM_KEYS`
+  ordnet jeden Raumschlüssel der Integration `clean-settings` oder
+  `map-editor` zu.
+- Reihenfolge: `sequenceModel(model, rooms)` → `{ strict, ordered,
+  unordered }`, `moveRoom(list, id, to)` als einzige Verschiebung (Ziehen,
+  Knöpfe, Tastatur, Antipp-Modus). Entwurf `card._drafts.get('sequence')` bis
+  das Gerät dieselbe Liste meldet. Menü: `MODULE_VIEWS.cleaning_sequence`.
+- Bewusst: Raumwahl und Antipp-Modus im Dialog (Liste/Knöpfe), nicht über die
+  Karte — der modale Dialog liegt mit Scrim davor (R04).
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):
@@ -289,6 +316,35 @@ echten HA-Selektoren. Die Abnahme mit `karten-alle.sh` und E2E läuft einmal
 am Ende aller Module.
 
 ## Geprüft
+
+**10.11.2026 · 0.1.0, Modul clean-settings (#882, Tasks 1–6, nicht getaggt)**
+
+1. `node --check` grün; `node --test` 405/405 (26 Tests `tests/reinigung.test.js`,
+   dazu Raum-Symbol-Ebene in `tests/karte.test.js`, Stationsbestätigungen und
+   „Zurück zum Dock“ in `tests/station.test.js`, rAF-Drossel in
+   `tests/aufgaben.test.js`).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. `render.py`: 51/51, UI-Regeln 0 (Regel 1 für Einstellungen, Raumseite,
+   Übertragen-Bestätigung, Reihenfolge; Regel 2 für die erste Ebene),
+   0 Konsolen-/Seitenfehler, 0 Fremdanfragen, 0 Dienstaufrufe. 9 Ansichten
+   (Einstellungen normal/CleanGenius/Customized, Räume, Raumseite,
+   Bestätigung, Reihenfolge strikt/nicht strikt/Antippen) × 360/390/800/1280 ×
+   hell/dunkel ohne Seitenüberlauf, Knöpfe und Felder ≥ 44 px. Echte Tastatur
+   (Leertaste greift mit Ansage, Pfeile, Leertaste legt ab, Escape bricht ab
+   ohne zu schließen) und echtes Mausziehen ergeben dieselbe Liste. Der Lauf
+   fand: `NodeList.find` fehlt im Browser (Attrappe liefert Arrays) — jetzt
+   `Array.from`; Raumnamen brachen bei 360 px mitten im Wort, der
+   Einstellungsknopf quetschte die Aufgabenarten, Symbole standen rechts vom
+   Text — behoben und in den Bildern nachgesehen.
+4. Live nur lesend (`/api/states`, `/api/services`): Werte und `_list` der
+   Grundzeilen wie `voll.json`; Fähigkeiten `cleaning_sequence_v2`,
+   `segment_slow_clean_route`, `custom_cleaning_mode`, `wetness_level`,
+   `cleaning_route`, ohne `auto_change_mop`/`mop_pressure`/`mop_temperature`;
+   Kamera-`rooms` mit Codes als Zahlen (Route 1–2, Modus 0/2) und `order`
+   1–7 = `cleaning_sequence` [3, 5, 7, 1, 6, 9, 4]. `services.yaml` nennt
+   `cleaning_route` nicht, das Schema (vacuum.py#L677) nimmt es. **Keine
+   Schreibprobe** — Raumwert hin/zurück und Reihenfolge tauschen/zurück
+   warten auf Nutzer-OK.
 
 **10.11.2026 · 0.1.0, Modul clean-tasks (#882, Tasks 1–8, nicht getaggt)**
 

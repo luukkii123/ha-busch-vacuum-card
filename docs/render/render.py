@@ -293,6 +293,16 @@ def scenario(fixture, name):
         vac["attributes"].update({"maps": [{"id": 3, "index": 1, "name": "Karte 1", "custom_name": None}, {"id": 7, "index": 2, "name": "Karte 2", "custom_name": None}],
                                   "selected_map": "Karte 1"})
         states["script.abendrunde"] = {"entity_id": "script.abendrunde", "state": "off", "attributes": {"friendly_name": "Abendrunde"}}
+    elif name == "cleangenius":
+        # clean-settings: CleanGenius on (synthetic mode list, the X40 empties it while off).
+        vac["attributes"].update({"cleangenius": "Routine cleaning", "cleangenius_cleaning": True,
+                                  "cleangenius_mode_list": ["Vacuum and mop", "Mop after vacuum"]})
+    elif name == "customized":
+        vac["attributes"]["customized_cleaning"] = True
+    elif name == "nonstrict":
+        # clean-settings: a device without cleaning_sequence_v2 and two rooms in order (synthetic).
+        vac["attributes"]["capabilities"] = [c for c in vac["attributes"]["capabilities"] if c != "cleaning_sequence_v2"]
+        vac["attributes"]["cleaning_sequence"] = [3, 5]
     elif name == "error":
         vac["state"] = "error"
         vac["attributes"].update({"has_error": True, "error": "Wheel stuck", "charging": False})
@@ -311,7 +321,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     repo_root = card_file.parent.parent
     fixture = json.loads((repo_root / "tests" / "fixtures" / "voll.json").read_text(encoding="utf-8"))
-    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts")}
+    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict")}
     cam = fixture["states"]["camera.robo_map"]["attributes"]
     grid = synthetic_map_data(cam["rooms"], frame_id=cam["frame_id"])
     svg, svg_size = synthetic_map_svg(cam, grid)
@@ -1119,6 +1129,101 @@ def main():
         page.evaluate("() => { window.__serviceCalls = []; }")
 
         # ------------------------------------------------------------------
+        # 3g. Cleaning settings (clean-settings Task 6): settings normal/CleanGenius/
+        #     Customized, rooms, room page, confirmation, sequence strict/not strict/
+        #     tap mode; keyboard and mouse drag on the sequence; no service call
+        # ------------------------------------------------------------------
+        clean_open = """(steps) => { window.closeDialogs(); const b = window.card().shadowRoot.querySelector('[data-action=clean-settings]');
+            if (!b) return 'missing settings button'; b.click(); const sr = () => window.dialog().shadowRoot;
+            for (const sel of steps) { const n = sr().querySelector(sel); if (!n) return 'missing ' + sel; n.click(); }
+            return sr().querySelector('h1').textContent; }"""
+        clean_views = [
+            ("einstellungen", "docked", []),
+            ("einstellungen-cleangenius", "cleangenius", []),
+            ("einstellungen-customized", "customized", []),
+            ("raeume", "customized", ["[data-action=rooms]"]),
+            ("raumseite", "customized", ["[data-action=rooms]", "[data-room='3']"]),
+            ("uebertragen-bestaetigen", "customized", ["[data-action=rooms]", "[data-room='3']", "[data-action=apply-all]"]),
+            ("reihenfolge-strikt", "docked", ["[data-action=sequence]"]),
+            ("reihenfolge-nicht-strikt", "nonstrict", ["[data-action=sequence]"]),
+            ("reihenfolge-antippen", "docked", ["[data-action=sequence]", "[data-action=tap-mode]"]),
+        ]
+        clean_geo = []
+        for w, h in ((360, 640), (390, 844), (800, 600), (1280, 800)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                for label, state, steps in clean_views:
+                    build(state)
+                    page.wait_for_timeout(150)
+                    title = page.evaluate(clean_open, steps)
+                    page.wait_for_timeout(550)
+                    g = page.evaluate("""() => { const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet'), r = sheet.getBoundingClientRect();
+                        const fields = Array.from(sr.querySelectorAll('select, input')).filter((n) => n.getBoundingClientRect().height > 0 && n.getBoundingClientRect().height < 44).length;
+                        return { kind: sheet.getAttribute('data-kind'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, W: innerWidth, H: innerHeight,
+                                 overflowX: sheet.scrollWidth - sheet.clientWidth, small: window.smallTargets(sr), smallFields: fields,
+                                 rows: sr.querySelectorAll('.setting').length, options: sr.querySelectorAll('[role=option]').length,
+                                 sections: Array.from(sr.querySelectorAll('[data-section]')).map((n) => n.getAttribute('data-section')),
+                                 locked: sr.querySelectorAll('.setting[data-state=locked]').length }; }""")
+                    if (w, th) in ((360, "light"), (1280, "dark")) or (w == 390 and th == "dark"):
+                        shot(f"reinigung-{label}-{w}x{h}-{th}.png")
+                    page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                    clean_geo.append({"label": label, "w": w, "h": h, "theme": th, "title": title, **g})
+        report["cleanDialogs"] = clean_geo
+        bad = [x for x in clean_geo if not inside(x) or x["small"] or x["smallFields"] or x["overflowX"] > 1 or str(x["title"]).startswith("missing")]
+        check("clean settings: 9 views x 4 sizes x 2 themes inside the viewport, no sideways overflow, 44 px buttons and fields",
+              not bad, json.dumps(bad[:4]))
+        by = {x["label"]: x for x in clean_geo if x["w"] == 390 and x["theme"] == "light"}
+        check("clean settings: sections, CleanGenius locks, room list/page, confirmation, sequence strict/not strict as expected",
+              by["einstellungen"]["title"] == "Reinigungseinstellungen" and by["einstellungen"]["sections"] == ["cleangenius", "basic", "customized", "sequence", "more"]
+              and by["einstellungen-cleangenius"]["locked"] >= 4 and by["einstellungen-customized"]["locked"] >= 2
+              and by["raumseite"]["title"] == "Salon" and by["raumseite"]["rows"] == 5 and by["uebertragen-bestaetigen"]["kind"] == "confirm"
+              and by["reihenfolge-strikt"]["options"] == 7 and by["reihenfolge-nicht-strikt"]["options"] == 2
+              and "unordered" in by["reihenfolge-nicht-strikt"]["sections"] and by["reihenfolge-antippen"]["options"] == 0,
+              json.dumps({k: {"title": v["title"], "rows": v["rows"], "options": v["options"], "sections": v["sections"], "locked": v["locked"], "kind": v["kind"]} for k, v in by.items()}))
+        # Real keyboard and mouse on the sequence (R15/R16): both give the same list.
+        page.set_viewport_size({"width": 390, "height": 844})
+        theme("light")
+        order_js = "() => Array.from(window.dialog().shadowRoot.querySelectorAll('[role=option]')).map((n) => n.getAttribute('data-room'))"
+        build("docked")
+        page.wait_for_timeout(150)
+        page.evaluate(clean_open, ["[data-action=sequence]"])
+        page.wait_for_timeout(500)
+        page.evaluate("() => window.dialog().shadowRoot.querySelector('[role=option][data-room=\"1\"]').focus()")
+        page.keyboard.press("Space")
+        live = page.evaluate("() => window.dialog().shadowRoot.querySelector('[aria-live]').textContent")
+        for _ in range(3):
+            page.keyboard.press("ArrowUp")
+        page.keyboard.press("Space")
+        keyed = page.evaluate(order_js)
+        focus_kept = page.evaluate("() => { const a = window.dialog().shadowRoot.activeElement; return a ? a.getAttribute('data-room') : null; }")
+        page.keyboard.press("Space")
+        page.keyboard.press("ArrowDown")
+        page.keyboard.press("Escape")
+        after_escape = page.evaluate(order_js)
+        still_open = page.evaluate("() => !!window.dialog() && window.dialog().shadowRoot.querySelector('h1').textContent")
+        page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+        build("docked")
+        page.wait_for_timeout(150)
+        page.evaluate(clean_open, ["[data-action=sequence]"])
+        page.wait_for_timeout(500)
+        box = page.evaluate("""() => { const sr = window.dialog().shadowRoot, h = sr.querySelector('[role=option][data-room="1"] .seq-handle').getBoundingClientRect(),
+            t = sr.querySelector('[role=option]').getBoundingClientRect(); return { x: h.left + h.width / 2, y: h.top + h.height / 2, top: t.top + 4 }; }""")
+        page.mouse.move(box["x"], box["y"])
+        page.mouse.down()
+        for i in range(1, 6):
+            page.mouse.move(box["x"], box["y"] + (box["top"] - box["y"]) * i / 5)
+        shot("reinigung-reihenfolge-ziehen-390x844-light.png")
+        page.mouse.up()
+        page.wait_for_timeout(100)
+        dragged = page.evaluate(order_js)
+        page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+        want = ["1", "3", "5", "7", "6", "9", "4"]
+        check("clean settings sequence: Space grabs (announced), arrows move, Space drops, Escape cancels without closing; mouse drag gives the same list",
+              keyed == want and dragged == want and focus_kept == "1" and after_escape == want and still_open == "Reinigungsreihenfolge" and "Atelier" in live,
+              json.dumps({"keyed": keyed, "dragged": dragged, "focus": focus_kept, "escape": after_escape, "open": still_open, "live": live}))
+
+        # ------------------------------------------------------------------
         # 4. HACS UI rules 1 and 2 (hacs/docs/ui-regeln.md)
         # ------------------------------------------------------------------
         report["uiRegeln"] = {}
@@ -1209,6 +1314,21 @@ def main():
                     page, breiten=(390, 960), hoehe=900,
                     messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
                     vor_messung=lambda pg: (build("shortcuts", config=short_config), page.wait_for_timeout(150)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            for label, state, steps, kind in (("reinigung", "docked", [], "bearbeitung"), ("reinigung_raumseite", "customized", ["[data-action=rooms]", "[data-room='3']"], "bearbeitung"),
+                                              ("reinigung_uebertragen", "customized", ["[data-action=rooms]", "[data-room='3']", "[data-action=apply-all]"], "bestaetigung"),
+                                              ("reinigung_reihenfolge", "nonstrict", ["[data-action=sequence]"], "bearbeitung")):
+                opener = lambda st=steps: page.evaluate(clean_open, st)
+                r["regel1_dialog_" + label] = lauf_breiten(
+                    page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, ".sheet"),
+                    vor_messung=lambda pg, o=opener, s=state: (build(s), page.wait_for_timeout(150), o(), page.wait_for_timeout(350)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                if steps:
+                    continue
+                r["regel2_dialog_" + label] = lauf_breiten(
+                    page, breiten=(390, 960), hoehe=900,
+                    messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
+                    vor_messung=lambda pg, s=state: (build(s), page.wait_for_timeout(150)))
                 page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
             r["regel1_karte_shortcuts"] = lauf_breiten(
                 page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
