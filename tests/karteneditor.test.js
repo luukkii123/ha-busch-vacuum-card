@@ -316,7 +316,7 @@ test('EDI-02 editCaps: je Werkzeug vorhanden/gesperrt + Grund; ohne Bearbeitungs
   const mit = k.I.editCaps(model, k.I.editData(bearbeitungsdaten()), attrs);
   assert.deepEqual(Object.keys(mit).filter((n) => mit[n].locked), []);
   assert.deepEqual(roh(mit.rooms.features), { visibility: true, floor: true, direction: true });
-  assert.deepEqual(roh(mit.carpets.features), { type: false, cleaning: true });
+  assert.deepEqual(roh(mit.carpets.features), { type: false, cleaning: true, shape: true, mats: false, preferences: false });
   // Fähigkeiten fehlen: Wände, Punkte (cruising), WLAN nicht da; Vorhänge ohne Attribut fehlen in lines nicht allein.
   const k2 = aufbau({ vac: { capabilities: ['map', 'multi_floor_map'] } });
   const c2 = k.I.editCaps(k2.karte._model(), null, k2.karte._map.current().objects);
@@ -1367,4 +1367,131 @@ test('EDI-05 Karte: Aufziehen in draw-rect legt an (Mindestgröße), Eckgriff (4
   tippeAuf(k, p(-20000, -20000));
   assert.equal(eintrag(k, 'virtual_walls', 0).getAttribute('aria-pressed'), 'false');
   assert.deepEqual(k.haus.rufe, []);
+});
+
+// ── Task 8: Teppiche (EDI-05) ───────────────────────────────────────────────
+
+const VOLL_CAPS = () => require('./kartendaten.js').fixture('voll').states['vacuum.robo'].attributes.capabilities;
+/** Karte mit Bearbeitungsdaten (Teppich-IDs 4/5, erkannter 11) und gewähltem Werkzeug Teppiche. */
+async function teppiche(mehr = {}, daten = {}) {
+  const k = aufbau(Object.assign({ bild: true, abruf: (url) => (/saved=1/.test(url) ? { json: bearbeitungsdaten(daten) } : { status: 404 }) }, mehr));
+  await mikro();
+  stift(k).click();
+  await mikro(); await mikro(); await mikro();
+  werkzeug(k, 'carpets').click();
+  return { k, d: dialogVon(k.u) };
+}
+
+test('EDI-05 Teppich-Listen: Typ erkannter Teppiche → vacuum_set_carpet_type, Reinigung → vacuum_set_custom_carpet_cleaning (je ein Aufruf mit Listen, Vorlieben nur wenn geändert)', () => {
+  const k = aufbau();
+  const base = k.I.editLists(k.karte._map.current().objects, k.I.editData(bearbeitungsdaten()));
+  assert.deepEqual(roh(base.carpet_types), [[11, 7]], 'nur erkannte: eigene tragen den Typ im 7. Wert von set_carpet_area');
+  assert.deepEqual(roh(base.carpet_cleanings), [['1:4', 4, 1, 1, null], ['1:5', 5, 1, 2, null], ['0:11', 11, 0, 1, null]]);
+  const nach = roh(base);
+  nach.carpet_types[0] = [11, 6];
+  nach.carpet_cleanings[1] = ['1:5', 5, 1, 3, null];
+  nach.carpet_cleanings[2] = ['0:11', 11, 0, 5, null];
+  assert.deepEqual(roh(k.I.groupCalls('carpet_type', nach, 2, base)), [{ service: 'vacuum_set_carpet_type', data: { id: [11], object_type: [0], carpet_type: [6] } }]);
+  assert.deepEqual(roh(k.I.groupCalls('carpet_cleaning', nach, 2, base)), [{ service: 'vacuum_set_custom_carpet_cleaning', data: { id: [5, 11], object_type: [1, 0], carpet_cleaning: [3, 5] } }]);
+  nach.carpet_cleanings[2] = ['0:11', 11, 0, 5, 5];
+  assert.deepEqual(roh(k.I.groupCalls('carpet_cleaning', nach, 2, base)[0].data.carpet_preferences), [[], ['clean_carpets_first', 'intensive_carpet_cleaning']], 'Vorlieben als Namen (device.py set_custom_carpet_cleaning)');
+  assert.deepEqual(roh(k.I.groupCalls('carpet_cleaning', base, 2, nach)[0].data), { id: [5, 11], object_type: [1, 0], carpet_cleaning: [2, 1], carpet_preferences: [[], []] }, 'Rückweg');
+  assert.equal(k.I.editLists(k.karte._map.current().objects, null).carpet_types, null, 'ohne Bearbeitungsdaten unbekannt');
+});
+
+test('EDI-05 Teppiche: bestehende IDs bleiben, neue −1, rund/eckig, Typ 5–8 (8 nur floor_mats) im 7. Wert, Koordinaten; Speichern → vacuum_set_carpet_area mit allen Teppichen', async () => {
+  const { k, d } = await teppiche({ vac: { capabilities: VOLL_CAPS().concat(['carpet_type', 'floor_mats']) } });
+  assert.equal(werkzeug(k, 'carpets').disabled, false);
+  assert.equal(k.karte._map._mode, 'draw-rect');
+  assert.equal(feldE(k, 'edit-kind'), null, 'nur eine Art: kein Auswahlfeld');
+  eintrag(k, 'carpets', 0).click();
+  assert.equal(wert(k, 'edit-x0'), 100);
+  tippen(k, feldE(k, 'edit-x0'), 150);
+  assert.deepEqual(optionen(feldE(k, 'carpet-type')), ['5', '6', '7', '8']);
+  waehle(k, feldE(k, 'carpet-type'), 5);
+  $d(k.u, '[data-action="edit-add"]').click();
+  assert.equal(eintrag(k, 'carpets', 2).getAttribute('data-state'), 'new');
+  assert.equal(feldE(k, 'edit-ellipse').value, '0');
+  waehle(k, feldE(k, 'edit-ellipse'), 1);
+  waehle(k, feldE(k, 'carpet-type'), 8);
+  assert.equal(feldE(k, 'carpet-cleaning'), null, 'neuer Teppich: Reinigung erst nach dem Speichern');
+  assert.match($d(k.u, '[data-panel="carpets"]').textContent, /Reinigung lässt sich nach dem Speichern einstellen/);
+  assert.ok(k.karte._map._layers.get('editor').group.querySelector('ellipse'), 'runder Teppich als Ellipse');
+  const neu = roh(k.karte._mapEdit.lists().carpets[2]);
+  $d(k.u, '[data-action="save"]').click();
+  assert.match(d.shadowRoot.textContent, /Teppiche: 1 neu, 1 geändert, 0 gelöscht/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_carpet_area']);
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', carpets: [[150, 100, 500, 400, 4, 0, 5], [600, 600, 900, 800, 5, 1, 5], neu], deleted_carpets: [[-200, -200, 0, 0]] });
+  assert.deepEqual(neu.slice(4), [-1, 1, 8], 'neu: id −1, rund, Bodenmatte');
+  // Ohne floor_mats kein Typ 8, ohne carpet_type kein Typfeld.
+  const ohne = await teppiche({ vac: { capabilities: VOLL_CAPS().concat(['carpet_type']) } });
+  eintrag(ohne.k, 'carpets', 0).click();
+  assert.deepEqual(optionen(feldE(ohne.k, 'carpet-type')), ['5', '6', '7']);
+  const keinTyp = await teppiche();
+  eintrag(keinTyp.k, 'carpets', 0).click();
+  assert.equal(feldE(keinTyp.k, 'carpet-type'), null);
+});
+
+test('EDI-05 Erkannte Teppiche: nur Typ, Reinigung und Ausblenden; gelöschte ein-/ausblenden; Typ → set_carpet_type, Reinigung → set_custom_carpet_cleaning', async () => {
+  const { k, d } = await teppiche({ vac: { capabilities: VOLL_CAPS().concat(['carpet_type']) } });
+  const erkannt = $d(k.u, '[data-carpet-detected="0"]');
+  assert.match(erkannt.getAttribute('aria-label'), /Erkannter Teppich 1/);
+  erkannt.click();
+  assert.equal(feldE(k, 'edit-x0'), null, 'Form gehört dem Gerät: keine Koordinaten');
+  assert.equal($d(k.u, '[data-action="edit-remove"]'), null);
+  waehle(k, feldE(k, 'carpet-type'), 6);
+  assert.deepEqual(optionen(feldE(k, 'carpet-cleaning')), ['-1', '1', '2', '3', '5', '6'], 'Optionen der Teppich-Reinigung des Geräts (select carpet_cleaning)');
+  waehle(k, feldE(k, 'carpet-cleaning'), 5);
+  assert.equal($d(k.u, '[data-field="carpet-pref-clean_carpets_first"]'), null, 'Vorlieben nur mit carpet_cleanset_v3');
+  $d(k.u, '[data-action="carpet-hide"]').click();
+  assert.match($d(k.u, '[data-carpet-detected="0"]').getAttribute('aria-label'), /ausgeblendet/);
+  // Gelöschte einblenden: Liste mit Wieder-Einblenden.
+  const umschalter = $d(k.u, '[data-action="carpet-deleted-toggle"]');
+  assert.equal(umschalter.getAttribute('aria-pressed'), 'false');
+  assert.equal($d(k.u, '[data-carpet-deleted="0"]'), null);
+  umschalter.click();
+  assert.equal($d(k.u, '[data-action="carpet-deleted-toggle"]').getAttribute('aria-pressed'), 'true');
+  assert.ok($d(k.u, '[data-carpet-deleted="0"]') && $d(k.u, '[data-carpet-deleted="1"]'));
+  $d(k.u, '[data-carpet-deleted="0"]').querySelector('[data-action="carpet-unhide"]').click();
+  assert.equal($d(k.u, '[data-carpet-deleted="1"]'), null);
+  $d(k.u, '[data-action="save"]').click();
+  const text = d.shadowRoot.textContent;
+  assert.match(text, /Erkannter Teppich 1: Typ Teppich kurzflorig/);
+  assert.match(text, /Erkannter Teppich 1: Reinigung /);
+  assert.match(text, /Erkannter Teppich 1: ausgeblendet/);
+  assert.match(text, /1 gelöschter Teppich wieder eingeblendet/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_carpet_area', 'vacuum_set_carpet_type', 'vacuum_set_custom_carpet_cleaning']);
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', carpets: [[100, 100, 500, 400, 4, 0, 6], [600, 600, 900, 800, 5, 1, 5]], deleted_carpets: [[1200, 100, 1400, 300]] }, 'eigene unverändert mit');
+  assert.deepEqual(roh(k.haus.rufe[2].data), { entity_id: 'vacuum.robo', id: [11], object_type: [0], carpet_type: [6] });
+  assert.deepEqual(roh(k.haus.rufe[3].data), { entity_id: 'vacuum.robo', id: [11], object_type: [0], carpet_cleaning: [5] });
+  // carpet_cleanset_v3: Vorlieben als Schalter, als Namen gesendet.
+  const v3 = await teppiche({ vac: { capabilities: VOLL_CAPS().concat(['carpet_cleanset_v3']) } });
+  eintrag(v3.k, 'carpets', 1).click();
+  assert.deepEqual(optionen(feldE(v3.k, 'carpet-cleaning')), ['-1', '1', '2', '3', '5', '6']);
+  $d(v3.k.u, '[data-field="carpet-pref-intensive_carpet_cleaning"]').click();
+  $d(v3.k.u, '[data-action="save"]').click();
+  $d(v3.k.u, '[data-action="confirm"]').click();
+  await v3.k.sicherungFertig();
+  assert.deepEqual(roh(v3.k.haus.rufe.at(-1).data), { entity_id: 'vacuum.robo', id: [5], object_type: [1], carpet_cleaning: [2], carpet_preferences: [['intensive_carpet_cleaning']] });
+});
+
+test('EDI-05 Teppiche gesperrt während einer Aufgabe: Hinweis, Hinzufügen/Felder aus, Ziehen ohne Wirkung; ohne Bearbeitungsdaten Werkzeug gesperrt', async () => {
+  const { k, d } = await teppiche({ zustand: 'cleaning' });
+  assert.match($d(k.u, '[data-panel="carpets"]').textContent, /Gesperrt, solange eine Aufgabe läuft/);
+  assert.equal($d(k.u, '[data-action="edit-add"]').disabled, true);
+  eintrag(k, 'carpets', 0).click();
+  assert.equal(feldE(k, 'edit-x0').disabled, true);
+  const c = k.karte._mapCentre();
+  zieh(k, 'start', c, c);
+  zieh(k, 'end', c, { x: c.x + 3000, y: c.y + 3000 });
+  assert.equal(k.karte._mapEdit.dirty(), false);
+  assert.ok(d);
+  const ohne = aufbau();
+  werkzeuge(ohne);
+  stift(ohne).click();
+  assert.equal(werkzeug(ohne, 'carpets').disabled, true, 'ohne Teppich-IDs gesperrt');
 });

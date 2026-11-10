@@ -7948,7 +7948,7 @@ canvas.map-base {
 [data-layer=editor] line[data-edit] { stroke-width: 4px; }
 [data-layer=editor] [data-edit][data-state=new] { stroke-dasharray: 8 4; }
 [data-layer=editor] [data-edit][data-state=changed] { stroke-dasharray: 2 3; }
-[data-layer=editor] [data-edit][data-state=removed] { opacity: 0.35; stroke-dasharray: 1 5; fill-opacity: 0; }
+[data-layer=editor] [data-edit][data-state=removed], [data-layer=editor] [data-edit][data-state=hidden] { opacity: 0.35; stroke-dasharray: 1 5; fill-opacity: 0; }
 [data-layer=editor] [data-edit][data-chosen=true] { stroke-width: 4px; fill-opacity: 0.3; }
 [data-layer=editor] [data-handle] circle {
     fill: var(--ha-card-background, var(--card-background-color, #ffffff));
@@ -11287,7 +11287,39 @@ const EDIT_TEXTS = {
         feld_edit_line_x1: 'Ende x (mm)',
         feld_edit_line_y1: 'Ende y (mm)',
         kartenMindest: 'Mindestens {mm} mm je Seite bzw. Länge (zwei Kartenraster).',
-        kartenObjTasten: 'Pfeiltasten in den Feldern: 50 mm, mit Umschalt 10 mm. Auf einem Eintrag der Liste verschieben die Pfeiltasten das Objekt; Entf entfernt es.'
+        kartenObjTasten: 'Pfeiltasten in den Feldern: 50 mm, mit Umschalt 10 mm. Auf einem Eintrag der Liste verschieben die Pfeiltasten das Objekt; Entf entfernt es.',
+        kartenEins_carpets: 'Teppich',
+        kartenObjHinweis_carpets: '„Hinzufügen“ legt einen Teppich in die Bildmitte; auf der Karte lässt sich einer aufziehen. Antippen wählt, die Eckgriffe ändern die Größe, die Fläche verschiebt.',
+        kartenObj_carpet_types: 'Teppicharten',
+        kartenObj_carpet_cleanings: 'Teppich-Reinigung',
+        boden_8: 'Bodenmatte',
+        teppichForm: 'Form',
+        teppichEckig: 'Eckig',
+        teppichRund: 'Rund',
+        teppichTyp: 'Teppichart',
+        teppichReinigung: 'Teppich-Reinigung',
+        teppichReinigungSpaeter: 'Die Reinigung lässt sich nach dem Speichern einstellen (der Teppich braucht erst seine ID vom Gerät).',
+        'teppichReinigung_-1': 'Wie in den Einstellungen',
+        teppichReinigung_1: 'Ausweichen',
+        teppichReinigung_2: 'Anpassen',
+        teppichReinigung_3: 'Wischpad abnehmen',
+        teppichReinigung_4: 'Anpassen ohne Route',
+        teppichReinigung_5: 'Saugen und Wischen',
+        teppichReinigung_6: 'Ignorieren',
+        teppichReinigung_7: 'Überqueren',
+        teppichErkannt: 'Erkannter Teppich {n}',
+        teppichErkanntHinweis: 'Erkannte Teppiche: Form und Lage bestimmt das Gerät; einstellbar sind Art, Reinigung und Ausblenden.',
+        teppichAusgeblendet: 'ausgeblendet',
+        teppichAusblenden: 'Ausblenden',
+        teppichEinblenden: 'Wieder einblenden',
+        teppichGeloeschteZeigen: 'Gelöschte Teppiche zeigen ({n})',
+        teppichGeloescht: 'Gelöschte Teppichfläche {n}',
+        teppichZeileTyp: '{name}: Typ {typ}',
+        teppichZeileReinigung: '{name}: Reinigung {wert}',
+        teppichZeileAus: '{name}: ausgeblendet',
+        teppichZeileEin: '{name}: eingeblendet',
+        teppichZeileWiederEins: '1 gelöschter Teppich wieder eingeblendet',
+        teppichZeileWieder: '{n} gelöschte Teppiche wieder eingeblendet'
     },
     en: {
         kartenSicherungTitel: 'Save map',
@@ -11460,7 +11492,39 @@ const EDIT_TEXTS = {
         feld_edit_line_x1: 'End x (mm)',
         feld_edit_line_y1: 'End y (mm)',
         kartenMindest: 'At least {mm} mm per side or length (two map cells).',
-        kartenObjTasten: 'Arrow keys in the fields: 50 mm, with Shift 10 mm. On an entry of the list the arrow keys move the object; Delete removes it.'
+        kartenObjTasten: 'Arrow keys in the fields: 50 mm, with Shift 10 mm. On an entry of the list the arrow keys move the object; Delete removes it.',
+        kartenEins_carpets: 'Carpet',
+        kartenObjHinweis_carpets: '“Add” places a carpet in the middle of the view; on the map you can draw one. A tap picks, the corner handles resize, the area moves.',
+        kartenObj_carpet_types: 'Carpet types',
+        kartenObj_carpet_cleanings: 'Carpet cleaning',
+        boden_8: 'Floor mat',
+        teppichForm: 'Shape',
+        teppichEckig: 'Square',
+        teppichRund: 'Round',
+        teppichTyp: 'Carpet type',
+        teppichReinigung: 'Carpet cleaning',
+        teppichReinigungSpaeter: 'Cleaning can be set after saving (the carpet first needs its id from the device).',
+        'teppichReinigung_-1': 'As in the settings',
+        teppichReinigung_1: 'Avoid',
+        teppichReinigung_2: 'Adapt',
+        teppichReinigung_3: 'Remove mop',
+        teppichReinigung_4: 'Adapt without route',
+        teppichReinigung_5: 'Vacuum and mop',
+        teppichReinigung_6: 'Ignore',
+        teppichReinigung_7: 'Cross',
+        teppichErkannt: 'Detected carpet {n}',
+        teppichErkanntHinweis: 'Detected carpets: the device sets shape and place; type, cleaning and hiding can be set.',
+        teppichAusgeblendet: 'hidden',
+        teppichAusblenden: 'Hide',
+        teppichEinblenden: 'Show again',
+        teppichGeloeschteZeigen: 'Show deleted carpets ({n})',
+        teppichGeloescht: 'Deleted carpet area {n}',
+        teppichZeileTyp: '{name}: type {typ}',
+        teppichZeileReinigung: '{name}: cleaning {wert}',
+        teppichZeileAus: '{name}: hidden',
+        teppichZeileEin: '{name}: shown',
+        teppichZeileWiederEins: '1 deleted carpet shown again',
+        teppichZeileWieder: '{n} deleted carpets shown again'
     }
 };
 for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
@@ -11785,6 +11849,11 @@ function editLists(attrs, data) {
         router,
         carpets: data && data.carpets ? data.carpets.map((c) => c.rect.concat([c.id === null ? -1 : c.id, c.ellipse, c.type === null ? 7 : c.type])) : null,
         deleted_carpets: data && data.deletedCarpets ? data.deletedCarpets.map((c) => c.rect.slice()) : null,
+        // Own carpets carry their type in the 7th value of set_carpet_area; detected ones only here (object_type 0).
+        carpet_types: data && data.detectedCarpets ? data.detectedCarpets.map((c) => [c.id, c.type === null ? 7 : c.type]) : null,
+        // Cleaning per carpet [key, id, object_type, cleaning, preferences bits|null]: own (1) with an id, detected (0).
+        carpet_cleanings: data && data.carpets && data.detectedCarpets ? data.carpets.filter((c) => c.id !== null && c.id >= 0).map((c) => [1, c]).concat(data.detectedCarpets.map((c) => [0, c]))
+            .map(([type, c]) => [type + ':' + c.id, c.id, type, c.cleaning === null || c.cleaning === 0 ? -1 : c.cleaning, c.preferences]) : null,
         furnitures: data && data.furnitures ? data.furnitures.map((f) => furnitureEntry(f)) : null,
         walls: data && data.walls ? data.walls.map((w) => [w.room].concat(WALL_FIELDS.map((k) => w[k]))) : null,
         doors: data && data.doors ? data.doors.map((d) => DOOR_FIELDS.map((k) => d[k])) : null,
@@ -11870,6 +11939,20 @@ const EDIT_GROUPS = {
     virtual_threshold: { service: 'vacuum_set_virtual_threshold', lists: ['virtual_thresholds'], data: (l) => ({ virtual_thresholds: l.virtual_thresholds }) },
     curtain: { service: 'vacuum_set_curtain', lists: ['curtains'], data: (l) => ({ curtains: l.curtains }) },
     carpet: { service: 'vacuum_set_carpet_area', lists: ['carpets', 'deleted_carpets'], data: (l) => ({ carpets: l.carpets, deleted_carpets: l.deleted_carpets }) },
+    // Type and cleaning: one call for the changed carpets, ids/object types/values as lists (vacuum.py#L479/#L693 take lists).
+    carpet_type: { service: 'vacuum_set_carpet_type', lists: ['carpet_types'], calls: (l, mapId, base) => {
+        const changed = changedEntries(l.carpet_types, base.carpet_types);
+        return changed.length ? [{ service: 'vacuum_set_carpet_type', data: { id: changed.map((e) => e[0]), object_type: changed.map(() => 0), carpet_type: changed.map((e) => e[1]) } }] : [];
+    } },
+    carpet_cleaning: { service: 'vacuum_set_custom_carpet_cleaning', lists: ['carpet_cleanings'], calls: (l, mapId, base) => {
+        const changed = changedEntries(l.carpet_cleanings, base.carpet_cleanings);
+        if (!changed.length) return [];
+        const data = { id: changed.map((e) => e[1]), object_type: changed.map((e) => e[2]), carpet_cleaning: changed.map((e) => e[3]) };
+        // Preferences only when one of them changed (only carpet_cleanset_v3 offers them): as names, like device.py reads them.
+        const was = (e) => ((base.carpet_cleanings || []).find((b) => b[0] === e[0]) || [])[4];
+        if (changed.some((e) => (e[4] === undefined ? null : e[4]) !== (was(e) === undefined ? null : was(e)))) data.carpet_preferences = changed.map((e) => carpetPrefNames(e[4]));
+        return [{ service: 'vacuum_set_custom_carpet_cleaning', data }];
+    } },
     furniture: { service: 'vacuum_set_furniture', lists: ['furnitures'], data: (l) => ({ furnitures: l.furnitures }) },
     points: { service: 'vacuum_set_predefined_points', lists: ['predefined_points'], data: (l) => ({ points: l.predefined_points }) },
     walls: { service: 'vacuum_set_walls', lists: ['walls', 'doors'], data: (l, mapId) => {
@@ -11943,7 +12026,10 @@ function editCaps(model, data, attrs) {
     };
     const carpets = {
         type: model.can('carpet_type') && svc('vacuum_set_carpet_type'),
-        cleaning: model.can('carpet_recognition') && svc('vacuum_set_custom_carpet_cleaning')
+        cleaning: model.can('carpet_recognition') && svc('vacuum_set_custom_carpet_cleaning'),
+        shape: model.can('carpet_shape'),
+        mats: model.can('floor_mats'),
+        preferences: model.can('carpet_cleanset_v3')
     };
     // Virtual thresholds and passable ones are the same device field (vwsl): a device with
     // passable_thresholds writes them with set_threshold, one with only virtual_thresholds with
@@ -11981,6 +12067,7 @@ function editCaps(model, data, attrs) {
     caps.carpets.features = carpets;
     caps.zones.kinds = kinds('zones');
     caps.lines.kinds = kinds('lines');
+    caps.carpets.kinds = ['carpets'];
     return caps;
 }
 
@@ -12353,7 +12440,7 @@ const EDIT_TOOLS = {
     walls: { icon: 'mdi:wall', lists: ['walls', 'doors'], panel: null },
     zones: Object.assign({ icon: 'mdi:vector-rectangle', lists: ['no_go_areas', 'no_mopping_areas', 'ramps'] }, objectTool('zones')),
     lines: Object.assign({ icon: 'mdi:vector-line', lists: ['virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'virtual_thresholds', 'curtains'] }, objectTool('lines')),
-    carpets: { icon: 'mdi:rug', lists: ['carpets', 'deleted_carpets'], panel: null },
+    carpets: Object.assign({ icon: 'mdi:rug', lists: ['carpets', 'deleted_carpets', 'carpet_types', 'carpet_cleanings'] }, objectTool('carpets')),
     furniture: { icon: 'mdi:sofa-outline', lists: ['furnitures'], panel: null },
     points: { icon: 'mdi:map-marker-multiple-outline', lists: ['predefined_points'], panel: null },
     wifi: { icon: 'mdi:wifi', lists: ['router'], panel: null }
@@ -12522,7 +12609,8 @@ class MapEditor {
         const card = this.card, hass = card._hass;
         const merged = this.lists();
         const mapId = card._map.current().mapId;
-        const groups = Object.keys(this.draft);
+        const order = Object.keys(EDIT_GROUPS);
+        const groups = Object.keys(this.draft).sort((x, y) => order.indexOf(x) - order.indexOf(y));
         const lines = this.counts().flatMap((c) => (EDIT_LINES[c.list] ? EDIT_LINES[c.list](hass, this, this.base[c.list], merged[c.list]) : [editCountLine(hass, editListLabel(hass, c.list), c)]));
         const undoText = lines.join('; ');
         if (this.foreign) lines.push(translate(hass, 'kartenAbgeglichen'));
@@ -13202,7 +13290,9 @@ const EDIT_KINDS = {
     passable_thresholds: lineKind('threshold'),
     impassable_thresholds: lineKind('threshold'),
     virtual_thresholds: lineKind('virtual_threshold'),
-    curtains: lineKind('curtain')
+    curtains: lineKind('curtain'),
+    // Own carpets [x0, y0, x1, y1, id, ellipse, type]: new −1, square, type 7 (map.py#L2103).
+    carpets: Object.assign(rectKind('carpet', [-1, 0, 7]), { round: (e) => e[5] === 1 })
 };
 
 /** An object tool's registry entry (EDIT_TOOLS): the same panel, map, layer and hit for every kind it edits. */
@@ -13351,6 +13441,8 @@ function objectsPanel(card, editor, body, hass, tool) {
     const pick = editor.pick;
     const entry = pick && (editor.lists()[pick.list] || [])[pick.i];
     if (entry && kinds.includes(pick.list)) objectForm(card, editor, body, hass, tool, pick, entry, lock);
+    const hooks = OBJECT_HOOKS[tool];
+    if (hooks && hooks.panel) hooks.panel(card, editor, body, hass, lock);
 }
 
 /** The objects of one kind: a button per object (state as text, R17), removed ones with "Zurückholen". */
@@ -13454,6 +13546,8 @@ function objectForm(card, editor, body, hass, tool, pick, entry, lock) {
     form.appendChild(fields);
     form.appendChild(noteLine(translate(hass, 'kartenMindest', { mm: editMin(card) })));
     form.appendChild(noteLine(translate(hass, 'kartenObjTasten')));
+    const hooks = OBJECT_HOOKS[tool];
+    if (hooks && hooks.form) hooks.form(card, editor, form, hass, pick, entry, lock);
     const actions = document.createElement('div');
     actions.className = 'actions';
     const remove = BuschUI.action({ label: translate(hass, 'entfernen') + ': ' + name, text: translate(hass, 'entfernen'), icon: 'mdi:delete-outline', variant: 'secondary',
@@ -13501,7 +13595,8 @@ function objectsOnMap(card, editor, e, tool) {
     const d = e.detail || {};
     if (objectsLock(editor, tool)) return undefined;
     if (e.type === 'map-tap' && d.robot) {
-        const hit = objectsHit(card, editor, d.robot, tool);
+        const hooks = OBJECT_HOOKS[tool];
+        const hit = objectsHit(card, editor, d.robot, tool) || (hooks && hooks.hitMore ? hooks.hitMore(card, editor, d.robot) : null);
         editor.pick = hit ? { list: hit.list, i: hit.i } : null;
         return editor.changed();
     }
@@ -13539,14 +13634,23 @@ function objectsDraw(card, editor, group, ctx, tool) {
             const a = ctx.toImage({ x: shape.x0, y: shape.y0 }), b = ctx.toImage({ x: shape.x1, y: shape.y1 });
             return a && b ? group.appendChild(ctx.svgNode('line', Object.assign({ x1: a.x, y1: a.y, x2: b.x, y2: b.y }, attrs))) : null;
         }
+        if (kind.round && attrs.round) {
+            const a = ctx.toImage({ x: shape.x0, y: shape.y0 }), b = ctx.toImage({ x: shape.x1, y: shape.y1 });
+            delete attrs.round;
+            return group.appendChild(ctx.svgNode('ellipse', Object.assign({ cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, rx: Math.abs(b.x - a.x) / 2, ry: Math.abs(b.y - a.y) / 2 }, attrs)));
+        }
+        delete attrs.round;
         return group.appendChild(ctx.svgNode('polygon', Object.assign({ points: boxPoints(ctx, shape) }, attrs)));
     };
+    const hooks = OBJECT_HOOKS[tool];
+    if (hooks && hooks.draw) hooks.draw(card, editor, group, ctx);
     for (const list of toolKinds(editor, tool)) {
         for (const row of objectRows(editor, list)) {
             const dragged = g && g.list === list && g.i !== null && g.i === row.i;
             const shape = dragged ? g.shape : EDIT_KINDS[list].toShape(row.entry);
             const chosen = !!pick && pick.list === list && pick.i === row.i;
-            node(list, shape, { 'data-edit': list, 'data-item': row.i === null ? 'removed:' + row.origin : row.i, 'data-state': row.state || 'same', 'data-chosen': String(chosen) });
+            node(list, shape, { 'data-edit': list, 'data-item': row.i === null ? 'removed:' + row.origin : row.i, 'data-state': row.state || 'same', 'data-chosen': String(chosen),
+                round: !!EDIT_KINDS[list].round && EDIT_KINDS[list].round(row.entry) });
         }
         if (g && g.i === null && g.list === list) node(list, g.shape, { 'data-edit': list, 'data-state': 'new', 'data-chosen': 'true' });
     }
@@ -13560,6 +13664,233 @@ function objectsDraw(card, editor, group, ctx, tool) {
         group.appendChild(screenMark(ctx, { x, y }, { 'data-handle': kind.shape === 'line' ? 'end' : 'corner', 'data-corner': j })).appendChild(ctx.svgNode('circle', { r: 8 }));
     });
 }
+
+// ── Carpets (map-editor Task 8: EDI-05) ──────────────────────────────────────
+
+/** Carpet cleaning codes (types.py DreameVacuumCarpetCleaning) by the option names of the select carpet_cleaning. */
+const CARPET_CLEANING = { avoidance: 1, adaptation: 2, remove_mop: 3, adaptation_without_route: 4, vacuum_and_mop: 5, ignore: 6, cross: 7 };
+/** Carpet preferences (carpet_cleanset_v3): bit, name, capability (null: the device decides, device.py set_custom_carpet_cleaning). */
+const CARPET_PREFS = [[1, 'clean_carpets_first', 'clean_carpets_first'], [2, 'carpet_boost', null], [4, 'intensive_carpet_cleaning', 'intensive_carpet_cleaning'],
+    [8, 'side_brush_carpet_rotate', 'side_brush_carpet_rotate'], [16, 'lift_chassis_on_carpet', 'lift_chassis_on_carpet']];
+
+/** Preference bits as the names the service reads; none known → none set. */
+const carpetPrefNames = (bits) => CARPET_PREFS.filter(([bit]) => Number.isInteger(bits) && bits > 0 && (bits & bit)).map(([, name]) => name);
+
+/** Cleaning choices: −1 (as in the settings) and the device's options of select carpet_cleaning (it filters by capability). */
+function carpetCleaningCodes(card) {
+    const model = card._model();
+    const id = model.entity('select.carpet_cleaning');
+    const state = id && card._hass && card._hass.states[id];
+    const names = state && Array.isArray(state.attributes.options) ? state.attributes.options : null;
+    const codes = names ? names.map((n) => CARPET_CLEANING[enumName(n)]).filter((c) => c !== undefined) : [1, 2, 3, 5];
+    return [-1].concat(codes);
+}
+
+function carpetCleaningLabel(hass, code) {
+    const name = Object.keys(CARPET_CLEANING).find((k) => CARPET_CLEANING[k] === code);
+    const fromHa = name ? optionLabel(hass, 'carpet_cleaning', name) : '';
+    return fromHa && fromHa !== name ? fromHa : translate(hass, 'teppichReinigung_' + code);
+}
+
+const carpetTypeCodes = (editor) => [5, 6, 7].concat(editor.toolCaps.carpets.features.mats ? [8] : []);
+const sameRect = (a, b) => [0, 1, 2, 3].every((i) => Number(a[i]) === Number(b[i]));
+const detectedName = (hass, editor, id) => translate(hass, 'teppichErkannt', { n: ((editor.data && editor.data.detectedCarpets) || []).findIndex((c) => c.id === id) + 1 });
+const ownCarpetName = (hass, editor, id) => translate(hass, 'kartenEins_carpets') + ' ' + ((editor.base.carpets || []).findIndex((e) => e[4] === id) + 1);
+
+/** A labelled select of the editor (R10): `data-field` = name. */
+function editSelect(name, label, value, options, disabled, onChange) {
+    const select = document.createElement('select');
+    for (const [v, text] of options) {
+        const option = document.createElement('option');
+        option.value = String(v);
+        option.textContent = text;
+        select.appendChild(option);
+    }
+    select.value = String(value);
+    if (disabled) select.disabled = true;
+    select.addEventListener('change', () => onChange(select.value));
+    return formField(name, label, select, '').wrap;
+}
+
+/** Cleaning of one carpet (existing id): select plus the preferences of carpet_cleanset_v3. */
+function carpetCleaningFields(card, editor, box, hass, key, lock) {
+    const features = editor.toolCaps.carpets.features;
+    if (!features.cleaning) return;
+    const entry = (editor.lists().carpet_cleanings || []).find((e) => e[0] === key);
+    if (!entry) return;
+    const [, id, type, cleaning, bits] = entry;
+    const set = (next) => setRoomEntry(editor, 'carpet_cleaning', 'carpet_cleanings', next);
+    const options = carpetCleaningCodes(card).map((c) => [c, carpetCleaningLabel(hass, c)]);
+    box.appendChild(editSelect('carpet-cleaning', translate(hass, 'teppichReinigung'), cleaning, options, !!lock, (v) => set([key, id, type, Number(v), bits])));
+    if (!features.preferences || cleaning === -1) return;
+    const model = card._model();
+    for (const [bit, name, cap] of CARPET_PREFS) {
+        if (cap && !model.can(cap)) continue;
+        const on = Number.isInteger(bits) && bits > 0 && !!(bits & bit);
+        const label = entityLabel(hass, 'switch', name);
+        const row = document.createElement('div');
+        row.className = 'setting';
+        const text = document.createElement('span');
+        text.className = 'setting-name';
+        text.textContent = label;
+        const toggle = entrySwitch(hass, label, on, !!lock, () => set([key, id, type, cleaning, ((Number.isInteger(bits) && bits > 0 ? bits : 0) ^ bit)]));
+        toggle.setAttribute('data-field', 'carpet-pref-' + name);
+        row.append(text, toggle);
+        box.appendChild(row);
+    }
+}
+
+/** A detected carpet shown or hidden: hiding = its area in deleted_carpets (map.py#L2103 "nocpt"). */
+function setCarpetHidden(editor, rect, hidden) {
+    const list = editor.edit('carpet').deleted_carpets;
+    const i = list.findIndex((e) => sameRect(e, rect));
+    if (hidden && i < 0) list.push(rect.slice(0, 4));
+    if (!hidden && i >= 0) list.splice(i, 1);
+    editor.changed();
+}
+
+/** Own carpet form: shape (square/round), type in the 7th value, cleaning once it has an id. */
+function carpetForm(card, editor, form, hass, pick, entry, lock) {
+    if (pick.list !== 'carpets') return;
+    const features = editor.toolCaps.carpets.features;
+    const set = (index, value) => changeObjects(editor, 'carpets', (entries) => {
+        entries[pick.i] = entries[pick.i].slice();
+        entries[pick.i][index] = value;
+    });
+    if (features.shape) form.appendChild(editSelect('edit-ellipse', translate(hass, 'teppichForm'), entry[5] ? 1 : 0, [[0, translate(hass, 'teppichEckig')], [1, translate(hass, 'teppichRund')]], !!lock, (v) => set(5, Number(v))));
+    if (features.type) form.appendChild(editSelect('carpet-type', translate(hass, 'teppichTyp'), entry[6], carpetTypeCodes(editor).map((c) => [c, translate(hass, 'boden_' + c)]), !!lock, (v) => set(6, Number(v))));
+    if (entry[4] >= 0) carpetCleaningFields(card, editor, form, hass, '1:' + entry[4], lock);
+    else if (features.cleaning) form.appendChild(noteLine(translate(hass, 'teppichReinigungSpaeter')));
+}
+
+/** Below the own carpets: detected ones (type, cleaning, hide — their shape belongs to the device) and the deleted areas. */
+function carpetsPanelEnd(card, editor, body, hass, lock) {
+    const data = editor.data;
+    const lists = editor.lists();
+    const detected = (data && data.detectedCarpets) || [];
+    const deleted = lists.deleted_carpets || [];
+    const features = editor.toolCaps.carpets.features;
+    if (detected.length) {
+        const box = document.createElement('div');
+        box.className = 'edit-list';
+        box.setAttribute('role', 'group');
+        box.setAttribute('aria-label', translate(hass, 'mapobj_detected_carpets'));
+        box.appendChild(noteLine(translate(hass, 'teppichErkanntHinweis')));
+        detected.forEach((c, i) => {
+            const hidden = deleted.some((e) => sameRect(e, c.rect));
+            const name = translate(hass, 'teppichErkannt', { n: i + 1 });
+            const size = translate(hass, 'kartenGroesse', { w: metres(hass, c.rect[2] - c.rect[0]), h: metres(hass, c.rect[3] - c.rect[1]) });
+            const chosen = !!editor.pick && editor.pick.list === 'detected_carpets' && editor.pick.i === i;
+            const words = hidden ? translate(hass, 'teppichAusgeblendet') : '';
+            const button = BuschUI.action({ label: [name, size, words].filter(Boolean).join(', '), text: name + ' · ' + size, variant: 'secondary', onClick: () => {
+                editor.pick = chosen ? null : { list: 'detected_carpets', i };
+                editor.changed();
+            } });
+            button.classList.add('edit-item');
+            button.setAttribute('data-carpet-detected', String(i));
+            button.setAttribute('aria-pressed', String(chosen));
+            if (hidden) {
+                button.setAttribute('data-state', 'hidden');
+                button.setAttribute('data-state-text', words);
+            }
+            box.appendChild(button);
+            if (!chosen) return;
+            const form = document.createElement('div');
+            form.className = 'edit-form';
+            form.setAttribute('role', 'group');
+            form.setAttribute('aria-label', translate(hass, 'kartenObjBearbeiten', { name }));
+            const type = (lists.carpet_types || []).find((e) => e[0] === c.id);
+            if (features.type && type) form.appendChild(editSelect('carpet-type', translate(hass, 'teppichTyp'), type[1], carpetTypeCodes(editor).map((t) => [t, translate(hass, 'boden_' + t)]), !!lock,
+                (v) => setRoomEntry(editor, 'carpet_type', 'carpet_types', [c.id, Number(v)])));
+            carpetCleaningFields(card, editor, form, hass, '0:' + c.id, lock);
+            const label = translate(hass, hidden ? 'teppichEinblenden' : 'teppichAusblenden');
+            const toggle = BuschUI.action({ label: label + ': ' + name, text: label, icon: hidden ? 'mdi:eye-outline' : 'mdi:eye-off-outline', variant: 'secondary', disabled: !!lock,
+                onClick: () => setCarpetHidden(editor, c.rect, !hidden) });
+            toggle.setAttribute('data-action', hidden ? 'carpet-show' : 'carpet-hide');
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            actions.appendChild(toggle);
+            form.appendChild(actions);
+            box.appendChild(form);
+        });
+        body.appendChild(box);
+    }
+    const label = translate(hass, 'teppichGeloeschteZeigen', { n: deleted.length });
+    const show = BuschUI.action({ label, text: label, icon: 'mdi:eye-refresh-outline', variant: 'secondary', disabled: !deleted.length && !editor.showDeleted, onClick: () => {
+        editor.showDeleted = !editor.showDeleted;
+        editor.changed();
+    } });
+    show.setAttribute('data-action', 'carpet-deleted-toggle');
+    show.setAttribute('aria-pressed', String(!!editor.showDeleted));
+    body.appendChild(show);
+    if (!editor.showDeleted) return;
+    const box = document.createElement('div');
+    box.className = 'edit-list';
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', translate(hass, 'mapobj_deleted_carpets'));
+    deleted.forEach((rect, i) => {
+        const item = document.createElement('div');
+        item.className = 'edit-item';
+        item.setAttribute('data-carpet-deleted', String(i));
+        const text = document.createElement('span');
+        text.textContent = translate(hass, 'teppichGeloescht', { n: i + 1 }) + ' · ' + translate(hass, 'kartenGroesse', { w: metres(hass, rect[2] - rect[0]), h: metres(hass, rect[3] - rect[1]) });
+        const back = BuschUI.action({ label: translate(hass, 'teppichEinblenden') + ': ' + text.textContent, text: translate(hass, 'teppichEinblenden'), icon: 'mdi:eye-outline', variant: 'secondary', disabled: !!lock,
+            onClick: () => setCarpetHidden(editor, rect, false) });
+        back.setAttribute('data-action', 'carpet-unhide');
+        item.append(text, back);
+        box.appendChild(item);
+    });
+    body.appendChild(box);
+}
+
+/** Detected carpets (and the deleted areas while shown) on the layer: faint when hidden, never with handles. */
+function carpetsDraw(card, editor, group, ctx) {
+    const deleted = editor.lists().deleted_carpets || [];
+    ((editor.data && editor.data.detectedCarpets) || []).forEach((c, i) => {
+        const r = c.rect;
+        const hidden = deleted.some((e) => sameRect(e, r));
+        const chosen = !!editor.pick && editor.pick.list === 'detected_carpets' && editor.pick.i === i;
+        group.appendChild(ctx.svgNode('polygon', { 'data-edit': 'detected_carpets', 'data-item': i, 'data-state': hidden ? 'hidden' : 'same', 'data-chosen': String(chosen), points: boxPoints(ctx, { x0: r[0], y0: r[1], x1: r[2], y1: r[3] }) }));
+    });
+    if (editor.showDeleted) deleted.forEach((r, i) => group.appendChild(ctx.svgNode('polygon', { 'data-edit': 'deleted_carpets', 'data-item': i, 'data-state': 'removed', points: boxPoints(ctx, { x0: r[0], y0: r[1], x1: r[2], y1: r[3] }) })));
+}
+
+/** A tap on a detected carpet picks it (own carpets above it win, objectsHit). */
+function carpetsHitMore(card, editor, p) {
+    const detected = (editor.data && editor.data.detectedCarpets) || [];
+    for (let i = detected.length - 1; i >= 0; i--) {
+        const r = detected[i].rect;
+        if (p.x >= r[0] && p.x <= r[2] && p.y >= r[1] && p.y <= r[3]) return { list: 'detected_carpets', i };
+    }
+    return null;
+}
+
+/** Tool-specific parts of the object building block (OBJECT_HOOKS[tool]): form, panel end, extra layer, extra hits. */
+const OBJECT_HOOKS = {
+    carpets: { form: carpetForm, panel: carpetsPanelEnd, draw: carpetsDraw, hitMore: carpetsHitMore }
+};
+
+/** Confirmation lines of carpet type, cleaning and hidden areas (R13: the objects by name). */
+Object.assign(EDIT_LINES, {
+    carpet_types: (hass, editor, before, after) => changedEntries(after, before)
+        .map(([id, type]) => translate(hass, 'teppichZeileTyp', { name: detectedName(hass, editor, id), typ: translate(hass, 'boden_' + type) })),
+    carpet_cleanings: (hass, editor, before, after) => changedEntries(after, before)
+        .map(([, id, type, cleaning]) => translate(hass, 'teppichZeileReinigung', { name: type === 0 ? detectedName(hass, editor, id) : ownCarpetName(hass, editor, id), wert: carpetCleaningLabel(hass, cleaning) })),
+    deleted_carpets: (hass, editor, before, after) => {
+        const detected = (editor.data && editor.data.detectedCarpets) || [];
+        const nameOf = (rect) => {
+            const i = detected.findIndex((c) => sameRect(c.rect, rect));
+            return i >= 0 ? translate(hass, 'teppichErkannt', { n: i + 1 }) : null;
+        };
+        const added = after.filter((r) => !before.some((b) => sameRect(b, r)));
+        const removed = before.filter((r) => !after.some((a) => sameRect(a, r)));
+        const lines = added.map((r) => translate(hass, 'teppichZeileAus', { name: nameOf(r) || translate(hass, 'mapobj_carpets') }))
+            .concat(removed.filter(nameOf).map((r) => translate(hass, 'teppichZeileEin', { name: nameOf(r) })));
+        const others = removed.filter((r) => !nameOf(r)).length;
+        if (others) lines.push(translate(hass, others === 1 ? 'teppichZeileWiederEins' : 'teppichZeileWieder', { n: others }));
+        return lines;
+    }
+});
 
 // ---------------------------------------------------------------------------
 // Remote control (remote): one sender, sliders, hold buttons and keys feed it (R08)
@@ -14170,6 +14501,8 @@ BuschVacuumCard.__internals = {
     splitCheck,
     mergeCheck,
     EDIT_KINDS,
+    OBJECT_HOOKS,
+    carpetCleaningCodes,
     lineFit,
     objectRows,
     editMin,
