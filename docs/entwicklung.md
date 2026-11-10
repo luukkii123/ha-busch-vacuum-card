@@ -48,6 +48,38 @@
 - Testdaten nur synthetisch (`tests/kartendaten.js` aus den verfremdeten
   Raumrechtecken); echte Kartendaten schließt `tests/datenschutz.test.js` aus.
 
+### Kartenvertrag (für alle späteren Module)
+
+`this._map` der Karte ist eine `MapView` (eine je Karte, nie bei fremden
+Updates neu gebaut). Koordinaten in Modulen immer in **Roboter-mm**;
+umgerechnet wird nur hier.
+
+| Aufruf | Ergebnis |
+| --- | --- |
+| `current()` | `{ camera, mapId, index, name, calibration, rooms, objects, frameId, updatedAt, mode }`; `calibration` ist die affine Matrix Roboter-mm → Bild-px (`{a,b,c,d,e,f}` wie CSS `matrix()`) oder `null`; `objects` = Attribute der Kartenkamera; `mode` `'data'` mit Kartendaten, sonst `'image'` |
+| `toImage(p)` / `toRobot(p)` | Roboter-mm ↔ Bild-px, `null` ohne Kalibrierung |
+| `toScreen(p)` / `fromScreen(p)` | Bild-px ↔ Client-px inkl. Zoom, Verschieben, `map_config` rotation/scale/crop |
+| `addLayer(id, { z, render(group, ctx), hit(point, ctx) })` | SVG-Gruppe in Bild-px; `render` beim Anlegen, bei neuer Kalibrierung/neuem Frame und bei `refresh(id)`; `hit` bekommt Roboter-mm und liefert `{ id, object }` oder nichts. `ctx` = `current()` plus `toImage`, `svgNode`, `data`, `model` |
+| `removeLayer(id)`, `refresh(id?)` | Ebene entfernen; neu zeichnen (ohne id: alle) |
+| `hitTest(clientPoint)` | `{ kind: 'room'\|'object'\|'floor'\|'outside', id, layer, object, robot, image }`; Ebenen mit `hit` von oben nach unten zuerst |
+| `roomAt(p)` / `passable(p)` | Raum-ID oder `null` (Datenmodus exakt, Bildmodus Rechteck + nächster Mittelpunkt); begehbar `true/false` nur im Datenmodus, sonst `null` (`clean-tasks` sperrt nur bei `false`) |
+| `setMode(mode, options)` | `view`, `pick-room`, `pick-point`, `draw-rect`, `drag`; unbekannt → Ausnahme |
+| `showLoupe(clientPoint)` / `hideLoupe()` | Lupe (in `draw-rect`/`drag` beim Ziehen automatisch) |
+| `selectMap(mapId)` | über core `_confirmMapChange` → `dreame_vacuum.vacuum_select_map`; `false`, wenn gesperrt (Aufgabe läuft), unbekannt oder schon aktiv |
+| `config(index)` | Kartenoptionen gemischt mit `map_config.map_<index>`; `hidden_objects` addieren sich |
+| `visible(name)` | `hidden_objects` (Karte + je Karte) |
+| `roomChips({ rooms, selected, order, onToggle })` | die eine Raum-Chip-Liste (Element); Pfeile/Home/End, `aria-pressed`, Reihenfolge-Badge; ein Chip-Tipp löst dasselbe `map-room-tap` aus wie die Fläche (`source: 'chip'`) |
+
+Ereignisse (`CustomEvent` auf `this._map.el`, `bubbles`): `map-tap`
+(`{ client, robot, hit, passable, mode }`), `map-room-tap` (`{ room, source,
+mode }`, in `view` und `pick-room`), `map-object-tap` (`{ id, layer, object,
+robot }`, in `view`), `map-long-press`, `map-drag` (`{ phase: start|move|end|cancel,
+mode, start, robot }`, in `draw-rect`/`drag`), `map-changed` (`{ index,
+mapId }`), `map-frame` (`{ frameId, mode }`). Gesperrt (`data-locked="true"`)
+löst die Karte keine Ereignisse aus und bewegt sich nicht; Raum-Chips bleiben
+bedienbar. Ein Modul entfernt seine Ebene und setzt `view` zurück, wenn es
+seinen Modus verlässt.
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):
