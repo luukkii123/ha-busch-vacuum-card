@@ -626,7 +626,7 @@ test('EDI-02 Werkzeugleiste je editCaps (nur gebaute Werkzeuge), Zähler, Sammel
   const d = bearbeiten(k);
   await mikro(); await mikro();
   assert.ok(werkzeug(k, 'zones') && werkzeug(k, 'lines') && werkzeug(k, 'walls'));
-  assert.equal(werkzeug(k, 'furniture'), null, 'ohne Panel kein Werkzeug');
+  assert.equal(werkzeug(k, 'wifi'), null, 'ohne Panel kein Werkzeug');
   assert.equal(werkzeug(k, 'walls').disabled, true, 'ohne Bearbeitungsdaten gesperrt');
   assert.match(d.shadowRoot.textContent, /Bearbeitungsdaten der Karte fehlen/);
   assert.equal($d(k.u, '[data-action="save"]').disabled, true, 'nichts offen');
@@ -1494,4 +1494,114 @@ test('EDI-05 Teppiche gesperrt während einer Aufgabe: Hinweis, Hinzufügen/Feld
   werkzeuge(ohne);
   stift(ohne).click();
   assert.equal(werkzeug(ohne, 'carpets').disabled, true, 'ohne Teppich-IDs gesperrt');
+});
+
+// ── Task 9: Möbel und Zielpunkte (EDI-05) ───────────────────────────────────
+
+async function mitDaten(name, mehr = {}, daten = {}) {
+  const k = aufbau(Object.assign({ bild: true, abruf: (url) => (/saved=1/.test(url) ? { json: bearbeitungsdaten(daten) } : { status: 404 }) }, mehr));
+  await mikro();
+  stift(k).click();
+  await mikro(); await mikro(); await mikro();
+  werkzeug(k, name).click();
+  return k;
+}
+
+test('EDI-05 Möbel: nur erlaubte Typen wie map.py set_furnitures (furnitures_v2/v3, extended_furnitures, pet_furniture)', () => {
+  const typen = (caps) => roh(aufbau({ vac: { capabilities: caps } }).I.furnitureTypes(aufbau({ vac: { capabilities: caps } }).karte._model()));
+  const basis = VOLL_CAPS().filter((c) => !['furnitures_v2', 'furnitures_v3', 'extended_furnitures', 'pet_furniture'].includes(c));
+  const bis = (n) => Array.from({ length: n }, (_, i) => i + 1);
+  assert.deepEqual(typen(basis.concat(['furnitures_v2', 'extended_furnitures', 'pet_furniture'])), bis(26).concat([29, 30, 31]));
+  assert.deepEqual(typen(basis.concat(['furnitures_v2', 'pet_furniture'])), [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 25], 'ohne erweiterte Möbel: >13 außer 25 und 8 fallen weg');
+  assert.deepEqual(typen(basis.concat(['furnitures_v3'])), [1, 2, 3, 4, 5, 6, 7, 9, 25], 'ohne Haustier-Möbel keine 10–13');
+  assert.deepEqual(typen(basis), bis(9), 'Möbel v1: nur Typen unter 10');
+});
+
+test('EDI-05 Möbel: vollständige Liste mit 11 Werten, neu id −1, drehen in 15°, skalieren, Raum über roomAt; Speichern → vacuum_set_furniture', async () => {
+  const k = await mitDaten('furniture');
+  const d = dialogVon(k.u);
+  assert.equal(k.karte._map._mode, 'draw-rect');
+  const sofa = eintrag(k, 'furnitures', 0);
+  assert.match(sofa.getAttribute('aria-label'), /Zweisitzer-Sofa 1, 0,8 × 0,6 m/);
+  sofa.click();
+  assert.match($d(k.u, '[data-panel="furniture"]').textContent, /Winkel: 90°/);
+  $d(k.u, '[data-action="furniture-rotate-right"]').click();
+  $d(k.u, '[data-action="furniture-rotate-left"]').click();
+  $d(k.u, '[data-action="furniture-rotate-left"]').click();
+  assert.match($d(k.u, '[data-panel="furniture"]').textContent, /Winkel: 75°/);
+  tippen(k, feldE(k, 'edit-x'), -4252);
+  tippen(k, feldE(k, 'edit-y'), -8496);
+  assert.match($d(k.u, '[data-panel="furniture"]').textContent, /Raum: Bibliothek/, 'Raum über roomAt');
+  $d(k.u, '[data-action="furniture-larger"]').click();
+  assert.equal(wert(k, 'edit-width'), 880);
+  assert.equal(wert(k, 'edit-height'), 660);
+  assert.equal(wert(k, 'edit-x'), -4252, 'skalieren um die Mitte');
+  // Neues Möbel: Typ wählen, platzieren.
+  assert.ok(optionen(feldE(k, 'furniture-new-type')).includes('31'));
+  waehle(k, feldE(k, 'furniture-new-type'), 11);
+  $d(k.u, '[data-action="edit-add"]').click();
+  assert.match(eintrag(k, 'furnitures', 2).getAttribute('aria-label'), /Haustierbett 3, 0,8 × 0,8 m, neu/);
+  assert.equal(feldE(k, 'furniture-type').value, '11');
+  const neu = roh(k.karte._mapEdit.lists().furnitures[2]);
+  assert.equal(neu.length, 11);
+  assert.deepEqual([neu[0], neu[1], neu[3], neu[4], neu[7], neu[8], neu[9], neu[10]], [-1, 11, 800, 800, 0, 1, 0, 1]);
+  assert.equal(neu[2], k.karte._map.roomAt({ x: neu[5], y: neu[6] }));
+  $d(k.u, '[data-action="save"]').click();
+  assert.match(d.shadowRoot.textContent, /Möbel: 1 neu, 1 geändert, 0 gelöscht/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_furniture']);
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', furnitures: [[3, 4, 5, 880, 660, -4252, -8496, 75, 1, 1, 1], [6, 14, 2, 400, 400, 1500, 200, 0, 1.2, 0, 0], neu] }, 'vollständige Liste, unveränderte mit geändert 0');
+  // Ohne erweiterte Möbel: kein Kühlschrank zur Wahl.
+  const k2 = await mitDaten('furniture', { vac: { capabilities: VOLL_CAPS().filter((c) => c !== 'extended_furnitures') } });
+  assert.ok(!optionen(feldE(k2, 'furniture-new-type')).includes('14'));
+  // Fläche ziehen verschiebt (gedrehtes Möbel getroffen über seine Ecken).
+  const m = k2.karte._mapEdit;
+  zieh(k2, 'start', { x: 300, y: 400 }, { x: 300, y: 400 });
+  zieh(k2, 'end', { x: 300, y: 400 }, { x: 800, y: 900 });
+  assert.deepEqual(roh(m.lists().furnitures[0]).slice(5, 7), [800, 900]);
+});
+
+test('EDI-05 Zielpunkte: nur mit cruising, höchstens 20, nur auf befahrbarer Fläche (passable !== false), gesperrt während einer Aufgabe → vacuum_set_predefined_points', async () => {
+  const neunzehn = {};
+  for (let i = 1; i <= 19; i++) neunzehn[i] = { x: -4000 + i * 10, y: -8000 };
+  const k = aufbau({ bild: true, cam: { predefined_points: neunzehn } });
+  k.karte._map.passable = (p) => (p.x > 100000 ? false : null);
+  const d = werkzeugOffen(k, 'points');
+  await mikro(); await mikro();
+  assert.equal(eintrag(k, 'predefined_points', 18).getAttribute('data-state'), null);
+  assert.match(eintrag(k, 'predefined_points', 0).getAttribute('aria-label'), /Zielpunkt 1, \(-3990, -8000\)/);
+  // Außerhalb: abgelehnt, Wert bleibt.
+  eintrag(k, 'predefined_points', 0).click();
+  tippen(k, feldE(k, 'edit-x'), 200000);
+  assert.equal(wert(k, 'edit-x'), -3990);
+  assert.match($d(k.u, '[data-panel="points"]').textContent, /nicht auf befahrbarer Fläche/);
+  tippeAuf(k, { x: 200000, y: 0 });
+  assert.equal(k.karte._mapEdit.lists().predefined_points.length, 19, 'Tipp neben die Fläche legt nichts an');
+  // Tipp auf freie Karte (weiter als 44 px von den Punkten) legt einen Punkt an; danach ist die Grenze 20 erreicht.
+  tippeAuf(k, { x: 2585, y: -6349 });
+  assert.equal(eintrag(k, 'predefined_points', 19).getAttribute('data-state'), 'new');
+  assert.equal($d(k.u, '[data-action="edit-add"]').disabled, true);
+  assert.match(d.shadowRoot.textContent, /Höchstens 20 Zielpunkte/);
+  tippeAuf(k, { x: 1229, y: -981 });
+  assert.equal(k.karte._mapEdit.lists().predefined_points.length, 20);
+  $d(k.u, '[data-action="save"]').click();
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_predefined_points']);
+  const punkte = roh(k.haus.rufe[1].data.points);
+  assert.equal(punkte.length, 20);
+  assert.deepEqual(punkte.at(-1), [2585, -6349]);
+  // Laufende Aufgabe: gesperrt.
+  const k2 = aufbau({ bild: true, zustand: 'cleaning' });
+  werkzeugOffen(k2, 'points');
+  await mikro(); await mikro();
+  assert.match($d(k2.u, '[data-panel="points"]').textContent, /Gesperrt, solange eine Aufgabe läuft/);
+  assert.equal($d(k2.u, '[data-action="edit-add"]').disabled, true);
+  tippeAuf(k2, { x: -4252, y: -8496 });
+  assert.equal(k2.karte._mapEdit.dirty(), false);
+  // Ohne cruising kein Werkzeug.
+  const k3 = aufbau({ vac: { capabilities: VOLL_CAPS().filter((c) => c !== 'cruising') } });
+  stift(k3).click();
+  assert.equal(werkzeug(k3, 'points'), null);
 });

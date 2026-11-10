@@ -11319,7 +11319,56 @@ const EDIT_TEXTS = {
         teppichZeileAus: '{name}: ausgeblendet',
         teppichZeileEin: '{name}: eingeblendet',
         teppichZeileWiederEins: '1 gelöschter Teppich wieder eingeblendet',
-        teppichZeileWieder: '{n} gelöschte Teppiche wieder eingeblendet'
+        teppichZeileWieder: '{n} gelöschte Teppiche wieder eingeblendet',
+        kartenEins_furnitures: 'Möbel',
+        kartenEins_predefined_points: 'Zielpunkt',
+        kartenObjHinweis_furniture: '„Hinzufügen“ stellt das gewählte Möbel in die Bildmitte; auf der Karte lässt es sich ziehen. Antippen wählt; Typ, Drehen und Größe im Formular.',
+        kartenObjHinweis_points: '„Hinzufügen“ setzt einen Zielpunkt in die Bildmitte, ein Tipp auf die Karte setzt ihn dort — nur auf befahrbarer Fläche. Ziehen verschiebt.',
+        feld_edit_furniture_x: 'Mitte x (mm)',
+        feld_edit_furniture_y: 'Mitte y (mm)',
+        feld_edit_furniture_width: 'Breite (mm)',
+        feld_edit_furniture_height: 'Tiefe (mm)',
+        feld_edit_point_x: 'x (mm)',
+        feld_edit_point_y: 'y (mm)',
+        punkteMax: 'Höchstens 20 Zielpunkte: Das Gerät speichert nicht mehr.',
+        moebelTyp: 'Möbeltyp',
+        moebelNeuTyp: 'Neues Möbel',
+        moebelWinkel: 'Winkel: {grad}°',
+        moebelLinks: 'Drehen −15°',
+        moebelRechts: 'Drehen +15°',
+        moebelKleiner: 'Kleiner',
+        moebelGroesser: 'Größer',
+        moebelRaum: 'Raum: {raum}',
+        moebelOhneRaum: 'Raum: keiner (liegt außerhalb der Räume)',
+        moebel_1: 'Einzelbett',
+        moebel_2: 'Doppelbett',
+        moebel_3: 'Sessel',
+        moebel_4: 'Zweisitzer-Sofa',
+        moebel_5: 'Dreisitzer-Sofa',
+        moebel_6: 'Esstisch',
+        moebel_7: 'Nachttisch',
+        moebel_8: 'Couchtisch',
+        moebel_9: 'Toilette',
+        moebel_10: 'Katzenklo',
+        moebel_11: 'Haustierbett',
+        moebel_12: 'Futternapf',
+        moebel_13: 'Haustiertoilette',
+        moebel_14: 'Kühlschrank',
+        moebel_15: 'Waschmaschine',
+        moebel_16: 'Geschlossenes Katzenklo',
+        moebel_17: 'Klimagerät',
+        moebel_18: 'TV-Schrank',
+        moebel_19: 'Bücherregal',
+        moebel_20: 'Schuhschrank',
+        moebel_21: 'Kleiderschrank',
+        moebel_22: 'Pflanzen',
+        moebel_23: 'Standspiegel',
+        moebel_24: 'L-Sofa',
+        moebel_25: 'Runder Couchtisch',
+        moebel_26: 'Tisch',
+        moebel_29: 'Sessel (schmal)',
+        moebel_30: 'Dreisitzer-Sofa (schmal)',
+        moebel_31: 'L-Sofa (rechts)'
     },
     en: {
         kartenSicherungTitel: 'Save map',
@@ -11524,7 +11573,56 @@ const EDIT_TEXTS = {
         teppichZeileAus: '{name}: hidden',
         teppichZeileEin: '{name}: shown',
         teppichZeileWiederEins: '1 deleted carpet shown again',
-        teppichZeileWieder: '{n} deleted carpets shown again'
+        teppichZeileWieder: '{n} deleted carpets shown again',
+        kartenEins_furnitures: 'Furniture',
+        kartenEins_predefined_points: 'Target point',
+        kartenObjHinweis_furniture: '“Add” places the chosen furniture in the middle of the view; on the map you can drag it. A tap picks; type, turning and size in the form.',
+        kartenObjHinweis_points: '“Add” sets a target point in the middle of the view, a tap on the map sets it there — only on reachable floor. Dragging moves it.',
+        feld_edit_furniture_x: 'Centre x (mm)',
+        feld_edit_furniture_y: 'Centre y (mm)',
+        feld_edit_furniture_width: 'Width (mm)',
+        feld_edit_furniture_height: 'Depth (mm)',
+        feld_edit_point_x: 'x (mm)',
+        feld_edit_point_y: 'y (mm)',
+        punkteMax: 'At most 20 target points: the device stores no more.',
+        moebelTyp: 'Furniture type',
+        moebelNeuTyp: 'New furniture',
+        moebelWinkel: 'Angle: {grad}°',
+        moebelLinks: 'Turn −15°',
+        moebelRechts: 'Turn +15°',
+        moebelKleiner: 'Smaller',
+        moebelGroesser: 'Larger',
+        moebelRaum: 'Room: {raum}',
+        moebelOhneRaum: 'Room: none (outside the rooms)',
+        moebel_1: 'Single bed',
+        moebel_2: 'Double bed',
+        moebel_3: 'Armchair',
+        moebel_4: 'Two-seat sofa',
+        moebel_5: 'Three-seat sofa',
+        moebel_6: 'Dining table',
+        moebel_7: 'Nightstand',
+        moebel_8: 'Coffee table',
+        moebel_9: 'Toilet',
+        moebel_10: 'Litter box',
+        moebel_11: 'Pet bed',
+        moebel_12: 'Food bowl',
+        moebel_13: 'Pet toilet',
+        moebel_14: 'Refrigerator',
+        moebel_15: 'Washing machine',
+        moebel_16: 'Enclosed litter box',
+        moebel_17: 'Air conditioner',
+        moebel_18: 'TV cabinet',
+        moebel_19: 'Bookshelf',
+        moebel_20: 'Shoe cabinet',
+        moebel_21: 'Wardrobe',
+        moebel_22: 'Greenery',
+        moebel_23: 'Floor mirror',
+        moebel_24: 'L-shaped sofa',
+        moebel_25: 'Round coffee table',
+        moebel_26: 'Table',
+        moebel_29: 'Armchair (narrow)',
+        moebel_30: 'Three-seat sofa (narrow)',
+        moebel_31: 'L-shaped sofa (right)'
     }
 };
 for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
@@ -12068,6 +12166,8 @@ function editCaps(model, data, attrs) {
     caps.zones.kinds = kinds('zones');
     caps.lines.kinds = kinds('lines');
     caps.carpets.kinds = ['carpets'];
+    caps.furniture.kinds = ['furnitures'];
+    caps.points.kinds = ['predefined_points'];
     return caps;
 }
 
@@ -12441,8 +12541,8 @@ const EDIT_TOOLS = {
     zones: Object.assign({ icon: 'mdi:vector-rectangle', lists: ['no_go_areas', 'no_mopping_areas', 'ramps'] }, objectTool('zones')),
     lines: Object.assign({ icon: 'mdi:vector-line', lists: ['virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'virtual_thresholds', 'curtains'] }, objectTool('lines')),
     carpets: Object.assign({ icon: 'mdi:rug', lists: ['carpets', 'deleted_carpets', 'carpet_types', 'carpet_cleanings'] }, objectTool('carpets')),
-    furniture: { icon: 'mdi:sofa-outline', lists: ['furnitures'], panel: null },
-    points: { icon: 'mdi:map-marker-multiple-outline', lists: ['predefined_points'], panel: null },
+    furniture: Object.assign({ icon: 'mdi:sofa-outline', lists: ['furnitures'] }, objectTool('furniture')),
+    points: Object.assign({ icon: 'mdi:map-marker-multiple-outline', lists: ['predefined_points'] }, objectTool('points')),
     wifi: { icon: 'mdi:wifi', lists: ['router'], panel: null }
 };
 
@@ -13292,8 +13392,45 @@ const EDIT_KINDS = {
     virtual_thresholds: lineKind('virtual_threshold'),
     curtains: lineKind('curtain'),
     // Own carpets [x0, y0, x1, y1, id, ellipse, type]: new −1, square, type 7 (map.py#L2103).
-    carpets: Object.assign(rectKind('carpet', [-1, 0, 7]), { round: (e) => e[5] === 1 })
+    carpets: Object.assign(rectKind('carpet', [-1, 0, 7]), { round: (e) => e[5] === 1 }),
+    // Furniture in the service's order [id, type, room, w, h, x, y, angle, scale, edit_type, modified] (map.py set_furnitures L2428):
+    // the shape is its unturned box around the centre; every change sets the room by roomAt and `modified`.
+    furnitures: { group: 'furniture', shape: 'furniture', handles: false, fields: ['x', 'y', 'width', 'height'], fit: shapeFit,
+        toShape: (e) => ({ x0: e[5] - e[3] / 2, y0: e[6] - e[4] / 2, x1: e[5] + e[3] / 2, y1: e[6] + e[4] / 2 }),
+        field: (e, key) => ({ x: e[5], y: e[6], width: e[3], height: e[4] })[key],
+        withField: (e, key, v) => {
+            const f = Object.assign({ x: e[5], y: e[6], width: e[3], height: e[4] }, { [key]: v });
+            return { x0: f.x - f.width / 2, y0: f.y - f.height / 2, x1: f.x + f.width / 2, y1: f.y + f.height / 2 };
+        },
+        corners: (e) => furnitureCorners([e[5], e[6], e[3], e[4], e[1], e[9], e[7]]),
+        label: (hass, e) => translate(hass, 'moebel_' + e[1]),
+        entry: (s, old, card) => {
+            const e = (old || [-1, 1, null, 0, 0, 0, 0, 0, 1, 0, 1]).slice();
+            const x = Math.round((s.x0 + s.x1) / 2), y = Math.round((s.y0 + s.y1) / 2);
+            const room = card && card._map ? card._map.roomAt({ x, y }) : null;
+            e[2] = room === null ? e[2] : room;
+            e[3] = Math.round(Math.abs(s.x1 - s.x0));
+            e[4] = Math.round(Math.abs(s.y1 - s.y0));
+            e[5] = x;
+            e[6] = y;
+            e[10] = 1;
+            return e;
+        } },
+    // Target points [x, y]: on the floor only (device.py#L6822 check_point), at most 20 (D#L6847).
+    predefined_points: { group: 'points', shape: 'point', handles: false, fields: ['x', 'y'], max: 20, maxText: 'punkteMax',
+        fit: (s) => ({ x0: Math.round(s.x0), y0: Math.round(s.y0), x1: Math.round(s.x0), y1: Math.round(s.y0) }),
+        toShape: (e) => ({ x0: e[0], y0: e[1], x1: e[0], y1: e[1] }),
+        field: (e, key) => (key === 'x' ? e[0] : e[1]),
+        withField: (e, key, v) => {
+            const x = key === 'x' ? v : e[0], y = key === 'y' ? v : e[1];
+            return { x0: x, y0: y, x1: x, y1: y };
+        },
+        check: (card, s) => (card._map && card._map.passable({ x: s.x0, y: s.y0 }) === false ? 'punktAusserhalb' : ''),
+        entry: (s) => [s.x0, s.y0] }
 };
+
+/** A piece of furniture's default box (0.8 × 0.8 m) around a robot point. */
+const centreShapeAt = (p) => ({ x0: p.x - 400, y0: p.y - 400, x1: p.x + 400, y1: p.y + 400 });
 
 /** An object tool's registry entry (EDIT_TOOLS): the same panel, map, layer and hit for every kind it edits. */
 function objectTool(tool) {
@@ -13302,6 +13439,7 @@ function objectTool(tool) {
         enter: (card, editor) => {
             editor.pick = null;
             editor.objDrag = null;
+            editor.objError = '';
             card._map.setMode('draw-rect');
         },
         onMap: (card, editor, e) => objectsOnMap(card, editor, e, tool),
@@ -13326,6 +13464,7 @@ function originsOf(editor, list) {
 
 /** One change of a draft list: fn(entries, origins) edits both; then the editor redraws. */
 function changeObjects(editor, list, fn) {
+    editor.objError = '';
     const entries = editor.edit(EDIT_KINDS[list].group)[list];
     const o = originsOf(editor, list).slice();
     fn(entries, o);
@@ -13350,17 +13489,36 @@ function objectsLock(editor, tool) {
     return key === 'kartenSperreLaeuft' ? '' : key;
 }
 
+/** Why a shape may not stand (text key of the kind's check, e.g. a point off the floor), or ''. Shown, the old value stays (R10). */
+function objectRefused(card, editor, kind, shape) {
+    const key = kind.check ? kind.check(card, shape) : '';
+    if (key) {
+        editor.objError = key;
+        editor.changed();
+    }
+    return !!key;
+}
+
 function setObject(card, editor, list, i, shape) {
     const kind = EDIT_KINDS[list];
+    const fitted = kind.fit(shape, editMin(card));
+    if (objectRefused(card, editor, kind, fitted)) return;
     changeObjects(editor, list, (entries) => {
-        entries[i] = kind.entry(kind.fit(shape, editMin(card)), entries[i]);
+        entries[i] = kind.entry(fitted, entries[i], card);
     });
 }
 
-function addObject(card, editor, list, shape) {
+/** A new object; `template` = the entry it starts from (furniture: id −1 and the chosen type). */
+function addObject(card, editor, list, shape, template = null) {
     const kind = EDIT_KINDS[list];
-    changeObjects(editor, list, (entries, o) => {
-        entries.push(kind.entry(kind.fit(shape, editMin(card)), null));
+    const fitted = kind.fit(shape, editMin(card));
+    if (kind.max && (editor.lists()[list] || []).length >= kind.max) {
+        editor.objError = kind.maxText;
+        return editor.changed();
+    }
+    if (objectRefused(card, editor, kind, fitted)) return undefined;
+    return changeObjects(editor, list, (entries, o) => {
+        entries.push(kind.entry(fitted, template, card));
         o.push(null);
         editor.pick = { list, i: entries.length - 1 };
     });
@@ -13386,6 +13544,8 @@ function restoreObject(editor, list, j) {
 function centreShape(card, list) {
     const c = card._mapCentre();
     if (!c) return null;
+    if (EDIT_KINDS[list].shape === 'point') return { x0: c.x, y0: c.y, x1: c.x, y1: c.y };
+    if (EDIT_KINDS[list].shape === 'furniture') return { x0: c.x - 400, y0: c.y - 400, x1: c.x + 400, y1: c.y + 400 };
     if (EDIT_KINDS[list].shape === 'line') {
         const d = shapeStep(card._map, 'right', 500);
         return { x0: c.x - d.x, y0: c.y - d.y, x1: c.x + d.x, y1: c.y + d.y };
@@ -13398,9 +13558,10 @@ const metres = (hass, mm) => new Intl.NumberFormat(localeOf(hass).language, { mi
 /** "No-Go-Zone 1 · 1,0 × 1,0 m" — name, number and size of an object (R16: the list is the screen reader's map). */
 function objectName(hass, list, n, entry) {
     const kind = EDIT_KINDS[list], s = kind.toShape(entry);
-    const size = kind.shape === 'line' ? translate(hass, 'kartenLaenge', { l: metres(hass, Math.hypot(s.x1 - s.x0, s.y1 - s.y0)) })
-        : translate(hass, 'kartenGroesse', { w: metres(hass, s.x1 - s.x0), h: metres(hass, s.y1 - s.y0) });
-    return { name: translate(hass, 'kartenEins_' + list) + ' ' + n, size };
+    const size = kind.shape === 'point' ? '(' + s.x0 + ', ' + s.y0 + ')'
+        : kind.shape === 'line' ? translate(hass, 'kartenLaenge', { l: metres(hass, Math.hypot(s.x1 - s.x0, s.y1 - s.y0)) })
+            : translate(hass, 'kartenGroesse', { w: metres(hass, s.x1 - s.x0), h: metres(hass, s.y1 - s.y0) });
+    return { name: (kind.label ? kind.label(hass, entry) : translate(hass, 'kartenEins_' + list)) + ' ' + n, size };
 }
 
 const objectKeyStep = (event) => (event.shiftKey ? 10 : 50);
@@ -13409,7 +13570,9 @@ const objectKeyStep = (event) => (event.shiftKey ? 10 : 50);
 function objectsPanel(card, editor, body, hass, tool) {
     const kinds = toolKinds(editor, tool);
     const lock = objectsLock(editor, tool);
+    const hooks = OBJECT_HOOKS[tool] || {};
     if (lock) body.appendChild(noteLine(translate(hass, lock), 'locked'));
+    if (editor.objError) body.appendChild(noteLine(translate(hass, editor.objError), 'error'));
     if (!kinds.includes(editor.addKinds[tool])) editor.addKinds[tool] = kinds[0];
     const add = document.createElement('div');
     add.className = 'edit-row';
@@ -13428,21 +13591,24 @@ function objectsPanel(card, editor, body, hass, tool) {
         });
         add.appendChild(formField('edit-kind', translate(hass, 'kartenArt'), select, '').wrap);
     }
+    if (hooks.addRow) hooks.addRow(card, editor, add, hass, lock);
+    const addKind = EDIT_KINDS[editor.addKinds[tool]];
+    const full = !!addKind.max && (editor.lists()[editor.addKinds[tool]] || []).length >= addKind.max;
     const label = translate(hass, 'kartenHinzufuegen', { art: translate(hass, 'kartenEins_' + editor.addKinds[tool]) });
-    const plus = BuschUI.action({ label, text: label, icon: 'mdi:plus-box-outline', variant: 'secondary', disabled: !!lock || !card._mapCentre(), onClick: () => {
+    const plus = BuschUI.action({ label, text: label, icon: 'mdi:plus-box-outline', variant: 'secondary', disabled: !!lock || full || !card._mapCentre(), onClick: () => {
         const shape = centreShape(card, editor.addKinds[tool]);
-        if (shape) addObject(card, editor, editor.addKinds[tool], shape);
+        if (shape) addObject(card, editor, editor.addKinds[tool], shape, hooks.template ? hooks.template(card, editor) : null);
     } });
     plus.setAttribute('data-action', 'edit-add');
     add.appendChild(plus);
     body.appendChild(add);
+    if (full) body.appendChild(noteLine(translate(hass, addKind.maxText), 'locked'));
     body.appendChild(noteLine(translate(hass, 'kartenObjHinweis_' + tool)));
     for (const list of kinds) body.appendChild(objectList(card, editor, hass, list, lock));
     const pick = editor.pick;
     const entry = pick && (editor.lists()[pick.list] || [])[pick.i];
     if (entry && kinds.includes(pick.list)) objectForm(card, editor, body, hass, tool, pick, entry, lock);
-    const hooks = OBJECT_HOOKS[tool];
-    if (hooks && hooks.panel) hooks.panel(card, editor, body, hass, lock);
+    if (hooks.panel) hooks.panel(card, editor, body, hass, lock);
 }
 
 /** The objects of one kind: a button per object (state as text, R17), removed ones with "Zurückholen". */
@@ -13522,32 +13688,36 @@ function objectForm(card, editor, body, hass, tool, pick, entry, lock) {
     form.appendChild(noteLine(translate(hass, 'kartenObjBearbeiten', { name })));
     const fields = document.createElement('div');
     fields.className = 'edit-coords';
-    for (const key of ['x0', 'y0', 'x1', 'y1']) {
+    // Rectangles and lines edit their corners/ends; points and furniture their own fields (kind.fields).
+    const value = (key) => (kind.field ? kind.field(entry, key) : shape[key]);
+    const shapeWith = (key, v) => (kind.withField ? kind.withField(entry, key, v) : Object.assign({}, shape, { [key]: v }));
+    for (const key of kind.fields || ['x0', 'y0', 'x1', 'y1']) {
         const input = document.createElement('input');
         input.setAttribute('type', 'number');
         input.setAttribute('inputmode', 'numeric');
         input.setAttribute('step', '50');
-        input.value = String(shape[key]);
+        input.value = String(value(key));
         if (lock) input.disabled = true;
         const field = formField('edit-' + key, translate(hass, 'feld_edit_' + kind.shape + '_' + key), input, '');
         input.addEventListener('change', () => {
-            const value = Number(input.value);
-            if (input.value === '' || !Number.isFinite(value)) return rerender(card); // keeps the old value (R10)
-            return setObject(card, editor, pick.list, pick.i, Object.assign({}, shape, { [key]: value }));
+            const v = Number(input.value);
+            if (input.value === '' || !Number.isFinite(v)) return rerender(card); // keeps the old value (R10)
+            return setObject(card, editor, pick.list, pick.i, shapeWith(key, v));
         });
         input.addEventListener('keydown', (event) => {
             const sign = { ArrowUp: 1, ArrowDown: -1 }[event.key];
             if (!sign || lock) return;
             event.preventDefault();
-            setObject(card, editor, pick.list, pick.i, Object.assign({}, shape, { [key]: shape[key] + sign * objectKeyStep(event) }));
+            setObject(card, editor, pick.list, pick.i, shapeWith(key, value(key) + sign * objectKeyStep(event)));
         });
         fields.appendChild(field.wrap);
     }
     form.appendChild(fields);
-    form.appendChild(noteLine(translate(hass, 'kartenMindest', { mm: editMin(card) })));
+    if (kind.shape !== 'point') form.appendChild(noteLine(translate(hass, 'kartenMindest', { mm: editMin(card) })));
     form.appendChild(noteLine(translate(hass, 'kartenObjTasten')));
     const hooks = OBJECT_HOOKS[tool];
     if (hooks && hooks.form) hooks.form(card, editor, form, hass, pick, entry, lock);
+    if (editor.objError) form.appendChild(noteLine(translate(hass, editor.objError), 'error'));
     const actions = document.createElement('div');
     actions.className = 'actions';
     const remove = BuschUI.action({ label: translate(hass, 'entfernen') + ': ' + name, text: translate(hass, 'entfernen'), icon: 'mdi:delete-outline', variant: 'secondary',
@@ -13570,7 +13740,7 @@ function objectsHit(card, editor, p, tool) {
     const dist = (q) => (q && c ? Math.hypot(q.x - c.x, q.y - c.y) : Infinity);
     const pick = editor.pick;
     const chosen = pick && (lists[pick.list] || [])[pick.i];
-    if (chosen && c) {
+    if (chosen && c && EDIT_KINDS[pick.list].handles !== false) {
         const kind = EDIT_KINDS[pick.list], s = kind.toShape(chosen);
         const points = kind.shape === 'line' ? [[s.x0, s.y0], [s.x1, s.y1]] : [[s.x0, s.y0], [s.x1, s.y0], [s.x1, s.y1], [s.x0, s.y1]];
         const centre = dist(clientOf(m, { x: (s.x0 + s.x1) / 2, y: (s.y0 + s.y1) / 2 }));
@@ -13581,7 +13751,11 @@ function objectsHit(card, editor, p, tool) {
         const kind = EDIT_KINDS[list], entries = lists[list] || [];
         for (let i = entries.length - 1; i >= 0; i--) {
             const s = kind.toShape(entries[i]);
-            if (kind.shape === 'line') {
+            if (kind.shape === 'point') {
+                if (dist(clientOf(m, { x: s.x0, y: s.y0 })) <= HANDLE_PX) return { list, i };
+            } else if (kind.shape === 'furniture') {
+                if (insidePolygon(p, kind.corners(entries[i]))) return { list, i };
+            } else if (kind.shape === 'line') {
                 const a = clientOf(m, { x: s.x0, y: s.y0 }), b = clientOf(m, { x: s.x1, y: s.y1 });
                 if (a && b && c && segmentDistance(c, a, b) <= HANDLE_PX) return { list, i };
             } else if (p.x >= Math.min(s.x0, s.x1) && p.x <= Math.max(s.x0, s.x1) && p.y >= Math.min(s.y0, s.y1) && p.y <= Math.max(s.y0, s.y1)) return { list, i };
@@ -13597,6 +13771,7 @@ function objectsOnMap(card, editor, e, tool) {
     if (e.type === 'map-tap' && d.robot) {
         const hooks = OBJECT_HOOKS[tool];
         const hit = objectsHit(card, editor, d.robot, tool) || (hooks && hooks.hitMore ? hooks.hitMore(card, editor, d.robot) : null);
+        if (!hit && hooks && hooks.tapEmpty) return hooks.tapEmpty(card, editor, d);
         editor.pick = hit ? { list: hit.list, i: hit.i } : null;
         return editor.changed();
     }
@@ -13607,7 +13782,14 @@ function objectsOnMap(card, editor, e, tool) {
             const shape = EDIT_KINDS[hit.list].toShape(editor.lists()[hit.list][hit.i]);
             editor.pick = { list: hit.list, i: hit.i };
             editor.objDrag = { kind: hit.part || 'move', j: hit.j, origin: shape, start: d.start, list: hit.list, i: hit.i, shape };
-        } else editor.objDrag = { kind: 'draw', start: d.start, list: editor.addKinds[tool] || toolKinds(editor, tool)[0], i: null, shape: { x0: d.start.x, y0: d.start.y, x1: d.start.x, y1: d.start.y } };
+        } else {
+            const list = editor.addKinds[tool] || toolKinds(editor, tool)[0];
+            const at = { x0: d.start.x, y0: d.start.y, x1: d.start.x, y1: d.start.y };
+            // A point or a piece of furniture follows the finger; rectangles and lines are drawn from the start.
+            const follow = ['point', 'furniture'].includes(EDIT_KINDS[list].shape);
+            const shape = EDIT_KINDS[list].shape === 'furniture' ? centreShapeAt(d.start) : at;
+            editor.objDrag = { kind: follow ? 'move' : 'draw', origin: shape, start: d.start, list, i: null, shape };
+        }
         return undefined;
     }
     const g = editor.objDrag;
@@ -13619,7 +13801,8 @@ function objectsOnMap(card, editor, e, tool) {
     if (d.robot) g.shape = shapeDrag(g, d.robot);
     if (d.phase === 'end') {
         editor.objDrag = null;
-        return g.i === null ? addObject(card, editor, g.list, g.shape) : setObject(card, editor, g.list, g.i, g.shape);
+        const hooks = OBJECT_HOOKS[tool];
+        return g.i === null ? addObject(card, editor, g.list, g.shape, hooks && hooks.template ? hooks.template(card, editor) : null) : setObject(card, editor, g.list, g.i, g.shape);
     }
     card._map.refresh('editor'); // R20: only the own layer while dragging
     return undefined;
@@ -13628,8 +13811,21 @@ function objectsOnMap(card, editor, e, tool) {
 /** The tool's objects on the layer editor: state as pattern (data-state, R17), removed ones faint, handles of the chosen one. */
 function objectsDraw(card, editor, group, ctx, tool) {
     const g = editor.objDrag, pick = editor.pick;
-    const node = (list, shape, attrs) => {
+    const node = (list, shape, attrs, entry, n) => {
         const kind = EDIT_KINDS[list];
+        if (kind.shape === 'point') {
+            delete attrs.round;
+            if (!ctx.toImage({ x: shape.x0, y: shape.y0 })) return null;
+            const mark = group.appendChild(screenMark(ctx, { x: shape.x0, y: shape.y0 }, attrs));
+            mark.appendChild(ctx.svgNode('circle', { r: 9 }));
+            mark.appendChild(ctx.svgNode('text', { 'text-anchor': 'middle', y: 4, 'font-size': 11 })).textContent = String(n);
+            return mark;
+        }
+        if (kind.shape === 'furniture') {
+            delete attrs.round;
+            const corners = entry ? kind.corners(kind.entry(shape, entry)) : areaCorners(shape);
+            return group.appendChild(ctx.svgNode('polygon', Object.assign({ points: toPoints({ toImage: ctx.toImage }, corners) }, attrs)));
+        }
         if (kind.shape === 'line') {
             const a = ctx.toImage({ x: shape.x0, y: shape.y0 }), b = ctx.toImage({ x: shape.x1, y: shape.y1 });
             return a && b ? group.appendChild(ctx.svgNode('line', Object.assign({ x1: a.x, y1: a.y, x2: b.x, y2: b.y }, attrs))) : null;
@@ -13650,12 +13846,12 @@ function objectsDraw(card, editor, group, ctx, tool) {
             const shape = dragged ? g.shape : EDIT_KINDS[list].toShape(row.entry);
             const chosen = !!pick && pick.list === list && pick.i === row.i;
             node(list, shape, { 'data-edit': list, 'data-item': row.i === null ? 'removed:' + row.origin : row.i, 'data-state': row.state || 'same', 'data-chosen': String(chosen),
-                round: !!EDIT_KINDS[list].round && EDIT_KINDS[list].round(row.entry) });
+                round: !!EDIT_KINDS[list].round && EDIT_KINDS[list].round(row.entry) }, row.entry, (row.i === null ? row.origin : row.i) + 1);
         }
-        if (g && g.i === null && g.list === list) node(list, g.shape, { 'data-edit': list, 'data-state': 'new', 'data-chosen': 'true' });
+        if (g && g.i === null && g.list === list) node(list, g.shape, { 'data-edit': list, 'data-state': 'new', 'data-chosen': 'true' }, null, '+');
     }
     const chosen = pick && (editor.lists()[pick.list] || [])[pick.i];
-    if (!chosen) return;
+    if (!chosen || EDIT_KINDS[pick.list].handles === false) return;
     const kind = EDIT_KINDS[pick.list];
     const s = g && g.list === pick.list && g.i === pick.i ? g.shape : kind.toShape(chosen);
     const points = kind.shape === 'line' ? [[s.x0, s.y0], [s.x1, s.y1]] : [[s.x0, s.y0], [s.x1, s.y0], [s.x1, s.y1], [s.x0, s.y1]];
@@ -13890,6 +14086,71 @@ Object.assign(EDIT_LINES, {
         if (others) lines.push(translate(hass, others === 1 ? 'teppichZeileWiederEins' : 'teppichZeileWieder', { n: others }));
         return lines;
     }
+});
+
+// ── Furniture and target points (map-editor Task 9: EDI-05) ─────────────────
+
+/** FurnitureType values (types.py:2841; 27/28 unknown). */
+const FURNITURE_TYPES = Array.from({ length: 26 }, (_, i) => i + 1).concat([29, 30, 31]);
+
+/**
+ * The types the device keeps (map.py set_furnitures drops the others — and
+ * with them the object): v2 without extended_furnitures no >13 except 25 and
+ * no 8, v1 nothing ≥ 10, pet furniture 10–13 only with pet_furniture.
+ */
+function furnitureTypes(model) {
+    const v2 = ['furnitures_v2', 'furnitures_v3'].some((c) => model.can(c));
+    return FURNITURE_TYPES.filter((t) => !(v2 && !model.can('extended_furnitures') && ((t > 13 && t !== 25) || t === 8))
+        && !(!v2 && t >= 10) && !(!model.can('pet_furniture') && t >= 10 && t <= 13));
+}
+
+const furnitureTypeOptions = (hass, types) => types.map((t) => [t, translate(hass, 'moebel_' + t)]);
+
+/** Furniture form: type (allowed ones), turn in 15° steps, size ±10 % around the centre, the room by roomAt. */
+function furnitureForm(card, editor, form, hass, pick, entry, lock) {
+    const types = furnitureTypes(card._model());
+    const change = (fn) => changeObjects(editor, 'furnitures', (entries) => {
+        const e = entries[pick.i].slice();
+        fn(e);
+        e[10] = 1;
+        entries[pick.i] = e;
+    });
+    form.appendChild(editSelect('furniture-type', translate(hass, 'moebelTyp'), entry[1], furnitureTypeOptions(hass, types.includes(entry[1]) ? types : types.concat([entry[1]])), !!lock,
+        (v) => change((e) => { e[1] = Number(v); })));
+    const room = entry[2] === null || entry[2] === undefined ? null : entry[2];
+    form.appendChild(noteLine(room === null ? translate(hass, 'moebelOhneRaum') : translate(hass, 'moebelRaum', { raum: roomLabel(editor, room) })));
+    form.appendChild(noteLine(translate(hass, 'moebelWinkel', { grad: entry[7] || 0 })));
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const button = (key, name, icon, onClick) => {
+        const label = translate(hass, key);
+        const b = BuschUI.action({ label, text: label, icon, variant: 'secondary', disabled: !!lock, onClick });
+        b.setAttribute('data-action', name);
+        actions.appendChild(b);
+    };
+    const turn = (deg) => change((e) => { e[7] = (((Number(e[7]) || 0) + deg) % 360 + 360) % 360; });
+    const scale = (f) => setObject(card, editor, 'furnitures', pick.i, EDIT_KINDS.furnitures.withField(Object.assign(entry.slice(), { 3: Math.round(entry[3] * f) }), 'height', Math.round(entry[4] * f)));
+    button('moebelLinks', 'furniture-rotate-left', 'mdi:rotate-left', () => turn(-15));
+    button('moebelRechts', 'furniture-rotate-right', 'mdi:rotate-right', () => turn(15));
+    button('moebelKleiner', 'furniture-smaller', 'mdi:arrow-collapse-all', () => scale(1 / 1.1));
+    button('moebelGroesser', 'furniture-larger', 'mdi:arrow-expand-all', () => scale(1.1));
+    form.appendChild(actions);
+}
+
+/** Before "Hinzufügen": the type of the next piece of furniture (only allowed types). */
+function furnitureAddRow(card, editor, row, hass, lock) {
+    const types = furnitureTypes(card._model());
+    if (!types.includes(editor.furnitureType)) editor.furnitureType = types[0];
+    row.appendChild(editSelect('furniture-new-type', translate(hass, 'moebelNeuTyp'), editor.furnitureType, furnitureTypeOptions(hass, types), !!lock, (v) => {
+        editor.furnitureType = Number(v);
+        rerender(card);
+    }));
+}
+
+Object.assign(OBJECT_HOOKS, {
+    furniture: { form: furnitureForm, addRow: furnitureAddRow, template: (card, editor) => [-1, editor.furnitureType || furnitureTypes(card._model())[0], null, 0, 0, 0, 0, 0, 1, 0, 1] },
+    // A tap on free floor sets a point there (addObject checks floor and limit).
+    points: { tapEmpty: (card, editor, d) => addObject(card, editor, 'predefined_points', { x0: d.robot.x, y0: d.robot.y, x1: d.robot.x, y1: d.robot.y }) }
 });
 
 // ---------------------------------------------------------------------------
@@ -14503,6 +14764,7 @@ BuschVacuumCard.__internals = {
     EDIT_KINDS,
     OBJECT_HOOKS,
     carpetCleaningCodes,
+    furnitureTypes,
     lineFit,
     objectRows,
     editMin,
