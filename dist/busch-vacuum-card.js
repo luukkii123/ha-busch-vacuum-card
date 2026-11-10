@@ -744,8 +744,79 @@ class VacuumModel {
 }
 
 // ---------------------------------------------------------------------------
-// Card
+// Map data and geometry (map-view, pure functions)
 // ---------------------------------------------------------------------------
+
+/**
+ * Map data of `/api/camera_map_data_proxy/<camera>` (dreame_vacuum 2.0.3,
+ * map.py get_data) → one grid. `data` holds per pixel type flat run lengths
+ * [x, y, count, …]; `size` = [left, top, original_left, original_top, width,
+ * height, grid_size, rotation, crop, visible_crop]. Grid cell (gx, gy) covers
+ * robot x ∈ [left + gx·grid, +grid), y ∈ [top + gy·grid, +grid). Type 512 is
+ * the carpet layer on top of the room pixels. Null for an empty map or junk.
+ */
+function decodeMapData(raw) {
+    if (!raw || raw.empty_map || !Array.isArray(raw.size) || !raw.data || typeof raw.data !== 'object') return null;
+    const [left, top, , , width, height, grid, rotation] = raw.size.map(Number);
+    if (![left, top, width, height, grid].every(Number.isFinite) || width < 1 || height < 1 || grid <= 0 || width * height > 4e6) return null;
+    const cells = new Uint8Array(width * height);
+    const carpet = new Uint8Array(width * height);
+    for (const [key, runs] of Object.entries(raw.data)) {
+        const type = Number(key);
+        if (!Array.isArray(runs) || !(type > 0)) continue;
+        const target = type === 512 ? carpet : cells;
+        const value = type === 512 ? 1 : type;
+        if (value > 255) continue;
+        for (let i = 0; i + 2 < runs.length; i += 3) {
+            const x = runs[i], y = runs[i + 1], n = runs[i + 2];
+            if (y < 0 || y >= height || x < 0) continue;
+            target.fill(value, y * width + x, y * width + Math.min(width, x + n));
+        }
+    }
+    return { left, top, width, height, grid, rotation: Number(rotation) || 0, crop: raw.size[8] || [0, 0, 0, 0], cells, carpet };
+}
+
+/** Pixel type under a robot point (mm), or 0 outside the grid. */
+function cellAt(map, p) {
+    if (!map || !p) return 0;
+    const gx = Math.floor((p.x - map.left) / map.grid), gy = Math.floor((p.y - map.top) / map.grid);
+    return gx < 0 || gy < 0 || gx >= map.width || gy >= map.height ? 0 : map.cells[gy * map.width + gx];
+}
+
+/** Room of a pixel type: 1–99 the room itself, 101–199 its edge, 201–248 its border (types.py, map.py L4590). */
+function roomOfCell(value) {
+    if (value >= 1 && value < 100) return value;
+    if (value > 100 && value < 200) return value - 100;
+    if (value > 200 && value < 249) return value - 200;
+    return null;
+}
+
+/** Data mode: the exact room under a robot point. */
+function roomAtGrid(map, p) {
+    return map ? roomOfCell(cellAt(map, p)) : null;
+}
+
+/** Floor the robot can reach: rooms, floor, new segment, cleaned/dirty area (MapPixelType). */
+function passableGrid(map, p) {
+    if (!map) return null;
+    const value = cellAt(map, p);
+    return roomOfCell(value) !== null || [249, 250, 253, 254].includes(value);
+}
+
+/**
+ * Image mode fallback: rooms carry only a rectangle and a centre, and the
+ * rectangles overlap. Among the rectangles holding the point, the nearest centre.
+ */
+function roomAtRects(rooms, p) {
+    let best = null;
+    let distance = Infinity;
+    for (const room of Object.values(rooms || {})) {
+        if (!room || !(p.x >= room.x0 && p.x <= room.x1 && p.y >= room.y0 && p.y <= room.y1)) continue;
+        const d = (p.x - room.x) ** 2 + (p.y - room.y) ** 2;
+        if (d < distance) { distance = d; best = Number(room.room_id); }
+    }
+    return best;
+}
 
 // ---------------------------------------------------------------------------
 // Status and control (CORE-03/04/07/11)
@@ -2187,6 +2258,10 @@ BuschVacuumCard.__internals = {
     CARD_STYLES,
     clockText,
     firstWeekday,
+    decodeMapData,
+    roomAtGrid,
+    roomAtRects,
+    passableGrid,
     version: CARD_VERSION
 };
 

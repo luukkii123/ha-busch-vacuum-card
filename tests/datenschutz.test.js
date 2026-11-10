@@ -101,3 +101,76 @@ test('Gegenprobe: die Prüfung schlägt an', () => {
   assert.equal(privateFunde('Raum Probewort', probe).length, 1, 'Name per Hash erkannt, auch großgeschrieben');
   assert.deepEqual(privateFunde('Version 2.0.3, Raum Atelier'), [], 'Versionsnummer ist keine IP');
 });
+
+// Kartendaten (map-view): Größe, Segment-Mittelpunkte und Lauflängen je Ebene
+// der echten Karte stehen nur privat; hier ihre scrypt-Werte. Geprüft werden
+// alle JSON-Dateien des Repos und die synthetischen Kartendaten der Tests.
+const ECHTE_KARTENDATEN = new Set([
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+  'ENTFERNT-M7',
+]);
+const kartenWert = (s) => crypto.scryptSync(s, 'busch-vacuum-kartendaten', 32).toString('hex');
+
+/** Fundstellen echter Kartendaten in einem beliebigen Objekt (rekursiv). */
+function echteKartendaten(objekt, werte = ECHTE_KARTENDATEN) {
+  const funde = [];
+  const besuche = (o, wo) => {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o.size) && o.size.length >= 7) {
+      const [l, t, , , w, h, g] = o.size;
+      if (werte.has(kartenWert(`size:${l},${t},${w},${h},${g}`))) funde.push(wo + ': Kartengröße');
+    }
+    if (Array.isArray(o.segments)) for (const s of o.segments) if (Array.isArray(s) && werte.has(kartenWert(`seg:${s[0]},${s[1]},${s[2]}`))) funde.push(wo + ': Segment ' + s[0]);
+    if (o.data && typeof o.data === 'object' && !Array.isArray(o.data)) {
+      for (const [k, v] of Object.entries(o.data)) {
+        if (Array.isArray(v) && werte.has(kartenWert(`lauf:${k}:${crypto.createHash('sha256').update(JSON.stringify(v)).digest('hex')}`))) funde.push(wo + ': Pixel ' + k);
+      }
+    }
+    for (const [k, v] of Object.entries(o)) if (v && typeof v === 'object' && k !== 'data') besuche(v, wo + '.' + k);
+  };
+  besuche(objekt, '');
+  return funde;
+}
+
+function jsonDateien(ordner) {
+  return fs.readdirSync(ordner, { withFileTypes: true }).flatMap((e) => {
+    const p = path.join(ordner, e.name);
+    if (e.isDirectory()) return ['.git', 'node_modules', 'graphify-out'].includes(e.name) ? [] : jsonDateien(p);
+    return e.name.endsWith('.json') ? [p] : [];
+  });
+}
+
+test('keine echten Kartendaten in JSON-Dateien des Repos', () => {
+  const dateien = jsonDateien(path.join(__dirname, '..'));
+  assert.ok(dateien.length >= 4);
+  for (const datei of dateien) assert.deepEqual(echteKartendaten(JSON.parse(fs.readFileSync(datei, 'utf8'))), [], datei);
+});
+
+test('synthetische Kartendaten der Tests sind keine echten', () => {
+  const { ausFixture } = require('./kartendaten.js');
+  const { _zellen, ...daten } = ausFixture();
+  assert.deepEqual(echteKartendaten(daten), []);
+});
+
+test('Gegenprobe: die Kartendaten-Prüfung schlägt an', () => {
+  const probe = { size: [-100, -200, 0, 0, 30, 40, 50, 0], segments: [[3, 10, 20]], data: { 3: [0, 0, 5] } };
+  const werte = new Set([kartenWert('size:-100,-200,30,40,50'), kartenWert('seg:3,10,20'),
+    kartenWert('lauf:3:' + crypto.createHash('sha256').update(JSON.stringify([0, 0, 5])).digest('hex'))]);
+  assert.deepEqual(echteKartendaten({ antwort: probe }, werte), ['.antwort: Kartengröße', '.antwort: Segment 3', '.antwort: Pixel 3']);
+  assert.deepEqual(echteKartendaten({ ...probe, size: [-101, -200, 0, 0, 30, 40, 50, 0], segments: [], data: {} }, werte), []);
+});

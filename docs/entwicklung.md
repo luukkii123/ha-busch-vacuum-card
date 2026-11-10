@@ -37,6 +37,17 @@
   anonymisiert (Namen, Seriennummer, Netzwerk, Grundriss ersetzt);
   `tests/datenschutz.test.js` prüft das bei jedem Lauf.
 
+## Karte (Modul map-view)
+
+- **Datenmodus ist Standard** (Spike 10.11.2026, Spec map-view „Entscheidung
+  Spike“): `/api/camera_map_data_proxy/<camera.*_map>?token=…&v=<frame_id>`,
+  nur bei neuem `frame_id`; exakter Raum-Treffertest über das Gitter
+  (`decodeMapData`, `roomAtGrid`, `passableGrid`). Rückfall Bildmodus
+  (`entity_picture`, `roomAtRects`: Rechteck + nächster Mittelpunkt).
+  Raum-Chips sind in beiden Modi die Grundlösung.
+- Testdaten nur synthetisch (`tests/kartendaten.js` aus den verfremdeten
+  Raumrechtecken); echte Kartendaten schließt `tests/datenschutz.test.js` aus.
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):
