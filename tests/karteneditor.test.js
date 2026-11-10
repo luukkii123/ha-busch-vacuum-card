@@ -533,7 +533,7 @@ test('ALL-13 Temporäre Karte: speichern/verwerfen/ersetzen nur bei has_temporar
   assert.equal($d(v.u, '[data-action="confirm"]').getAttribute('data-variant'), 'destructive');
   $d(v.u, '[data-action="confirm"]').click();
   await mikro(); await mikro();
-  assert.deepEqual(dienste(v.haus), ['vacuum_discard_temporary_map']);
+  assert.deepEqual(roh(v.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_discard_temporary_map', data: { entity_id: 'vacuum.robo' } }]);
   const r = aufbau({ vac: { has_temporary_map: true, maps: ZWEI_KARTEN, map_count: 2 } });
   verwaltung(r);
   $d(r.u, '[data-action="replace_temporary"]').click();
@@ -1906,4 +1906,70 @@ test('EDI-07 Legende aus wifi_map_data (Anteile je Stufe); gesperrt während ein
   stift(k4).click();
   assert.equal(werkzeug(k4, 'wifi'), null);
   assert.deepEqual([k, k2, k3].flatMap((x) => x.haus.rufe), []);
+});
+
+// ── Checkpoint C (nach Task 7–12): jede Zeile der Schreibweg-Tabellen mit Test ──
+
+test('ALL-13 Karte anlegen (Kartierungsfahrt): nach Bestätigung erst Sicherung der aktiven Karte, dann vacuum_call_action { key: start_mapping }', async () => {
+  const k = aufbau({ vac: { mapping_available: true } });
+  verwaltung(k);
+  $d(k.u, '[data-action="start_mapping"]').click();
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Roboter fährt/);
+  assert.deepEqual(k.haus.rufe, []);
+  $d(k.u, '[data-action="confirm"]').click();
+  await mikro();
+  assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_backup_map', data: { entity_id: 'vacuum.robo', map_id: 3 } }]);
+  await k.sicherungFertig();
+  assert.deepEqual(roh(k.haus.rufe.at(-1)), { domain: 'dreame_vacuum', service: 'vacuum_call_action', data: { entity_id: 'vacuum.robo', key: 'start_mapping' } });
+});
+
+/** Spec „Schreibwege“: Tabellenzeile → Dienst (bzw. Schlüssel) → Test, der Dienst und Datenform prüft. */
+const SCHREIBWEGE = [
+  ['Multi-Floor an/aus', "key: 'multi_floor_map'", 'ALL-10 Multi-Floor-Zeile'],
+  ['Karte anlegen', "key: 'start_mapping'", 'ALL-13 Karte anlegen (Kartierungsfahrt)'],
+  ['Schnellkartierung', "key: 'start_fast_mapping'", 'ALL-13 Neue Karte: start_mapping'],
+  ['Umbenennen', 'vacuum_rename_map', 'EDI-01 Umbenennen'],
+  ['Wählen', 'vacuum_select_map', 'EDI-01 Wählen nur über MapView.selectMap'],
+  ['Löschen', 'vacuum_delete_map', 'EDI-01 Löschen'],
+  ['Temporäre Karte speichern', 'vacuum_save_temporary_map', 'ALL-13 Temporäre Karte'],
+  ['Temporäre Karte verwerfen', 'vacuum_discard_temporary_map', 'ALL-13 Temporäre Karte'],
+  ['Durch temporäre ersetzen', 'vacuum_replace_temporary_map', 'ALL-13 Temporäre Karte'],
+  ['Karte neu anfordern', 'vacuum_request_map', 'ALL-13 Temporäre Karte'],
+  ['Eigener Name', 'vacuum_rename_segment', 'EDI-03 Raumlisten und Dienstformen'],
+  ['Typ', 'vacuum_set_segment_type', 'EDI-03 Raumlisten und Dienstformen'],
+  ['Sichtbarkeit', 'vacuum_set_hidden_segments', 'EDI-03 Raumlisten und Dienstformen'],
+  ['Bodenmaterial, Holzrichtung', 'vacuum_set_floor_material', 'EDI-03 Raumlisten und Dienstformen'],
+  ['Teilen', 'vacuum_split_segments', 'EDI-03 Teilen: Linie per zwei Kartenpunkten'],
+  ['Zusammenführen', 'vacuum_merge_segments', 'EDI-03 Zusammenführen'],
+  ['Virtuelle Wände, No-Go, Wischverbot', 'vacuum_set_restricted_zone', 'EDI-05 Zonen: + legt ein Rechteck'],
+  ['Schwellen, Rampen', 'vacuum_set_threshold', 'EDI-05 Schwellen und Rampen'],
+  ['Virtuelle Schwellen', 'vacuum_set_virtual_threshold', 'EDI-05 Geräte nur mit virtual_thresholds'],
+  ['Vorhänge', 'vacuum_set_curtain', 'EDI-02 Werkzeugleiste je editCaps'],
+  ['Teppiche (Fläche, rund, gelöscht)', 'vacuum_set_carpet_area', 'EDI-05 Teppiche: bestehende IDs bleiben'],
+  ['Teppichart', 'vacuum_set_carpet_type', 'EDI-05 Erkannte Teppiche'],
+  ['Teppich-Reinigung', 'vacuum_set_custom_carpet_cleaning', 'EDI-05 Erkannte Teppiche'],
+  ['Möbel', 'vacuum_set_furniture', 'EDI-05 Möbel: vollständige Liste'],
+  ['Zielpunkte', 'vacuum_set_predefined_points', 'EDI-05 Zielpunkte'],
+  ['Wände und Türen', 'vacuum_set_walls', 'EDI-04 Wände: nur mit walls'],
+  ['WLAN-Karte Router', 'vacuum_set_router_position', 'EDI-07 WLAN-Karte'],
+  ['Sicherung (Sicherheitsrahmen 2)', 'vacuum_backup_map', 'EDI-02 erste Speicherung'],
+];
+
+test('EDI-02 Checkpoint C: jede Zeile der Schreibweg-Tabellen hat einen Test mit Dienstname und Datenform; jeder Kartendienst steht in der Tabelle', () => {
+  const quelle = require('node:fs').readFileSync(__filename, 'utf8');
+  const tests = Array.from(quelle.matchAll(/^test\('([^']*)'/gm), (m) => ({ i: m.index, name: m[1] }));
+  const rumpf = (name) => {
+    const n = tests.findIndex((t) => t.name.startsWith(name));
+    assert.ok(n >= 0, 'Test fehlt: ' + name);
+    return quelle.slice(tests[n].i, n + 1 < tests.length ? tests[n + 1].i : quelle.length);
+  };
+  for (const [zeile, dienst, name] of SCHREIBWEGE) {
+    const b = rumpf(name);
+    const wort = dienst.startsWith('key:') ? dienst : "'" + dienst + "'";
+    // Dienst und seine Daten in derselben Prüfung: { service: '<dienst>', data: {…} } bzw. ein Datenvergleich im selben Test.
+    assert.ok(b.includes(wort) || (dienst.startsWith('vacuum_') && b.includes(dienst)), zeile + ': ' + dienst + ' nicht in „' + name + '“');
+    assert.match(b, /data(: \{|\))|\.data\b|data: \{/, zeile + ': keine Datenform in „' + name + '“');
+  }
+  const gedeckt = new Set(SCHREIBWEGE.map(([, d]) => (d.startsWith('key:') ? (d.includes('multi_floor') ? 'vacuum_set_property' : 'vacuum_call_action') : d)));
+  for (const d of KARTENDIENSTE) assert.ok(gedeckt.has(d), 'Kartendienst ohne Tabellenzeile: ' + d);
 });
