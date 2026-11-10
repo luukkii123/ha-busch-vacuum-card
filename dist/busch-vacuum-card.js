@@ -2030,6 +2030,8 @@ const SETTING_EXTRA = {
     auto_empty_area: { min: 5, max: 15 },
     // Rotates the robot's stored map (set_map_rotation, device.py#L6569): only after asking (R13).
     map_rotation: { options: ['0', '90', '180', '270'], confirm: true, wire: (value) => ({ key: 'map_rotation', value: Number(value) }) },
+    // Changes how the robot stores its maps (map-editor ALL-10): only after asking (R13).
+    multi_floor_map: { confirm: true },
     // The floor changes through map-view's contract, with core's confirmation (CORE-20).
     selected_map: { pick: (card, model, name) => pickMap(card, model, name) },
     // With `dnd_task` the periods replace the single window (attribute `dnd` is then a list).
@@ -2075,7 +2077,9 @@ SETTING_NEEDS.cleanGenius.push('customized_cleaning', 'cleaning_mode', 'suction_
 Object.assign(SETTING_NEEDS, {
     customized: ['suction_level', 'water_volume', 'mop_pad_humidity', 'wetness_level'],
     customizedMode: ['cleaning_mode', 'cleaning_route'],
-    savedMap: ['customized_cleaning', 'cleaning_route']
+    savedMap: ['customized_cleaning', 'cleaning_route'],
+    // Not with a temporary map (types.py:2028).
+    noTemporary: ['multi_floor_map']
 });
 
 /** Dock's tabs (DOCK-02…04), in order; a station key not named in STATION_TAB_OF washes. */
@@ -2153,7 +2157,8 @@ const SETTING_LOCKS = {
     autoEmpty: (model) => settingValue(model, 'auto_dust_collecting').value !== false,
     customized: (model) => model.attr('customized_cleaning') !== true,
     customizedMode: (model) => !(model.attr('customized_cleaning') === true && model.can('custom_cleaning_mode')),
-    savedMap: (model) => model.attr('has_saved_map') !== false && model.attr('has_temporary_map') !== true
+    savedMap: (model) => model.attr('has_saved_map') !== false && model.attr('has_temporary_map') !== true,
+    noTemporary: (model) => model.attr('has_temporary_map') !== true
 };
 
 /**
@@ -2217,6 +2222,7 @@ function entityLabel(hass, platform, key) {
 
 function optionLabel(hass, key, option) {
     if (key === 'map_rotation') return option + '°';
+    if (typeof option === 'boolean') return translate(hass, option ? 'an' : 'aus');
     const id = 'component.dreame_vacuum.entity.select.' + key + '.state.' + enumName(option);
     const fromHa = hass && typeof hass.localize === 'function' ? hass.localize(id) : '';
     return fromHa && fromHa !== id ? fromHa : String(option);
@@ -3753,6 +3759,7 @@ class MapView {
             if (busy) this._floorButton.setAttribute('aria-describedby', 'map-floor-reason');
             else this._floorButton.removeAttribute('aria-describedby');
         }
+        this._renderEditTools();
         const locked = this._locked();
         this.lockReason.textContent = translate(this.hass, 'zoomGesperrt');
         for (const [name, tool] of Object.entries(this._tool)) {
@@ -3766,6 +3773,26 @@ class MapView {
             else tool.button.removeAttribute('aria-describedby');
         }
         this.tools.hidden = !this._view;
+    }
+
+    /**
+     * map-editor's map tools: "Karten verwalten" (the menu's maps view, R08).
+     * They open dialogs, so the lock (a gesture lock) leaves them usable.
+     */
+    _renderEditTools() {
+        const card = this.card;
+        const manage = !!(this.model && card._opts && this.model.can('multi_floor_map'));
+        if (manage && !this._mapsButton) {
+            this._mapsButton = BuschUI.action({ label: translate(this.hass, 'kartenVerwalten'), icon: 'mdi:layers-edit', variant: 'secondary', onClick: () => card._openDialog(mapsView(card)) });
+            this._mapsButton.setAttribute('data-action', 'map-maps');
+            this._mapsButton.setAttribute('aria-haspopup', 'dialog');
+            this._mapsButton.classList.add('map-tool');
+            this.tools.insertBefore(this._mapsButton, this._tool.info.button);
+        } else if (!manage && this._mapsButton) {
+            this._mapsButton.remove();
+            this._mapsButton = null;
+        }
+        if (this._mapsButton) BuschUI.action({ node: this._mapsButton, label: translate(this.hass, 'kartenVerwalten'), icon: 'mdi:layers-edit', variant: 'secondary', onClick: () => card._openDialog(mapsView(card)) });
     }
 
     toScreen(p) {
@@ -4587,7 +4614,8 @@ const MODULE_VIEWS = {
     cleaning_sequence: (card) => sequenceView(card),
     history: (card) => historyView(card, 'history'),
     cruising_history: (card) => historyView(card, 'cruising_history'),
-    remote: (card) => remoteView(card)
+    remote: (card) => remoteView(card),
+    maps: (card) => mapsView(card)
 };
 
 /** Rows of device-settings (not dock's or clean-settings'), for the search (R14). */
@@ -9483,6 +9511,7 @@ class BuschVacuumCard extends HTMLElement {
         this._settingDone = new Map(); // action → what it achieved, shown once in its group (R11)
         this._drafts = new Map(); // form → unsaved input, kept when the form is left (R10)
         this._settingTexts = null;
+        this._mapSessions = new Set(); // map-editor: sessions of the maps view, fed like _editSession
     }
 
     /** Set by Home Assistant in a panel view. */
@@ -9718,6 +9747,7 @@ class BuschVacuumCard extends HTMLElement {
             this._map.update(hass, model);
         }
         if (this._editSession) this._editSession.onHass(model);
+        for (const session of this._mapSessions) if (session !== this._editSession) session.onHass(model);
 
         const stats = [];
         const area = statText(hass, model, 'sensor.cleaned_area', 'cleaned_area', 'm²');
@@ -11019,7 +11049,34 @@ const EDIT_TEXTS = {
         kartenWackeln: 'Ungespeicherte Änderungen',
         kartenOffenFrage: 'Es gibt {n} ungespeicherte Änderungen. Speichern, verwerfen oder weiter bearbeiten?',
         kartenWeiter: 'Weiter bearbeiten',
-        kartenOhneDaten: 'Gesperrt: Die Bearbeitungsdaten der Karte fehlen (Wände, Teppich-IDs, Möbel). Die anderen Werkzeuge gehen.'
+        kartenOhneDaten: 'Gesperrt: Die Bearbeitungsdaten der Karte fehlen (Wände, Teppich-IDs, Möbel). Die anderen Werkzeuge gehen.',
+        kartenVerwalten: 'Karten verwalten',
+        kartenWaehlen: 'Wählen',
+        kartenUmbenennenTitel: 'Karte umbenennen',
+        feld_map_name: 'Name der Karte',
+        kartenNameLeer: 'Leer lassen für den Standardnamen „{name}“.',
+        kartenUmbenanntZeile: 'Name: {alt} → {neu}',
+        kartenLoeschenTitel: 'Karte löschen',
+        kartenLoeschenZeile: 'Karte „{karte}“ wird gelöscht.',
+        kartenLoeschtAlle: 'Multi-Floor ist aus: Das Gerät löscht alle Karten, nicht nur diese.',
+        abschnitt_kartenNeu: 'Neue Karte',
+        kartierung: 'Kartierung starten',
+        kartierungSchnell: 'Schnellkartierung',
+        kartierungFaehrt: 'Roboter fährt: Er erkundet die Etage und legt eine neue Karte an.',
+        kartierungNichtFrei: 'Kartierung nur, wenn das Gerät Platz für eine neue Karte hat.',
+        karteAnfordern: 'Karte neu anfordern',
+        karteAnfordernHinweis: 'Holt die Karte neu vom Roboter und ändert nichts. Während einer Spot-Reinigung kann die Anfrage ins Leere laufen.',
+        keineKarte: 'Noch keine gespeicherte Karte.',
+        temporaerText: 'Der Roboter hat eine neue, noch nicht gespeicherte Karte (temporäre Karte).',
+        temporaerSpeichern: 'Temporäre Karte speichern',
+        temporaerSpeichernZeile: 'Die temporäre Karte wird als Karte gespeichert.',
+        temporaerVerwerfen: 'Temporäre Karte verwerfen',
+        temporaerVerwerfenZeile: 'Die temporäre Karte wird verworfen.',
+        temporaerErsetzen: 'Gespeicherte Karte ersetzen',
+        temporaerErsetzenWahl: 'Welche gespeicherte Karte soll die temporäre Karte ersetzen?',
+        temporaerErsetzenZeile: 'Karte „{karte}“ wird durch die temporäre Karte ersetzt.',
+        sperre_noTemporary: 'Gesperrt, solange eine temporäre Karte offen ist.',
+        frage_multi_floor_map: 'Multi-Floor (mehrere Karten) auf „{wert}“ stellen? Das ändert, wie der Roboter Karten speichert.'
     },
     en: {
         kartenSicherungTitel: 'Save map',
@@ -11046,7 +11103,34 @@ const EDIT_TEXTS = {
         kartenWackeln: 'Unsaved changes',
         kartenOffenFrage: 'There are {n} unsaved changes. Save, discard or keep editing?',
         kartenWeiter: 'Keep editing',
-        kartenOhneDaten: 'Locked: the map’s edit data is missing (walls, carpet ids, furniture). The other tools work.'
+        kartenOhneDaten: 'Locked: the map’s edit data is missing (walls, carpet ids, furniture). The other tools work.',
+        kartenVerwalten: 'Manage maps',
+        kartenWaehlen: 'Select',
+        kartenUmbenennenTitel: 'Rename map',
+        feld_map_name: 'Map name',
+        kartenNameLeer: 'Leave empty for the standard name “{name}”.',
+        kartenUmbenanntZeile: 'Name: {alt} → {neu}',
+        kartenLoeschenTitel: 'Delete map',
+        kartenLoeschenZeile: 'Map “{karte}” will be deleted.',
+        kartenLoeschtAlle: 'Multi-floor is off: the device deletes all maps, not only this one.',
+        abschnitt_kartenNeu: 'New map',
+        kartierung: 'Start mapping',
+        kartierungSchnell: 'Fast mapping',
+        kartierungFaehrt: 'The robot drives: it explores the floor and creates a new map.',
+        kartierungNichtFrei: 'Mapping only when the device has room for a new map.',
+        karteAnfordern: 'Request map again',
+        karteAnfordernHinweis: 'Fetches the map from the robot again and changes nothing. During a spot clean the request may get no answer.',
+        keineKarte: 'No saved map yet.',
+        temporaerText: 'The robot has a new map that is not saved yet (temporary map).',
+        temporaerSpeichern: 'Save temporary map',
+        temporaerSpeichernZeile: 'The temporary map is saved as a map.',
+        temporaerVerwerfen: 'Discard temporary map',
+        temporaerVerwerfenZeile: 'The temporary map is discarded.',
+        temporaerErsetzen: 'Replace a saved map',
+        temporaerErsetzenWahl: 'Which saved map should the temporary map replace?',
+        temporaerErsetzenZeile: 'Map “{karte}” is replaced by the temporary map.',
+        sperre_noTemporary: 'Locked while a temporary map is open.',
+        frage_multi_floor_map: 'Set multi-floor (several maps) to “{wert}”? This changes how the robot stores maps.'
     }
 };
 for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
@@ -11493,6 +11577,311 @@ function loadEditData(card) {
     entry.promise = typeof fetch !== 'function' ? Promise.resolve(settle(null))
         : Promise.resolve().then(() => fetch(m._url(url))).then((res) => (res && res.ok ? res.json() : null)).then(settle, () => settle(null));
     return entry.promise;
+}
+
+// ── Map management (map-editor Task 3: EDI-01, ALL-13, ALL-10) ──────────────
+
+/** A view's way back to an earlier view of the same dialog (a form, its choice and its confirmation at once). */
+function backTo(dialog, view) {
+    const index = dialog._views.indexOf(view);
+    if (index >= 0 && index < dialog._views.length - 1) dialog.back(dialog._views.length - 1 - index);
+}
+
+const mapEntryName = (entry) => entry.custom_name || entry.name || String(entry.id);
+
+/** The vacuum's stored maps; the active one by the map camera's index (as map-view's floors). */
+function mapEntries(model) {
+    const maps = model.attr('maps');
+    const index = cameraAttrs(model).map_index;
+    return (Array.isArray(maps) ? maps.filter((m) => m && m.id !== undefined) : []).map((m) => ({ entry: m, name: mapEntryName(m), active: index !== undefined && m.index === index }));
+}
+
+/**
+ * A session for one map of the management (Sicherheitsrahmen 1: opening a
+ * form for a map starts one): backup and "Karte: …" name that map. The card
+ * feeds it state updates while the view is open (backup status).
+ */
+function mapSessionFor(card, sessions, entry) {
+    const key = entry ? String(entry.id) : 'active';
+    if (!sessions.has(key)) {
+        const session = new MapEditSession(card);
+        if (entry) {
+            session.mapId = entry.id;
+            session.mapName = mapEntryName(entry);
+        }
+        sessions.set(key, session);
+        card._mapSessions.add(session);
+    }
+    return sessions.get(key);
+}
+
+/**
+ * vacuum_request_map {} (device.py#L6462) only asks the robot to send its map
+ * again and changes nothing on it — so it is the one map service outside
+ * mapWrite, deliberately without a grant and without confirmation (spec:
+ * Kartenverwaltung, "nicht zerstörend").
+ */
+function requestMap(card) {
+    const label = translate(card._hass, 'karteAnfordern');
+    return trackWrite(card, 'request_map', { label, call: () => card._hass.callService('dreame_vacuum', 'vacuum_request_map', { entity_id: card._opts.entity }) });
+}
+
+/** The way to the maps view shared by the menu entry and the map tool (R08). */
+function mapsView(card) {
+    loadSettingTexts(card);
+    const sessions = new Map();
+    const view = {
+        title: translate(card._hass, 'entryMaps'),
+        kind: 'editor',
+        watch: () => {
+            const model = card._model();
+            return [card._opts.entity, ...model.related.maps.map.slice(0, 1), ...model.related.maps.saved_map, ...Object.values(model.related.device)];
+        },
+        leave: () => {
+            for (const session of sessions.values()) card._mapSessions.delete(session);
+        },
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const temporary = model.attr('has_temporary_map') === true;
+            const row = settingRow(card, model, 'multi_floor_map');
+            if (row) body.appendChild(row);
+            const entries = mapEntries(model);
+            const active = entries.find((e) => e.active);
+            const undoable = Array.from(sessions.values()).find((s) => s.undo.length);
+            if (undoable) {
+                const note = noteLine(translate(hass, 'kartenGespeichert') + ' · ' + undoable.saved, 'success');
+                const undo = BuschUI.action({ label: translate(hass, 'rueckgaengig'), text: translate(hass, 'rueckgaengig'), icon: 'mdi:undo', onClick: () => dialog.show(mapUndoConfirm(card, undoable, (d) => backTo(d, view))) });
+                undo.setAttribute('data-action', 'undo');
+                note.appendChild(undo);
+                body.appendChild(note);
+            }
+            if (temporary) body.appendChild(temporaryBlock(card, model, hass, dialog, view, sessions, entries));
+            if (!entries.length || model.attr('has_saved_map') === false) body.appendChild(noteLine(translate(hass, 'keineKarte')));
+            const list = document.createElement('div');
+            list.className = 'settings-list maps-list';
+            for (const { entry, name, active: current } of entries) list.appendChild(mapRow(card, model, hass, dialog, view, sessions, entry, name, current));
+            if (entries.length) body.appendChild(list);
+            const fresh = viewSection(hass, 'kartenNeu', newMapActions(card, model, hass, dialog, view, sessions, active));
+            if (fresh) body.appendChild(fresh);
+        }
+    };
+    return view;
+}
+
+/** One stored map: preview, name, active mark (not colour alone, R17), select / rename / delete. */
+function mapRow(card, model, hass, dialog, home, sessions, entry, name, current) {
+    const row = document.createElement('div');
+    row.className = 'setting map-entry';
+    row.setAttribute('data-map', String(entry.id));
+    if (current) row.setAttribute('aria-current', 'true');
+    const cam = model.related.maps.saved_map.find((id) => hass.states[id] && hass.states[id].attributes.map_index === entry.index);
+    const picture = cam && hass.states[cam].attributes.entity_picture;
+    if (picture) {
+        const img = document.createElement('img');
+        img.className = 'floor-preview';
+        img.setAttribute('src', card._map ? card._map._url(picture) : picture);
+        img.setAttribute('alt', '');
+        img.setAttribute('loading', 'lazy');
+        row.appendChild(img);
+    }
+    const text = document.createElement('span');
+    text.className = 'setting-name';
+    text.textContent = current ? name + ' · ' + translate(hass, 'aktiveKarte') : name;
+    row.appendChild(text);
+    const session = sessions.get(String(entry.id));
+    const temporary = model.attr('has_temporary_map') === true;
+    const busy = taskActive(model, model.state ? model.state.state : 'unavailable');
+    if (!current) {
+        const select = BuschUI.action({ label: translate(hass, 'kartenWaehlen') + ': ' + name, text: translate(hass, 'kartenWaehlen'), disabled: busy,
+            onClick: () => (card._map ? card._map.selectMap(entry.id) : pickMap(card, model, name)) });
+        select.setAttribute('data-action', 'select');
+        row.appendChild(select);
+    }
+    if (model.can('dreame_vacuum.vacuum_rename_map')) {
+        const rename = BuschUI.action({ label: translate(hass, 'umbenennen') + ': ' + name, icon: 'mdi:pencil-outline', variant: 'icon-only', disabled: temporary,
+            onClick: () => dialog.show(renameMapView(card, home, mapSessionFor(card, sessions, entry), entry)) });
+        rename.setAttribute('data-action', 'rename');
+        row.appendChild(rename);
+    }
+    if (model.can('dreame_vacuum.vacuum_delete_map')) {
+        const remove = BuschUI.action({ label: translate(hass, 'loeschen') + ': ' + name, icon: 'mdi:delete-outline', variant: 'icon-only', disabled: temporary || busy,
+            onClick: () => dialog.show(deleteMapConfirm(card, home, mapSessionFor(card, sessions, entry), entry, model)) });
+        remove.setAttribute('data-action', 'delete');
+        row.appendChild(remove);
+    }
+    if (temporary || busy) row.appendChild(noteLine(translate(hass, temporary ? 'kartenSperreTemporaer' : 'kartenSperreAufgabe'), 'locked'));
+    if (session && session.error) row.appendChild(noteLine(session.error.text, 'error'));
+    return row;
+}
+
+/** Delete (D#L6896): names the map; without multi-floor the device deletes every map (comment D#L6915). */
+function deleteMapConfirm(card, home, session, entry, model) {
+    const hass = card._hass;
+    const lines = [translate(hass, 'kartenLoeschenZeile', { karte: mapEntryName(entry) })];
+    if (model.attr('multi_floor_map') !== true) lines.push(translate(hass, 'kartenLoeschtAlle'));
+    return mapConfirm(card, session, {
+        title: translate(hass, 'kartenLoeschenTitel'), lines, action: translate(hass, 'loeschen'), destructive: true, irreversible: true,
+        calls: [{ service: 'vacuum_delete_map', data: { map_id: entry.id } }],
+        done: (dialog) => backTo(dialog, home)
+    });
+}
+
+/**
+ * Rename form (R10): empty = the standard name (V#L595); the draft survives
+ * leaving; with open input Escape/Back/Close ask (dirtyChoice, Regel 2).
+ */
+function renameMapView(card, home, session, entry) {
+    const key = 'map-name:' + entry.id;
+    const original = entry.custom_name || '';
+    if (!card._drafts.has(key)) card._drafts.set(key, original);
+    const hass = card._hass;
+    const confirm = (dialog) => {
+        const name = card._drafts.get(key).trim();
+        dialog.show(mapConfirm(card, session, {
+            title: translate(hass, 'kartenUmbenennenTitel'),
+            lines: [translate(hass, 'kartenUmbenanntZeile', { alt: mapEntryName(entry), neu: name || entry.name || String(entry.id) })],
+            action: translate(hass, 'speichern'),
+            calls: [{ service: 'vacuum_rename_map', data: { map_id: entry.id, map_name: name } }],
+            undo: { text: translate(hass, 'kartenUmbenennenTitel'), calls: [{ service: 'vacuum_rename_map', data: { map_id: entry.id, map_name: original } }] },
+            done: (d) => {
+                card._drafts.delete(key);
+                backTo(d, home);
+            }
+        }));
+    };
+    const dirty = () => card._drafts.has(key) && card._drafts.get(key) !== original;
+    const view = {
+        title: translate(hass, 'kartenUmbenennenTitel'),
+        kind: 'editor',
+        watch: () => [card._opts.entity],
+        guard: (dialog) => {
+            if (!dirty()) return false;
+            dialog.show(dirtyChoice(card, {
+                count: () => 1,
+                save: (d) => confirm(d),
+                discard: (d) => {
+                    card._drafts.delete(key);
+                    backTo(d, home);
+                }
+            }));
+            return true;
+        },
+        render: (body, h, dialog) => {
+            const model = card._model();
+            const lock = session.lock('vacuum_rename_map', model);
+            if (dirty()) body.appendChild(noteLine(translate(h, 'ungespeichert'), 'dirty'));
+            if (lock) body.appendChild(noteLine(translate(h, lock), 'locked'));
+            const input = document.createElement('input');
+            input.setAttribute('type', 'text');
+            input.setAttribute('autocomplete', 'off');
+            input.setAttribute('placeholder', entry.name || '');
+            input.value = card._drafts.get(key);
+            const field = formField('map_name', translate(h, 'feld_map_name'), input, '');
+            body.append(field.wrap, noteLine(translate(h, 'kartenNameLeer', { name: entry.name || String(entry.id) })));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const save = BuschUI.action({ label: translate(h, 'speichern'), text: translate(h, 'speichern'), variant: 'primary', onClick: () => confirm(dialog) });
+            save.setAttribute('data-action', 'save');
+            const able = () => { save.disabled = !!lock || !dirty(); };
+            able();
+            input.addEventListener('input', () => {
+                card._drafts.set(key, input.value);
+                able();
+            });
+            actions.appendChild(save);
+            body.appendChild(actions);
+        }
+    };
+    return view;
+}
+
+/**
+ * New map (ALL-13): mapping (only `mapping_available`, types.py:2373) and fast
+ * mapping through device-settings' callAction — after a confirmation whose click
+ * first backs up the active stored map (Sicherheitsrahmen 2), never before.
+ */
+function newMapActions(card, model, hass, dialog, home, sessions, active) {
+    const nodes = [];
+    if (model.can('dreame_vacuum.vacuum_call_action')) {
+        for (const key of ['start_mapping', 'start_fast_mapping']) {
+            const free = key !== 'start_mapping' || model.attr('mapping_available') === true;
+            const busy = card._settingWrites.has(key);
+            const label = translate(hass, key === 'start_mapping' ? 'kartierung' : 'kartierungSchnell');
+            const button = BuschUI.action({ label, text: busy ? translate(hass, 'wirdGestartet') : label, icon: key === 'start_mapping' ? 'mdi:map-plus' : 'mdi:map-marker-path', disabled: !free || busy,
+                onClick: () => dialog.show(mapConfirm(card, mapSessionFor(card, sessions, active ? active.entry : null), {
+                    title: label,
+                    lines: [translate(hass, 'kartierungFaehrt')],
+                    action: label,
+                    irreversible: true,
+                    calls: [],
+                    done: (d) => {
+                        callAction(card, key, undefined, { label });
+                        backTo(d, home);
+                    }
+                })) });
+            button.setAttribute('data-action', key);
+            if (busy) button.setAttribute('aria-busy', 'true');
+            nodes.push(button);
+            if (!free) nodes.push(noteLine(translate(hass, 'kartierungNichtFrei'), 'locked'));
+            const note = card._settingNotes.get(key);
+            if (note) nodes.push(noteLine(note, 'error'));
+        }
+        nodes.push(noteLine(translate(hass, 'kartierungFaehrt')));
+    }
+    if (model.can('dreame_vacuum.vacuum_request_map')) {
+        const label = translate(hass, 'karteAnfordern');
+        const busy = card._settingWrites.has('request_map');
+        const button = BuschUI.action({ label, text: label, icon: 'mdi:refresh', disabled: busy, onClick: () => requestMap(card) });
+        button.setAttribute('data-action', 'request_map');
+        if (busy) button.setAttribute('aria-busy', 'true');
+        nodes.push(button, noteLine(translate(hass, 'karteAnfordernHinweis')));
+        const note = card._settingNotes.get('request_map');
+        if (note) nodes.push(noteLine(note, 'error'));
+    }
+    return nodes;
+}
+
+/** Temporary map (ALL-13): save, discard, replace a stored one — each confirmed, none undoable. */
+function temporaryBlock(card, model, hass, dialog, home, sessions, entries) {
+    const box = document.createElement('div');
+    box.className = 'temporary-map';
+    box.appendChild(noteLine(translate(hass, 'temporaerText'), 'warning'));
+    const session = mapSessionFor(card, sessions, null);
+    const ask = (title, line, service, data, destructive) => dialog.show(mapConfirm(card, session, {
+        title, lines: [line], action: title, destructive, irreversible: true, calls: [{ service, data }], done: (d) => backTo(d, home)
+    }));
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const add = (action, key, service, onClick, variant) => {
+        if (!model.can('dreame_vacuum.' + service)) return;
+        const label = translate(hass, key);
+        const button = BuschUI.action({ label, text: label, variant, onClick });
+        button.setAttribute('data-action', action);
+        actions.appendChild(button);
+    };
+    add('save_temporary', 'temporaerSpeichern', 'vacuum_save_temporary_map', () => ask(translate(hass, 'temporaerSpeichern'), translate(hass, 'temporaerSpeichernZeile'), 'vacuum_save_temporary_map', {}, false), 'primary');
+    add('discard_temporary', 'temporaerVerwerfen', 'vacuum_discard_temporary_map', () => ask(translate(hass, 'temporaerVerwerfen'), translate(hass, 'temporaerVerwerfenZeile'), 'vacuum_discard_temporary_map', {}, true), 'destructive');
+    if (entries.length) {
+        add('replace_temporary', 'temporaerErsetzen', 'vacuum_replace_temporary_map', () => dialog.show({
+            title: translate(hass, 'temporaerErsetzen'),
+            kind: 'editor',
+            render: (body, h) => {
+                body.appendChild(noteLine(translate(h, 'temporaerErsetzenWahl')));
+                const list = document.createElement('div');
+                list.className = 'menu floors';
+                for (const { entry, name } of entries) {
+                    const button = BuschUI.action({ label: name, text: name, variant: 'quiet', onClick: () => ask(translate(h, 'temporaerErsetzen'), translate(h, 'temporaerErsetzenZeile', { karte: name }), 'vacuum_replace_temporary_map', { map_id: entry.id }, true) });
+                    button.classList.add('menu-item');
+                    button.setAttribute('data-replace', String(entry.id));
+                    list.appendChild(button);
+                }
+                body.appendChild(list);
+            }
+        }));
+    }
+    box.appendChild(actions);
+    if (session.error) box.appendChild(noteLine(session.error.text, 'error'));
+    return box;
 }
 
 // ---------------------------------------------------------------------------
@@ -12088,6 +12477,7 @@ BuschVacuumCard.__internals = {
     EDIT_GROUPS,
     editCaps,
     loadEditData,
+    mapsView,
     REMOTE,
     remoteValue,
     RemoteSender,

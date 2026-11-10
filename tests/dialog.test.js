@@ -68,13 +68,16 @@ test('Orten ruft genau vacuum.locate und schließt das Menü', () => {
   assert.equal(dialogVon(u), null);
 });
 
-test('andere Einträge öffnen eine Platzhalter-Ansicht mit Titel und Modulhinweis', () => {
-  const { u, haus } = offen();
+test('Kartenverwaltung öffnet ihre Registry-Ansicht; die Platzhalter-Ansicht bleibt Rückfall mit Titel und Modulhinweis', () => {
+  const { u, haus, karte } = offen();
   eintrag(u, 'maps').click();
   assert.equal($d(u, 'h1').textContent, 'Kartenverwaltung');
-  assert.match($d(u, '.placeholder').textContent, /map-editor/);
+  assert.equal($d(u, '.placeholder'), null, 'map-editor füllt den Eintrag');
   assert.deepEqual(haus.rufe, []);
   assert.deepEqual(u.verlauf.aufrufe, ['push', 'push'], 'eigener Verlaufseintrag je Ansicht');
+  dialogVon(u).show(karte._placeholderView({ text: 'entryMaps', module: 'map-editor' }));
+  assert.equal($d(u, 'h1').textContent, 'Kartenverwaltung');
+  assert.match($d(u, '.placeholder').textContent, /map-editor/);
 });
 
 // ── Dialog (CORE-12) ───────────────────────────────────────────────────────

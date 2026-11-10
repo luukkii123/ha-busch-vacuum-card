@@ -347,3 +347,190 @@ test('EDI-02 Bearbeitungsdaten: MapView-Daten desselben frame mit Wänden werden
   assert.equal(await k2.I.loadEditData(k2.karte), null);
   assert.equal(k2.karte._editData.failed, true);
 });
+
+// ── Task 3: Kartenverwaltung (EDI-01, ALL-13, ALL-10) ───────────────────────
+
+const ZWEI_KARTEN = [
+  { id: 3, index: 1, name: 'Karte 1', custom_name: null },
+  { id: 7, index: 2, name: 'Karte 2', custom_name: 'Oben' },
+];
+/** Kartenverwaltung über das Menü öffnen. */
+function verwaltung(k) {
+  k.karte._openDialog(k.karte._menuView());
+  Array.from($$d(k.u, '.menu-item')).find((b) => b.getAttribute('data-entry') === 'maps').click();
+  return dialogVon(k.u);
+}
+const karteZeile = (k, id) => $d(k.u, '[data-map="' + id + '"]');
+const knopfIn = (node, action) => node.querySelectorAll('[data-action="' + action + '"]')[0] || null;
+
+test('EDI-01 Menüeintrag maps und Kartenwerkzeug öffnen dieselbe Ansicht: Liste mit Vorschau, aktiv markiert', () => {
+  const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
+  const d = verwaltung(k);
+  assert.equal($d(k.u, 'h1').textContent, 'Kartenverwaltung');
+  assert.equal($d(k.u, '.placeholder'), null, 'Registry statt Platzhalter');
+  assert.equal(d._views.at(-1).kind, 'editor');
+  assert.equal(karteZeile(k, 3).getAttribute('aria-current'), 'true');
+  assert.match(karteZeile(k, 3).textContent, /Karte 1 · aktiv/);
+  assert.equal(karteZeile(k, 7).getAttribute('aria-current'), null);
+  assert.match(karteZeile(k, 7).textContent, /Oben/);
+  assert.match(karteZeile(k, 3).querySelector('img').getAttribute('src'), /camera_proxy\/camera\.robo_map_1/);
+  assert.equal(knopfIn(karteZeile(k, 3), 'select'), null, 'die aktive Karte ist schon gewählt');
+  d.remove(); k.karte._dialog = null;
+  const werkzeug = k.karte._map.tools.querySelector('[data-action="map-maps"]');
+  assert.ok(werkzeug, 'Kartenwerkzeug');
+  werkzeug.click();
+  assert.equal($d(k.u, 'h1').textContent, 'Kartenverwaltung');
+  assert.ok(karteZeile(k, 7));
+  assert.deepEqual(k.haus.rufe, []);
+  const ohne = aufbau({ vac: { capabilities: ['map'] } });
+  assert.equal(ohne.karte._map.tools.querySelector('[data-action="map-maps"]'), null, 'ohne multi_floor_map kein Werkzeug (wie das Menü)');
+});
+
+test('EDI-01 Wählen nur über MapView.selectMap mit der Bestätigung von core (CORE-20)', () => {
+  const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
+  verwaltung(k);
+  knopfIn(karteZeile(k, 7), 'select').click();
+  assert.deepEqual(k.haus.rufe, []);
+  assert.match($d(k.u, '.placeholder').textContent, /Oben/);
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_select_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
+});
+
+test('EDI-01 Umbenennen → vacuum_rename_map { map_id, map_name } nach Bestätigung, leer = Standardname; Formular mit Dirty-Schutz', async () => {
+  const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
+  const d = verwaltung(k);
+  knopfIn(karteZeile(k, 7), 'rename').click();
+  assert.equal(d._views.at(-1).kind, 'editor');
+  const feld = $d(k.u, '[data-field="map_name"]');
+  assert.equal(feld.value, 'Oben');
+  assert.match(d.shadowRoot.textContent, /Leer lassen für den Standardnamen „Karte 2“/);
+  feld.value = 'Keller';
+  feld.dispatchEvent(k.u.neuesEreignis('input'));
+  // Escape mit offener Eingabe: Dialog bleibt, fragt.
+  k.u.document.dispatchEvent(k.u.neuesEreignis('keydown', { key: 'Escape' }));
+  assert.ok(d._sheet.classList.contains('shake'));
+  assert.ok($d(k.u, '[data-action="keep"]'), 'Speichern / Verwerfen / Weiter bearbeiten');
+  $d(k.u, '[data-action="keep"]').click();
+  k.u.zurueck();
+  assert.equal($d(k.u, '[data-field="map_name"]').value, 'Keller', 'Eingabe bleibt');
+  $d(k.u, '[data-action="save"]').click();
+  assert.equal(d._views.at(-1).kind, 'confirm');
+  assert.match(d.shadowRoot.textContent, /Name: Oben → Keller/);
+  assert.match(d.shadowRoot.textContent, /Karte: Oben/);
+  assert.deepEqual(k.haus.rufe, [], 'erst nach Bestätigung');
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(roh(k.haus.rufe), [
+    { domain: 'dreame_vacuum', service: 'vacuum_backup_map', data: { entity_id: 'vacuum.robo', map_id: 7 } },
+    { domain: 'dreame_vacuum', service: 'vacuum_rename_map', data: { entity_id: 'vacuum.robo', map_id: 7, map_name: 'Keller' } },
+  ]);
+  // Leerer Name = Standardname.
+  const k2 = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true, capabilities: ['map', 'multi_floor_map'] } });
+  verwaltung(k2);
+  knopfIn(karteZeile(k2, 7), 'rename').click();
+  const f2 = $d(k2.u, '[data-field="map_name"]');
+  f2.value = '';
+  f2.dispatchEvent(k2.u.neuesEreignis('input'));
+  $d(k2.u, '[data-action="save"]').click();
+  $d(k2.u, '[data-action="confirm"]').click();
+  await mikro(); await mikro();
+  assert.deepEqual(roh(k2.haus.rufe.at(-1).data), { entity_id: 'vacuum.robo', map_id: 7, map_name: '' });
+});
+
+test('EDI-01 Löschen: Bestätigung nennt die Karte, ohne Multi-Floor „löscht alle Karten“; destruktiv, nicht umkehrbar', async () => {
+  const k = aufbau({ vac: { capabilities: ['map', 'multi_floor_map'] } });
+  verwaltung(k);
+  knopfIn(karteZeile(k, 3), 'delete').click();
+  const text = dialogVon(k.u).shadowRoot.textContent;
+  assert.match(text, /Karte „Karte 1“ wird gelöscht/);
+  assert.match(text, /Das Gerät löscht alle Karten/);
+  assert.match(text, /Wiederherstellen in der Kartensicherung/);
+  assert.equal($d(k.u, '[data-action="confirm"]').getAttribute('data-variant'), 'destructive');
+  $d(k.u, '[data-action="cancel"]').click();
+  assert.deepEqual(k.haus.rufe, []);
+  const k2 = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true, capabilities: ['map', 'multi_floor_map'] } });
+  verwaltung(k2);
+  knopfIn(karteZeile(k2, 7), 'delete').click();
+  assert.doesNotMatch(dialogVon(k2.u).shadowRoot.textContent, /alle Karten/, 'mit Multi-Floor nur diese Karte');
+  $d(k2.u, '[data-action="confirm"]').click();
+  await mikro(); await mikro();
+  assert.deepEqual(roh(k2.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_delete_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
+});
+
+test('ALL-10 Multi-Floor-Zeile = settingRow aus device-settings, mit Bestätigung; gesperrt bei temporärer Karte', () => {
+  const k = aufbau();
+  verwaltung(k);
+  const zeile = $d(k.u, '[data-setting="multi_floor_map"]');
+  assert.ok(zeile, 'dieselbe Zeile wie in den Geräteeinstellungen');
+  zeile.querySelector('[role="switch"]').click();
+  assert.deepEqual(k.haus.rufe, []);
+  assert.equal(dialogVon(k.u)._views.at(-1).kind, 'confirm');
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Multi-Floor/);
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_set_property', data: { entity_id: 'vacuum.robo', key: 'multi_floor_map', value: 1 } }]);
+  const t = aufbau({ vac: { has_temporary_map: true } });
+  verwaltung(t);
+  const gesperrt = $d(t.u, '[data-setting="multi_floor_map"]');
+  assert.equal(gesperrt.getAttribute('data-state'), 'locked');
+  assert.match(gesperrt.textContent, /temporäre Karte/);
+  assert.ok(gesperrt.querySelector('[role="switch"]').disabled);
+});
+
+test('ALL-13 Neue Karte: start_mapping nur bei mapping_available, nach Bestätigung erst Sicherung der aktiven Karte, dann vacuum_call_action', async () => {
+  const k = aufbau();
+  verwaltung(k);
+  const kartierung = $d(k.u, '[data-action="start_mapping"]');
+  assert.ok(kartierung.disabled, 'mapping_available false');
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Platz für eine neue Karte/);
+  const schnell = $d(k.u, '[data-action="start_fast_mapping"]');
+  schnell.click();
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Roboter fährt/);
+  assert.deepEqual(k.haus.rufe, []);
+  $d(k.u, '[data-action="confirm"]').click();
+  await mikro();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map'], 'zuerst die aktive gespeicherte Karte sichern');
+  assert.deepEqual(roh(k.haus.rufe[0].data), { entity_id: 'vacuum.robo', map_id: 3 });
+  await k.sicherungFertig();
+  assert.deepEqual(roh(k.haus.rufe.at(-1)), { domain: 'dreame_vacuum', service: 'vacuum_call_action', data: { entity_id: 'vacuum.robo', key: 'start_fast_mapping' } });
+  const m = aufbau({ vac: { mapping_available: true } });
+  verwaltung(m);
+  assert.equal($d(m.u, '[data-action="start_mapping"]').disabled, false);
+});
+
+test('ALL-13 Temporäre Karte: speichern/verwerfen/ersetzen nur bei has_temporary_map; Karte neu anfordern ohne Bestätigung', async () => {
+  const k = aufbau();
+  verwaltung(k);
+  assert.equal($d(k.u, '[data-action="save_temporary"]'), null);
+  $d(k.u, '[data-action="request_map"]').click();
+  assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_request_map', data: { entity_id: 'vacuum.robo' } }], 'nicht zerstörend: direkt');
+  const t = aufbau({ vac: { has_temporary_map: true, maps: ZWEI_KARTEN, map_count: 2 } });
+  verwaltung(t);
+  assert.equal(knopfIn(karteZeile(t, 7), 'rename').disabled, true, 'nicht bei temporärer Karte');
+  $d(t.u, '[data-action="save_temporary"]').click();
+  assert.match(dialogVon(t.u).shadowRoot.textContent, /Keine Sicherung möglich/);
+  $d(t.u, '[data-action="confirm"]').click();
+  await mikro(); await mikro();
+  assert.deepEqual(roh(t.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_save_temporary_map', data: { entity_id: 'vacuum.robo' } }]);
+  const v = aufbau({ vac: { has_temporary_map: true } });
+  verwaltung(v);
+  $d(v.u, '[data-action="discard_temporary"]').click();
+  assert.equal($d(v.u, '[data-action="confirm"]').getAttribute('data-variant'), 'destructive');
+  $d(v.u, '[data-action="confirm"]').click();
+  await mikro(); await mikro();
+  assert.deepEqual(dienste(v.haus), ['vacuum_discard_temporary_map']);
+  const r = aufbau({ vac: { has_temporary_map: true, maps: ZWEI_KARTEN, map_count: 2 } });
+  verwaltung(r);
+  $d(r.u, '[data-action="replace_temporary"]').click();
+  $d(r.u, '[data-replace="7"]').click();
+  assert.match(dialogVon(r.u).shadowRoot.textContent, /„Oben“ wird durch die temporäre Karte ersetzt/);
+  $d(r.u, '[data-action="confirm"]').click();
+  await mikro(); await mikro();
+  assert.deepEqual(roh(r.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_replace_temporary_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
+});
+
+test('EDI-01 Leerzustand ohne gespeicherte Karte (R18)', () => {
+  const k = aufbau({ vac: { maps: [], map_count: 0, has_saved_map: false } });
+  verwaltung(k);
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Noch keine gespeicherte Karte/);
+  assert.ok($d(k.u, '[data-action="start_fast_mapping"]'), 'Anlegen bleibt möglich');
+});

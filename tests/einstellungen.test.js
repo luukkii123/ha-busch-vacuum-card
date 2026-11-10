@@ -167,7 +167,7 @@ test('Dienstfehler: R12-Text mit Grund, Folge und nächstem Schritt; Wert zurüc
   assert.match(text, /erneut/);
 });
 
-test('Menü: Geräteeinstellungen und Zubehör öffnen Registry-Ansichten, andere bleiben Platzhalter', () => {
+test('Menü: Geräteeinstellungen, Zubehör und Kartenverwaltung öffnen Registry-Ansichten', () => {
   const k = aufbau();
   menue(k);
   eintrag(k.u, 'settings').click();
@@ -181,7 +181,8 @@ test('Menü: Geräteeinstellungen und Zubehör öffnen Registry-Ansichten, ander
   const k3 = aufbau();
   menue(k3);
   eintrag(k3.u, 'maps').click();
-  assert.match($d(k3.u, '.placeholder').textContent, /map-editor/);
+  assert.equal($d(k3.u, 'h1').textContent, 'Kartenverwaltung');
+  assert.equal($d(k3.u, '.placeholder'), null);
   assert.deepEqual(k.haus.rufe, []);
 });
 
@@ -720,6 +721,9 @@ test('Sonstiges: Kindersicherung, Mehrstockwerkskarte, Kartenwahl, Kartenrotatio
   assert.equal($d(k.u, '[data-setting="selected_map"]').querySelector('select').value, 'Karte 1');
   assert.equal($d(k.u, '[data-setting="map_rotation"]').querySelector('select').value, '0');
   $d(k.u, '[data-setting="multi_floor_map"]').querySelector('[role="switch"]').click();
+  assert.deepEqual(aufrufe(k), [], 'Multi-Floor ändert die Kartenablage: erst fragen (map-editor ALL-10)');
+  assert.match($d(k.u, '.body').textContent, /Multi-Floor .* auf „An“/);
+  $d(k.u, '[data-action="confirm"]').click();
   assert.deepEqual(aufrufe(k), [setze(k, 'multi_floor_map', 1)]);
 });
 
