@@ -3366,6 +3366,7 @@ class MapView {
         this._data = null; // decoded map data (data mode)
         this._pictures = {}; // map_config background_image / overlay_image elements
         this._obstacleActions = new Map(); // id → { label, icon, run(obstacle) } of other modules
+        this._objectActions = new Map(); // id → { layers, label, icon, run(found) }: the bubble of carpets/furniture (map-editor EDI-06)
         this._ignorePending = null; // { id, wanted, timer }: one ignore call at a time (R11)
         this._build();
         this._bindGestures();
@@ -3552,6 +3553,12 @@ class MapView {
             if (['obstacles', 'stains', 'pets', 'blocked_rooms'].includes(hit.layer)) this._openBubble(hit.id, hit.object);
         }
         else if (hit.kind === 'room' && ['view', 'pick-room'].includes(this._mode)) this._roomTap(hit.id, 'map');
+        // Carpets and furniture have no layer hit (a tap on them stays a room tap); with an action of
+        // another module they get a bubble too (MAP-04 slot, map-editor EDI-06).
+        if (this._mode === 'view' && hit.kind !== 'object' && this._objectActions.size && !this.card._mapEdit) {
+            const found = this.objectAt(hit.robot);
+            if (found) this._openObjectBubble(found);
+        }
     }
 
     /** Area and chip lead here alike (R08): one event, the chips' onToggle, the highlight. */
@@ -3845,6 +3852,11 @@ class MapView {
             this._editButton = null;
         }
         if (this._editButton) BuschUI.action({ node: this._editButton, label: translate(this.hass, 'kartenBearbeiten'), icon: 'mdi:pencil-outline', variant: 'secondary', onClick: () => card._openDialog(mapEditView(card)) });
+        // EDI-06: "Bearbeiten" in the bubble of carpets/furniture — the same edit mode, started with that object.
+        const quick = !edit ? [] : (this.model.can('dreame_vacuum.vacuum_set_carpet_area') ? ['carpets', 'detected_carpets'] : [])
+            .concat(this.model.can('dreame_vacuum.vacuum_set_furniture') ? ['furnitures'] : []);
+        if (quick.length) this.addObjectAction('map-edit', { layers: quick, label: translate(this.hass, 'blaseBearbeiten'), icon: 'mdi:pencil-outline', run: (found) => card._openDialog(mapEditView(card, undefined, found)) });
+        else this.removeObjectAction('map-edit');
         const manage = open && this.model.can('multi_floor_map');
         if (manage && !this._mapsButton) {
             this._mapsButton = BuschUI.action({ label: translate(this.hass, 'kartenVerwalten'), icon: 'mdi:layers-edit', variant: 'secondary', onClick: () => card._openDialog(mapsView(card)) });
@@ -4284,6 +4296,78 @@ class MapView {
         this._obstacleActions.delete(id);
     }
 
+    /** Contract: an action in the bubble of a carpet or piece of furniture (map-editor: "Bearbeiten"); `layers` it serves. */
+    addObjectAction(id, { layers, label, icon, run }) {
+        this._objectActions.set(id, { layers, label, icon, run });
+    }
+
+    removeObjectAction(id) {
+        this._objectActions.delete(id);
+    }
+
+    /**
+     * The carpet or furniture under a robot point, topmost first, only of layers
+     * an object action serves and that show: { layer, index, item } or null.
+     * Furniture from the map data, else the attribute (x, y = centre).
+     */
+    objectAt(p) {
+        const served = new Set([...this._objectActions.values()].flatMap((a) => a.layers || []));
+        const ctx = this._ctx();
+        for (const layer of ['furnitures', 'detected_carpets', 'carpets']) {
+            if (!served.has(layer) || !this.visible(layer)) continue;
+            const furniture = layer === 'furnitures';
+            const data = furniture && ctx.data && ctx.data.raw && Array.isArray(ctx.data.raw.furnitures) ? ctx.data.raw.furnitures : null;
+            const items = data || (Array.isArray(ctx.objects[layer]) ? ctx.objects[layer] : []);
+            for (let i = items.length - 1; i >= 0; i--) {
+                const item = items[i];
+                if (!item) continue;
+                const corners = !furniture ? areaCorners(item) : Array.isArray(item) ? furnitureCorners(item) : furnitureCorners([item.x, item.y, item.width, item.height, 0, 0, item.angle || 0]);
+                if (corners.every((c) => Number.isFinite(Number(c.x)) && Number.isFinite(Number(c.y))) && insidePolygon(p, corners)) return { layer, index: i, item };
+            }
+        }
+        return null;
+    }
+
+    /** The bubble of a carpet or piece of furniture: its name and the actions of other modules. */
+    _openObjectBubble(found) {
+        const hass = this.hass;
+        const item = found.item;
+        const type = Array.isArray(item) ? item[4] : item.type;
+        const name = found.layer === 'carpets' ? translate(hass, 'kartenEins_carpets')
+            : found.layer === 'detected_carpets' ? translate(hass, 'blaseErkannterTeppich')
+                : Number.isFinite(Number(type)) ? translate(hass, 'moebel_' + Number(type)) : furnitureNameOf(hass, type);
+        const text = document.createElement('div');
+        text.className = 'map-bubble-text';
+        const line = document.createElement('strong');
+        line.className = 'map-bubble-line';
+        line.textContent = name;
+        text.appendChild(line);
+        const buttons = [];
+        for (const [id, action] of this._objectActions) {
+            if (!(action.layers || []).includes(found.layer)) continue;
+            const b = BuschUI.action({ label: action.label, text: action.label, icon: action.icon, variant: 'quiet', onClick: () => {
+                this._closeBubble();
+                action.run(found);
+            } });
+            b.setAttribute('data-action', 'object-' + id);
+            buttons.push(b);
+        }
+        const close = BuschUI.action({ label: translate(hass, 'schliessen'), icon: 'mdi:close', variant: 'icon-only', onClick: () => this._closeBubble() });
+        close.setAttribute('data-action', 'bubble-close');
+        this.bubble.replaceChildren(text, ...buttons, close);
+        this.bubble.setAttribute('aria-label', name);
+        this.bubble.removeAttribute('data-obstacle');
+        this.bubble.setAttribute('data-object-layer', found.layer);
+        const corners = Array.isArray(item) && found.layer === 'furnitures' ? furnitureCorners(item) : found.layer === 'furnitures' ? [{ x: item.x, y: item.y }] : areaCorners(item);
+        const centre = { x: corners.reduce((n, c) => n + Number(c.x), 0) / corners.length, y: corners.reduce((n, c) => n + Number(c.y), 0) / corners.length };
+        const s = this.toScreen(this.toImage(centre));
+        const rect = this._stageRect();
+        const y = s ? s.y - rect.top : 8;
+        this.bubble.style.setProperty('--bvc-bubble-y', y + 'px');
+        this.bubble.toggleAttribute('data-below', y < rect.height / 2);
+        this.bubble.hidden = false;
+    }
+
     /** The transient bubble at the symbol: type, room, reason; details open the dialog. */
     _openBubble(id, item) {
         const hass = this.hass;
@@ -4308,6 +4392,7 @@ class MapView {
         this.bubble.replaceChildren(text, details, close);
         this.bubble.setAttribute('aria-label', translate(hass, 'hindernis'));
         this.bubble.setAttribute('data-obstacle', String(id));
+        this.bubble.removeAttribute('data-object-layer');
         // Above the symbol (below it in the upper half), kept inside the stage.
         const y = s ? s.y - rect.top : 8;
         this.bubble.style.setProperty('--bvc-bubble-y', y + 'px');
@@ -11370,6 +11455,10 @@ const EDIT_TEXTS = {
         moebel_29: 'Sessel (schmal)',
         moebel_30: 'Dreisitzer-Sofa (schmal)',
         moebel_31: 'L-Sofa (rechts)',
+        blaseBearbeiten: 'Bearbeiten',
+        blaseErkannterTeppich: 'Erkannter Teppich',
+        blaseNichtBearbeitbar: 'Dieses Objekt lässt sich hier nicht bearbeiten.',
+        blaseNichtGefunden: 'Das Objekt aus der Karte steht nicht in den Bearbeitungsdaten — wähle es in der Liste.',
         kartenEins_walls: 'Wand',
         kartenEins_doors: 'Tür',
         kartenObjHinweis_walls: 'Antippen wählt eine Wand oder Tür; die Endgriffe verschieben die Enden (bei Türen die Breite), die Linie verschiebt sie (Lage). Zurücksetzen holt die Ausgangslage. Anlegen und Löschen von Wänden und Türen hat die Integration keinen öffentlichen Schreibweg — die Anzahl bleibt gleich.',
@@ -11633,6 +11722,10 @@ const EDIT_TEXTS = {
         moebel_29: 'Armchair (narrow)',
         moebel_30: 'Three-seat sofa (narrow)',
         moebel_31: 'L-shaped sofa (right)',
+        blaseBearbeiten: 'Edit',
+        blaseErkannterTeppich: 'Detected carpet',
+        blaseNichtBearbeitbar: 'This object cannot be edited here.',
+        blaseNichtGefunden: 'The object of the map is not in the edit data — pick it in the list.',
         kartenEins_walls: 'Wall',
         kartenEins_doors: 'Door',
         kartenObjHinweis_walls: 'A tap picks a wall or door; the end handles move the ends (for doors the width), the line moves it (position). Reset brings back the original position. The integration has no public way to add or delete walls and doors — their number stays the same.',
@@ -12738,6 +12831,8 @@ class MapEditor {
             this.data = data;
             this.toolCaps = editCaps(card._model(), data, cur.objects);
             this.loading = false;
+            if (this.quick) quickPick(card, this, this.quick);
+            this.quick = null;
             this.changed();
         });
     }
@@ -12849,7 +12944,7 @@ class MapEditor {
  * tools by editCaps, one collected save. `mapId` (vacuum `maps[].id`) asks for
  * a map; only the active one is edited, another is offered to switch to (CORE-20).
  */
-function mapEditView(card, mapId) {
+function mapEditView(card, mapId, quick = null) {
     let editor = null;
     const view = {
         title: translate(card._hass, 'kartenBearbeiten'),
@@ -12896,6 +12991,7 @@ function mapEditView(card, mapId) {
             }
             if (!editor) {
                 editor = new MapEditor(card, view);
+                editor.quick = quick;
                 editor.enter();
             }
             editRender(card, editor, body, hass, dialog);
@@ -12904,8 +13000,42 @@ function mapEditView(card, mapId) {
     return view;
 }
 
+/**
+ * EDI-06: the object of a bubble (MapView.objectAt) chosen in its tool, once the
+ * edit data is there (carpet ids and furniture come only with it). A tool that
+ * is locked or missing says why instead.
+ */
+function quickPick(card, editor, found) {
+    const tool = found.layer === 'furnitures' ? 'furniture' : 'carpets';
+    const cap = editor.toolCaps[tool];
+    if (!cap || !cap.shown || cap.locked || !EDIT_TOOLS[tool].panel) {
+        editor.quickNote = cap && cap.locked ? cap.reason : 'blaseNichtBearbeitbar';
+        return;
+    }
+    editor.selectTool(tool);
+    const lists = editor.lists(), item = found.item;
+    let pick = null;
+    if (tool === 'furniture') {
+        const id = Array.isArray(item) ? item[9] : item.furniture_id;
+        const x = Array.isArray(item) ? item[0] : item.x, y = Array.isArray(item) ? item[1] : item.y;
+        let i = id === undefined || id === null ? -1 : (lists.furnitures || []).findIndex((e) => e[0] === id);
+        if (i < 0) i = (lists.furnitures || []).findIndex((e) => Math.round(e[5]) === Math.round(x) && Math.round(e[6]) === Math.round(y));
+        if (i >= 0) pick = { list: 'furnitures', i };
+    } else {
+        const rect = rectOf(item);
+        const own = (lists.carpets || []).findIndex((e) => sameRect(e, rect));
+        const detected = ((editor.data && editor.data.detectedCarpets) || []).findIndex((c) => sameRect(c.rect, rect));
+        if (found.layer === 'carpets' && own >= 0) pick = { list: 'carpets', i: own };
+        else if (detected >= 0) pick = { list: 'detected_carpets', i: detected };
+        else if (own >= 0) pick = { list: 'carpets', i: own };
+    }
+    editor.pick = pick;
+    if (!pick) editor.quickNote = 'blaseNichtGefunden';
+}
+
 function editRender(card, editor, body, hass, dialog) {
     const m = card._map;
+    if (editor.quickNote) body.appendChild(noteLine(translate(hass, editor.quickNote), 'locked'));
     if (card._locked) body.appendChild(noteLine(translate(hass, 'kartenSperreAufgehoben')));
     const hidden = m.config(m.current().index).hidden_objects.filter((name) => EDIT_SHOWN_OBJECTS.has(name));
     if (hidden.length) body.appendChild(noteLine(translate(hass, 'kartenAusgeblendetSichtbar', { liste: hidden.map((n) => translate(hass, 'mapobj_' + n)).join(', ') })));
@@ -14174,6 +14304,19 @@ function furnitureTypes(model) {
     return FURNITURE_TYPES.filter((t) => !(v2 && !model.can('extended_furnitures') && ((t > 13 && t !== 25) || t === 8))
         && !(!v2 && t >= 10) && !(!model.can('pet_furniture') && t >= 10 && t <= 13));
 }
+
+/** A furniture type of the attribute ("Two Seat Sofa", types.py Furniture.as_dict) as the editor's name. */
+function furnitureNameOf(hass, type) {
+    const name = enumName(type);
+    const code = name ? Object.keys(FURNITURE_ENUM).find((k) => FURNITURE_ENUM[k] === name) : undefined;
+    return code ? translate(hass, 'moebel_' + code) : String(type || translate(hass, 'kartenEins_furnitures'));
+}
+
+/** FurnitureType names (types.py:2841) by code, for the attribute's type text. */
+const FURNITURE_ENUM = { 1: 'single_bed', 2: 'double_bed', 3: 'arm_chair', 4: 'two_seat_sofa', 5: 'three_seat_sofa', 6: 'dining_table', 7: 'nightstant', 8: 'coffee_table',
+    9: 'toilet', 10: 'litter_box', 11: 'pet_bed', 12: 'food_bowl', 13: 'pet_toilet', 14: 'refrigerator', 15: 'washing_machine', 16: 'enclosed_litter_box', 17: 'air_conditioner',
+    18: 'tv_cabinet', 19: 'bookshelf', 20: 'shoe_cabinet', 21: 'wardrobe', 22: 'greenery', 23: 'floor_mirror', 24: 'l_shaped_sofa', 25: 'round_coffee_table', 26: 'table',
+    29: 'arm_chair_narrow', 30: 'three_seat_sofa_narrow', 31: 'l_shaped_sofa_right' };
 
 const furnitureTypeOptions = (hass, types) => types.map((t) => [t, translate(hass, 'moebel_' + t)]);
 

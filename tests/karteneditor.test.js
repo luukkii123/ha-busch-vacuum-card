@@ -1740,3 +1740,90 @@ test('EDI-04 Wände: Anzahl je Raum oder der Türen geändert → Speichern gesp
   stift(k4).click();
   assert.equal(werkzeug(k4, 'walls'), null);
 });
+
+// ── Task 11: Schnellbearbeitung (EDI-06) ────────────────────────────────────
+
+/** Startkarte mit Teppichen/Möbeln in den Attributen, die zu den Bearbeitungsdaten passen. */
+function schnell(mehr = {}) {
+  const ecken = (x0, y0, x1, y1) => ({ x0, y0, x1: x1, y1: y0, x2: x1, y2: y1, x3: x0, y3: y1, angle: null });
+  return aufbau(Object.assign({ bild: true, abruf: (url) => (/saved=1/.test(url) ? { json: bearbeitungsdaten() } : { status: 404 }),
+    cam: { carpets: [ecken(100, 100, 500, 400), ecken(600, 600, 900, 800)], detected_carpets: [ecken(1200, 100, 1400, 300)],
+      furnitures: [{ x: 1500, y: 200, width: 400, height: 400, type: 'Refrigerator', furniture_id: 6, angle: 0 }] } }, mehr));
+}
+const tippeKarte = (k, robot) => { const m = k.karte._map; m._emitTap(m.toScreen(m.toImage(robot))); };
+const blase = (k) => k.karte._map.bubble;
+
+test('EDI-06 Blase bei Teppich/Möbel trägt „Bearbeiten“ (Aktionsplatz) und startet die Sitzung mit dem gewählten Objekt im passenden Werkzeug; gleicher Rahmen', async () => {
+  const k = schnell();
+  await mikro(); await mikro();
+  const m = k.karte._map;
+  assert.equal(m._mode, 'view');
+  tippeKarte(k, { x: 700, y: 700 });
+  assert.equal(blase(k).hidden, false, 'Blase am Teppich');
+  assert.equal(blase(k).getAttribute('data-object-layer'), 'carpets');
+  assert.match(blase(k).textContent, /Teppich/);
+  const knopf = blase(k).querySelector('[data-action="object-map-edit"]');
+  assert.ok(knopf, 'Aktionsplatz „Bearbeiten“');
+  assert.equal(knopf.getAttribute('aria-label'), 'Bearbeiten');
+  knopf.click();
+  assert.equal(blase(k).hidden, true);
+  const d = dialogVon(k.u);
+  assert.equal(d._views.at(-1).kind, 'editor');
+  await mikro(); await mikro(); await mikro();
+  assert.equal(werkzeug(k, 'carpets').getAttribute('aria-pressed'), 'true');
+  assert.equal(eintrag(k, 'carpets', 1).getAttribute('aria-pressed'), 'true', 'gewählter Teppich');
+  assert.equal(wert(k, 'edit-x0'), 600);
+  tippen(k, feldE(k, 'edit-x0'), 650);
+  $d(k.u, '[data-action="save"]').click();
+  assert.match(d.shadowRoot.textContent, /Teppiche: 0 neu, 1 geändert, 0 gelöscht/);
+  assert.match(d.shadowRoot.textContent, /Sicherung der Karte erstellt/, 'Sicherung wie im Bearbeitungsmodus');
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_carpet_area']);
+  k.u.zurueck();
+  assert.ok($d(k.u, '[data-action="undo"]'), 'Rückgängig wie im Bearbeitungsmodus');
+  // Möbel und erkannter Teppich.
+  const k2 = schnell();
+  await mikro(); await mikro();
+  tippeKarte(k2, { x: 1500, y: 200 });
+  assert.equal(blase(k2).getAttribute('data-object-layer'), 'furnitures');
+  assert.match(blase(k2).textContent, /Kühlschrank/);
+  blase(k2).querySelector('[data-action="object-map-edit"]').click();
+  await mikro(); await mikro(); await mikro();
+  assert.equal(werkzeug(k2, 'furniture').getAttribute('aria-pressed'), 'true');
+  assert.equal(eintrag(k2, 'furnitures', 1).getAttribute('aria-pressed'), 'true', 'Möbel über furniture_id');
+  const k3 = schnell();
+  await mikro(); await mikro();
+  tippeKarte(k3, { x: 1250, y: 150 });
+  assert.equal(blase(k3).getAttribute('data-object-layer'), 'detected_carpets');
+  blase(k3).querySelector('[data-action="object-map-edit"]').click();
+  await mikro(); await mikro(); await mikro();
+  assert.equal($d(k3.u, '[data-carpet-detected="0"]').getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(k3.haus.rufe, []);
+  // Daneben (kein Objekt): keine Blase.
+  const k4 = schnell();
+  await mikro();
+  tippeKarte(k4, { x: -20000, y: -20000 });
+  assert.equal(blase(k4).hidden, true);
+});
+
+test('EDI-06 keine Schnellbearbeitung bei hidden_card_objects map_editor, ohne can("map_edit") und im Bearbeitungsmodus', async () => {
+  const aus = schnell({ config: { hidden_card_objects: ['map_editor'] } });
+  await mikro();
+  tippeKarte(aus, { x: 700, y: 700 });
+  assert.equal(blase(aus).hidden, true);
+  const ohne = schnell();
+  ohne.haus.services.dreame_vacuum = { vacuum_select_map: {} };
+  ohne.karte.hass = ohne.haus.setze({});
+  assert.equal(ohne.karte._model().can('map_edit'), false);
+  tippeKarte(ohne, { x: 700, y: 700 });
+  assert.equal(blase(ohne).hidden, true);
+  const modus = schnell();
+  await mikro();
+  stift(modus).click();
+  await mikro(); await mikro();
+  tippeKarte(modus, { x: 700, y: 700 });
+  assert.equal(blase(modus).hidden, true, 'im Bearbeitungsmodus wählt das Werkzeug, keine Blase');
+  // Hindernis-Blase (MAP-04) bleibt unverändert.
+  assert.equal(typeof modus.karte._map.addObstacleAction, 'function');
+});
