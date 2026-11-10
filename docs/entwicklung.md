@@ -48,6 +48,25 @@
 - Testdaten nur synthetisch (`tests/kartendaten.js` aus den verfremdeten
   Raumrechtecken); echte Kartendaten schließt `tests/datenschutz.test.js` aus.
 
+- Darstellung (MAP-05/09): Datenmodus malt die Karte selbst in ein Canvas
+  (`paintMapPixels`, ein Pixel je Gitterzelle, `image-rendering: pixelated`),
+  nur bei neuem Frame, anderem Farbschema oder `map_display`;
+  `map_display: floor_plan` = alle Räume ein Ton mit Konturen.
+  `color_scheme` `auto` (folgt `hass.themes.darkMode`), `light`, `dark`,
+  `grey`; `override_colors` (auch `dark: {…}`) setzt `--bvc-map-*` inline an
+  `.map-view`. `icon_set` `busch` (eigene SVG-Formen) oder `material` (`mdi:`).
+- **R24-Ausnahme Bildmodus** (nur Rückfall, wenn die Kartendaten fehlen):
+  Grund: das Bild rendert die Integration; Räume, Wände und eingebrannte
+  Objekte (Pfad, Hindernisse, Teppiche des Bilds) lassen sich darin weder
+  umfärben noch einzeln ausblenden, `floor_plan` geht nicht, `passable` ist
+  `null`, der Raum-Treffertest nimmt Rechteck + nächsten Mittelpunkt.
+  `color_scheme` wirkt nur als `grey` (CSS-Filter). Risiko: an Raumgrenzen
+  kann ein Tipp den Nachbarraum treffen, ausgeblendete Objekte bleiben im
+  Bild sichtbar. Ersatz: Raum-Chips sind in jedem Modus der exakte Weg
+  (R15/R22); die eigenen Ebenen bleiben ausblendbar; Tests
+  „Datenmodus nicht verfügbar → Bildmodus“ und „color_scheme …“ in
+  `tests/karte.test.js`.
+
 ### Kartenvertrag (für alle späteren Module)
 
 `this._map` der Karte ist eine `MapView` (eine je Karte, nie bei fremden

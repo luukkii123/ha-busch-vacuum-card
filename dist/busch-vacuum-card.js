@@ -562,6 +562,24 @@ const MAP_OBJECTS = [
     'obstacles', 'stains', 'pets'
 ];
 
+/** MAP-05/09: display, colour scheme, icon set and the colours override_colors may set. */
+const MAP_DISPLAYS = ['standard', 'floor_plan'];
+const COLOR_SCHEMES = ['auto', 'light', 'dark', 'grey'];
+const ICON_SETS = ['busch', 'material'];
+const OVERRIDE_KEYS = ['floor', 'wall', 'room', 'carpet', 'no_go', 'no_mop', 'virtual_wall', 'path', 'robot', 'charger'];
+const SAFE_COLOR = /^(?:#[0-9a-f]{3,8}|(?:rgb|rgba|hsl|hsla)\([\d\s.,%]+\)|[a-z]+)$/i;
+
+function normalizeColors(raw) {
+    const pick = (source) => Object.fromEntries(OVERRIDE_KEYS
+        .filter((key) => typeof (source || {})[key] === 'string' && SAFE_COLOR.test(source[key].trim()))
+        .map((key) => [key, source[key].trim()]));
+    if (!raw || typeof raw !== 'object') return {};
+    const out = pick(raw);
+    const dark = pick(raw.dark);
+    if (Object.keys(dark).length) out.dark = dark;
+    return out;
+}
+
 /** Per map (`map_config.map_<index>`, MAP-06) with what applies when a value is missing. */
 const MAP_CONFIG_DEFAULTS = {
     rotation: 0, scale: 1, opacity: 1, object_scale: 1, object_opacity: 1, font_size: 12, crop: null,
@@ -667,6 +685,10 @@ function normalizeConfig(raw) {
         touch_lock: Number.isFinite(hold) ? Math.min(TOUCH_LOCK_MS.max, Math.max(TOUCH_LOCK_MS.min, hold)) : TOUCH_LOCK_MS.standard,
         disable_haptic: raw.disable_haptic === true,
         hidden_objects: Array.isArray(raw.hidden_objects) ? raw.hidden_objects.filter((name) => MAP_OBJECTS.includes(name)) : [],
+        map_display: MAP_DISPLAYS.includes(raw.map_display) ? raw.map_display : 'standard',
+        color_scheme: COLOR_SCHEMES.includes(raw.color_scheme) ? raw.color_scheme : 'auto',
+        icon_set: ICON_SETS.includes(raw.icon_set) ? raw.icon_set : 'busch',
+        override_colors: normalizeColors(raw.override_colors),
         map_config: normalizeMapConfig(raw.map_config)
     };
 }
@@ -1177,12 +1199,18 @@ const menuFor = (model) => MENU.filter((entry) => model.can(entry.needs));
 
 /** The entities a render reads; Home Assistant replaces a state object on every change. */
 function watchSnapshot(hass, ids) {
-    return { language: BuschUI.language(hass, { legacy: true }), ids, objects: ids.map((id) => hass.states[id]) };
+    return { language: BuschUI.language(hass, { legacy: true }), dark: darkMode(hass), ids, objects: ids.map((id) => hass.states[id]) };
+}
+
+/** HA's dark mode, for the map's colour scheme `auto`. */
+function darkMode(hass) {
+    return !!(hass && hass.themes && hass.themes.darkMode);
 }
 
 function snapshotUnchanged(snapshot, hass) {
     if (!snapshot || !hass || !hass.states) return false;
     if (BuschUI.language(hass, { legacy: true }) !== snapshot.language) return false;
+    if (snapshot.dark !== undefined && darkMode(hass) !== snapshot.dark) return false;
     return snapshot.ids.every((id, i) => hass.states[id] === snapshot.objects[i]);
 }
 
@@ -1200,6 +1228,90 @@ const MAP_ZOOM = { min: 1, max: 8, step: 2, wheel: 0.0015 };
 const TAP = { slop: 6, doubleMs: 300, doubleSlop: 24, longMs: 500, hitPx: 22 };
 const MAP_MODES = ['view', 'pick-room', 'pick-point', 'draw-rect', 'drag'];
 const LOUPE = { size: 120, magnify: 2 };
+
+/** Map colours per scheme (MAP-05): canvas colours of data mode; layers read the --bvc-map-* set from them. */
+const MAP_SCHEMES = {
+    light: { floor: '#dde3ea', wall: '#5c6670', room: ['#a9c7ec', '#b5dcb0', '#f3d79e', '#e2b8d6'], carpet: 'rgba(0, 0, 0, 0.16)', path: '#5c6670' },
+    dark: { floor: '#2a3038', wall: '#9aa4ae', room: ['#2d5680', '#3a6537', '#75602f', '#663b5e'], carpet: 'rgba(255, 255, 255, 0.14)', path: '#b0bac4' },
+    grey: { floor: '#e3e3e3', wall: '#5e5e5e', room: ['#c2c2c2', '#d0d0d0', '#b0b0b0', '#dadada'], carpet: 'rgba(0, 0, 0, 0.14)', path: '#5e5e5e' }
+};
+
+/** A CSS colour as [r, g, b, a] (0–255); hex and rgb()/rgba() here, other forms through a 1-px canvas. */
+function parseColor(value, fallback = [0, 0, 0, 0]) {
+    const text = String(value || '').trim();
+    let m = /^#([0-9a-f]{3,8})$/i.exec(text);
+    if (m) {
+        let h = m[1];
+        if (h.length <= 4) h = h.split('').map((c) => c + c).join('');
+        const n = h.match(/../g).map((x) => parseInt(x, 16));
+        return [n[0], n[1], n[2], n.length > 3 ? n[3] : 255];
+    }
+    m = /^rgba?\(([^)]+)\)$/i.exec(text);
+    if (m) {
+        const n = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+        return [n[0], n[1], n[2], n[3] === undefined ? 255 : Math.round(n[3] * 255)].map((v) => Math.min(255, Math.max(0, v || 0)));
+    }
+    try {
+        const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+        ctx.fillStyle = text;
+        ctx.fillRect(0, 0, 1, 1);
+        return Array.from(ctx.getImageData(0, 0, 1, 1).data);
+    } catch (e) {
+        return fallback;
+    }
+}
+
+/**
+ * Data mode picture (pure, MAP-05): one RGBA pixel per grid cell, y flipped,
+ * cropped and turned like gridAffine. Rooms by their color_index, walls,
+ * floor, carpet blended on top; `floorPlan` paints every room in one tone
+ * with contours where two rooms meet.
+ */
+function paintMapPixels(grid, colors, { rooms = {}, floorPlan = false } = {}) {
+    const crop = Array.isArray(grid.crop) ? grid.crop.map((v) => Number(v) || 0) : [0, 0, 0, 0];
+    const W = grid.width, H = grid.height;
+    const w0 = W - crop[0] - crop[2], h0 = H - crop[1] - crop[3];
+    const turns = (((grid.rotation % 360) + 360) % 360) / 90;
+    const width = turns % 2 ? h0 : w0, height = turns % 2 ? w0 : h0;
+    const data = new Uint8ClampedArray(width * height * 4);
+    const roomColor = (id) => {
+        if (floorPlan) return colors.room;
+        const index = rooms[id] && Number.isFinite(Number(rooms[id].color_index)) ? Number(rooms[id].color_index) : id;
+        return colors.rooms[((index % colors.rooms.length) + colors.rooms.length) % colors.rooms.length];
+    };
+    const roomAtCell = (gx, gy) => (gx < 0 || gy < 0 || gx >= W || gy >= H ? null : roomOfCell(grid.cells[gy * W + gx]));
+    for (let gy = 0; gy < H; gy++) {
+        for (let gx = 0; gx < W; gx++) {
+            const value = grid.cells[gy * W + gx];
+            if (!value) continue;
+            let x = gx - crop[0], y = H - 1 - gy - crop[1];
+            if (x < 0 || y < 0 || x >= w0 || y >= h0) continue;
+            for (let t = 0, w = w0; t < turns; t++) {
+                [x, y] = [y, w - 1 - x];
+                w = w === w0 ? h0 : w0;
+            }
+            const room = roomOfCell(value);
+            let c = room !== null ? roomColor(room) : value >= 251 && value !== 253 && value !== 254 ? colors.wall : colors.floor;
+            if (room !== null && floorPlan && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+                const other = roomAtCell(gx + dx, gy + dy);
+                return other !== null && other !== room;
+            })) c = colors.wall;
+            const i = (y * width + x) * 4;
+            data[i] = c[0]; data[i + 1] = c[1]; data[i + 2] = c[2]; data[i + 3] = c[3];
+            if (grid.carpet && grid.carpet[gy * W + gx] && colors.carpet && !floorPlan) {
+                const a = colors.carpet[3] / 255;
+                for (let k = 0; k < 3; k++) data[i + k] = Math.round(data[i + k] * (1 - a) + colors.carpet[k] * a);
+            }
+        }
+    }
+    return { width, height, data };
+}
+
+/** icon_set material: the mdi icon per symbol. */
+const MATERIAL_ICONS = {
+    robot: 'mdi:robot-vacuum', charger: 'mdi:ev-station', router: 'mdi:router-wireless', obstacle: 'mdi:alert',
+    stain: 'mdi:water-alert', pet: 'mdi:paw', blocked: 'mdi:lock-outline', point: 'mdi:map-marker', station: 'mdi:home-alert'
+};
 
 /** Built-in layers: hidden_objects name, z order, how it draws. Modules add theirs with addLayer. */
 const MAP_LAYERS = [
@@ -1411,7 +1523,7 @@ class MapView {
         this.card = card;
         this.hass = null;
         this.model = null;
-        this.stats = { images: 0, data: 0, renders: 0 }; // for tests and the performance check
+        this.stats = { images: 0, data: 0, renders: 0, paints: 0 }; // for tests and the performance check
         this._cam = null;
         this._key = null;
         this._imageUrl = null;
@@ -1870,7 +1982,10 @@ class MapView {
         if (!q || !this._image) return;
         if (this._loupeSource !== this._image) {
             this._loupeSource = this._image;
-            this.loupeContent.replaceChildren(this._image.cloneNode ? this._image.cloneNode(true) : document.createElement('img'));
+            const copy = this._image.cloneNode ? this._image.cloneNode(true) : document.createElement('img');
+            // A canvas clone is empty: draw the map into it.
+            if (copy.tagName === 'CANVAS' && typeof copy.getContext === 'function') copy.getContext('2d').drawImage(this._image, 0, 0);
+            this.loupeContent.replaceChildren(copy);
         }
         const rect = this._stageRect();
         // The view's turn and scale, magnified, with the point under the pointer in the loupe's centre.
@@ -1904,7 +2019,7 @@ class MapView {
         this.model = model;
         const id = model.related.maps.map[0];
         const cam = (hass.states && hass.states[id]) || null;
-        const key = JSON.stringify([BuschUI.language(hass, { legacy: true }), model.state && model.state.state, ...MAP_VACUUM_KEYS.map((k) => model.attr(k))]);
+        const key = JSON.stringify([BuschUI.language(hass, { legacy: true }), darkMode(hass), model.state && model.state.state, ...MAP_VACUUM_KEYS.map((k) => model.attr(k))]);
         if (cam === this._cam && key === this._key) return;
         const before = this._cam ? this._attrs().map_index : undefined;
         this._cam = cam;
@@ -1912,7 +2027,7 @@ class MapView {
         this._cameraId = id;
         this.stats.renders++;
         const a = this._attrs();
-        this._matrix = affineFrom(a.calibration_points);
+        this._matrix = this._data ? gridAffine(this._data.grid).matrix : affineFrom(a.calibration_points);
         const options = this.config(a.map_index);
         this._display = { rotation: options.rotation, scale: options.scale, crop: options.crop };
         if (before !== undefined && before !== a.map_index) {
@@ -1923,9 +2038,12 @@ class MapView {
             this._emit('map-changed', { index: a.map_index, mapId: a.map_id });
         }
         this.region.setAttribute('aria-label', translate(hass, 'karteAlt', { karte: this._mapName() }));
+        this._applyScheme();
         if (this._showsMap()) {
-            this._loadImage(a.entity_picture);
+            // Data mode paints its own map: the integration's picture only until the data is there.
+            if (!this._data) this._loadImage(a.entity_picture);
             this._loadData(a);
+            this._paint();
         }
         this._render();
         this._renderLayers();
@@ -1947,6 +2065,11 @@ class MapView {
             if (this._dataFrame !== frame) return;
             const grid = decodeMapData(raw);
             this._data = grid ? { raw, grid } : null;
+            if (this._data) {
+                this._matrix = gridAffine(grid).matrix;
+                this._paint();
+                this._render();
+            }
             this._emit('map-frame', { frameId: frame, mode: this._data ? 'data' : 'image' });
             this._renderLayers();
         }).catch(() => {
@@ -2019,9 +2142,69 @@ class MapView {
             if (!this._matrix && this._imageState === 'ready') notes.push(['uncalibrated', 'mdi:crosshairs-question', 'ohneKalibrierung']);
         }
         this.stage.hidden = !shows;
+        this.el.toggleAttribute('data-mode-image', !this._data);
         this.stage.setAttribute('aria-busy', String(this._imageState === 'loading'));
         this.notes.replaceChildren(...notes.map(([kind, icon, key]) => this._note(kind, icon, translate(hass, key))));
         this._layout();
+    }
+
+    /** MAP-05/09: scheme colours (auto follows HA's dark mode) with override_colors, as --bvc-map-* on the view. */
+    _applyScheme() {
+        const opts = this.card._opts || {};
+        const scheme = opts.color_scheme === 'auto' || !opts.color_scheme ? (darkMode(this.hass) ? 'dark' : 'light') : opts.color_scheme;
+        const own = Object.assign({}, opts.override_colors || {});
+        const dark = own.dark || {};
+        delete own.dark;
+        const override = Object.assign(own, scheme === 'dark' ? dark : {});
+        const base = MAP_SCHEMES[scheme];
+        const colors = {
+            floor: override.floor || base.floor, wall: override.wall || base.wall, carpet: override.carpet || base.carpet, path: override.path || base.path,
+            room: override.room ? [override.room, override.room, override.room, override.room] : base.room
+        };
+        const style = this.el.style;
+        for (const key of ['floor', 'wall', 'carpet', 'path']) style.setProperty('--bvc-map-' + key, colors[key]);
+        colors.room.forEach((value, i) => style.setProperty('--bvc-map-room-' + i, value));
+        for (const key of ['no_go', 'no_mop', 'virtual_wall', 'robot', 'charger']) {
+            const name = '--bvc-map-' + key.replace('_', '-');
+            if (override[key]) style.setProperty(name, override[key]);
+            else style.removeProperty(name);
+        }
+        this.el.setAttribute('data-scheme', scheme);
+        this._colors = colors;
+    }
+
+    /** Data mode: the map from its pixel layers, only for a new frame, scheme or display (R20). */
+    _paint() {
+        if (!this._data) return;
+        const opts = this.card._opts || {};
+        const floorPlan = opts.map_display === 'floor_plan';
+        const key = JSON.stringify([this._dataFrame, this._colors, floorPlan]);
+        if (key === this._paintKey) return;
+        this._paintKey = key;
+        this.stats.paints++;
+        const c = this._colors;
+        const picture = paintMapPixels(this._data.grid, {
+            floor: parseColor(c.floor), wall: parseColor(c.wall), carpet: parseColor(c.carpet),
+            rooms: c.room.map((v) => parseColor(v)), room: parseColor(c.room[0])
+        }, { rooms: this._attrs().rooms || {}, floorPlan });
+        this._painted = { floorPlan, width: picture.width, height: picture.height };
+        let canvas = this._image && this._image.tagName === 'CANVAS' ? this._image : null;
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+            canvas.className = 'map-base';
+            canvas.setAttribute('role', 'img');
+            if (this._image) this._image.remove();
+            this.pan.insertBefore(canvas, this._pictures.overlay || this.svg);
+            this._image = canvas;
+        }
+        canvas.setAttribute('aria-label', translate(this.hass, 'karteAlt', { karte: this._mapName() }));
+        canvas.width = picture.width;
+        canvas.height = picture.height;
+        const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+        if (ctx && typeof ImageData === 'function') ctx.putImageData(new ImageData(picture.data, picture.width, picture.height), 0, 0);
+        this._imageUrl = null;
+        this._imageState = 'ready';
+        this._size = { width: picture.width, height: picture.height };
     }
 
     _note(kind, icon, text) {
@@ -2184,7 +2367,16 @@ class MapView {
         if (!p) return null;
         const g = this.svgNode('g', { 'data-object': id, 'data-symbol': kind });
         g.style.transform = 'translate(' + p.x + 'px, ' + p.y + 'px) scale(var(--bvc-map-symbol))' + (upright ? ' rotate(var(--bvc-map-turn))' : ' rotate(' + angle + 'deg)');
-        for (const [tag, attrs] of MAP_SYMBOLS[kind] || []) g.appendChild(this.svgNode(tag, attrs));
+        const icon = this.card._opts && this.card._opts.icon_set === 'material' && MATERIAL_ICONS[kind];
+        if (icon) {
+            // mdi icons need HTML: a foreignObject of 24 screen px around the point.
+            const box = this.svgNode('foreignObject', { x: -12, y: -12, width: 24, height: 24, class: 'material' });
+            const holder = document.createElement('div');
+            holder.className = 'material-icon';
+            holder.appendChild(BuschUI.ha.icon(icon));
+            box.appendChild(holder);
+            g.appendChild(box);
+        } else for (const [tag, attrs] of MAP_SYMBOLS[kind] || []) g.appendChild(this.svgNode(tag, attrs));
         return g;
     }
 
@@ -2451,6 +2643,31 @@ const CARD_STYLES = BuschUI.cardStyles + `
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+canvas.map-base {
+    image-rendering: pixelated;
+}
+/* Image mode can only grey the integration's picture (R24 exception, docs/entwicklung.md). */
+.map-view[data-scheme=grey][data-mode-image] .map-base {
+    filter: grayscale(1);
+}
+.map-layers foreignObject.material {
+    overflow: visible;
+}
+.material-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    color: var(--primary-text-color, #212121);
+    --mdc-icon-size: 18px;
+}
+[data-symbol=robot] .material-icon {
+    background: var(--bvc-map-robot, var(--primary-color, #03a9f4));
+    color: var(--text-primary-color, #ffffff);
 }
 .map-base {
     position: absolute;
@@ -3980,6 +4197,8 @@ BuschVacuumCard.__internals = {
     multiplyAffine,
     gridAffine,
     viewMatrix,
+    paintMapPixels,
+    parseColor,
     version: CARD_VERSION
 };
 

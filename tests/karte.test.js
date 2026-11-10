@@ -907,4 +907,108 @@ test('background_image/overlay_image: Ecken in Roboter-mm, unter bzw. über der 
   assert.equal(boese.shadowRoot.querySelector('.map-background'), null, 'unsichere URL verworfen');
 });
 
+// ── Task 8: Darstellung, Farbschema, Icon-Set ──────────────────────────────
+const px = (bild, x, y) => Array.from(bild.data.slice((y * bild.width + x) * 4, (y * bild.width + x) * 4 + 4));
+
+test('Datenmodus: Canvas aus den Pixelebenen statt Bild, Geometrie aus dem Gitter', async () => {
+  const { karte, daten } = await datenKarte();
+  const m = karte._map;
+  const basis = karte.shadowRoot.querySelector('.map-base');
+  assert.equal(basis.tagName, 'CANVAS');
+  assert.equal(m.stats.paints, 1);
+  const { gridAffine, decodeMapData } = intern();
+  const g = gridAffine(decodeMapData(daten));
+  assert.deepEqual(m._size, { width: g.width, height: g.height });
+  assert.deepEqual(JSON.parse(JSON.stringify(m.current().calibration)), JSON.parse(JSON.stringify(g.matrix)));
+  assert.equal(basis.getAttribute('role'), 'img');
+  assert.match(basis.getAttribute('aria-label'), /Karte 1/);
+});
+
+test('Datenmodus: neu gemalt nur bei neuem frame_id oder anderem Farbschema', async () => {
+  const { haus, karte } = await datenKarte();
+  const m = karte._map;
+  karte.hass = haus.fremd();
+  karte.hass = haus.setze(kamera(haus, { vacuum_position: { x: 5, y: 5, a: 0 } }));
+  await mikro(); await mikro();
+  assert.equal(m.stats.paints, 1);
+  karte.hass = haus.setze(kamera(haus, { frame_id: 1181 }));
+  await mikro(); await mikro();
+  assert.equal(m.stats.paints, 2);
+  karte.hass = Object.assign(haus.hass(), { themes: { darkMode: true } });
+  await mikro();
+  assert.equal(m.stats.paints, 3, 'auto folgt dem dunklen Thema');
+});
+
+test('paintMapPixels: Räume nach color_index, Wand, Teppich, Grundriss mit Konturen, Drehung', () => {
+  const { paintMapPixels, decodeMapData } = intern();
+  const daten = kartendaten({ 1: { room_id: 1, x: 125, y: 125, x0: 0, y0: 0, x1: 249, y1: 249, color_index: 0 }, 2: { room_id: 2, x: 375, y: 125, x0: 250, y0: 0, x1: 499, y1: 249, color_index: 2 } });
+  const grid = decodeMapData(daten);
+  const farben = { floor: [1, 1, 1, 255], wall: [9, 9, 9, 255], rooms: [[10, 0, 0, 255], [20, 0, 0, 255], [30, 0, 0, 255], [40, 0, 0, 255]], room: [50, 50, 50, 255], carpet: [0, 0, 0, 64] };
+  const rooms = { 1: { color_index: 0 }, 2: { color_index: 2 } };
+  const bild = paintMapPixels(grid, farben, { rooms });
+  assert.deepEqual([bild.width, bild.height], [grid.width, grid.height]);
+  // Zelle (gx, gy) liegt im Bild bei (gx, H−1−gy).
+  const zelle = (gx, gy) => px(bild, gx, grid.height - 1 - gy);
+  const [left, top] = daten.size;
+  const z1 = [Math.floor((125 - left) / 50), Math.floor((125 - top) / 50)], z2 = [Math.floor((375 - left) / 50), Math.floor((125 - top) / 50)];
+  assert.deepEqual(zelle(z2[0], z2[1]), [30, 0, 0, 255], 'Raum 2 color_index 2');
+  assert.notDeepEqual(zelle(z1[0], z1[1]).slice(0, 3), [10, 0, 0], 'Teppich über Raum 1 gemischt');
+  const wand = daten._zellen.indexOf(255);
+  assert.deepEqual(zelle(wand % grid.width, Math.floor(wand / grid.width)), [9, 9, 9, 255]);
+  assert.deepEqual(px(bild, 0, 0), [0, 0, 0, 0], 'außen durchsichtig');
+  const plan = paintMapPixels(grid, farben, { rooms, floorPlan: true });
+  const planZelle = (gx, gy) => px(plan, gx, grid.height - 1 - gy);
+  assert.deepEqual(planZelle(z2[0], z2[1]), [50, 50, 50, 255], 'Grundriss: ein Raumton');
+  // Grenze zwischen Raum 1 und 2 als Kontur in Wandfarbe.
+  const grenze = Array.from({ length: grid.width - 1 }, (_, gx) => gx).find((gx) => grid.cells[z1[1] * grid.width + gx] === 1 && grid.cells[z1[1] * grid.width + gx + 1] === 2);
+  assert.deepEqual(planZelle(grenze, z1[1]), [9, 9, 9, 255], 'Kontur');
+  const gedreht = paintMapPixels(Object.assign({}, grid, { rotation: 90 }), farben, { rooms });
+  assert.deepEqual([gedreht.width, gedreht.height], [grid.height, grid.width]);
+  // 90°: Bildpunkt (x, y) → (y, W−1−x).
+  assert.deepEqual(px(gedreht, grid.height - 1 - z2[1], grid.width - 1 - z2[0]), [30, 0, 0, 255]);
+});
+
+test('color_scheme hell/dunkel/grau/auto über --bvc-map-*; override_colors auch dunkel', async () => {
+  const farbe = (k, name) => k._map.el.style['--bvc-map-' + name];
+  const { karte: hell } = await kartenKarte('voll', { color_scheme: 'light' });
+  const { karte: dunkel } = await kartenKarte('voll', { color_scheme: 'dark' });
+  const { karte: grau } = await kartenKarte('voll', { color_scheme: 'grey' });
+  assert.ok(farbe(hell, 'floor') && farbe(dunkel, 'floor') && farbe(hell, 'floor') !== farbe(dunkel, 'floor'));
+  assert.notEqual(farbe(grau, 'room-0'), farbe(hell, 'room-0'));
+  assert.equal(grau._map.el.getAttribute('data-scheme'), 'grey');
+  const css = grau.shadowRoot.querySelector('style').textContent;
+  assert.match(css, /\.map-view\[data-scheme=grey\]\[data-mode-image\] \.map-base \{\s*filter: grayscale\(1\)/, 'Bildmodus: nur grau als Filter (R24)');
+  const u = bildUmgebung(), haus = hausAus('voll');
+  const auto = neueKarte(u, haus, { override_colors: { floor: '#123456', dark: { floor: '#654321' } } });
+  await mikro();
+  assert.equal(auto._map.el.getAttribute('data-scheme'), 'light');
+  assert.equal(farbe(auto, 'floor'), '#123456');
+  auto.hass = Object.assign(haus.hass(), { themes: { darkMode: true } });
+  assert.equal(auto._map.el.getAttribute('data-scheme'), 'dark');
+  assert.equal(farbe(auto, 'floor'), '#654321', 'dunkle Übersteuerung');
+  const { karte: boese } = await kartenKarte('voll', { override_colors: { floor: 'red;}x{', unbekannt: '#fff' } });
+  assert.deepEqual(JSON.parse(JSON.stringify(boese._opts.override_colors)), {}, 'unsichere Werte verworfen');
+});
+
+test('map_display floor_plan nur im Datenmodus; Vorgabe standard', async () => {
+  const { karte } = await datenKarte({ config: { map_display: 'floor_plan' } });
+  assert.equal(karte._opts.map_display, 'floor_plan');
+  assert.equal(karte._map._painted.floorPlan, true);
+  const { karte: normal } = await datenKarte();
+  assert.equal(normal._opts.map_display, 'standard');
+  assert.equal(normal._map._painted.floorPlan, false);
+});
+
+test('icon_set busch (eigene Formen) oder material (mdi:)', async () => {
+  const { karte } = await kartenKarte();
+  const roboter = ebene(karte, 'robot').querySelector('[data-object]');
+  assert.ok(roboter.querySelector('circle'), 'Busch-Form');
+  assert.equal(roboter.querySelector('ha-icon'), null);
+  const { karte: mat } = await kartenKarte('voll', { icon_set: 'material' });
+  const icon = ebene(mat, 'robot').querySelector('ha-icon');
+  assert.equal(icon.getAttribute('icon'), 'mdi:robot-vacuum');
+  assert.equal(ebene(mat, 'charger').querySelector('ha-icon').getAttribute('icon'), 'mdi:ev-station');
+  assert.equal(ebene(mat, 'obstacles').querySelector('ha-icon').getAttribute('icon'), 'mdi:alert');
+});
+
 module.exports = { intern, raeume };
