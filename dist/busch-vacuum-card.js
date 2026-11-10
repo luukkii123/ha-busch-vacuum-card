@@ -7938,6 +7938,23 @@ canvas.map-base {
     stroke-width: 2px;
     stroke-dasharray: 6 3;
 }
+/* map-editor objects: the state is a pattern too (R17) — new dashed, changed dotted, deleted faint; the list says it in words. */
+[data-layer=editor] [data-edit] {
+    stroke: var(--bvc-task-color, var(--primary-color, #03a9f4));
+    fill: var(--bvc-task-color, var(--primary-color, #03a9f4));
+    fill-opacity: 0.15;
+    stroke-width: 2px;
+}
+[data-layer=editor] line[data-edit] { stroke-width: 4px; }
+[data-layer=editor] [data-edit][data-state=new] { stroke-dasharray: 8 4; }
+[data-layer=editor] [data-edit][data-state=changed] { stroke-dasharray: 2 3; }
+[data-layer=editor] [data-edit][data-state=removed] { opacity: 0.35; stroke-dasharray: 1 5; fill-opacity: 0; }
+[data-layer=editor] [data-edit][data-chosen=true] { stroke-width: 4px; fill-opacity: 0.3; }
+[data-layer=editor] [data-handle] circle {
+    fill: var(--ha-card-background, var(--card-background-color, #ffffff));
+    stroke: var(--bvc-task-color, var(--primary-color, #03a9f4));
+    stroke-width: 2px;
+}
 .map-layers [data-ignored=true] {
     opacity: 0.45;
 }
@@ -11239,7 +11256,38 @@ const EDIT_TEXTS = {
         zusammenNachbarn: 'Die Räume grenzen nicht aneinander.',
         zusammenWeiter: 'Zusammenführen …',
         zusammenTitel: 'Räume zusammenführen',
-        zusammenZeile: 'Räume: {a} + {b} → ein Raum'
+        zusammenZeile: 'Räume: {a} + {b} → ein Raum',
+        kartenObj_no_mopping_areas: 'Wischverbotszonen',
+        kartenEins_no_go_areas: 'No-Go-Zone',
+        kartenEins_no_mopping_areas: 'Wischverbotszone',
+        kartenEins_ramps: 'Rampe',
+        kartenEins_virtual_walls: 'Virtuelle Wand',
+        kartenEins_passable_thresholds: 'Passierbare Schwelle',
+        kartenEins_impassable_thresholds: 'Unpassierbare Schwelle',
+        kartenEins_virtual_thresholds: 'Virtuelle Schwelle',
+        kartenEins_curtains: 'Vorhang',
+        kartenArt: 'Art',
+        kartenHinzufuegen: '{art} hinzufügen',
+        kartenObjHinweis_zones: '„Hinzufügen“ legt ein Rechteck in die Bildmitte; auf der Karte lässt sich eines aufziehen. Antippen wählt, die Eckgriffe ändern die Größe, die Fläche verschiebt.',
+        kartenObjHinweis_lines: '„Hinzufügen“ legt eine Linie in die Bildmitte; auf der Karte lässt sich eine ziehen. Antippen wählt, die Endgriffe verschieben die Enden.',
+        kartenArtLeer: '{art}: keine',
+        kartenStand_new: 'neu',
+        kartenStand_changed: 'geändert',
+        kartenStand_removed: 'gelöscht',
+        kartenZurueckholen: 'Zurückholen',
+        kartenObjBearbeiten: '{name} bearbeiten',
+        kartenGroesse: '{w} × {h} m',
+        kartenLaenge: '{l} m',
+        feld_edit_rect_x0: 'Ecke 1 x (mm)',
+        feld_edit_rect_y0: 'Ecke 1 y (mm)',
+        feld_edit_rect_x1: 'Ecke 2 x (mm)',
+        feld_edit_rect_y1: 'Ecke 2 y (mm)',
+        feld_edit_line_x0: 'Start x (mm)',
+        feld_edit_line_y0: 'Start y (mm)',
+        feld_edit_line_x1: 'Ende x (mm)',
+        feld_edit_line_y1: 'Ende y (mm)',
+        kartenMindest: 'Mindestens {mm} mm je Seite bzw. Länge (zwei Kartenraster).',
+        kartenObjTasten: 'Pfeiltasten in den Feldern: 50 mm, mit Umschalt 10 mm. Auf einem Eintrag der Liste verschieben die Pfeiltasten das Objekt; Entf entfernt es.'
     },
     en: {
         kartenSicherungTitel: 'Save map',
@@ -11381,7 +11429,38 @@ const EDIT_TEXTS = {
         zusammenNachbarn: 'The rooms do not border each other.',
         zusammenWeiter: 'Merge …',
         zusammenTitel: 'Merge rooms',
-        zusammenZeile: 'Rooms: {a} + {b} → one room'
+        zusammenZeile: 'Rooms: {a} + {b} → one room',
+        kartenObj_no_mopping_areas: 'No-mop zones',
+        kartenEins_no_go_areas: 'No-go zone',
+        kartenEins_no_mopping_areas: 'No-mop zone',
+        kartenEins_ramps: 'Ramp',
+        kartenEins_virtual_walls: 'Virtual wall',
+        kartenEins_passable_thresholds: 'Passable threshold',
+        kartenEins_impassable_thresholds: 'Impassable threshold',
+        kartenEins_virtual_thresholds: 'Virtual threshold',
+        kartenEins_curtains: 'Curtain',
+        kartenArt: 'Kind',
+        kartenHinzufuegen: 'Add {art}',
+        kartenObjHinweis_zones: '“Add” places a rectangle in the middle of the view; on the map you can draw one. A tap picks, the corner handles resize, the area moves.',
+        kartenObjHinweis_lines: '“Add” places a line in the middle of the view; on the map you can draw one. A tap picks, the end handles move the ends.',
+        kartenArtLeer: '{art}: none',
+        kartenStand_new: 'new',
+        kartenStand_changed: 'changed',
+        kartenStand_removed: 'deleted',
+        kartenZurueckholen: 'Bring back',
+        kartenObjBearbeiten: 'Edit {name}',
+        kartenGroesse: '{w} × {h} m',
+        kartenLaenge: '{l} m',
+        feld_edit_rect_x0: 'Corner 1 x (mm)',
+        feld_edit_rect_y0: 'Corner 1 y (mm)',
+        feld_edit_rect_x1: 'Corner 2 x (mm)',
+        feld_edit_rect_y1: 'Corner 2 y (mm)',
+        feld_edit_line_x0: 'Start x (mm)',
+        feld_edit_line_y0: 'Start y (mm)',
+        feld_edit_line_x1: 'End x (mm)',
+        feld_edit_line_y1: 'End y (mm)',
+        kartenMindest: 'At least {mm} mm per side or length (two map cells).',
+        kartenObjTasten: 'Arrow keys in the fields: 50 mm, with Shift 10 mm. On an entry of the list the arrow keys move the object; Delete removes it.'
     }
 };
 for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
@@ -11866,12 +11945,26 @@ function editCaps(model, data, attrs) {
         type: model.can('carpet_type') && svc('vacuum_set_carpet_type'),
         cleaning: model.can('carpet_recognition') && svc('vacuum_set_custom_carpet_cleaning')
     };
+    // Virtual thresholds and passable ones are the same device field (vwsl): a device with
+    // passable_thresholds writes them with set_threshold, one with only virtual_thresholds with
+    // set_virtual_threshold — and then never set_threshold, which would send vwsl empty.
+    const virtualOnly = svc('vacuum_set_virtual_threshold') && has('virtual_thresholds') && !has('passable_thresholds');
+    const kind = {
+        no_go_areas: svc('vacuum_set_restricted_zone') && has('no_go_areas'),
+        no_mopping_areas: svc('vacuum_set_restricted_zone') && has('no_mopping_areas'),
+        ramps: !virtualOnly && svc('vacuum_set_threshold') && has('ramps'),
+        virtual_walls: svc('vacuum_set_restricted_zone') && has('virtual_walls'),
+        passable_thresholds: !virtualOnly && svc('vacuum_set_threshold') && has('passable_thresholds'),
+        impassable_thresholds: !virtualOnly && svc('vacuum_set_threshold') && has('impassable_thresholds'),
+        virtual_thresholds: virtualOnly,
+        curtains: model.can('curtains') && svc('vacuum_set_curtain') && has('curtains')
+    };
+    const kinds = (tool) => EDIT_TOOLS[tool].lists.filter((list) => kind[list]);
     const shown = {
         rooms: (Object.keys(a.rooms || {}).length > 0 && ['vacuum_rename_segment', 'vacuum_set_segment_type', 'vacuum_split_segments', 'vacuum_merge_segments'].some(svc)) || rooms.visibility || rooms.floor,
         walls: model.can('walls') && svc('vacuum_set_walls'),
-        zones: (svc('vacuum_set_restricted_zone') && (has('no_go_areas') || has('no_mopping_areas'))) || (svc('vacuum_set_threshold') && has('ramps')),
-        lines: (svc('vacuum_set_restricted_zone') && has('virtual_walls')) || (svc('vacuum_set_threshold') && (has('passable_thresholds') || has('impassable_thresholds')))
-            || (svc('vacuum_set_virtual_threshold') && has('virtual_thresholds')) || (model.can('curtains') && svc('vacuum_set_curtain') && has('curtains')),
+        zones: kinds('zones').length > 0,
+        lines: kinds('lines').length > 0,
         carpets: svc('vacuum_set_carpet_area') && (has('carpets') || has('deleted_carpets') || model.can('carpet_recognition')),
         furniture: svc('vacuum_set_furniture') && (has('furnitures') || ['furnitures_v2', 'furnitures_v3', 'saved_furnitures', 'pet_furniture', 'extended_furnitures'].some((c) => model.can(c))),
         points: model.can('cruising') && svc('vacuum_set_predefined_points'),
@@ -11886,6 +11979,8 @@ function editCaps(model, data, attrs) {
     for (const name of EDIT_TOOL_NAMES) caps[name] = Object.assign({ shown: !!shown[name] }, locks[name] || { locked: false, reason: '' });
     caps.rooms.features = rooms;
     caps.carpets.features = carpets;
+    caps.zones.kinds = kinds('zones');
+    caps.lines.kinds = kinds('lines');
     return caps;
 }
 
@@ -12256,8 +12351,8 @@ const EDIT_TOOLS = {
         enter: (card, editor) => card._map.setMode(editor.split ? 'drag' : 'pick-room', { selected: () => roomsPicked(editor) }), onMap: (...a) => roomsOnMap(...a),
         draw: (...a) => drawSplit(...a), hit: (...a) => hitSplit(...a) },
     walls: { icon: 'mdi:wall', lists: ['walls', 'doors'], panel: null },
-    zones: { icon: 'mdi:vector-rectangle', lists: ['no_go_areas', 'no_mopping_areas', 'ramps'], panel: null },
-    lines: { icon: 'mdi:vector-line', lists: ['virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'virtual_thresholds', 'curtains'], panel: null },
+    zones: Object.assign({ icon: 'mdi:vector-rectangle', lists: ['no_go_areas', 'no_mopping_areas', 'ramps'] }, objectTool('zones')),
+    lines: Object.assign({ icon: 'mdi:vector-line', lists: ['virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'virtual_thresholds', 'curtains'] }, objectTool('lines')),
     carpets: { icon: 'mdi:rug', lists: ['carpets', 'deleted_carpets'], panel: null },
     furniture: { icon: 'mdi:sofa-outline', lists: ['furnitures'], panel: null },
     points: { icon: 'mdi:map-marker-multiple-outline', lists: ['predefined_points'], panel: null },
@@ -12322,6 +12417,10 @@ class MapEditor {
         this.foreign = false;
         this.toolCaps = editCaps(card._model(), null, cur.objects);
         this.left = false;
+        this.pick = null; // object tools: { list, i } of the chosen object
+        this.origins = {}; // object tools: per list, the base index of each draft entry (null = new)
+        this.addKinds = {}; // object tools: the kind "Hinzufügen" adds, per tool
+        this.objDrag = null;
     }
 
     lists() {
@@ -13064,6 +13163,404 @@ function drawSplit(card, editor, group, ctx) {
     });
 }
 
+// ── Objects: zones and lines (map-editor Task 7: EDI-05) — one building block for every object tool ──
+
+/** Smallest side of a rectangle or length of a line: two map cells (device grid, R: Mindestgröße). */
+function editMin(card) {
+    const m = card._map;
+    return 2 * ((m && m._data && m._data.grid && m._data.grid.grid) || GRID_MM);
+}
+
+/** A line of at least `min` mm in whole mm; a shorter one grows along its direction (to the right without one). */
+function lineFit(l, min) {
+    const dx = l.x1 - l.x0, dy = l.y1 - l.y0, length = Math.hypot(dx, dy);
+    const out = Object.assign({}, l);
+    if (length < min) {
+        const grow = min + 0.5; // whole mm afterwards may not round below min
+        out.x1 = l.x0 + (length ? dx / length : 1) * grow;
+        out.y1 = l.y0 + (length ? dy / length : 0) * grow;
+    }
+    return { x0: Math.round(out.x0), y0: Math.round(out.y0), x1: Math.round(out.x1), y1: Math.round(out.y1) };
+}
+
+const shapeOfEntry = (e) => ({ x0: e[0], y0: e[1], x1: e[2], y1: e[3] });
+
+/**
+ * Object kinds by list name: write group, shape (rect | line), fit to the
+ * smallest size, entry ↔ shape. A rectangle keeps the values after its four
+ * (the 5th value of zones/ramps is passed through — no public meaning, spec
+ * Grenzen); a new one gets `extra` (none for zones and ramps).
+ */
+const rectKind = (group, extra = []) => ({ group, shape: 'rect', fit: shapeFit, toShape: shapeOfEntry,
+    entry: (s, old) => [s.x0, s.y0, s.x1, s.y1].concat(old ? old.slice(4) : cloneList(extra)) });
+const lineKind = (group) => ({ group, shape: 'line', fit: lineFit, toShape: shapeOfEntry, entry: (s) => [s.x0, s.y0, s.x1, s.y1] });
+const EDIT_KINDS = {
+    no_go_areas: rectKind('restricted'),
+    no_mopping_areas: rectKind('restricted'),
+    ramps: rectKind('threshold'),
+    virtual_walls: lineKind('restricted'),
+    passable_thresholds: lineKind('threshold'),
+    impassable_thresholds: lineKind('threshold'),
+    virtual_thresholds: lineKind('virtual_threshold'),
+    curtains: lineKind('curtain')
+};
+
+/** An object tool's registry entry (EDIT_TOOLS): the same panel, map, layer and hit for every kind it edits. */
+function objectTool(tool) {
+    return {
+        panel: (card, editor, body, hass) => objectsPanel(card, editor, body, hass, tool),
+        enter: (card, editor) => {
+            editor.pick = null;
+            editor.objDrag = null;
+            card._map.setMode('draw-rect');
+        },
+        onMap: (card, editor, e) => objectsOnMap(card, editor, e, tool),
+        draw: (card, editor, group, ctx) => objectsDraw(card, editor, group, ctx, tool),
+        hit: (card, editor, point) => {
+            const h = objectsHit(card, editor, point, tool);
+            return h ? { id: [h.list, h.i, h.part || 'body', h.j === undefined ? '' : h.j].join(':'), object: h } : null;
+        }
+    };
+}
+
+const toolKinds = (editor, tool) => (editor.toolCaps[tool] && editor.toolCaps[tool].kinds) || [];
+
+/** Base index of each draft entry of `list` (null = new); without own bookkeeping the entries are the base ones in order. */
+function originsOf(editor, list) {
+    const entries = editor.lists()[list] || [];
+    const own = editor.origins[list];
+    if (own && own.ref === entries && own.o.length === entries.length) return own.o;
+    const n = (editor.base[list] || []).length;
+    return entries.map((e, i) => (i < n ? i : null));
+}
+
+/** One change of a draft list: fn(entries, origins) edits both; then the editor redraws. */
+function changeObjects(editor, list, fn) {
+    const entries = editor.edit(EDIT_KINDS[list].group)[list];
+    const o = originsOf(editor, list).slice();
+    fn(entries, o);
+    editor.origins[list] = { ref: entries, o };
+    editor.changed();
+}
+
+/** Rows of a list for the panel and the layer: each entry with its state (new / changed / '') and the removed base entries (R17). */
+function objectRows(editor, list) {
+    const base = editor.base[list] || [], entries = editor.lists()[list] || [];
+    const o = originsOf(editor, list);
+    const rows = entries.map((entry, i) => ({ i, entry, origin: o[i],
+        state: o[i] === null ? 'new' : JSON.stringify(entry) === JSON.stringify(base[o[i]]) ? '' : 'changed' }));
+    const used = new Set(o);
+    return rows.concat(base.map((entry, j) => ({ i: null, entry, origin: j, state: 'removed' })).filter((r) => !used.has(r.origin)));
+}
+
+/** Why the objects of a tool may not change now (text key) — a running task for carpets/points, a temporary map; '' when free. */
+function objectsLock(editor, tool) {
+    const services = [...new Set(toolKinds(editor, tool).map((list) => EDIT_GROUPS[EDIT_KINDS[list].group].service))];
+    const key = services.map((service) => editor.session.lock(service)).find(Boolean) || '';
+    return key === 'kartenSperreLaeuft' ? '' : key;
+}
+
+function setObject(card, editor, list, i, shape) {
+    const kind = EDIT_KINDS[list];
+    changeObjects(editor, list, (entries) => {
+        entries[i] = kind.entry(kind.fit(shape, editMin(card)), entries[i]);
+    });
+}
+
+function addObject(card, editor, list, shape) {
+    const kind = EDIT_KINDS[list];
+    changeObjects(editor, list, (entries, o) => {
+        entries.push(kind.entry(kind.fit(shape, editMin(card)), null));
+        o.push(null);
+        editor.pick = { list, i: entries.length - 1 };
+    });
+}
+
+function removeObject(editor, list, i) {
+    changeObjects(editor, list, (entries, o) => {
+        entries.splice(i, 1);
+        o.splice(i, 1);
+        editor.pick = null;
+    });
+}
+
+/** A removed base entry comes back unchanged (R13: undo before saving). */
+function restoreObject(editor, list, j) {
+    changeObjects(editor, list, (entries, o) => {
+        entries.push(cloneList(editor.base[list][j]));
+        o.push(j);
+    });
+}
+
+/** The default new object at the centre of the visible map: 1 × 1 m, a line of 1 m along the screen's x axis. */
+function centreShape(card, list) {
+    const c = card._mapCentre();
+    if (!c) return null;
+    if (EDIT_KINDS[list].shape === 'line') {
+        const d = shapeStep(card._map, 'right', 500);
+        return { x0: c.x - d.x, y0: c.y - d.y, x1: c.x + d.x, y1: c.y + d.y };
+    }
+    return { x0: c.x - 500, y0: c.y - 500, x1: c.x + 500, y1: c.y + 500 };
+}
+
+const metres = (hass, mm) => new Intl.NumberFormat(localeOf(hass).language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Math.abs(mm) / 1000);
+
+/** "No-Go-Zone 1 · 1,0 × 1,0 m" — name, number and size of an object (R16: the list is the screen reader's map). */
+function objectName(hass, list, n, entry) {
+    const kind = EDIT_KINDS[list], s = kind.toShape(entry);
+    const size = kind.shape === 'line' ? translate(hass, 'kartenLaenge', { l: metres(hass, Math.hypot(s.x1 - s.x0, s.y1 - s.y0)) })
+        : translate(hass, 'kartenGroesse', { w: metres(hass, s.x1 - s.x0), h: metres(hass, s.y1 - s.y0) });
+    return { name: translate(hass, 'kartenEins_' + list) + ' ' + n, size };
+}
+
+const objectKeyStep = (event) => (event.shiftKey ? 10 : 50);
+
+/** Panel of an object tool: what to add, the objects per kind with their state, the chosen one's form. */
+function objectsPanel(card, editor, body, hass, tool) {
+    const kinds = toolKinds(editor, tool);
+    const lock = objectsLock(editor, tool);
+    if (lock) body.appendChild(noteLine(translate(hass, lock), 'locked'));
+    if (!kinds.includes(editor.addKinds[tool])) editor.addKinds[tool] = kinds[0];
+    const add = document.createElement('div');
+    add.className = 'edit-row';
+    if (kinds.length > 1) {
+        const select = document.createElement('select');
+        for (const list of kinds) {
+            const option = document.createElement('option');
+            option.value = list;
+            option.textContent = translate(hass, 'kartenEins_' + list);
+            select.appendChild(option);
+        }
+        select.value = editor.addKinds[tool];
+        select.addEventListener('change', () => {
+            editor.addKinds[tool] = select.value;
+            rerender(card);
+        });
+        add.appendChild(formField('edit-kind', translate(hass, 'kartenArt'), select, '').wrap);
+    }
+    const label = translate(hass, 'kartenHinzufuegen', { art: translate(hass, 'kartenEins_' + editor.addKinds[tool]) });
+    const plus = BuschUI.action({ label, text: label, icon: 'mdi:plus-box-outline', variant: 'secondary', disabled: !!lock || !card._mapCentre(), onClick: () => {
+        const shape = centreShape(card, editor.addKinds[tool]);
+        if (shape) addObject(card, editor, editor.addKinds[tool], shape);
+    } });
+    plus.setAttribute('data-action', 'edit-add');
+    add.appendChild(plus);
+    body.appendChild(add);
+    body.appendChild(noteLine(translate(hass, 'kartenObjHinweis_' + tool)));
+    for (const list of kinds) body.appendChild(objectList(card, editor, hass, list, lock));
+    const pick = editor.pick;
+    const entry = pick && (editor.lists()[pick.list] || [])[pick.i];
+    if (entry && kinds.includes(pick.list)) objectForm(card, editor, body, hass, tool, pick, entry, lock);
+}
+
+/** The objects of one kind: a button per object (state as text, R17), removed ones with "Zurückholen". */
+function objectList(card, editor, hass, list, lock) {
+    const art = editListLabel(hass, list);
+    const box = document.createElement('div');
+    box.className = 'edit-list';
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', art);
+    const rows = objectRows(editor, list);
+    if (!rows.length) {
+        box.appendChild(noteLine(translate(hass, 'kartenArtLeer', { art })));
+        return box;
+    }
+    for (const row of rows) {
+        const n = (row.i === null ? row.origin : row.i) + 1;
+        const { name, size } = objectName(hass, list, n, row.entry);
+        const words = row.state ? translate(hass, 'kartenStand_' + row.state) : '';
+        if (row.state === 'removed') {
+            const item = document.createElement('div');
+            item.className = 'edit-item';
+            item.setAttribute('data-edit-removed', list + ':' + row.origin);
+            item.setAttribute('data-state', 'removed');
+            item.setAttribute('data-state-text', words);
+            const text = document.createElement('span');
+            text.textContent = name + ' · ' + size + ' · ' + words;
+            const back = BuschUI.action({ label: translate(hass, 'kartenZurueckholen') + ': ' + name, text: translate(hass, 'kartenZurueckholen'), icon: 'mdi:undo', variant: 'secondary',
+                disabled: !!lock, onClick: () => restoreObject(editor, list, row.origin) });
+            back.setAttribute('data-action', 'edit-restore');
+            item.append(text, back);
+            box.appendChild(item);
+            continue;
+        }
+        const chosen = !!editor.pick && editor.pick.list === list && editor.pick.i === row.i;
+        const button = BuschUI.action({ label: [name, size, words].filter(Boolean).join(', '), text: name + ' · ' + size, variant: 'secondary', onClick: () => {
+            editor.pick = chosen ? null : { list, i: row.i };
+            editor.changed();
+        } });
+        button.classList.add('edit-item');
+        button.setAttribute('data-edit-item', list + ':' + row.i);
+        button.setAttribute('aria-pressed', String(chosen));
+        if (row.state) {
+            button.setAttribute('data-state', row.state);
+            button.setAttribute('data-state-text', words);
+        }
+        button.addEventListener('keydown', (event) => objectKey(card, editor, event, list, row.i, lock));
+        box.appendChild(button);
+    }
+    return box;
+}
+
+/** Keys on an object's entry (R03/R15): arrows move it 50 mm (Shift 10 mm) along the screen, Delete removes it. */
+function objectKey(card, editor, event, list, i, lock) {
+    if (lock) return;
+    const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[event.key];
+    const entry = (editor.lists()[list] || [])[i];
+    if (!entry) return;
+    if (dir) {
+        event.preventDefault();
+        editor.pick = { list, i };
+        setObject(card, editor, list, i, shapeMove(EDIT_KINDS[list].toShape(entry), shapeStep(card._map, dir, objectKeyStep(event))));
+    } else if (event.key === 'Delete' || event.key === 'Backspace') {
+        event.preventDefault();
+        removeObject(editor, list, i);
+    }
+}
+
+/** Form of the chosen object: coordinates in robot mm (R15, number fields ±50 mm, Shift 10 mm), smallest size, remove. */
+function objectForm(card, editor, body, hass, tool, pick, entry, lock) {
+    const kind = EDIT_KINDS[pick.list];
+    const shape = kind.toShape(entry);
+    const { name } = objectName(hass, pick.list, pick.i + 1, entry);
+    const form = document.createElement('div');
+    form.className = 'edit-form';
+    form.setAttribute('role', 'group');
+    form.setAttribute('aria-label', translate(hass, 'kartenObjBearbeiten', { name }));
+    form.appendChild(noteLine(translate(hass, 'kartenObjBearbeiten', { name })));
+    const fields = document.createElement('div');
+    fields.className = 'edit-coords';
+    for (const key of ['x0', 'y0', 'x1', 'y1']) {
+        const input = document.createElement('input');
+        input.setAttribute('type', 'number');
+        input.setAttribute('inputmode', 'numeric');
+        input.setAttribute('step', '50');
+        input.value = String(shape[key]);
+        if (lock) input.disabled = true;
+        const field = formField('edit-' + key, translate(hass, 'feld_edit_' + kind.shape + '_' + key), input, '');
+        input.addEventListener('change', () => {
+            const value = Number(input.value);
+            if (input.value === '' || !Number.isFinite(value)) return rerender(card); // keeps the old value (R10)
+            return setObject(card, editor, pick.list, pick.i, Object.assign({}, shape, { [key]: value }));
+        });
+        input.addEventListener('keydown', (event) => {
+            const sign = { ArrowUp: 1, ArrowDown: -1 }[event.key];
+            if (!sign || lock) return;
+            event.preventDefault();
+            setObject(card, editor, pick.list, pick.i, Object.assign({}, shape, { [key]: shape[key] + sign * objectKeyStep(event) }));
+        });
+        fields.appendChild(field.wrap);
+    }
+    form.appendChild(fields);
+    form.appendChild(noteLine(translate(hass, 'kartenMindest', { mm: editMin(card) })));
+    form.appendChild(noteLine(translate(hass, 'kartenObjTasten')));
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const remove = BuschUI.action({ label: translate(hass, 'entfernen') + ': ' + name, text: translate(hass, 'entfernen'), icon: 'mdi:delete-outline', variant: 'secondary',
+        disabled: !!lock, onClick: () => removeObject(editor, pick.list, pick.i) });
+    remove.setAttribute('data-action', 'edit-remove');
+    actions.appendChild(remove);
+    form.appendChild(actions);
+    body.appendChild(form);
+}
+
+/**
+ * The object under a robot point: handles of the chosen object first (44-px
+ * target, R06; the nearer of a corner and the centre wins on a small zone),
+ * then the objects, the topmost first. { list, i, part?, j? } or null.
+ */
+function objectsHit(card, editor, p, tool) {
+    const m = card._map;
+    const c = clientOf(m, p);
+    const lists = editor.lists();
+    const dist = (q) => (q && c ? Math.hypot(q.x - c.x, q.y - c.y) : Infinity);
+    const pick = editor.pick;
+    const chosen = pick && (lists[pick.list] || [])[pick.i];
+    if (chosen && c) {
+        const kind = EDIT_KINDS[pick.list], s = kind.toShape(chosen);
+        const points = kind.shape === 'line' ? [[s.x0, s.y0], [s.x1, s.y1]] : [[s.x0, s.y0], [s.x1, s.y0], [s.x1, s.y1], [s.x0, s.y1]];
+        const centre = dist(clientOf(m, { x: (s.x0 + s.x1) / 2, y: (s.y0 + s.y1) / 2 }));
+        const j = points.map(([x, y]) => dist(clientOf(m, { x, y }))).findIndex((d) => d <= HANDLE_PX && (kind.shape === 'line' || d < centre));
+        if (j >= 0) return { list: pick.list, i: pick.i, part: kind.shape === 'line' ? 'end' : 'corner', j };
+    }
+    for (const list of toolKinds(editor, tool).slice().reverse()) {
+        const kind = EDIT_KINDS[list], entries = lists[list] || [];
+        for (let i = entries.length - 1; i >= 0; i--) {
+            const s = kind.toShape(entries[i]);
+            if (kind.shape === 'line') {
+                const a = clientOf(m, { x: s.x0, y: s.y0 }), b = clientOf(m, { x: s.x1, y: s.y1 });
+                if (a && b && c && segmentDistance(c, a, b) <= HANDLE_PX) return { list, i };
+            } else if (p.x >= Math.min(s.x0, s.x1) && p.x <= Math.max(s.x0, s.x1) && p.y >= Math.min(s.y0, s.y1) && p.y <= Math.max(s.y0, s.y1)) return { list, i };
+        }
+    }
+    return null;
+}
+
+/** Map events of an object tool (mode draw-rect): tap chooses, drag moves/scales the chosen one or draws a new object. */
+function objectsOnMap(card, editor, e, tool) {
+    const d = e.detail || {};
+    if (objectsLock(editor, tool)) return undefined;
+    if (e.type === 'map-tap' && d.robot) {
+        const hit = objectsHit(card, editor, d.robot, tool);
+        editor.pick = hit ? { list: hit.list, i: hit.i } : null;
+        return editor.changed();
+    }
+    if (e.type !== 'map-drag') return undefined;
+    if (d.phase === 'start') {
+        const hit = objectsHit(card, editor, d.start, tool);
+        if (hit) {
+            const shape = EDIT_KINDS[hit.list].toShape(editor.lists()[hit.list][hit.i]);
+            editor.pick = { list: hit.list, i: hit.i };
+            editor.objDrag = { kind: hit.part || 'move', j: hit.j, origin: shape, start: d.start, list: hit.list, i: hit.i, shape };
+        } else editor.objDrag = { kind: 'draw', start: d.start, list: editor.addKinds[tool] || toolKinds(editor, tool)[0], i: null, shape: { x0: d.start.x, y0: d.start.y, x1: d.start.x, y1: d.start.y } };
+        return undefined;
+    }
+    const g = editor.objDrag;
+    if (!g) return undefined;
+    if (d.phase === 'cancel') {
+        editor.objDrag = null; // the draft never changed while dragging
+        return editor.changed();
+    }
+    if (d.robot) g.shape = shapeDrag(g, d.robot);
+    if (d.phase === 'end') {
+        editor.objDrag = null;
+        return g.i === null ? addObject(card, editor, g.list, g.shape) : setObject(card, editor, g.list, g.i, g.shape);
+    }
+    card._map.refresh('editor'); // R20: only the own layer while dragging
+    return undefined;
+}
+
+/** The tool's objects on the layer editor: state as pattern (data-state, R17), removed ones faint, handles of the chosen one. */
+function objectsDraw(card, editor, group, ctx, tool) {
+    const g = editor.objDrag, pick = editor.pick;
+    const node = (list, shape, attrs) => {
+        const kind = EDIT_KINDS[list];
+        if (kind.shape === 'line') {
+            const a = ctx.toImage({ x: shape.x0, y: shape.y0 }), b = ctx.toImage({ x: shape.x1, y: shape.y1 });
+            return a && b ? group.appendChild(ctx.svgNode('line', Object.assign({ x1: a.x, y1: a.y, x2: b.x, y2: b.y }, attrs))) : null;
+        }
+        return group.appendChild(ctx.svgNode('polygon', Object.assign({ points: boxPoints(ctx, shape) }, attrs)));
+    };
+    for (const list of toolKinds(editor, tool)) {
+        for (const row of objectRows(editor, list)) {
+            const dragged = g && g.list === list && g.i !== null && g.i === row.i;
+            const shape = dragged ? g.shape : EDIT_KINDS[list].toShape(row.entry);
+            const chosen = !!pick && pick.list === list && pick.i === row.i;
+            node(list, shape, { 'data-edit': list, 'data-item': row.i === null ? 'removed:' + row.origin : row.i, 'data-state': row.state || 'same', 'data-chosen': String(chosen) });
+        }
+        if (g && g.i === null && g.list === list) node(list, g.shape, { 'data-edit': list, 'data-state': 'new', 'data-chosen': 'true' });
+    }
+    const chosen = pick && (editor.lists()[pick.list] || [])[pick.i];
+    if (!chosen) return;
+    const kind = EDIT_KINDS[pick.list];
+    const s = g && g.list === pick.list && g.i === pick.i ? g.shape : kind.toShape(chosen);
+    const points = kind.shape === 'line' ? [[s.x0, s.y0], [s.x1, s.y1]] : [[s.x0, s.y0], [s.x1, s.y0], [s.x1, s.y1], [s.x0, s.y1]];
+    points.forEach(([x, y], j) => {
+        if (!ctx.toImage({ x, y })) return;
+        group.appendChild(screenMark(ctx, { x, y }, { 'data-handle': kind.shape === 'line' ? 'end' : 'corner', 'data-corner': j })).appendChild(ctx.svgNode('circle', { r: 8 }));
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Remote control (remote): one sender, sliders, hold buttons and keys feed it (R08)
 // ---------------------------------------------------------------------------
@@ -13672,6 +14169,10 @@ BuschVacuumCard.__internals = {
     splitLimit,
     splitCheck,
     mergeCheck,
+    EDIT_KINDS,
+    lineFit,
+    objectRows,
+    editMin,
     REMOTE,
     remoteValue,
     RemoteSender,

@@ -1187,3 +1187,184 @@ test('EDI-02 Checkpoint B: alle Aufrufer von mapWrite/confirmGrant gegen die Bes
   }
   assert.deepEqual(k.haus.rufe, []);
 });
+
+// ── Task 7: Zonen und Linien (EDI-05) ───────────────────────────────────────
+
+/** Bearbeitungsmodus mit den echten Werkzeugen (ohne Testpanels) und gewähltem Werkzeug. */
+function werkzeugOffen(k, name) {
+  stift(k).click();
+  werkzeug(k, name).click();
+  return dialogVon(k.u);
+}
+const eintrag = (k, list, i) => $d(k.u, '[data-edit-item="' + list + ':' + i + '"]');
+const wert = (k, name) => Number(feldE(k, name).value);
+const optionen = (node) => Array.from(node.querySelectorAll('option'), (o) => o.value);
+/** Roboterpunkt, der auf dem Bildschirm `dx`/`dy` px neben `p` liegt. */
+const daneben = (k, p, dx, dy) => { const m = k.karte._map, s = m.toScreen(m.toImage(p)); return m.toRobot(m.fromScreen({ x: s.x + dx, y: s.y + dy })); };
+
+test('EDI-05 Zonen/Linien: Arten je Dienst und Attribut; virtuelle Schwellen nur ohne passable_thresholds — nie set_threshold und set_virtual_threshold zugleich', () => {
+  const arten = (k) => { const c = k.I.editCaps(k.karte._model(), null, k.karte._map.current().objects); return { zones: roh(c.zones.kinds), lines: roh(c.lines.kinds) }; };
+  assert.deepEqual(arten(aufbau()), { zones: ['no_go_areas', 'no_mopping_areas', 'ramps'], lines: ['virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'curtains'] });
+  assert.deepEqual(arten(aufbau({ cam: { virtual_thresholds: [] } })).lines, ['virtual_walls', 'passable_thresholds', 'impassable_thresholds', 'curtains'], 'beide Attribute: nur set_threshold (dasselbe Feld vwsl)');
+  assert.deepEqual(arten(aufbau({ cam: { passable_thresholds: null, impassable_thresholds: [], virtual_thresholds: [] } })),
+    { zones: ['no_go_areas', 'no_mopping_areas'], lines: ['virtual_walls', 'virtual_thresholds', 'curtains'] }, 'nur virtuelle Schwellen: keine Art von set_threshold (es schriebe vwsl leer)');
+  const { fixture } = require('./kartendaten.js');
+  const alle = fixture('voll').states['vacuum.robo'].attributes.capabilities;
+  assert.ok(!arten(aufbau({ vac: { capabilities: alle.filter((c) => c !== 'curtains') } })).lines.includes('curtains'), 'Vorhänge nur mit Fähigkeit curtains');
+  const k = aufbau();
+  k.haus.services.dreame_vacuum = Object.assign({}, k.haus.services.dreame_vacuum);
+  delete k.haus.services.dreame_vacuum.vacuum_set_threshold;
+  k.karte.hass = k.haus.setze({});
+  assert.deepEqual(arten(k), { zones: ['no_go_areas', 'no_mopping_areas'], lines: ['virtual_walls', 'curtains'] });
+});
+
+test('EDI-05 Zonen: + legt ein Rechteck in die Bildmitte, Formular mit Koordinaten (±50/10 mm), Mindestgröße zwei Raster, Liste mit Zustandstext; Speichern sendet alle drei Listen', async () => {
+  const k = aufbau({ bild: true });
+  const d = werkzeugOffen(k, 'zones');
+  await mikro(); await mikro();
+  assert.equal(k.karte._map._mode, 'draw-rect');
+  assert.match(d.shadowRoot.textContent, /No-Go-Zonen: keine/);
+  assert.match(d.shadowRoot.textContent, /Wischverbotszonen: keine/, 'Begriff aus R26');
+  assert.deepEqual(optionen(feldE(k, 'edit-kind')), ['no_go_areas', 'no_mopping_areas', 'ramps']);
+  waehle(k, feldE(k, 'edit-kind'), 'no_mopping_areas');
+  $d(k.u, '[data-action="edit-add"]').click();
+  const z = eintrag(k, 'no_mopping_areas', 0);
+  assert.equal(z.getAttribute('data-state'), 'new');
+  assert.equal(z.getAttribute('data-state-text'), 'neu', 'Zustand als Text, nicht nur Farbe (R17)');
+  assert.match(z.getAttribute('aria-label'), /Wischverbotszone 1, 1,0 × 1,0 m, neu/);
+  assert.equal(z.getAttribute('aria-pressed'), 'true', 'das neue Objekt ist gewählt');
+  const [x0, y0, x1, y1] = ['edit-x0', 'edit-y0', 'edit-x1', 'edit-y1'].map((f) => wert(k, f));
+  assert.equal(x1 - x0, 1000);
+  assert.equal(y1 - y0, 1000);
+  const mitte = k.karte._mapCentre();
+  assert.ok(Math.abs((x0 + x1) / 2 - mitte.x) <= 1 && Math.abs((y0 + y1) / 2 - mitte.y) <= 1, 'Bildmitte');
+  assert.equal(k.karte._map._layers.get('editor').group.querySelector('[data-edit="no_mopping_areas"]').getAttribute('data-state'), 'new', 'auf der Ebene editor mit Zustand (Muster)');
+  k.u.tasteAn(feldE(k, 'edit-x0'), 'keydown', { key: 'ArrowUp' });
+  assert.equal(wert(k, 'edit-x0'), x0 + 50);
+  k.u.tasteAn(feldE(k, 'edit-x0'), 'keydown', { key: 'ArrowDown', shiftKey: true });
+  assert.equal(wert(k, 'edit-x0'), x0 + 40);
+  tippen(k, feldE(k, 'edit-x1'), x0 + 60);
+  assert.equal(wert(k, 'edit-x1'), x0 + 140, 'Mindestgröße: zwei Kartenraster (2 × 50 mm)');
+  assert.match($d(k.u, '[data-panel="zones"]').textContent, /Mindestens 100 mm/);
+  assert.deepEqual(k.haus.rufe, []);
+  $d(k.u, '[data-action="save"]').click();
+  assert.match(d.shadowRoot.textContent, /Wischverbotszonen: 1 neu, 0 geändert, 0 gelöscht/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_restricted_zone']);
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', walls: [[777, -7926, 794, -6336]], zones: [], no_mops: [[x0 + 40, y0, x0 + 140, y1]] }, 'die anderen zwei Listen unverändert mit');
+});
+
+test('EDI-05 Schwellen und Rampen: eine Art ändern → vacuum_set_threshold mit allen drei Listen; 5. Wert bestehender Rampen durchgereicht, neue ohne; Entfernen zeigt „gelöscht“, Zurückholen', async () => {
+  const k = aufbau({ bild: true, cam: { ramps: [{ x0: 0, y0: 0, x1: 400, y1: 0, x2: 400, y2: 600, x3: 0, y3: 600, angle: 90 }] } });
+  const d = werkzeugOffen(k, 'lines');
+  await mikro(); await mikro();
+  eintrag(k, 'passable_thresholds', 0).click();
+  assert.equal(wert(k, 'edit-x0'), -4584);
+  tippen(k, feldE(k, 'edit-x0'), -4600);
+  assert.equal(eintrag(k, 'passable_thresholds', 0).getAttribute('data-state'), 'changed');
+  assert.match(eintrag(k, 'passable_thresholds', 0).getAttribute('aria-label'), /Passierbare Schwelle 1, .* m, geändert/);
+  eintrag(k, 'virtual_walls', 0).click();
+  $d(k.u, '[data-action="edit-remove"]').click();
+  const weg = $d(k.u, '[data-edit-removed="virtual_walls:0"]');
+  assert.equal(weg.getAttribute('data-state-text'), 'gelöscht');
+  assert.match(weg.textContent, /Virtuelle Wand 1/);
+  assert.equal(eintrag(k, 'virtual_walls', 0), null);
+  weg.querySelector('[data-action="edit-restore"]').click();
+  assert.equal(eintrag(k, 'virtual_walls', 0).getAttribute('data-state'), null, 'zurückgeholt: unverändert');
+  assert.equal(k.karte._mapEdit.dirty(['virtual_walls']), false);
+  $d(k.u, '[data-action="save"]').click();
+  assert.match(d.shadowRoot.textContent, /Passierbare Schwellen: 0 neu, 1 geändert, 0 gelöscht/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_threshold'], 'nur die Gruppe der geänderten Art');
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', passable_thresholds: [[-4600, -7932, -3289, -7932], [-4708, -7418, -3234, -7418]], impassable_thresholds: [], ramps: [[0, 0, 400, 600, 90]] });
+  // Rampe verschieben (Pfeiltaste auf dem Eintrag) und neue Rampe: 5. Wert nur bei der bestehenden.
+  k.u.zurueck();
+  werkzeug(k, 'zones').click();
+  const rampe = eintrag(k, 'ramps', 0);
+  rampe.click();
+  k.u.tasteAn(eintrag(k, 'ramps', 0), 'keydown', { key: 'ArrowRight' });
+  k.u.tasteAn(eintrag(k, 'ramps', 0), 'keydown', { key: 'ArrowRight', shiftKey: true });
+  waehle(k, feldE(k, 'edit-kind'), 'ramps');
+  $d(k.u, '[data-action="edit-add"]').click();
+  $d(k.u, '[data-action="save"]').click();
+  $d(k.u, '[data-action="confirm"]').click();
+  await mikro(); await mikro();
+  assert.deepEqual(dienste(k.haus).slice(2), ['vacuum_set_threshold']);
+  const { ramps, passable_thresholds } = roh(k.haus.rufe[2].data);
+  assert.equal(ramps.length, 2);
+  assert.equal(ramps[0][4], 90, 'bestehende Rampe: 5. Wert durchgereicht');
+  assert.equal(Math.abs(ramps[0][0]) + Math.abs(ramps[0][1]), 60, 'verschoben um 50 + 10 mm');
+  assert.equal(ramps[0][2] - ramps[0][0], 400);
+  assert.equal(ramps[1].length, 4, 'neue Rampe ohne 5. Wert');
+  assert.deepEqual(passable_thresholds, [[-4600, -7932, -3289, -7932], [-4708, -7418, -3234, -7418]], 'Schwellen unverändert mit');
+  // Entf auf dem Eintrag entfernt.
+  k.u.zurueck();
+  k.u.tasteAn(eintrag(k, 'ramps', 1), 'keydown', { key: 'Delete' });
+  assert.equal(eintrag(k, 'ramps', 1), null);
+  assert.ok($d(k.u, '[data-edit-removed="ramps:1"]'));
+});
+
+test('EDI-05 Geräte nur mit virtual_thresholds: neue Linie → nur vacuum_set_virtual_threshold, nie vacuum_set_threshold', async () => {
+  const k = aufbau({ bild: true, cam: { passable_thresholds: null, impassable_thresholds: [], ramps: null, virtual_thresholds: [{ x0: 0, y0: 0, x1: 800, y1: 0 }] } });
+  werkzeugOffen(k, 'lines');
+  await mikro(); await mikro();
+  assert.deepEqual(optionen(feldE(k, 'edit-kind')), ['virtual_walls', 'virtual_thresholds', 'curtains']);
+  waehle(k, feldE(k, 'edit-kind'), 'virtual_thresholds');
+  $d(k.u, '[data-action="edit-add"]').click();
+  const [x0, y0, x1, y1] = ['edit-x0', 'edit-y0', 'edit-x1', 'edit-y1'].map((f) => wert(k, f));
+  assert.equal(Math.round(Math.hypot(x1 - x0, y1 - y0)), 1000, 'neue Linie 1 m');
+  $d(k.u, '[data-action="save"]').click();
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Virtuelle Schwellen: 1 neu/);
+  $d(k.u, '[data-action="confirm"]').click();
+  await k.sicherungFertig();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_virtual_threshold']);
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', virtual_thresholds: [[0, 0, 800, 0], [x0, y0, x1, y1]] });
+});
+
+test('EDI-05 Karte: Aufziehen in draw-rect legt an (Mindestgröße), Eckgriff (44 px) skaliert, Fläche verschiebt, Abbrechen stellt her; Linienende ziehen', async () => {
+  const k = aufbau({ bild: true });
+  werkzeugOffen(k, 'zones');
+  await mikro(); await mikro();
+  const c = k.karte._mapCentre();
+  const p = (dx, dy) => ({ x: c.x + dx, y: c.y + dy });
+  const no = () => roh(k.karte._mapEdit.lists().no_go_areas);
+  const r = (v) => v.map(Math.round);
+  zieh(k, 'start', p(0, 0), p(0, 0));
+  zieh(k, 'move', p(0, 0), p(4000, 3000));
+  assert.deepEqual(no(), [], 'während des Ziehens bleibt der Entwurf unberührt');
+  zieh(k, 'end', p(0, 0), p(4000, 3000));
+  assert.deepEqual(no(), [r([c.x, c.y, c.x + 4000, c.y + 3000])]);
+  // Kleines Aufziehen: Mindestgröße.
+  zieh(k, 'start', p(-9000, -9000), p(-9000, -9000));
+  zieh(k, 'end', p(-9000, -9000), p(-8990, -8990));
+  assert.deepEqual(no()[1], r([c.x - 9000, c.y - 9000, c.x - 8900, c.y - 8900]));
+  // Eckgriff: 15 px neben der Ecke trifft noch (44-px-Ziel).
+  eintrag(k, 'no_go_areas', 0).click();
+  const ecke = daneben(k, p(4000, 3000), 15, 15);
+  zieh(k, 'start', ecke, ecke);
+  zieh(k, 'end', ecke, p(5000, 3500));
+  assert.deepEqual(no()[0], r([c.x, c.y, c.x + 5000, c.y + 3500]), 'gegenüberliegende Ecke bleibt');
+  // Fläche verschieben.
+  zieh(k, 'start', p(2000, 1500), p(2000, 1500));
+  zieh(k, 'end', p(2000, 1500), p(2500, 1000));
+  assert.deepEqual(no()[0], r([c.x + 500, c.y - 500, c.x + 5500, c.y + 3000]));
+  // Abbrechen stellt her.
+  zieh(k, 'start', p(2000, 1500), p(2000, 1500));
+  zieh(k, 'move', p(2000, 1500), p(9000, 9000));
+  zieh(k, 'cancel', p(2000, 1500), p(9000, 9000));
+  assert.deepEqual(no()[0], r([c.x + 500, c.y - 500, c.x + 5500, c.y + 3000]));
+  // Linien: Ende am Griff ziehen.
+  $d(k.u, '[data-action="discard-draft"]').click();
+  werkzeug(k, 'lines').click();
+  eintrag(k, 'virtual_walls', 0).click();
+  const ende = daneben(k, { x: 794, y: -6336 }, 10, 0);
+  zieh(k, 'start', ende, ende);
+  zieh(k, 'end', ende, { x: 900, y: -5000 });
+  assert.deepEqual(roh(k.karte._mapEdit.lists().virtual_walls), [[777, -7926, 900, -5000]], 'anderes Ende bleibt');
+  // Tippen auf leere Karte hebt die Wahl auf.
+  tippeAuf(k, p(-20000, -20000));
+  assert.equal(eintrag(k, 'virtual_walls', 0).getAttribute('aria-pressed'), 'false');
+  assert.deepEqual(k.haus.rufe, []);
+});
