@@ -633,6 +633,19 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sperre_notDrying: 'Während des Trocknens nicht änderbar.',
             sperre_autoDrying: 'Nur bei automatischem Trocknen ohne intelligentes Trocknen.',
             sperre_autoEmpty: 'Nur bei eingeschaltetem Auto-Entleeren.',
+            sperre_customized: 'Customized Cleaning ist an: dieser Wert gilt je Raum.',
+            sperre_customizedMode: 'Customized Cleaning ist an: dieser Wert gilt je Raum.',
+            sperre_savedMap: 'Nur mit gespeicherter Karte, nicht mit einer temporären.',
+            einstellungen: 'Einstellungen',
+            reinigungseinstellungen: 'Reinigungseinstellungen',
+            abschnitt_cleangenius: 'CleanGenius',
+            abschnitt_basic: 'Grundeinstellungen',
+            abschnitt_customized: 'Customized Cleaning',
+            abschnitt_sequence: 'Reinigungsreihenfolge',
+            abschnitt_more: 'Mehr',
+            weitereReinigung: 'Weitere Reinigungseinstellungen',
+            wiederholungenHinweis: 'Gilt für Raum ohne Customized Cleaning, Zone und Spot.',
+            cleanGeniusRaeume: 'CleanGenius wählt die Einstellungen je Raum selbst.',
             status_washing: 'Mop wird gewaschen',
             status_washing_paused: 'Waschen pausiert',
             status_drying: 'Trocknet',
@@ -1129,6 +1142,19 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             sperre_notDrying: 'Cannot change while drying.',
             sperre_autoDrying: 'Only with automatic drying on and smart drying off.',
             sperre_autoEmpty: 'Only with auto-emptying on.',
+            sperre_customized: 'Customized Cleaning is on: this value is set per room.',
+            sperre_customizedMode: 'Customized Cleaning is on: this value is set per room.',
+            sperre_savedMap: 'Only with a saved map, not a temporary one.',
+            einstellungen: 'Settings',
+            reinigungseinstellungen: 'Cleaning settings',
+            abschnitt_cleangenius: 'CleanGenius',
+            abschnitt_basic: 'Basics',
+            abschnitt_customized: 'Customized Cleaning',
+            abschnitt_sequence: 'Cleaning sequence',
+            abschnitt_more: 'More',
+            weitereReinigung: 'More cleaning settings',
+            wiederholungenHinweis: 'Applies to rooms without Customized Cleaning, zones and spots.',
+            cleanGeniusRaeume: 'CleanGenius picks the settings per room itself.',
             status_washing: 'Mop washing',
             status_washing_paused: 'Washing paused',
             status_drying: 'Drying',
@@ -1728,7 +1754,7 @@ const SETTING_KEYS = {
         // custom_mopping_mode has no entity, only the attribute (types.py:1495).
         switch: ['custom_mopping_mode', 'tight_mopping', 'mop_extend', 'mopping_under_furnitures', 'wider_corner_coverage',
             'auto_change_mop', 'water_electrolysis', 'pressurized_cleaning'],
-        select: ['mop_extend_frequency', 'mop_pad_swing', 'mopping_type', 'custom_mopping_route', 'mop_pressure', 'mop_temperature',
+        select: ['mop_extend_frequency', 'mop_pad_swing', 'mopping_type', 'custom_mopping_route', 'mop_temperature',
             'scraper_frequency'],
         number: ['mop_cleaning_remainder']
     },
@@ -1772,7 +1798,7 @@ const SETTING_KEYS = {
     },
     clean: {
         switch: ['customized_cleaning', 'cleaning_sequence'],
-        select: ['suction_level', 'water_volume', 'cleaning_mode', 'mop_pad_humidity', 'cleaning_route', 'cleangenius', 'cleangenius_mode'],
+        select: ['suction_level', 'water_volume', 'cleaning_mode', 'mop_pad_humidity', 'cleaning_route', 'mop_pressure', 'cleangenius', 'cleangenius_mode'],
         number: ['wetness_level']
     }
 };
@@ -1782,7 +1808,10 @@ const SETTING_EXTRA = {
     volume: { min: 0, max: 100 },
     camera_light_brightness: { min: 40, max: 100 },
     mop_cleaning_remainder: { min: 0, max: 180 },
-    wetness_level: { min: 1, max: 32 },
+    // 1–15 where the station washes by frequency (number.py#L166).
+    wetness_level: { min: 1, max: (model) => (model.can('mop_clean_frequency') ? 15 : 32) },
+    // Only while CleanGenius is on; its list stays empty otherwise (types.py#L2149).
+    cleangenius_mode: { shownIf: (model) => !['off', ''].includes(enumName(settingValue(model, 'cleangenius').value)) },
     auto_empty_area: { min: 5, max: 15 },
     // Rotates the robot's stored map (set_map_rotation, device.py#L6569): only after asking (R13).
     map_rotation: { options: ['0', '90', '180', '270'], confirm: true, wire: (value) => ({ key: 'map_rotation', value: Number(value) }) },
@@ -1825,6 +1854,14 @@ const SETTING_NEEDS = {
     autoEmpty: ['auto_empty_frequency']
 };
 SETTING_NEEDS.idle.push('self_clean_frequency', 'auto_recleaning', 'auto_rewashing');
+// clean-settings (types.py#L2022–L2193): after idle and CleanGenius, the room values and the map.
+SETTING_NEEDS.idle.push('customized_cleaning', 'cleaning_route', 'cleangenius', 'cleangenius_mode');
+SETTING_NEEDS.cleanGenius.push('customized_cleaning', 'cleaning_mode', 'suction_level', 'water_volume', 'mop_pad_humidity', 'wetness_level', 'cleaning_route');
+Object.assign(SETTING_NEEDS, {
+    customized: ['suction_level', 'water_volume', 'mop_pad_humidity', 'wetness_level'],
+    customizedMode: ['cleaning_mode', 'cleaning_route'],
+    savedMap: ['customized_cleaning', 'cleaning_route']
+});
 
 /** Dock's tabs (DOCK-02…04), in order; a station key not named in STATION_TAB_OF washes. */
 const STATION_TABS = ['wash', 'dry', 'empty'];
@@ -1898,7 +1935,10 @@ const SETTING_LOCKS = {
     byTime: (model) => enumName(settingValue(model, 'self_clean_frequency').value) === 'by_time',
     notDrying: (model) => model.attr('drying') !== true,
     autoDrying: (model) => settingValue(model, 'auto_drying').value !== false && settingValue(model, 'smart_drying').value !== true,
-    autoEmpty: (model) => settingValue(model, 'auto_dust_collecting').value !== false
+    autoEmpty: (model) => settingValue(model, 'auto_dust_collecting').value !== false,
+    customized: (model) => model.attr('customized_cleaning') !== true,
+    customizedMode: (model) => !(model.attr('customized_cleaning') === true && model.can('custom_cleaning_mode')),
+    savedMap: (model) => model.attr('has_saved_map') !== false && model.attr('has_temporary_map') !== true
 };
 
 /**
@@ -1925,13 +1965,13 @@ function settingState(card, model, key) {
     return {
         key, def, entityId, options,
         label: settingLabel(hass, key),
-        present: current.source !== null && !(def.replacedBy && model.can(def.replacedBy)),
+        present: current.source !== null && !(def.replacedBy && model.can(def.replacedBy)) && !(def.shownIf && !def.shownIf(model)),
         source: current.source,
         value,
         known: value !== undefined,
         // Ranges: the card's table, else the vacuum's `<key>_min/_max` (self_clean_area), else the entity's.
         min: def.min !== undefined ? def.min : model.attr(key + '_min') !== undefined ? model.attr(key + '_min') : entity ? entity.attributes.min : undefined,
-        max: def.max !== undefined ? def.max : model.attr(key + '_max') !== undefined ? model.attr(key + '_max') : entity ? entity.attributes.max : undefined,
+        max: typeof def.max === 'function' ? def.max(model) : def.max !== undefined ? def.max : model.attr(key + '_max') !== undefined ? model.attr(key + '_max') : entity ? entity.attributes.max : undefined,
         step: entity && entity.attributes.step ? entity.attributes.step : 1,
         locked: !!reason,
         reason,
@@ -5145,6 +5185,97 @@ function voicePackConfirm(card, draft) {
 }
 
 // ---------------------------------------------------------------------------
+// Cleaning settings (clean-settings): global rows, CleanGenius, Customized
+// Cleaning per room, mop type, cleaning sequence (SET-01…06) — rows and the
+// write path are device-settings' (R08)
+// ---------------------------------------------------------------------------
+
+/** Room keys of the integration (SEGMENT_SELECTS/NUMBERS) and the module that writes them. */
+const ROOM_KEYS = {
+    'clean-settings': ['suction_level', 'water_volume', 'mop_pad_humidity', 'cleaning_mode', 'cleaning_times', 'custom_mopping_route',
+        'cleaning_route', 'mop_pressure', 'mop_temperature', 'mop_type', 'order', 'wetness_level'],
+    'map-editor': ['name', 'visibility', 'floor_material', 'floor_material_direction']
+};
+
+/** Basics in the reference's order; repeats follow as the card's own row. */
+const CLEAN_BASIC = ['cleaning_mode', 'suction_level', 'mop_pad_humidity', 'wetness_level', 'water_volume', 'cleaning_route', 'mop_pressure'];
+
+/**
+ * Repeats 1–3 (range of Customized Cleaning, device.py#L7244): no device key,
+ * the card keeps it (`_repeats`, never stored, R21). One row for the task
+ * panel and the settings (R08).
+ */
+function repeatsRow(card, { hint = false } = {}) {
+    const hass = card._hass;
+    const row = document.createElement('div');
+    row.className = 'task-tools task-repeats';
+    row.setAttribute('role', 'group');
+    row.setAttribute('aria-label', translate(hass, 'wiederholungen'));
+    const value = document.createElement('span');
+    value.className = 'task-count';
+    value.setAttribute('role', 'status');
+    value.setAttribute('data-note', 'repeats');
+    value.textContent = translate(hass, 'wiederholungenWert', { n: card._repeats });
+    const step = (d) => {
+        card._repeats = Math.min(3, Math.max(1, card._repeats + d));
+        card._update();
+        rerender(card);
+    };
+    const minus = BuschUI.action({ label: translate(hass, 'wenigerWiederholungen'), icon: 'mdi:minus', variant: 'secondary', disabled: card._repeats <= 1, onClick: () => step(-1) });
+    minus.setAttribute('data-action', 'repeats-minus');
+    const plus = BuschUI.action({ label: translate(hass, 'mehrWiederholungen'), icon: 'mdi:plus', variant: 'secondary', disabled: card._repeats >= 3, onClick: () => step(1) });
+    plus.setAttribute('data-action', 'repeats-plus');
+    row.append(value, minus, plus);
+    if (hint) {
+        const text = document.createElement('span');
+        text.className = 'repeats-hint';
+        text.textContent = translate(hass, 'wiederholungenHinweis');
+        row.appendChild(text);
+    }
+    return row;
+}
+
+/** A titled section of a view; without content it does not appear (R18). */
+function viewSection(hass, name, nodes) {
+    if (!nodes.length) return null;
+    const section = document.createElement('section');
+    section.setAttribute('data-section', name);
+    const heading = document.createElement('h2');
+    heading.className = 'settings-heading';
+    heading.textContent = translate(hass, 'abschnitt_' + name);
+    const list = document.createElement('div');
+    list.className = 'settings-list';
+    list.append(...nodes);
+    section.append(heading, list);
+    return section;
+}
+
+/** SET-01: the cleaning settings; rows save at once like in device-settings. */
+function cleanSettingsView(card) {
+    loadSettingTexts(card);
+    return {
+        title: translate(card._hass, 'reinigungseinstellungen'),
+        kind: 'editor',
+        watch: () => settingsWatch(card),
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const rows = (keys) => keys.map((key) => settingRow(card, model, key)).filter(Boolean);
+            const sections = [
+                ['cleangenius', model.can('cleangenius') ? rows(['cleangenius', 'cleangenius_mode']) : []],
+                ['basic', rows(CLEAN_BASIC).concat(repeatsRow(card, { hint: true }))],
+                ['customized', model.can('customized_cleaning') ? rows(['customized_cleaning']) : []],
+                ['more', groupShown(model, 'cleaning')
+                    ? [viewLink(translate(hass, 'weitereReinigung'), 'more-cleaning', 'mdi:robot-vacuum', () => dialog.show(groupView(card, 'cleaning')))] : []]
+            ];
+            for (const [name, nodes] of sections) {
+                const section = viewSection(hass, name, nodes);
+                if (section) body.appendChild(section);
+            }
+        }
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Station (dock): actions, dock menu, station view with tabs (DOCK-01…06)
 // ---------------------------------------------------------------------------
 
@@ -6383,10 +6514,27 @@ ha-card {
     flex-direction: column;
     gap: var(--ha-space-2, 8px);
 }
+.task-head {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--ha-space-1, 4px);
+}
 .tasks {
     display: flex;
     flex-wrap: wrap;
     gap: var(--ha-space-1, 4px);
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.task-settings {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+}
+.task-settings ha-icon {
+    order: -1;
+    --mdc-icon-size: 20px;
 }
 .task {
     display: inline-flex;
@@ -6914,6 +7062,21 @@ const DIALOG_STYLES = BuschUI.cardStyles + `
 }
 .station-actions {
     margin-top: var(--ha-space-2, 8px);
+}
+.task-repeats {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    padding: var(--ha-space-2, 8px) 0;
+}
+.task-repeats .task-count {
+    flex: 1 1 auto;
+}
+.repeats-hint {
+    flex: 1 1 100%;
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
 }
 .settings-heading {
     margin: var(--ha-space-4, 16px) 0 0;
@@ -7594,6 +7757,8 @@ class BuschVacuumCard extends HTMLElement {
         const types = tasksFor(model);
         const nodes = [];
         const chosen = active ? runningTask(model) : task;
+        const head = document.createElement('div');
+        head.className = 'task-head';
         if (types.length > 1) {
             const group = document.createElement('div');
             group.className = 'tasks';
@@ -7618,8 +7783,17 @@ class BuschVacuumCard extends HTMLElement {
                 });
                 group.appendChild(button);
             });
-            nodes.push(group);
+            head.appendChild(group);
         }
+        // SET-01: not while a scheduled, shortcut or CleanGenius task runs (their settings are fixed).
+        if (model.can('settings') && !(active && ['scheduled_clean', 'shortcut_task', 'cleangenius_cleaning'].some((k) => model.attr(k) === true))) {
+            const label = translate(hass, 'einstellungen');
+            const button = BuschUI.action({ label: translate(hass, 'reinigungseinstellungen'), text: label, icon: 'mdi:tune-variant', onClick: () => this._openDialog(cleanSettingsView(this)) });
+            button.classList.add('task-settings');
+            button.setAttribute('data-action', 'clean-settings');
+            head.appendChild(button);
+        }
+        if (head.childNodes.length) nodes.push(head);
         if (active) {
             const [key, icon] = model.attr('scheduled_clean') ? ['aufgabeGeplant', 'mdi:calendar-clock']
                 : model.attr('shortcut_task') ? ['aufgabeShortcut', 'mdi:star-four-points-outline']
@@ -7631,7 +7805,7 @@ class BuschVacuumCard extends HTMLElement {
             if (task === 'spot') nodes.push(...this._spotPanel(hass, model));
             if (task === 'goto') nodes.push(...this._gotoPanel(hass, model));
             // TASK-06: room without Customized Cleaning (else the rooms' own values go), zone, spot.
-            if (task === 'zone' || task === 'spot' || (task === 'room' && model.attr('customized_cleaning') !== true)) nodes.push(this._repeatsRow(hass));
+            if (task === 'zone' || task === 'spot' || (task === 'room' && model.attr('customized_cleaning') !== true)) nodes.push(repeatsRow(this));
             if (this._undo) {
                 const note = this._note('task-note', 'mdi:undo-variant', translate(hass, 'auswahlGeleert'));
                 note.appendChild(this._panelButton(hass, 'rueckgaengig', 'mdi:undo', 'undo', () => this._undoClear()));
@@ -7827,32 +8001,6 @@ class BuschVacuumCard extends HTMLElement {
             nodes.push(note);
         }
         return nodes;
-    }
-
-    /**
-     * Repeats 1–3 (range of Customized Cleaning, device.py#L7244).
-     * shortcut: local stepper until clean-settings brings the shared row (SET-02, R08); replace it then.
-     */
-    _repeatsRow(hass) {
-        const row = document.createElement('div');
-        row.className = 'task-tools task-repeats';
-        row.setAttribute('role', 'group');
-        row.setAttribute('aria-label', translate(hass, 'wiederholungen'));
-        const value = document.createElement('span');
-        value.className = 'task-count';
-        value.setAttribute('role', 'status');
-        value.setAttribute('data-note', 'repeats');
-        value.textContent = translate(hass, 'wiederholungenWert', { n: this._repeats });
-        const step = (d) => {
-            this._repeats = Math.min(3, Math.max(1, this._repeats + d));
-            this._update();
-        };
-        const minus = BuschUI.action({ label: translate(hass, 'wenigerWiederholungen'), icon: 'mdi:minus', variant: 'secondary', disabled: this._repeats <= 1, onClick: () => step(-1) });
-        minus.setAttribute('data-action', 'repeats-minus');
-        const plus = BuschUI.action({ label: translate(hass, 'mehrWiederholungen'), icon: 'mdi:plus', variant: 'secondary', disabled: this._repeats >= 3, onClick: () => step(1) });
-        plus.setAttribute('data-action', 'repeats-plus');
-        row.append(value, minus, plus);
-        return row;
     }
 
     /** A labelled panel button with a stable data-action (focus survives the redraw). */
@@ -8735,6 +8883,7 @@ BuschVacuumCard.__internals = {
     settingState,
     settingRow,
     MODULE_VIEWS,
+    ROOM_KEYS,
     daysOfMask,
     maskOfDays,
     maskOfRepeats,
