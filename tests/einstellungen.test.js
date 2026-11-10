@@ -332,3 +332,70 @@ test('Wischen verweist auf Station → Waschen (gleiche Zeilen, Abnahme dock); o
   gruppe(o, 'mopping').click();
   assert.equal($d(o.u, '[data-action="station"]'), null);
 });
+
+// ── Task 4: Kamera und KI (ALL-06, DEV-05) ──────────────────────────────────
+
+const zustand = (id, state, attributes = {}) => ({ [id]: { entity_id: id, state, attributes } });
+
+test('Kamera und KI: alle Zeilen des Geräts, Werte aus Attribut bzw. aktivierter Entität', () => {
+  const k = einstellungen();
+  gruppe(k, 'camera').click();
+  assert.deepEqual(zeilen(k), ['obstacle_avoidance', 'ai_obstacle_detection', 'ai_obstacle_image_upload', 'ai_obstacle_picture', 'ai_pet_detection',
+    'ai_furniture_detection', 'ai_fluid_detection', 'fuzzy_obstacle_detection', 'pet_focused_detection', 'pet_picture', 'stain_avoidance',
+    'collision_avoidance', 'fill_light', 'human_follow', 'camera_light_brightness_auto', 'camera_light_brightness']);
+  const m = k.model();
+  for (const key of ['obstacle_avoidance', 'ai_obstacle_detection', 'collision_avoidance', 'fill_light']) {
+    assert.equal(k.I.settingState(k.karte, m, key).value, m.attr(key) === true || m.attr(key) === 1, key);
+  }
+  assert.deepEqual([k.I.settingState(k.karte, m, 'human_follow').source, k.I.settingState(k.karte, m, 'human_follow').value], ['entity', false]);
+});
+
+test('Die sieben früher deaktivierten Einstellungen: Entitätswert oder ehrlich „unbekannt“ mit Ein/Aus', () => {
+  const k = aufbau('voll', { attribute: { ai_obstacle_detection: true } });
+  for (const key of ['ai_furniture_detection', 'ai_fluid_detection', 'fuzzy_obstacle_detection', 'camera_light_brightness_auto']) {
+    const z = zeile(k, key);
+    assert.equal(z.querySelector('[role="switch"]'), null, key + ': kein geratener Schalterzustand');
+    assert.match(z.querySelector('.setting-status').textContent, /Wert unbekannt/, key);
+    assert.ok(z.querySelector('[data-action="on"]') && z.querySelector('[data-action="off"]'), key);
+  }
+  zeile(k, 'ai_furniture_detection').querySelector('[data-action="on"]').click();
+  assert.deepEqual(aufrufe(k), [setze(k, 'ai_furniture_detection', 1)]);
+  const h = aufbau('voll', { states: zustand('switch.robo_human_follow', 'on') });
+  assert.equal(zeile(h, 'human_follow').querySelector('[role="switch"]').getAttribute('aria-checked'), 'true');
+});
+
+test('KI-Unterpunkte gesperrt, solange die KI-Hinderniserkennung aus ist; Fleckenmeiden braucht Flüssigkeitserkennung', () => {
+  const k = aufbau();
+  assert.match(zeile(k, 'pet_focused_detection').querySelector('.setting-status').textContent, /KI-Hinderniserkennung/);
+  const f = aufbau('voll', { attribute: { ai_obstacle_detection: true }, states: zustand('switch.robo_ai_fluid_detection', 'off') });
+  assert.match(zeile(f, 'stain_avoidance').querySelector('.setting-status').textContent, /Flüssigkeitserkennung/);
+  assert.equal(zeile(f, 'pet_focused_detection').getAttribute('data-state'), 'ok');
+});
+
+test('Kameralicht-Helligkeit 40–100; mit Automatik gesperrt', () => {
+  const k = aufbau('voll', { states: zustand('number.robo_camera_light_brightness', '70', { min: 40, max: 100, step: 1 }) });
+  const feld = zeile(k, 'camera_light_brightness').querySelector('input');
+  assert.deepEqual([feld.getAttribute('min'), feld.getAttribute('max'), feld.value], ['40', '100', '70']);
+  feld.value = '30';
+  feld.dispatchEvent(k.u.neuesEreignis('change'));
+  assert.match(zeile(k, 'camera_light_brightness').querySelector('.setting-status').textContent, /40 bis 100/);
+  const neuFeld = zeile(k, 'camera_light_brightness').querySelector('input');
+  neuFeld.value = '85';
+  neuFeld.dispatchEvent(k.u.neuesEreignis('change'));
+  assert.deepEqual(aufrufe(k), [setze(k, 'camera_light_brightness', 85)]);
+  const a = aufbau('voll', { states: zustand('number.robo_camera_light_brightness', '101') });
+  assert.match(zeile(a, 'camera_light_brightness').querySelector('.setting-status').textContent, /Automatik/);
+});
+
+test('Kameralicht automatisch über den belegten Umweg: an = Helligkeit 40 mit params [101], aus = 40', () => {
+  const an = aufbau('voll', { states: zustand('switch.robo_camera_light_brightness_auto', 'off') });
+  zeile(an, 'camera_light_brightness_auto').querySelector('[role="switch"]').click();
+  assert.deepEqual(aufrufe(an), [{ domain: 'dreame_vacuum', service: 'vacuum_set_property', data: { entity_id: 'vacuum.robo', key: 'camera_light_brightness', value: 40, params: [101] } }]);
+  // Bestätigt über die Entität der Automatik, nicht über den geschriebenen Schlüssel.
+  an.karte.hass = an.haus.setze(zustand('switch.robo_camera_light_brightness_auto', 'on'));
+  an.u.uhr.vor(6000);
+  assert.equal(zeile(an, 'camera_light_brightness_auto').querySelector('.setting-status').textContent, '');
+  const aus = aufbau('voll', { states: zustand('switch.robo_camera_light_brightness_auto', 'on') });
+  zeile(aus, 'camera_light_brightness_auto').querySelector('[role="switch"]').click();
+  assert.deepEqual(aufrufe(aus), [setze(aus, 'camera_light_brightness', 40)]);
+});

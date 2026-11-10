@@ -1384,7 +1384,11 @@ const SETTING_EXTRA = {
     mop_cleaning_remainder: { min: 0, max: 180 },
     wetness_level: { min: 1, max: 32 },
     auto_empty_area: { min: 5, max: 15 },
-    map_rotation: { options: ['0', '90', '180', '270'] }
+    map_rotation: { options: ['0', '90', '180', '270'] },
+    // Automatic camera light = brightness 101 (switch.py#L548), but its own switch has no
+    // write path and `value` 101 fails the 40–100 check (device.py#L2936); the setter gets
+    // `params` instead (device.py#L2958). Off writes 40, as the integration's format_fn does.
+    camera_light_brightness_auto: { wire: (on) => ({ key: 'camera_light_brightness', value: 40, params: on ? [101] : undefined }) }
 };
 
 /**
@@ -1566,8 +1570,9 @@ function trackWrite(card, key, { want, check, call }) {
 function writeSetting(card, key, value, params) {
     const def = SETTINGS[key];
     const want = normalizeSetting(def.control, value);
-    const data = { entity_id: card._opts.entity, key, value: def.control === 'switch' ? (want ? 1 : 0) : value };
-    if (params) data.params = params;
+    const wire = def.wire ? def.wire(want) : { key, value: def.control === 'switch' ? (want ? 1 : 0) : value, params };
+    const data = { entity_id: card._opts.entity, key: wire.key, value: wire.value };
+    if (wire.params) data.params = wire.params;
     return trackWrite(card, key, {
         want,
         check: (model) => sameSetting(def.control, settingValue(model, key).value, want),
