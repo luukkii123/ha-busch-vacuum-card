@@ -370,6 +370,16 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskSpot: 'Spot',
             taskGoto: 'Hinfahren',
             aufgabeLaeuft: 'Aufgabe läuft',
+            gotoSimuliert: 'Dieser Roboter fährt Ziele als kleine Zonenreinigung an: Die Integration stellt Modus, Saugstufe und Wasser dafür kurz um und danach zurück.',
+            zielMitte: 'Ziel in Kartenmitte',
+            zielpunkte: 'Gespeicherte Zielpunkte',
+            zielpunktName: 'Zielpunkt {n}',
+            zielName: 'Ziel · {x} / {y} mm',
+            zielVerschieben: 'Ziel verschieben',
+            zielblase: 'Ziel',
+            zielVerwerfen: 'Ziel verwerfen',
+            hierhinFahren: 'Hierhin fahren',
+            tastenZiel: 'Tasten am Ziel: Pfeile verschieben (Umschalt: 500 mm), Eingabe springt zu „Hierhin fahren“, Entf verwirft.',
             spotHier: 'Spot hier',
             punkte: 'Punkte',
             punktName: 'Punkt {n} · 1,5 × 1,5 m',
@@ -849,6 +859,16 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskSpot: 'Spot',
             taskGoto: 'Go to',
             aufgabeLaeuft: 'Task running',
+            gotoSimuliert: 'This robot reaches targets as a small zone cleaning: the integration briefly switches mode, suction and water and restores them afterwards.',
+            zielMitte: 'Target at map centre',
+            zielpunkte: 'Saved target points',
+            zielpunktName: 'Target point {n}',
+            zielName: 'Target · {x} / {y} mm',
+            zielVerschieben: 'Move target',
+            zielblase: 'Target',
+            zielVerwerfen: 'Discard target',
+            hierhinFahren: 'Go here',
+            tastenZiel: 'Keys on the target: arrows move (Shift: 500 mm), Enter goes to “Go here”, Delete discards.',
             spotHier: 'Spot here',
             punkte: 'Points',
             punktName: 'Point {n} · 1.5 × 1.5 m',
@@ -5990,6 +6010,15 @@ canvas.map-base {
     stroke: var(--bvc-task-color, var(--primary-color, #03a9f4));
     stroke-width: 2px;
 }
+[data-layer=tasks] [data-select=goto] path {
+    fill: var(--bvc-task-color, var(--primary-color, #03a9f4));
+    stroke: var(--text-primary-color, #ffffff);
+    stroke-width: 1.5px;
+}
+[data-layer=tasks] [data-select=goto] circle {
+    fill: var(--text-primary-color, #ffffff);
+    stroke: none;
+}
 [data-layer=tasks] [data-handle=point] text {
     fill: var(--primary-text-color, #212121);
     stroke: none;
@@ -6442,6 +6471,42 @@ ha-card {
 .task-note > span {
     flex: 1;
     min-width: 0;
+}
+.task-bubble {
+    position: absolute;
+    left: var(--ha-space-2, 8px);
+    right: 68px;
+    bottom: var(--ha-space-2, 8px);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    padding: var(--ha-space-1, 4px) var(--ha-space-1, 4px) var(--ha-space-1, 4px) var(--ha-space-3, 12px);
+    box-sizing: border-box;
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    color: var(--primary-text-color, #212121);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+:host([data-hand=left]) .task-bubble {
+    left: 68px;
+    right: var(--ha-space-2, 8px);
+}
+.task-bubble-text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: var(--ha-font-size-s, 14px);
+}
+.task-bubble .busch-ui-action {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+}
+.task-bubble ha-icon {
+    order: -1;
+    --mdc-icon-size: 18px;
 }
 .task-error {
     display: flex;
@@ -7540,6 +7605,7 @@ class BuschVacuumCard extends HTMLElement {
             if (task === 'room') nodes.push(...this._roomPanel(hass, model));
             if (task === 'zone') nodes.push(...this._zonePanel(hass, model));
             if (task === 'spot') nodes.push(...this._spotPanel(hass, model));
+            if (task === 'goto') nodes.push(...this._gotoPanel(hass, model));
             if (this._undo) {
                 const note = this._note('task-note', 'mdi:undo-variant', translate(hass, 'auswahlGeleert'));
                 note.appendChild(this._panelButton(hass, 'rueckgaengig', 'mdi:undo', 'undo', () => this._undoClear()));
@@ -7566,8 +7632,9 @@ class BuschVacuumCard extends HTMLElement {
         const root = this.shadowRoot;
         const focused = root.activeElement && root.activeElement.getAttribute ? root.activeElement.getAttribute('data-action') : null;
         this._taskArea.replaceChildren(...nodes);
+        this._renderGotoBubble(hass, model, !active && task === 'goto', ready);
         // Rebuilt on every own update: keyboard focus stays on the same control.
-        const again = focused && this._taskArea.querySelector('[data-action="' + focused + '"]');
+        const again = focused && (this._taskArea.querySelector('[data-action="' + focused + '"]') || (this._gotoBubble && this._gotoBubble.querySelector('[data-action="' + focused + '"]')));
         if (again && !again.disabled) again.focus();
         return ready;
     }
@@ -7689,6 +7756,7 @@ class BuschVacuumCard extends HTMLElement {
         const task = this._chosenTask(model);
         if (e.type === 'map-room-tap' && task === 'room' && d.mode === 'pick-room') this._toggleRoom(model, Number(d.room), d.shift);
         if (task === 'spot' && d.mode === 'pick-point' && e.type === 'map-tap' && d.robot) this._spotTap(d);
+        if (task === 'goto' && d.mode === 'pick-point' && e.type === 'map-tap' && d.robot) this._setGoto(d.robot);
         if (task === 'zone' && d.mode === 'draw-rect') {
             if (e.type === 'map-tap' && d.robot) this._zoneTap(d);
             if (e.type === 'map-drag') this._zoneDrag(d);
@@ -8098,6 +8166,136 @@ class BuschVacuumCard extends HTMLElement {
         }
     }
 
+    // ── Go-To (TASK-05) ───────────────────────────────────────────────────
+
+    /** One target; refused targets are not set, the reason shows (R12). */
+    _setGoto(p) {
+        if (!p) return;
+        const model = this._model();
+        const target = { x: Math.round(p.x), y: Math.round(p.y) };
+        const check = taskReady(model, 'goto', Object.assign(emptySelection(), { goto: target }), this._taskMap());
+        if (!check.ok) {
+            this._taskInfo = { key: check.reason, note: 'outside' };
+            return this._update();
+        }
+        this._selection.goto = target;
+        this._selectionChanged();
+    }
+
+    _moveGoto(dir, mm) {
+        const t = this._selection.goto;
+        if (!t) return;
+        const d = this._zoneStep(dir, mm);
+        this._setGoto({ x: t.x + d.x, y: t.y + d.y });
+    }
+
+    /** Saved target points of the map (`predefined_points`, dict or list of { x, y }). */
+    _gotoPoints() {
+        const raw = this._map ? this._map.current().objects.predefined_points : null;
+        if (!raw || typeof raw !== 'object') return [];
+        return Object.entries(raw).filter(([, p]) => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
+            .map(([key, p], i) => ({ key: Array.isArray(raw) ? String(i + 1) : key, x: Number(p.x), y: Number(p.y) }));
+    }
+
+    _gotoPanel(hass, model) {
+        const nodes = [];
+        const target = this._selection.goto;
+        if (!model.can('cruising')) {
+            const note = this._note('task-note', 'mdi:information-outline', translate(hass, 'gotoSimuliert'));
+            note.setAttribute('data-note', 'goto-simulated');
+            nodes.push(note);
+        }
+        const tools = document.createElement('div');
+        tools.className = 'task-tools';
+        tools.appendChild(this._panelButton(hass, 'zielMitte', 'mdi:crosshairs', 'goto-centre', () => this._setGoto(this._mapCentre()), !this._mapCentre()));
+        nodes.push(tools);
+        const points = this._gotoPoints();
+        if (points.length) {
+            const list = document.createElement('div');
+            list.className = 'task-list';
+            list.setAttribute('role', 'group');
+            list.setAttribute('aria-label', translate(hass, 'zielpunkte'));
+            for (const p of points) {
+                const text = translate(hass, 'zielpunktName', { n: p.key });
+                const button = BuschUI.action({ label: text, text, icon: 'mdi:map-marker-star-outline', variant: 'secondary', onClick: () => this._setGoto(p) });
+                button.classList.add('task-item');
+                button.setAttribute('data-action', 'goto-point-' + p.key);
+                button.setAttribute('aria-pressed', String(!!target && Math.round(p.x) === target.x && Math.round(p.y) === target.y));
+                list.appendChild(button);
+            }
+            nodes.push(list);
+        }
+        if (target) {
+            const list = document.createElement('div');
+            list.className = 'task-list';
+            const text = translate(hass, 'zielName', { x: target.x, y: target.y });
+            const entry = BuschUI.action({ label: text, text, icon: 'mdi:map-marker-outline', variant: 'secondary', onClick: () => {} });
+            entry.classList.add('task-item');
+            entry.setAttribute('data-action', 'goto-target');
+            entry.setAttribute('aria-pressed', 'true');
+            entry.addEventListener('keydown', (event) => {
+                const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[event.key];
+                if (dir) {
+                    event.preventDefault();
+                    this._moveGoto(dir, event.shiftKey ? 500 : 100);
+                } else if (event.key === 'Enter') {
+                    // Enter confirms the target: on to the one start button.
+                    event.preventDefault();
+                    const go = this._gotoBubble && this._gotoBubble.querySelector('[data-action="goto-start"]');
+                    if (go) go.focus();
+                } else if (event.key === 'Delete' || event.key === 'Backspace') {
+                    event.preventDefault();
+                    this._selection.goto = null;
+                    this._selectionChanged();
+                }
+            });
+            list.appendChild(entry);
+            nodes.push(list);
+            nodes.push(this._arrowRow(hass, 'goto', (dir, mm) => this._moveGoto(dir, mm), null, translate(hass, 'zielVerschieben')));
+            nodes.push(this._keyHint(hass, 'tastenZiel'));
+        }
+        return nodes;
+    }
+
+    /** The target bubble at the bottom of the map (R04 fleeting, R23): the one way to start Go-To. */
+    _renderGotoBubble(hass, model, shown, ready) {
+        const target = this._selection.goto;
+        if (!shown || !target || !this._map) {
+            if (this._gotoBubble) this._gotoBubble.remove();
+            this._gotoBubble = null;
+            return;
+        }
+        if (!this._gotoBubble) {
+            this._gotoBubble = document.createElement('div');
+            this._gotoBubble.className = 'task-bubble';
+            this._gotoBubble.setAttribute('role', 'group');
+            this._gotoBubble.addEventListener('keydown', (event) => {
+                if (event.key !== 'Escape') return;
+                event.preventDefault();
+                this._selection.goto = null;
+                this._selectionChanged();
+            });
+        }
+        const bubble = this._gotoBubble;
+        bubble.setAttribute('aria-label', translate(hass, 'zielblase'));
+        const text = document.createElement('span');
+        text.className = 'task-bubble-text';
+        text.textContent = translate(hass, 'zielName', { x: target.x, y: target.y });
+        const label = translate(hass, 'hierhinFahren');
+        const busy = !!this._pending;
+        const go = BuschUI.action({ label, text: busy ? translate(hass, 'wirdGestartet') : label, icon: 'mdi:navigation-variant-outline', variant: 'primary', disabled: !ready.ok || busy,
+            onClick: () => this._startTask(model.state) });
+        go.setAttribute('data-action', 'goto-start');
+        if (!ready.ok) go.setAttribute('aria-describedby', 'task-hint');
+        const clear = BuschUI.action({ label: translate(hass, 'zielVerwerfen'), icon: 'mdi:close', variant: 'icon-only', onClick: () => {
+            this._selection.goto = null;
+            this._selectionChanged();
+        } });
+        clear.setAttribute('data-action', 'goto-clear');
+        bubble.replaceChildren(text, go, clear);
+        if (bubble.parentNode !== this._map.region) this._map.region.appendChild(bubble);
+    }
+
     /** Taps on own targets: × first, then handles (44 px), then the area or point. */
     _hitSelection(point) {
         const model = this._model();
@@ -8130,6 +8328,12 @@ class BuschVacuumCard extends HTMLElement {
     /** Draws the own selection into the layer `tasks` (shape + number, R17). */
     _drawSelection(group, ctx) {
         const task = this._chosenTask(ctx.model);
+        if (task === 'goto' && this._selection.goto) {
+            const g = group.appendChild(screenMark(ctx, this._selection.goto, { 'data-select': 'goto' }));
+            g.appendChild(ctx.svgNode('path', { d: 'M0 0 C-6 -8 -9 -12 -9 -17 A9 9 0 0 1 9 -17 C9 -12 6 -8 0 0 Z' }));
+            g.appendChild(ctx.svgNode('circle', { cy: -17, r: 3.5 }));
+            return;
+        }
         if (task === 'spot') {
             const map = this._taskMap();
             this._selection.spots.forEach((p, i) => {

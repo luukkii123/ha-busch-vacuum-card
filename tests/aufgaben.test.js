@@ -621,3 +621,80 @@ test('„Spot hier“ im Hindernis-Dialog: wechselt auf Spot, setzt den Punkt, s
   assert.deepEqual(punkte(karte), [[Math.round(o.x), Math.round(o.y)]]);
   assert.deepEqual(haus.rufe, [], 'kein Dienstaufruf');
 });
+
+// ── Task 6: Go-To ──────────────────────────────────────────────────────────
+const ohneCruising = (haus) => saugerNeu(haus, { capabilities: haus.states['vacuum.robo'].attributes.capabilities.filter((c) => c !== 'cruising') });
+async function gotoKarte(opts = {}) {
+  const r = await kartenKarte(opts);
+  if (opts.simuliert) r.karte.hass = r.haus.setze(ohneCruising(r.haus));
+  art(r.karte, 'goto').click();
+  return r;
+}
+const ziel = (karte) => karte._selection.goto && [Math.round(karte._selection.goto.x), Math.round(karte._selection.goto.y)];
+
+test('Go-To: Tipp setzt ein Ziel (zweiter ersetzt), Zielblase „Hierhin fahren“ ist der einzige Start', async () => {
+  const { u, haus, karte } = await gotoKarte({ zustand: 'idle' });
+  assert.equal(karte._map._mode, 'pick-point');
+  const a = raeume()['5'], b = raeume()['3'];
+  tippe(u, karte, bildschirm(karte, a));
+  tippe(u, karte, bildschirm(karte, b));
+  naheGleich([ziel(karte)], [[b.x, b.y]], 40, 'ein Ziel');
+  assert.equal(knopf(karte, 'start'), null);
+  assert.equal(knopf(karte, 'return'), null);
+  const blase = $(karte, '.task-bubble');
+  assert.ok(blase && !blase.hidden, 'Zielblase');
+  const los = $(karte, '[data-action="goto-start"]');
+  assert.match(los.textContent, /Hierhin fahren/);
+  assert.equal(ebeneTasks(karte).querySelectorAll('[data-select="goto"]').length, 1);
+  los.click(); los.click();
+  assert.deepEqual(roh(haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_goto', data: { entity_id: 'vacuum.robo', x: ziel(karte)[0], y: ziel(karte)[1] } }]);
+});
+
+test('Go-To: × in der Blase verwirft das Ziel; unbegehbar → nicht gesetzt mit Grund', async () => {
+  const { u, karte, karten } = await gotoKarte();
+  tippe(u, karte, bildschirm(karte, raeume()['5']));
+  $(karte, '[data-action="goto-clear"]').click();
+  assert.equal(karte._selection.goto, null);
+  assert.equal($(karte, '.task-bubble'), null);
+  const [left, top] = karten.size;
+  tippe(u, karte, bildschirm(karte, { x: left + 10, y: top + 10 }));
+  assert.equal(karte._selection.goto, null);
+  assert.match(notiz(karte, 'outside').textContent, /nicht auf befahrbarer Fläche/);
+});
+
+test('Go-To: gespeicherte Zielpunkte als Chips', async () => {
+  const { haus, karte } = await kartenKarte();
+  karte.hass = haus.setze(ersetze(haus, CAM, { predefined_points: { 1: { x: -3400, y: -2900, type: 0, completed: false }, 2: { x: -6000, y: -8000, type: 0, completed: false } } }));
+  art(karte, 'goto').click();
+  aktion(karte, 'goto-point-2').click();
+  assert.deepEqual(ziel(karte), [-6000, -8000]);
+  assert.equal(aktion(karte, 'goto-point-2').getAttribute('aria-pressed'), 'true');
+});
+
+test('Go-To ohne Tippen: Zielkreuz in Kartenmitte, Pfeil-Knöpfe/-Tasten, Eingabe springt zu „Hierhin fahren“', async () => {
+  const { u, karte } = await gotoKarte();
+  aktion(karte, 'goto-centre').click();
+  const mitte = karte._mapCentre();
+  assert.deepEqual(ziel(karte), [Math.round(mitte.x), Math.round(mitte.y)]);
+  aktion(karte, 'goto-right').click();
+  assert.equal(ziel(karte)[0], Math.round(mitte.x) + 100);
+  aktion(karte, 'goto-target').dispatchEvent(u.neuesEreignis('keydown', { key: 'ArrowRight', shiftKey: true }));
+  assert.equal(ziel(karte)[0], Math.round(mitte.x) + 600);
+  const enter = u.neuesEreignis('keydown', { key: 'Enter' });
+  aktion(karte, 'goto-target').dispatchEvent(enter);
+  assert.ok(enter.defaultPrevented);
+  assert.equal(karte.shadowRoot.activeElement, $(karte, '[data-action="goto-start"]'));
+});
+
+test('Go-To simuliert: Hinweis „kleine Zonenreinigung“, Ziel am Roboter gesperrt; nativ nicht', async () => {
+  const sim = await gotoKarte({ simuliert: true });
+  assert.match(notiz(sim.karte, 'goto-simulated').textContent, /kleine Zonenreinigung/);
+  const r = sim.haus.states[CAM].attributes.vacuum_position;
+  tippe(sim.u, sim.karte, bildschirm(sim.karte, { x: r.x + 50, y: r.y }));
+  assert.equal(sim.karte._selection.goto, null);
+  assert.match(notiz(sim.karte, 'outside').textContent, /schon an diesem Ziel/);
+  const nativ = await gotoKarte();
+  assert.equal(notiz(nativ.karte, 'goto-simulated'), null);
+  tippe(nativ.u, nativ.karte, bildschirm(nativ.karte, { x: r.x + 50, y: r.y }));
+  assert.ok(nativ.karte._selection.goto, 'nativ darf neben dem Roboter');
+});
