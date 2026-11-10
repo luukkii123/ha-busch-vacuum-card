@@ -299,6 +299,44 @@ example out from under a bed.
   200 ms later (≤ 5 per second), always with the newest value. Limits: forward
   100, backward −100, turning ±128.
 
+## Map editing
+
+Robots whose integration offers the map services get a pen on the map
+(*Edit map*) and a *Map management* entry (multi-floor maps).
+
+- **Map management:** every saved map with a preview; switch, rename or
+  delete a map, start a new mapping run, save/discard/replace a temporary
+  map, ask the robot for a fresh map.
+- **Edit mode:** the map moves into the dialog with a tool bar — rooms
+  (name, type, visibility, floor; split and merge two rooms), walls and doors
+  (move, reset), no-go/no-mop zones and ramps, virtual walls, thresholds and
+  curtains, carpets (own and detected ones: shape, type, cleaning, hide),
+  furniture, target points (cruising) and the router on the WiFi map. Draw
+  and drag on the map, or type the coordinates in millimetres; the arrow keys
+  move the chosen object. Tools appear only when your device supports them.
+- A tap on a carpet or a piece of furniture opens its bubble with *Edit*,
+  which jumps straight into the right tool.
+
+> **Safety:** nothing changes on the robot without your confirmation. *Save*
+> first lists what changes (for example "No-go zones: 1 new, 0 changed,
+> 0 deleted") and the map; only *Confirm* sends it, and a click beside the
+> dialog does not. Before the **first** change of an editing session the card
+> backs up the map on the robot (`vacuum_backup_map`) and waits until the
+> backup has succeeded — if it fails, nothing is changed. Leaving with
+> unsaved changes asks first. Nothing can be edited while a task runs or a
+> temporary map is open.
+
+- **Undo:** after saving, *Undo* sends the previous state back (again with
+  a confirmation). Splitting, merging and deleting cannot be undone this
+  way — the backup made before the first change is the way back (restoring
+  it from the card follows with the map backup module; until then use the
+  Dreame app).
+- **Limits of the integration:** low-lying areas are shown, not edited;
+  zones and ramps cannot be rotated; walls and doors can be moved, not added
+  or removed; merging takes two rooms at a time.
+- Hide all map editing (pen, map management, *Edit* in the bubble) with
+  `hidden_card_objects: map_editor`.
+
 ## Theming
 
 The card follows your Home Assistant theme. These optional theme variables

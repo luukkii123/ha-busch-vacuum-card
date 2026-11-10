@@ -318,6 +318,79 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 - Annahme bis Live-Lauf 2: positive `rotation` = links (gegen den
   Uhrzeigersinn); als `shortcut:` im Code markiert.
 
+## Kartenbearbeitung (Modul map-editor)
+
+- **Sicherheitsrahmen.** Genau ein Schreibweg: `mapWrite(card, grant,
+  service, data)` wirft ohne Grant; einen Grant erzeugt nur
+  `confirmGrant(card)`, und das steht genau einmal im Code — im
+  Bestätigungsklick von `mapConfirm` (Checkpoint-B-Test prüft alle Aufrufer
+  im Quelltext; einzige Ausnahme ohne Bestätigung: `requestMap`, nicht
+  zerstörend). Kein `hidden_card_objects`-Schalter schaltet die Bestätigung
+  ab. `MapEditSession` je Bearbeitung: die **erste** Speicherung ruft zuerst
+  `vacuum_backup_map { map_id }` (nur mit Fähigkeit `backup_map`) und erst
+  nach `map_backup_status` „Success“ den Kartendienst; Fehler oder 60 s ohne
+  Ende → 0 Kartendienste, Text der Integration, Erneut behält den Entwurf.
+  Spätere Speicherungen derselben Sitzung sichern nicht neu. `undo[]` hält je
+  Speicherung die Ausgangslisten; Rückgängig sendet sie bestätigt mit
+  demselben Dienst (ohne Sicherung); nicht umkehrbare Aktionen (Teilen,
+  Zusammenführen, Löschen) verweisen auf Wiederherstellen in der
+  Kartensicherung (eigenes Modul, noch nicht gebaut). Gesperrt während Aufgabe (Dienste in
+  `EDIT_TASK_LOCKED`), temporärer Karte, laufender Sicherung/
+  Wiederherstellung. Nur die aktive Karte (`map_id` =
+  `card._map.current().mapId`), sonst „Zu <Karte> wechseln“ über
+  `selectMap` (CORE-20).
+- **Dirty-Schutz.** Der Bearbeitungsdialog (`kind: 'editor'`) hat `guard`:
+  mit offenen Änderungen halten Escape, Schließen, Zurück-Geste, Fertig,
+  Werkzeug-, Aufgaben- und Kartenwechsel an, das Blatt wackelt (`.shake`) und
+  `dirtyChoice` bietet Weiter bearbeiten / Verwerfen / Speichern. Bestätigung
+  und Formulare schließen nie per Außenklick (R04).
+- **Registry.** `EDIT_TOOLS[name] = { icon, lists, panel, enter?, draw?,
+  hit?, onMap? }` für rooms, walls, zones, lines, carpets, furniture, points,
+  wifi; ein Werkzeug erscheint nur mit `panel` und wenn `editCaps` es zeigt
+  (Fähigkeit + Dienst + Attribut; Wände/Teppiche/Möbel brauchen die
+  Bearbeitungsdaten, sonst gesperrt mit Grund). `EDIT_GROUPS[group] =
+  { service, lists, data | calls, check? }` bildet Listen auf genau einen
+  Dienst ab; `MapEditor` hält `base` (Dienst-Werteordnung) und `draft`,
+  Sammel-Speichern = eine Bestätigung, je geänderter Gruppe ein Aufruf in
+  fester Reihenfolge (`groupCalls`), Zeilen „<Art>: n neu, n geändert, n
+  gelöscht“ bzw. je Raum/Objekt (`EDIT_LINES`).
+- **Schreibwege kurz.** Jeder Objektdienst **ersetzt die ganze Liste**:
+  `vacuum_set_restricted_zone` immer mit `walls`/`zones`/`no_mops`,
+  `vacuum_set_threshold` immer mit allen drei Schwellenlisten (Geräte nur mit
+  `virtual_thresholds` → nur `vacuum_set_virtual_threshold`, nie beide),
+  `vacuum_set_curtain`, `vacuum_set_carpet_area` (eigene Teppiche, Typ im 7.
+  Wert; `vacuum_set_carpet_type`/`vacuum_set_custom_carpet_cleaning` nur für
+  geänderte), `vacuum_set_furniture` (11 Werte), `vacuum_set_predefined_points`,
+  `vacuum_set_walls { walls, doors, map_id }`, `vacuum_set_router_position
+  { x, y }`; Räume: `vacuum_rename_segment` je Raum, `vacuum_set_segment_type`,
+  `vacuum_set_hidden_segments`, `vacuum_set_floor_material` (alle Räume),
+  `vacuum_split_segments`, `vacuum_merge_segments`; Verwaltung:
+  `vacuum_rename_map`, `vacuum_delete_map`, `vacuum_select_map` (core),
+  temporäre Karte speichern/verwerfen/ersetzen, `start_mapping`. Die Tabelle
+  der Spec ist je Zeile mit Dienst und Datenform getestet (Checkpoint C).
+- **Bearbeitungsdaten.** `loadEditData` holt beim Betreten einmal
+  `/api/camera_map_data_proxy/<kamera>?…&saved=1&index=<n>&v=<frame_id>`
+  (Wände kommen nur mit der gespeicherten Karte), neu nur bei neuem
+  `frame_id`; ein fremdes neues `frame_id` während offener Änderungen zeigt
+  einen Hinweis und gleicht vor dem Speichern ab.
+- **Schnellbearbeitung** (EDI-06): die Blase eines Teppichs/Möbels trägt
+  „Bearbeiten“ im Aktionsplatz und öffnet denselben Modus mit dem Objekt im
+  passenden Werkzeug. **WLAN** (EDI-07): Umschalter Reinigungs-/WLAN-Karte
+  (WLAN-Kamera kalibriert über der Karte), Legende mit Stufennamen, Router
+  nur auf befahrbarer Fläche.
+- **Grenzen ohne öffentlichen Schreibweg** (ehrlich angezeigt/begrenzt):
+  `low_lying_areas` nur Anzeige — `vacuum_set_low_lying_area` lehnt in
+  Integration 2.0.3 jede Änderung ab (Entscheidung: als Integrationsgrenze
+  vermerkt, nachrüsten, sobald die Integration es kann); Drehen von
+  Zonen/Rampen nicht möglich, ein vorhandener 5. Wert wird nur durchgereicht;
+  Wände/Türen nur verschieben/zurücksetzen, nicht anlegen/löschen (Anzahl je
+  Raum bleibt, sonst Speichern gesperrt); Zusammenführen nur zwei Räume je
+  Schritt. WLAN-Überlagerung und Teppich-Vorlieben (`carpet_cleanset_v3`)
+  sind nur synthetisch belegt (X40 ohne `carpet_cleanset_v3`; die
+  Deckung des WLAN-Bilds über der Karte ist am echten Gerät nicht geprüft).
+- Ausblenden: `hidden_card_objects: map_editor` blendet Stift,
+  Kartenwerkzeug, Menüeintrag `maps` und die Schnellbearbeitung aus.
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):
@@ -388,6 +461,17 @@ Bestätigungen bei 360×640, 390×844, 800×600, 1280×800 hell/dunkel (Lage, ke
 Seitenüberlauf, Knöpfe und Felder ≥ 44 px), Regel 1 für vier Einstellungsansichten,
 Regel 2 für die erste Ebene (tiefere Ebenen gehen mit Escape/Zurück eine Ebene
 zurück, Node-Test).
+Kartenbearbeitung (map-editor): `&saved=1` beantwortet der Harness mit
+**synthetischen** Bearbeitungsdaten (`synthetic_edit_data`: Wände = Kanten der
+verfremdeten Raumrechtecke, erfundene Türen/Möbel/Zielpunkte, Teppiche aus den
+Fixture-Rechtecken, WLAN-Gitter), die WLAN-Kamera mit einem eigenen Bild durch
+ihre Kalibrierung. 16 Ansichten (Verwaltung, Umbenennen, Löschen, Modus, je
+Werkzeug ein Formular, Teilen, WLAN-/Reinigungskarte, Bestätigung,
+Ungespeichert) × 360/390/800/1280 × hell/dunkel; echte Eingabe (Escape mit
+Änderungen fragt und wackelt, Außenklick lässt die Bestätigung offen, erst der
+bestätigende Klick sendet `vacuum_backup_map`), Blase „Bearbeiten“ per
+Mausklick auf einen Teppich; Regel 1 je Ansicht (bei 2600 px Höhe: Karte über
+dem Werkzeug, das Blatt scrollt), Regel 2 für Verwaltung und Modus.
 
 Grenzen: `ha-card`, `ha-icon` und `ha-form` sind Attrappen; belegt sind
 Verdrahtung, Maße und erzeugte Konfiguration, nicht die Darstellung der
@@ -395,6 +479,45 @@ echten HA-Selektoren. Die Abnahme mit `karten-alle.sh` und E2E läuft einmal
 am Ende aller Module.
 
 ## Geprüft
+
+**10.11.2026 · 0.1.0, Modul map-editor (#882, Tasks 1–13 ohne Live-Kartenänderung, nicht getaggt)**
+
+1. `node --check` grün; `node --test` 563/563 (66 Tests `tests/karteneditor.test.js`,
+   davon 5 aus den Befunden dieses Laufs).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. `render.py`: 68/68 (7 neu), UI-Regeln 0 (Regel 1 für 16 Editor-Ansichten,
+   Regel 2 für Verwaltung und Modus), 0 Konsolen-/Seitenfehler, 0
+   Fremdanfragen, 0 Dienstaufrufe ohne bestätigten Klick (128 Ansichten);
+   der eine bestätigte Klick sendet zuerst `vacuum_backup_map`, danach
+   geleert. Matrix 16 Ansichten × 360/390/800/1280 × hell/dunkel im Bild,
+   ohne Seitenüberlauf, Knöpfe und Felder ≥ 44 px; Werkzeuge mit Formular je
+   Art; WLAN-Bild über seine eigene Kalibrierung deckungsgleich (< 0,01 px);
+   Blase „Bearbeiten“ per Mausklick ≥ 44 px, öffnet das Teppich-Werkzeug.
+   Nur synthetische Daten, kein Grundriss. Der Lauf fand: leere Kartenblase
+   als Balken über der Karte im Dialog (`[hidden]` fehlte in den
+   Dialog-Stilen), Symbole rechts vom Text in Werkzeugleiste, Formularen,
+   Verwaltung und Blase, gewählter Listeneintrag nur über `aria-pressed`
+   erkennbar, Wandliste mit allen Wänden (live 56) — jetzt ab 13 Wänden
+   raumweise, die auf der Karte gewählte Wand zeigt ihren Raum —, Tastenhilfe
+   des Routers sprach von „Wand oder Tür“, ein einzelnes Kartensymbol brach
+   allein um, „1 ungespeicherte Änderungen“ — behoben und in den Bildern
+   nachgesehen. Grenze: Titel „Ungespeicherte Änderungen“ wird im 320 px
+   breiten Bestätigungsdialog gekürzt (core-Titelzeile, Text darunter
+   vollständig).
+4. Live lesend (Koordinator, nur `GET /api/states` und
+   `camera_map_data_proxy &saved=1`): Fähigkeiten walls, cruising, wifi_map,
+   segment_visibility, floor_material, floor_direction_cleaning,
+   carpet_recognition, curtains, pet_furniture, extended_furnitures,
+   backup_map, carpet_shape vorhanden; carpet_type, floor_mats,
+   carpet_cleanset_v3, map_v2, virtual_thresholds fehlen. Attribute
+   `furnitures`/`predefined_points`/`virtual_thresholds`/`low_lying_areas` =
+   None. Bearbeitungsdaten: Wände je 11 Werte (7 Räume, 56 Wände), Türen
+   17 × 11, Teppiche 3 × 15, gelöschte 2 × 9, erkannte 6 × 18, Möbel []
+   (`furniture_version` 4), `station_segment` und Raumnachbarn vorhanden;
+   `editData` liest sie vollständig (Zählung stimmt).
+5. **Live-Kartenänderung: wartet auf Nutzer-OK** (Ablauf im Plan map-editor,
+   Task 13 „Live-Lauf 1“: Sicherung, eine No-Go-Zone, Rückgängig,
+   Listenvergleich). Kein Kartendienst gegen das Gerät aufgerufen.
 
 **10.11.2026 · 0.1.0, Modul remote (#882, Tasks 1–6, nicht getaggt; Live-Teil Task 7 offen)**
 

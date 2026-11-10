@@ -28,6 +28,11 @@ Covered (plan 2026-11-09-busch-vacuum-card-core, Task 8):
     390x844, 844x390, 1280x800, light/dark; real mouse drag, two real touch points
     (CDP), keyboard, stop after release/blur/visibilitychange/Escape, rate and
     spacing from timestamps; every call stays in the harness stub
+  * map editor (plan 2026-11-10-busch-vacuum-card-map-editor, Task 13): SYNTHETIC edit
+    data (walls, doors, carpets, furniture, points, WiFi grid) for &saved=1; map
+    management, edit mode per tool with one form per kind, confirmation (outside
+    click keeps it), dirty dialog (Escape keeps it and shakes), WiFi switch, bubble
+    "Bearbeiten" at 360/390/800/1280 light/dark; 0 calls without a confirming click
   * history (plan 2026-11-10-busch-vacuum-card-history, Task 7): the history
     endpoints answer with a SYNTHETIC run (gzip JSON like the integration, an
     SVG picture, an SVG obstacle photo): list, groups, detail with cleaning and
@@ -151,6 +156,45 @@ def synthetic_map_svg(cam_attrs, grid):
             rects.append(f'<rect x="{min(ax, bx):.1f}" y="{min(ay, by):.1f}" width="{abs(bx - ax):.1f}" height="{abs(by - ay):.1f}" fill="{fill}"/>')
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
             f'<rect width="100%" height="100%" fill="#f0f0f0"/>' + "".join(rects) + "</svg>"), (width, height)
+
+
+def synthetic_edit_data(grid, cam):
+    """Edit data like camera_map_data_proxy &saved=1 (map.py get_data): the synthetic grid plus
+    INVENTED walls (the room rectangles' edges), doors, carpets (the fixture's anonymised carpet
+    rectangles), furniture, target points and a WiFi grid -- never a real floor plan."""
+    rs = sorted((r for r in cam["rooms"].values() if r.get("x0") is not None), key=lambda r: r["room_id"])
+    touch = lambda a, b: a["x0"] <= b["x1"] + 100 and b["x0"] <= a["x1"] + 100 and a["y0"] <= b["y1"] + 100 and b["y0"] <= a["y1"] + 100
+    floor = {"Wood": 1, "Tile": 2}
+    direction = {"Horizontal": 0, "Vertical": 90}
+    segments = [[r["room_id"], r["x"], r["y"], r.get("type", 0), None, r.get("index", 0), r.get("color_index", 0),
+                 [o["room_id"] for o in rs if o is not r and touch(r, o)], floor.get(r.get("floor_material"), 0),
+                 direction.get(r.get("floor_material_direction")), 1] for r in rs]
+    walls = {}
+    for r in rs:
+        x0, y0, x1, y1 = r["x0"], r["y0"], r["x1"], r["y1"]
+        walls[str(r["room_id"])] = [[ax, ay, bx, by, ax, ay, bx, by, 1, (ax + bx) // 2, (ay + by) // 2]
+                                    for ax, ay, bx, by in ((x0, y0, x1, y0), (x1, y0, x1, y1), (x1, y1, x0, y1), (x0, y1, x0, y0))]
+    doors = []
+    for i, r in enumerate(rs[:3]):
+        mx = (r["x0"] + r["x1"]) // 2
+        doors.append([mx - 400, r["y1"], mx + 400, r["y1"], mx - 400, r["y1"], mx + 400, r["y1"], 0, 50 + i, 1])
+    corners = lambda c: [c["x0"], c["y0"], c["x1"], c["y1"], c["x2"], c["y2"], c["x3"], c["y3"]]
+    carpets = [corners(c) + [i + 1, 0, 1, None, 6, 0, None] for i, c in enumerate(cam["carpets"])]
+    deleted = [corners(c) + [20 + i] for i, c in enumerate(cam["deleted_carpets"])]
+    detected = [corners(c) + [30 + i, 0, 1, None, 7, 0, None, None, [rs[0]["room_id"]], None] for i, c in enumerate(cam["detected_carpets"])]
+    furnitures = [[f["x"], f["y"], f["width"], f["height"], t, 0, f["angle"], 1, f["segment"], f["furniture_id"]]
+                  for f, t in ((FURNITURE[0], 4), (FURNITURE[1], 14))]
+    levels = [14, 13, 12, 11, 10]
+    wifi = {"size": grid["size"], "data": {str(levels[i % 5]): runs for i, (k, runs) in enumerate(sorted(grid["data"].items()))
+                                            if k not in ("255", "512")}}
+    return dict(grid, saved_map=True, station_segment=rs[0]["room_id"], segments=segments, walls=walls, doors=doors,
+                carpets=carpets, deleted_carpets=deleted, detected_carpets=detected, furnitures=furnitures,
+                predefined_points=[[rs[0]["x"], rs[0]["y"] + 400], [rs[2]["x"] + 300, rs[2]["y"]]], wifi_map_data=wifi)
+
+
+# Furniture for the edit scenario, in the camera attribute form (and as edit data above); invented positions.
+FURNITURE = [{"x": -3461, "y": -2902, "width": 1800, "height": 900, "type": "Two seat sofa", "furniture_id": 3, "angle": 0, "segment": 3},
+             {"x": 2472, "y": -3806, "width": 700, "height": 700, "type": "Refrigerator", "furniture_id": 6, "angle": 0, "segment": 9}]
 
 
 OBSTACLE_PHOTO = ('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="#cfd8dc"/>'
@@ -306,6 +350,9 @@ def scenario(fixture, name):
         # clean-settings: CleanGenius on (synthetic mode list, the X40 empties it while off).
         vac["attributes"].update({"cleangenius": "Routine cleaning", "cleangenius_cleaning": True,
                                   "cleangenius_mode_list": ["Vacuum and mop", "Mop after vacuum"]})
+    elif name == "editor":
+        # map-editor: furniture in the camera attributes (the X40 reports none), matching synthetic_edit_data.
+        states["camera.robo_map"]["attributes"]["furnitures"] = [{k: f[k] for k in ("x", "y", "width", "height", "type", "furniture_id", "angle")} for f in FURNITURE]
     elif name == "customized":
         vac["attributes"]["customized_cleaning"] = True
     elif name == "nonstrict":
@@ -334,10 +381,15 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     repo_root = card_file.parent.parent
     fixture = json.loads((repo_root / "tests" / "fixtures" / "voll.json").read_text(encoding="utf-8"))
-    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty")}
+    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty", "editor")}
     cam = fixture["states"]["camera.robo_map"]["attributes"]
     grid = synthetic_map_data(cam["rooms"], frame_id=cam["frame_id"])
     svg, svg_size = synthetic_map_svg(cam, grid)
+    edit_data = synthetic_edit_data(grid, cam)
+    # The WiFi camera's own picture, drawn through ITS calibration (other scale than the map), so the
+    # overlay check below proves the card places it by that calibration.
+    wifi_cam = fixture["states"]["camera.robo_wifi_map_1"]["attributes"]
+    wifi_svg, _ = synthetic_map_svg(wifi_cam, edit_data["wifi_map_data"])
     routing = {"data": True}
     # history: SYNTHETIC run data in the form of map.py get_data for a history map (fields checked
     # read-only on the device 10.11.2026), built from the same anonymised rooms -- never a real run.
@@ -379,11 +431,16 @@ def main():
                 return route.fulfill(status=200, content_type="image/svg+xml", body=svg)
             if "/api/camera_map_obstacle_history_proxy/" in url:
                 return route.fulfill(status=200, content_type="image/svg+xml", body=OBSTACLE_PHOTO)
+            if "/api/camera_map_data_proxy/" in url and "saved=1" in url:
+                # map-editor: the stored map's edit data (walls only come with it, map.py#L8629).
+                return route.fulfill(status=200, content_type="application/json", body=json.dumps(edit_data))
             if "/api/camera_map_data_proxy/" in url:
                 body = grid if routing["data"] else {"empty_map": True, "size": [0, 0, 0, 0, 1, 1, 0, 0, [0, 0, 0, 0]]}
                 return route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
             if "/api/camera_map_obstacle_proxy/" in url:
                 return route.fulfill(status=200, content_type="image/svg+xml", body=OBSTACLE_PHOTO)
+            if "camera.robo_wifi_map" in url:
+                return route.fulfill(status=200, content_type="image/svg+xml", body=wifi_svg)
             return route.fulfill(status=200, content_type="image/svg+xml", body=svg)
         page.route("**/api/camera_*proxy/**", camera_route)
 
@@ -1533,6 +1590,170 @@ def main():
               json.dumps({"keyed": keyed, "dragged": dragged, "focus": focus_kept, "escape": after_escape, "open": still_open, "live": live}))
 
         # ------------------------------------------------------------------
+        # 3j. Map editor (map-editor Task 13): map management (rename form, delete
+        #     confirmation), edit mode per tool with one form per kind, save
+        #     confirmation (outside click keeps it), dirty dialog (Escape keeps it,
+        #     the sheet shakes), WiFi switch, bubble "Bearbeiten". Edit data are
+        #     SYNTHETIC (synthetic_edit_data). Every callService lands in the harness
+        #     stub: 0 calls without a confirming click, exactly one backup after it.
+        # ------------------------------------------------------------------
+        edit_open = """async (a) => { window.closeDialogs(); const c = window.card(); const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+            const sr = () => window.dialog() && window.dialog().shadowRoot;
+            const tool = c._map && c._map.tools.querySelector('[data-action=' + (a.entry === 'maps' ? 'map-maps' : 'map-edit') + ']');
+            if (!tool) return 'missing entry ' + a.entry;
+            tool.click();
+            await wait(a.entry === 'maps' ? 150 : 400);
+            for (const sel of a.steps) {
+              if (sel.startsWith('key:')) { document.dispatchEvent(new KeyboardEvent('keydown', { key: sel.slice(4), bubbles: true, composed: true })); await wait(60); continue; }
+              const n = sr() && sr().querySelector(sel); if (!n) return 'missing ' + sel; n.click(); await wait(150); }
+            await wait(200); return sr() ? sr().querySelector('h1').textContent : 'missing dialog'; }"""
+        edit_measure = """() => { const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet'), r = sheet.getBoundingClientRect();
+            const fields = Array.from(sr.querySelectorAll('select, input')).filter((n) => n.getBoundingClientRect().height > 0 && n.getBoundingClientRect().height < 44)
+              .map((n) => (n.closest('[data-field]') ? n.closest('[data-field]').getAttribute('data-field') : n.tagName) + ' ' + Math.round(n.getBoundingClientRect().height));
+            const pressed = sr.querySelector('[data-tool][aria-pressed=true]'), panel = sr.querySelector('[data-panel]');
+            const c = window.card(), layer = c._map && c._map._layers.get('editor');
+            const stage = sr.querySelector('.map-stage'), sb = stage ? stage.getBoundingClientRect() : null;
+            return { kind: sheet.getAttribute('data-kind'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, W: innerWidth, H: innerHeight,
+                     overflowX: sheet.scrollWidth - sheet.clientWidth, small: window.smallTargets(sr), smallFields: fields,
+                     tool: pressed ? pressed.getAttribute('data-tool') : null, panel: panel ? panel.getAttribute('data-panel') : null,
+                     tools: sr.querySelectorAll('[data-tool]').length, lockedTools: sr.querySelectorAll('[data-tool][disabled]').length,
+                     form: !!sr.querySelector('.edit-form') || !!sr.querySelector('[data-panel=rooms] .settings-list'),
+                     picked: sr.querySelectorAll('[data-edit-item][aria-pressed=true]').length, maps: sr.querySelectorAll('[data-map]').length,
+                     mapInSheet: !!sr.querySelector('.edit-map .map-stage'), stageW: sb ? sb.width : 0, stageH: sb ? sb.height : 0,
+                     wifiImage: !!(layer && layer.group.querySelector('image')), legend: !!sr.querySelector('.wifi-legend'),
+                     wifiOff: (() => {
+                       // Robot (0, 0) and (1000, 0) through the WiFi picture's calibration vs. through the map.
+                       const img = layer && layer.group.querySelector('image'); if (!img) return null;
+                       const cal = c.hass.states['camera.robo_wifi_map_1'].attributes.calibration_points, m = c._map;
+                       return Math.max(...cal.slice(0, 2).map((p) => { const q = img.ownerSVGElement.createSVGPoint(); q.x = p.map.x; q.y = p.map.y;
+                         const a = q.matrixTransform(img.getScreenCTM()), b = m.toScreen(m.toImage(p.vacuum)); return Math.hypot(a.x - b.x, a.y - b.y); })); })(),
+                     keep: !!sr.querySelector('[data-action=keep]'), confirmBtn: !!sr.querySelector('[data-action=confirm]'),
+                     counter: sr.querySelector('[data-counter]') ? sr.querySelector('[data-counter]').getAttribute('data-counter') : null,
+                     text: sheet.textContent.replace(/\\s+/g, ' ').slice(0, 400) }; }"""
+        edit_views = [
+            ("verwaltung", "floors", "maps", []),
+            ("verwaltung-umbenennen", "floors", "maps", ["[data-map='7'] [data-action=rename]"]),
+            ("verwaltung-loeschen", "floors", "maps", ["[data-map='7'] [data-action=delete]"]),
+            ("modus", "editor", "edit", []),
+            ("raeume", "editor", "edit", ["[data-tool=rooms]", ".room-chip[data-room='3']"]),
+            ("raeume-teilen", "editor", "edit", ["[data-tool=rooms]", ".room-chip[data-room='3']", "[data-action=room-split]"]),
+            ("waende", "editor", "edit", ["[data-tool=walls]", "[data-edit-item='walls:0']"]),
+            ("zonen", "editor", "edit", ["[data-tool=zones]", "[data-action=edit-add]"]),
+            ("linien", "editor", "edit", ["[data-tool=lines]", "[data-edit-item='virtual_walls:0']"]),
+            ("teppiche", "editor", "edit", ["[data-tool=carpets]", "[data-edit-item='carpets:0']"]),
+            ("moebel", "editor", "edit", ["[data-tool=furniture]", "[data-edit-item='furnitures:0']"]),
+            ("punkte", "editor", "edit", ["[data-tool=points]", "[data-edit-item='predefined_points:0']"]),
+            ("wlan", "editor", "edit", ["[data-tool=wifi]", "[data-edit-item='router:0']"]),
+            ("wlan-reinigungskarte", "editor", "edit", ["[data-tool=wifi]", "[data-wifi-view=cleaning]"]),
+            ("bestaetigung", "editor", "edit", ["[data-tool=zones]", "[data-action=edit-add]", "[data-action=save]"]),
+            ("ungespeichert", "editor", "edit", ["[data-tool=zones]", "[data-action=edit-add]", "key:Escape"]),
+        ]
+        page.evaluate("() => { window.__serviceCalls = []; }")
+        edit_geo = []
+        for w, h in ((360, 640), (390, 844), (800, 600), (1280, 800)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                for label, state, entry, steps in edit_views:
+                    build(state)
+                    page.wait_for_timeout(200)
+                    title = page.evaluate(edit_open, {"entry": entry, "steps": steps})
+                    page.wait_for_timeout(450)
+                    g = page.evaluate(edit_measure) if not str(title).startswith("missing") else {}
+                    if (w, th) in ((360, "dark"), (1280, "light"), (390, "light")):
+                        shot(f"editor-{label}-{w}x{h}-{th}.png")
+                    page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                    edit_geo.append({"label": label, "w": w, "h": h, "theme": th, "title": title, **g})
+        report["editorDialogs"] = edit_geo
+        calls_matrix = page.evaluate("() => window.__serviceCalls.map((c) => c.service)")
+        bad = [x for x in edit_geo if str(x["title"]).startswith("missing") or not inside(x) or x["small"] or x["smallFields"] or x["overflowX"] > 1]
+        check("map editor: 16 views x 4 sizes x 2 themes inside the viewport, no sideways overflow, buttons and fields >= 44 px",
+              not bad, json.dumps([{k: x.get(k) for k in ("label", "w", "theme", "title", "small", "smallFields", "overflowX", "top", "bottom")} for x in bad[:5]]))
+        by = {x["label"]: x for x in edit_geo if x["w"] == 390 and x["theme"] == "light"}
+        tools = {"raeume": "rooms", "waende": "walls", "zonen": "zones", "linien": "lines", "teppiche": "carpets", "moebel": "furniture", "punkte": "points", "wlan": "wifi"}
+        check("map editor: management lists both maps, rename form and delete confirmation; edit mode with the map in the sheet and 8 tools, none locked with edit data",
+              by["verwaltung"].get("maps") == 2 and by["verwaltung"].get("title") == "Kartenverwaltung"
+              and by["verwaltung-umbenennen"].get("kind") == "editor" and by["verwaltung-loeschen"].get("kind") == "confirm"
+              and by["modus"].get("mapInSheet") and by["modus"].get("tools") == 8 and by["modus"].get("lockedTools") == 0
+              and by["modus"].get("stageW", 0) > 200 and by["modus"].get("stageH", 0) > 150,
+              json.dumps({k: {kk: by[k].get(kk) for kk in ("title", "kind", "maps", "tools", "lockedTools", "mapInSheet", "stageW", "stageH")} for k in ("verwaltung", "verwaltung-umbenennen", "verwaltung-loeschen", "modus")}))
+        check("map editor: every tool pressed with its panel and one form per kind (rooms, walls, zones, lines, carpets, furniture, points, router)",
+              all(by[v].get("tool") == t and by[v].get("panel") == t and by[v].get("form") for v, t in tools.items()),
+              json.dumps({v: {kk: by[v].get(kk) for kk in ("title", "tool", "panel", "form", "picked", "text")} for v in tools}))
+        wifi_off = [x.get("wifiOff") for x in edit_geo if x["label"] == "wlan"]
+        check("map editor: WiFi map first with picture (on the map within 1.5 px through its own calibration, 8 cases) and legend, switch to the cleaning map removes both",
+              all(o is not None and o <= 1.5 for o in wifi_off) and by["wlan"].get("wifiImage") and by["wlan"].get("legend") and not by["wlan-reinigungskarte"].get("wifiImage")
+              and not by["wlan-reinigungskarte"].get("legend"),
+              json.dumps({"off": wifi_off, **{v: {kk: by[v].get(kk) for kk in ("wifiImage", "legend")} for v in ("wlan", "wlan-reinigungskarte")}}))
+        check("map editor: save opens a confirmation (kind confirm); Escape with open changes asks (keep/discard) instead of closing; 0 service calls in all 128 views",
+              by["bestaetigung"].get("kind") == "confirm" and by["bestaetigung"].get("confirmBtn") and by["ungespeichert"].get("keep")
+              and not calls_matrix, json.dumps({"bestaetigung": by["bestaetigung"].get("text"), "ungespeichert": by["ungespeichert"].get("text"), "calls": calls_matrix}))
+
+        # Real pointer and keyboard: an outside click keeps the confirmation, Escape with changes keeps the
+        # dialog and shakes it, the confirming click sends exactly the backup first (the harness never reports
+        # "Success", so no map service follows) -- then the stub is emptied.
+        page.set_viewport_size({"width": 1280, "height": 800})
+        theme("light")
+        build("editor")
+        page.wait_for_timeout(200)
+        page.evaluate(edit_open, {"entry": "edit", "steps": ["[data-tool=zones]", "[data-action=edit-add]"]})
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(60)
+        esc = page.evaluate("""() => { const d = window.dialog(); if (!d) return null; const sr = d.shadowRoot;
+            return { open: true, keep: !!sr.querySelector('[data-action=keep]'), shake: sr.querySelector('.sheet').classList.contains('shake') }; }""")
+        page.evaluate("() => window.dialog().shadowRoot.querySelector('[data-action=keep]').click()")
+        page.wait_for_timeout(300)
+        page.evaluate("() => window.dialog().shadowRoot.querySelector('[data-action=save]').click()")
+        page.wait_for_timeout(450)
+        page.mouse.click(12, 12)
+        page.wait_for_timeout(350)
+        outside = page.evaluate("""() => { const d = window.dialog(); return d ? d.shadowRoot.querySelector('.sheet').getAttribute('data-kind') : null; }""")
+        before = page.evaluate("() => window.__serviceCalls.length")
+        box = page.evaluate("""() => { const b = window.dialog().shadowRoot.querySelector('[data-action=confirm]').getBoundingClientRect();
+            return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }""")
+        page.mouse.click(box["x"], box["y"])
+        page.wait_for_timeout(300)
+        after = page.evaluate("() => window.__serviceCalls.map((c) => [c.service, c.payload])")
+        page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; window.__serviceCalls = []; }")
+        check("map editor real input: Escape with changes asks and shakes, outside click keeps the confirmation, 0 calls before the click; the confirming click sends vacuum_backup_map first",
+              esc and esc["keep"] and esc["shake"] and outside == "confirm" and before == 0
+              and len(after) == 1 and after[0][0] == "vacuum_backup_map" and after[0][1].get("entity_id") == "vacuum.robo",
+              json.dumps({"escape": esc, "outside": outside, "before": before, "after": after}))
+
+        # Bubble "Bearbeiten" (EDI-06): a real click on a carpet of the card's map, the bubble's action
+        # opens the edit mode with the carpet tool.
+        bubble = []
+        for w, h, th in ((360, 640, "dark"), (390, 844, "light"), (1280, 800, "light"), (1280, 800, "dark")):
+            page.set_viewport_size({"width": w, "height": h})
+            theme(th)
+            build("editor")
+            page.wait_for_timeout(300)
+            pt = page.evaluate("""() => { const c = window.card(), m = c._map; m.stage.scrollIntoView({ block: 'center' });
+                const k = c.hass.states['camera.robo_map'].attributes.carpets[2];
+                const s = m.toScreen(m.toImage({ x: (k.x0 + k.x2) / 2, y: (k.y0 + k.y2) / 2 })); return s; }""")
+            page.mouse.click(pt["x"], pt["y"])
+            page.wait_for_timeout(300)
+            b = page.evaluate("""() => { const c = window.card(), sr = c.shadowRoot, bub = c._map.bubble, r = bub.getBoundingClientRect(), stage = c._map.stage.getBoundingClientRect();
+                const act = bub.querySelector('[data-action=object-map-edit]'), ab = act ? act.getBoundingClientRect() : null;
+                return { hidden: bub.hidden, layer: bub.getAttribute('data-object-layer'), action: !!act, aw: ab ? ab.width : 0, ah: ab ? ab.height : 0,
+                         inside: r.left >= stage.left - 0.5 && r.right <= stage.right + 0.5 && r.top >= stage.top - 0.5 && r.bottom <= stage.bottom + 0.5,
+                         small: window.smallTargets(sr), overflow: document.documentElement.scrollWidth - innerWidth }; }""")
+            shot(f"editor-blase-{w}x{h}-{th}.png")
+            if b["action"]:
+                page.evaluate("() => window.card()._map.bubble.querySelector('[data-action=object-map-edit]').click()")
+                page.wait_for_timeout(600)
+                b["opened"] = page.evaluate("""() => { const d = window.dialog(); if (!d) return null; const t = d.shadowRoot.querySelector('[data-tool][aria-pressed=true]');
+                    return [d.shadowRoot.querySelector('.sheet').getAttribute('data-kind'), t && t.getAttribute('data-tool')]; }""")
+            page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            bubble.append({"w": w, "theme": th, **b})
+        report["editorBubble"] = bubble
+        calls_bubble = page.evaluate("() => window.__serviceCalls.length")
+        check("map editor bubble: a click on a carpet shows the bubble inside the map with 'Bearbeiten' (>= 44 px), it opens the edit mode in the carpet tool; 0 calls",
+              all(not x["hidden"] and x["layer"] in ("carpets", "detected_carpets") and x["action"] and x["aw"] >= 44 and x["ah"] >= 44 and x["inside"]
+                  and not x["small"] and x["overflow"] <= 0 and x.get("opened") == ["editor", "carpets"] for x in bubble) and calls_bubble == 0,
+              json.dumps({"bubble": bubble, "calls": calls_bubble}))
+
+        # ------------------------------------------------------------------
         # 4. HACS UI rules 1 and 2 (hacs/docs/ui-regeln.md)
         # ------------------------------------------------------------------
         report["uiRegeln"] = {}
@@ -1664,6 +1885,21 @@ def main():
                 messung=lambda pg: messe_popup(pg, lambda: page.evaluate(remote_open, False), ".sheet", '[data-action="close"]', dialog_typ="bearbeitung"),
                 vor_messung=lambda pg: (build("docked"), page.wait_for_timeout(150)))
             page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            for label, state, entry, steps in edit_views:
+                opener = lambda e=entry, st=steps: page.evaluate(edit_open, {"entry": e, "steps": st})
+                # The edit view carries the map (about 470 px) above its panel and the sheet scrolls; the
+                # carpet tool with its detected carpets runs past 2000 px, so it is measured at 2600 px.
+                r["regel1_dialog_editor_" + label] = lauf_breiten(
+                    page, breiten=WIDTHS, hoehe=2600, messung=lambda pg: messe_text(pg, ".sheet"),
+                    vor_messung=lambda pg, o=opener, s=state: (build(s), page.wait_for_timeout(200), o(), page.wait_for_timeout(450)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                if steps:
+                    continue
+                r["regel2_dialog_editor_" + label] = lauf_breiten(
+                    page, breiten=(390, 960), hoehe=900,
+                    messung=lambda pg, o=opener: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ="bearbeitung"),
+                    vor_messung=lambda pg, s=state: (build(s), page.wait_for_timeout(200)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
             r["regel1_karte_shortcuts"] = lauf_breiten(
                 page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
                 vor_messung=lambda pg: (build("shortcuts", config=short_config), page.wait_for_timeout(200)))
