@@ -302,3 +302,124 @@ test('runningTask erkennt Go-To an task_status cruising_point', async () => {
   const { karte } = await kartenKarte({ vacuum: { started: true, task_status: 'cruising_point' }, zustand: 'cleaning' });
   assert.deepEqual(gewaehlt(karte), ['goto']);
 });
+
+// ── Task 3: Raum ───────────────────────────────────────────────────────────
+const ev = (u, typ, init) => u.neuesEreignis(typ, Object.assign({ pointerType: 'mouse', pointerId: 1 }, init));
+const zeiger = (u, karte, typ, x, y, id = 1) => karte._map.stage.dispatchEvent(ev(u, typ, { clientX: x, clientY: y, pointerId: id }));
+const tippe = (u, karte, client) => { zeiger(u, karte, 'pointerdown', client.x, client.y); zeiger(u, karte, 'pointerup', client.x, client.y); u.uhr.vor(400); };
+const bildschirm = (karte, robot) => karte._map.toScreen(karte._map.toImage(robot));
+const chip = (karte, id) => $$(karte, '.room-chip').find((b) => b.getAttribute('data-room') === String(id));
+const klick = (u, node, init = {}) => node.dispatchEvent(u.neuesEreignis('click', init));
+const aktion = (karte, name) => karte._taskArea.querySelector('[data-action="' + name + '"]');
+const notiz = (karte, name) => karte._taskArea.querySelector('[data-note="' + name + '"]');
+const ebeneTasks = (karte) => karte._map.svg.querySelector('[data-layer="tasks"]');
+
+test('Raum: Fläche und Chip schalten über dasselbe Ereignis um (R08)', async () => {
+  const { u, karte } = await kartenKarte();
+  art(karte, 'room').click();
+  assert.equal(karte._map._mode, 'pick-room');
+  const liste = [];
+  karte._map.el.addEventListener('map-room-tap', (e) => liste.push(e.detail.source));
+  tippe(u, karte, bildschirm(karte, raeume()['5']));
+  chip(karte, 3).click();
+  assert.deepEqual(liste, ['map', 'chip']);
+  assert.deepEqual(roh(karte._selection.rooms), [5, 3]);
+  assert.equal(chip(karte, 5).getAttribute('aria-pressed'), 'true');
+  tippe(u, karte, bildschirm(karte, raeume()['5']));
+  assert.deepEqual(roh(karte._selection.rooms), [3], 'zweiter Tipp wählt ab');
+  assert.equal(chip(karte, 5).getAttribute('aria-pressed'), 'false');
+  const marken = ebeneTasks(karte).querySelectorAll('[data-select="room"]');
+  assert.deepEqual(marken.map((m) => m.getAttribute('data-room')), ['3'], 'Auswahl auf der Karte mit Form (R17)');
+});
+
+test('Raum: nur sichtbare Räume als Chip und wählbar', async () => {
+  const { u, haus, karte } = await kartenKarte();
+  const rooms = Object.assign({}, haus.states[CAM].attributes.rooms);
+  rooms['9'] = Object.assign({}, rooms['9'], { visibility: 'Hidden' });
+  karte.hass = haus.setze(ersetze(haus, CAM, { rooms }));
+  art(karte, 'room').click();
+  assert.equal(chip(karte, 9), undefined);
+  tippe(u, karte, bildschirm(karte, raeume()['9']));
+  assert.deepEqual(roh(karte._selection.rooms), []);
+  aktion(karte, 'rooms-all').click();
+  assert.ok(!karte._selection.rooms.includes(9), '„Alle wählen“ ohne versteckte');
+});
+
+test('Raum: Badges = gespeicherte Reinigungsreihenfolge mit Hinweis (customized_cleaning, X40)', async () => {
+  const { karte } = await kartenKarte();
+  art(karte, 'room').click();
+  chip(karte, 1).click(); chip(karte, 3).click(); chip(karte, 5).click();
+  // cleaning_sequence [3, 5, 7, 1, …] → 3:1, 5:2, 1:3
+  assert.equal(chip(karte, 3).querySelector('.room-order').textContent, '1');
+  assert.equal(chip(karte, 5).querySelector('.room-order').textContent, '2');
+  assert.equal(chip(karte, 1).querySelector('.room-order').textContent, '3');
+  assert.match(notiz(karte, 'order').textContent, /Reinigungsreihenfolge/);
+});
+
+test('Raum: Badges = Tipp-Reihenfolge auf Geräten ohne customized_cleaning', async () => {
+  const { haus, karte } = await kartenKarte();
+  const caps = haus.states['vacuum.robo'].attributes.capabilities.filter((c) => c !== 'customized_cleaning');
+  karte.hass = haus.setze(saugerNeu(haus, { capabilities: caps }));
+  art(karte, 'room').click();
+  chip(karte, 1).click(); chip(karte, 3).click();
+  assert.equal(chip(karte, 1).querySelector('.room-order').textContent, '1');
+  assert.equal(chip(karte, 3).querySelector('.room-order').textContent, '2');
+  assert.equal(notiz(karte, 'order'), null);
+  knopf(karte, 'start').click();
+  assert.deepEqual(roh(haus.rufe[0].data.segments), [1, 3]);
+});
+
+test('Raum: Anzahl sichtbar, „Alle wählen“, „Auswahl leeren“ mit 5 s Rückgängig (R02/R13)', async () => {
+  const { u, karte } = await kartenKarte();
+  art(karte, 'room').click();
+  assert.equal(aktion(karte, 'rooms-clear').disabled, true);
+  aktion(karte, 'rooms-all').click();
+  assert.equal(karte._selection.rooms.length, 7);
+  assert.match(notiz(karte, 'count').textContent, /7 Räume gewählt/);
+  aktion(karte, 'rooms-clear').click();
+  assert.deepEqual(roh(karte._selection.rooms), []);
+  aktion(karte, 'undo').click();
+  assert.equal(karte._selection.rooms.length, 7, 'Rückgängig stellt her');
+  aktion(karte, 'rooms-clear').click();
+  u.uhr.vor(5000);
+  assert.equal(aktion(karte, 'undo'), null, 'nach 5 s weg');
+});
+
+test('Raum: Strg-Klick schaltet, Umschalt-Klick wählt den Bereich bis zum letzten Chip (R02)', async () => {
+  const { u, karte } = await kartenKarte();
+  art(karte, 'room').click();
+  const ids = $$(karte, '.room-chip').map((b) => Number(b.getAttribute('data-room')));
+  klick(u, chip(karte, ids[1]), { ctrlKey: true });
+  klick(u, chip(karte, ids[4]), { shiftKey: true });
+  assert.deepEqual(roh(karte._selection.rooms), ids.slice(1, 5));
+});
+
+test('Raum: gesperrte Karte — Flächentipp wirkungslos, Chips bedienbar', async () => {
+  const { u, karte } = await kartenKarte();
+  art(karte, 'room').click();
+  karte._toggleLock();
+  tippe(u, karte, bildschirm(karte, raeume()['5']));
+  assert.deepEqual(roh(karte._selection.rooms), []);
+  chip(karte, 5).click();
+  assert.deepEqual(roh(karte._selection.rooms), [5]);
+});
+
+test('Raum: Kamera nicht verfügbar → Chips aus vacuum.rooms (R18)', async () => {
+  const { haus, karte } = await kartenKarte();
+  karte.hass = haus.setze(ersetze(haus, CAM, {}, 'unavailable'));
+  art(karte, 'room').click();
+  const chips = $$(karte, '.room-chip');
+  assert.equal(chips.length, 7);
+  chip(karte, 4).click();
+  assert.deepEqual(roh(karte._selection.rooms), [4]);
+  assert.equal(knopf(karte, 'start').disabled, false);
+});
+
+test('Kartenwechsel (map-changed) leert die Auswahl mit Hinweis', async () => {
+  const { haus, karte } = await kartenKarte();
+  art(karte, 'room').click();
+  chip(karte, 5).click();
+  karte.hass = haus.setze(ersetze(haus, CAM, { map_index: 2, map_id: 7 }));
+  assert.deepEqual(roh(karte._selection.rooms), []);
+  assert.match(notiz(karte, 'map-changed').textContent, /Karte gewechselt/);
+});

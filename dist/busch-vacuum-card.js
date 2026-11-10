@@ -370,6 +370,14 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskSpot: 'Spot',
             taskGoto: 'Hinfahren',
             aufgabeLaeuft: 'Aufgabe läuft',
+            raumGewaehlt: '{n} Raum gewählt',
+            raeumeGewaehlt: '{n} Räume gewählt',
+            alleWaehlen: 'Alle wählen',
+            auswahlLeeren: 'Auswahl leeren',
+            auswahlGeleert: 'Auswahl geleert.',
+            rueckgaengig: 'Rückgängig',
+            reihenfolgeGespeichert: 'Der Roboter reinigt in seiner gespeicherten Reinigungsreihenfolge (Menü → Reinigungsreihenfolge), nicht in der Tipp-Reihenfolge.',
+            auswahlKarteGewechselt: 'Karte gewechselt: Die Auswahl gehörte zur vorigen Karte und wurde geleert. Wähle neu.',
             aufgabeFehler: '„{task}“ wurde nicht gestartet ({grund}). Deine Auswahl bleibt erhalten. Prüfe den Grund und starte erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
             sperreAblassenAufgabe: 'Während die Station Wasser ablässt oder sich selbst repariert, startet keine Aufgabe. Warte, bis sie fertig ist.',
             raumOhneKarte: 'Räume lassen sich nur auf einer gespeicherten Karte reinigen. Lass den Roboter die Karte fertig erstellen und speichern, oder wähle „Gesamt“.',
@@ -819,6 +827,14 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskSpot: 'Spot',
             taskGoto: 'Go to',
             aufgabeLaeuft: 'Task running',
+            raumGewaehlt: '{n} room chosen',
+            raeumeGewaehlt: '{n} rooms chosen',
+            alleWaehlen: 'Select all',
+            auswahlLeeren: 'Clear selection',
+            auswahlGeleert: 'Selection cleared.',
+            rueckgaengig: 'Undo',
+            reihenfolgeGespeichert: 'The robot cleans in its saved cleaning sequence (menu → Cleaning sequence), not in the order you tapped.',
+            auswahlKarteGewechselt: 'Map changed: the selection belonged to the previous map and was cleared. Choose again.',
             aufgabeFehler: '“{task}” did not start ({grund}). Your selection is kept. Check the reason and start again; if that does not help, check the dreame_vacuum integration.',
             sperreAblassenAufgabe: 'No task starts while the station drains water or repairs itself. Wait until it has finished.',
             raumOhneKarte: 'Rooms can only be cleaned on a saved map. Let the robot finish and save the map, or choose “All”.',
@@ -2423,6 +2439,14 @@ function cameraAttrs(model) {
     return (cam && cam.attributes) || {};
 }
 
+/** The vacuum's own room list of the selected map ({ "Karte 1": [{ id, name, icon }] }) as camera-like rooms. */
+function vacuumRooms(model) {
+    const all = model.attr('rooms');
+    if (!all || typeof all !== 'object') return {};
+    const list = all[model.attr('selected_map')] || Object.values(all)[0] || [];
+    return Object.fromEntries((Array.isArray(list) ? list : []).filter((r) => r && r.id !== undefined).map((r) => [String(r.id), { room_id: r.id, name: r.name, icon: r.icon }]));
+}
+
 /** A zone with sorted, whole robot mm: [x0, y0, x1, y1] as the service wants it. */
 const zoneBox = (z) => [Math.round(Math.min(z.x0, z.x1)), Math.round(Math.min(z.y0, z.y1)), Math.round(Math.max(z.x0, z.x1)), Math.round(Math.max(z.y0, z.y1))];
 
@@ -3111,8 +3135,8 @@ class MapView {
     }
 
     /** Area and chip lead here alike (R08): one event, the chips' onToggle, the highlight. */
-    _roomTap(id, source) {
-        this._emit('map-room-tap', { room: id, source, mode: this._mode });
+    _roomTap(id, source, keys) {
+        this._emit('map-room-tap', Object.assign({ room: id, source, mode: this._mode }, keys));
         if (this._chipToggle) this._chipToggle(id);
         if (this._mode === 'view' && source === 'chip') this._showRoom(id);
     }
@@ -3144,6 +3168,7 @@ class MapView {
         this._modeOptions = options || {};
         this.hideLoupe();
         this.el.setAttribute('data-mode', mode);
+        this._renderChips();
     }
 
     /** Room under a robot point: exact from the map data, else rectangle and nearest centre. */
@@ -3203,10 +3228,12 @@ class MapView {
                 text: name,
                 icon: room.icon || 'mdi:floor-plan',
                 variant: 'secondary',
-                onClick: () => {
+                onClick: (event) => {
                     if (onToggle) onToggle(Number(id));
-                    if (list === this.chips) this._roomTap(Number(id), 'chip');
-                    else this._emit('map-room-tap', { room: Number(id), source: 'chip', mode: this._mode });
+                    // R02: Shift picks a range, Ctrl/Cmd toggles (a plain tap toggles too).
+                    const keys = { shift: !!(event && event.shiftKey), toggle: !!(event && (event.ctrlKey || event.metaKey)) };
+                    if (list === this.chips) this._roomTap(Number(id), 'chip', keys);
+                    else this._emit('map-room-tap', Object.assign({ room: Number(id), source: 'chip', mode: this._mode }, keys));
                 }
             });
             button.classList.add('room-chip');
@@ -3236,8 +3263,12 @@ class MapView {
 
     _renderChips() {
         if (!this.model) return;
-        const rooms = this._showsMap() ? this.current().rooms : {};
-        const key = JSON.stringify([rooms, this._highlight, BuschUI.language(this.hass, { legacy: true })]);
+        // pick-room: the module's selection, order and fallback rooms (setMode options), e.g. clean-tasks.
+        const o = this._mode === 'pick-room' ? this._modeOptions : {};
+        const rooms = this._showsMap() ? this.current().rooms : o.fallbackRooms ? o.fallbackRooms() : {};
+        const picked = o.selected ? o.selected() : null;
+        const ownOrder = o.order ? o.order() : null;
+        const key = JSON.stringify([rooms, this._highlight, BuschUI.language(this.hass, { legacy: true }), this._mode, picked, ownOrder]);
         if (key === this._chipsKey) return;
         this._chipsKey = key;
         const root = this.card.shadowRoot;
@@ -3246,7 +3277,7 @@ class MapView {
         // The cleaning sequence as on the map's badges (R01).
         const order = Object.entries(rooms).filter(([, r]) => Number(r && r.order) > 0).sort((x, y) => x[1].order - y[1].order).map(([id]) => id);
         const highlight = this._highlight !== null && this._highlight !== undefined ? [this._highlight] : [];
-        const chips = this.roomChips({ rooms, selected: highlight, order });
+        const chips = this.roomChips({ rooms, selected: picked || highlight, order: ownOrder || order });
         if (this.chips) this.chips.remove();
         this.el.insertBefore(chips, this.notes);
         this.chips = chips;
@@ -4055,9 +4086,9 @@ class MapView {
         if (id !== undefined) {
             const layer = this._layers.get(id);
             if (layer) this._renderLayer(layer, true);
-            return;
-        }
-        for (const layer of this._layers.values()) this._renderLayer(layer, true);
+        } else for (const layer of this._layers.values()) this._renderLayer(layer, true);
+        // A module's selection may show on the chips too (pick-room).
+        this._renderChips();
     }
 
     _renderLayers() {
@@ -5855,6 +5886,16 @@ canvas.map-base {
     --bvc-task-color: var(--bvc-accent-color, var(--primary-color, #03a9f4));
     --bvc-task-invalid: var(--bvc-error-color, var(--error-color, #db4437));
 }
+[data-layer=tasks] [data-select] circle {
+    fill: var(--bvc-task-color, var(--primary-color, #03a9f4));
+    stroke: var(--text-primary-color, #ffffff);
+    stroke-width: 2px;
+}
+[data-layer=tasks] [data-select] text {
+    fill: var(--text-primary-color, #ffffff);
+    stroke: none;
+    font-weight: var(--ha-font-weight-bold, 700);
+}
 [data-layer=tasks] [data-active] {
     stroke: var(--bvc-task-color, var(--primary-color, #03a9f4));
     fill: var(--bvc-task-color, var(--primary-color, #03a9f4));
@@ -6231,6 +6272,41 @@ ha-card {
 .task-error ha-icon {
     flex: none;
     --mdc-icon-size: 18px;
+}
+.task-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+}
+.task-count {
+    flex: 1 1 100%;
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+}
+.task-tools .busch-ui-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+}
+.task-tools ha-icon,
+.task-note ha-icon {
+    order: -1;
+    flex: none;
+    --mdc-icon-size: 18px;
+}
+.task-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+    overflow-wrap: anywhere;
+}
+.task-note > span {
+    flex: 1;
+    min-width: 0;
 }
 .task-error {
     display: flex;
@@ -7126,6 +7202,7 @@ class BuschVacuumCard extends HTMLElement {
             if (!this._map) {
                 this._map = new MapView(this);
                 this._mapSlot.appendChild(this._map.el);
+                for (const type of ['map-room-tap', 'map-tap', 'map-drag', 'map-changed']) this._map.el.addEventListener(type, (e) => this._onMapEvent(e));
             }
             this._map.update(hass, model);
         }
@@ -7323,6 +7400,17 @@ class BuschVacuumCard extends HTMLElement {
                 : ['aufgabeLaeuft', 'mdi:progress-clock'];
             nodes.push(this._note('task-badge', icon, translate(hass, key)));
         } else {
+            if (task === 'room') nodes.push(...this._roomPanel(hass, model));
+            if (this._undo) {
+                const note = this._note('task-note', 'mdi:undo-variant', translate(hass, 'auswahlGeleert'));
+                note.appendChild(this._panelButton(hass, 'rueckgaengig', 'mdi:undo', 'undo', () => this._undoClear()));
+                nodes.push(note);
+            }
+            if (this._taskInfo) {
+                const note = this._note('task-note', 'mdi:map-marker-alert-outline', translate(hass, this._taskInfo));
+                note.setAttribute('data-note', 'map-changed');
+                nodes.push(note);
+            }
             if (!ready.ok) nodes.push(this._note('task-hint', 'mdi:information-outline', translate(hass, ready.reason, { min: this._zoneMinText() })));
             if (this._taskError) {
                 const error = this._note('task-error', 'mdi:alert-circle-outline', this._taskError);
@@ -7330,7 +7418,12 @@ class BuschVacuumCard extends HTMLElement {
                 nodes.push(error);
             }
         }
+        const root = this.shadowRoot;
+        const focused = root.activeElement && root.activeElement.getAttribute ? root.activeElement.getAttribute('data-action') : null;
         this._taskArea.replaceChildren(...nodes);
+        // Rebuilt on every own update: keyboard focus stays on the same control.
+        const again = focused && this._taskArea.querySelector('[data-action="' + focused + '"]');
+        if (again && !again.disabled) again.focus();
         return ready;
     }
 
@@ -7376,9 +7469,137 @@ class BuschVacuumCard extends HTMLElement {
         }
     }
 
-    /** Options of setMode for a task type (filled by the task types' own code). */
-    _taskModeOptions() {
-        return {};
+    /** Options of setMode for a task type: pick-room shows the selection and its order on the chips. */
+    _taskModeOptions(task) {
+        if (task !== 'room') return {};
+        return { selected: () => this._selection.rooms.slice(), order: () => this._roomOrder(this._model()), fallbackRooms: () => vacuumRooms(this._model()) };
+    }
+
+    /** Rooms to choose from: the map's, else (camera away, R18) the vacuum's list; hidden ones never. */
+    _taskRooms(model) {
+        const m = this._map;
+        const rooms = m && m._showsMap() ? m.current().rooms : vacuumRooms(model);
+        return Object.fromEntries(Object.entries(rooms).filter(([, r]) => r && r.visibility !== 'Hidden'));
+    }
+
+    /**
+     * Order of the chosen rooms: tap order only where the device takes it;
+     * with customized_cleaning (X40) it cleans in the saved sequence
+     * (device.py#L4954, L7148), so the badges show that.
+     */
+    _roomOrder(model) {
+        const picked = this._selection.rooms;
+        if (!model.can('customized_cleaning')) return picked.slice();
+        const sequence = (model.attr('cleaning_sequence') || []).map(Number).filter((id) => picked.includes(id));
+        return sequence.concat(picked.filter((id) => !sequence.includes(id)));
+    }
+
+    /** Selection changed: map layer, chips and panel follow (R08). */
+    _selectionChanged() {
+        this._taskError = null;
+        if (this._map) this._map.refresh('tasks');
+        this._update();
+    }
+
+    /** Clears a part of the selection with a 5-s undo (R13). */
+    _clearSelection(part) {
+        const before = this._selection[part].slice();
+        if (!before.length) return;
+        if (this._undo) clearTimeout(this._undo.timer);
+        const undo = { part, before, timer: null };
+        undo.timer = setTimeout(() => { if (this._undo === undo) { this._undo = null; this._update(); } }, 5000);
+        this._undo = undo;
+        this._selection[part] = [];
+        this._selectionChanged();
+    }
+
+    _undoClear() {
+        const undo = this._undo;
+        if (!undo) return;
+        clearTimeout(undo.timer);
+        this._undo = null;
+        this._selection[undo.part] = undo.before;
+        this._selectionChanged();
+    }
+
+    /** Map contract events of the task types. */
+    _onMapEvent(e) {
+        const d = e.detail || {};
+        if (e.type === 'map-changed') {
+            // IDs and coordinates belong to one map.
+            const had = this._selection.rooms.length || this._selection.zones.length || this._selection.spots.length || this._selection.goto;
+            this._selection = emptySelection();
+            this._taskInfo = had ? 'auswahlKarteGewechselt' : null;
+            this._selectionChanged();
+            return;
+        }
+        const model = this._model();
+        if (taskActive(model, model.state ? model.state.state : 'unavailable')) return;
+        const task = this._chosenTask(model);
+        if (e.type === 'map-room-tap' && task === 'room' && d.mode === 'pick-room') this._toggleRoom(model, Number(d.room), d.shift);
+    }
+
+    _toggleRoom(model, id, range) {
+        const rooms = this._taskRooms(model);
+        if (!rooms[id]) return;
+        const picked = this._selection.rooms;
+        const ids = Object.keys(rooms).map(Number);
+        if (range && this._lastRoom !== undefined && ids.includes(this._lastRoom)) {
+            const [a, b] = [ids.indexOf(this._lastRoom), ids.indexOf(id)].sort((x, y) => x - y);
+            for (const r of ids.slice(a, b + 1)) if (!picked.includes(r)) picked.push(r);
+        } else if (picked.includes(id)) picked.splice(picked.indexOf(id), 1);
+        else picked.push(id);
+        this._lastRoom = id;
+        this._selectionChanged();
+    }
+
+    /** Room panel (TASK-02): count, select all, clear with undo, order note. */
+    _roomPanel(hass, model) {
+        const nodes = [];
+        const n = this._selection.rooms.length;
+        const tools = document.createElement('div');
+        tools.className = 'task-tools';
+        const count = document.createElement('span');
+        count.className = 'task-count';
+        count.setAttribute('role', 'status');
+        count.setAttribute('data-note', 'count');
+        count.textContent = translate(hass, n === 1 ? 'raumGewaehlt' : 'raeumeGewaehlt', { n });
+        const all = this._panelButton(hass, 'alleWaehlen', 'mdi:select-all', 'rooms-all', () => {
+            for (const id of Object.keys(this._taskRooms(model)).map(Number)) if (!this._selection.rooms.includes(id)) this._selection.rooms.push(id);
+            this._selectionChanged();
+        });
+        const clear = this._panelButton(hass, 'auswahlLeeren', 'mdi:selection-remove', 'rooms-clear', () => this._clearSelection('rooms'), n === 0);
+        tools.append(count, all, clear);
+        nodes.push(tools);
+        if (n && model.can('customized_cleaning')) {
+            const note = this._note('task-note', 'mdi:sort-numeric-ascending', translate(hass, 'reihenfolgeGespeichert'));
+            note.setAttribute('data-note', 'order');
+            nodes.push(note);
+        }
+        return nodes;
+    }
+
+    /** A labelled panel button with a stable data-action (focus survives the redraw). */
+    _panelButton(hass, key, icon, name, onClick, disabled = false, vars) {
+        const label = translate(hass, key, vars);
+        const button = BuschUI.action({ label, text: label, icon, variant: 'secondary', disabled, onClick });
+        button.setAttribute('data-action', name);
+        return button;
+    }
+
+    /** Draws the own selection into the layer `tasks` (shape + number, R17). */
+    _drawSelection(group, ctx) {
+        const task = this._chosenTask(ctx.model);
+        if (task === 'room') {
+            const order = this._roomOrder(ctx.model);
+            for (const id of this._selection.rooms) {
+                const room = ctx.rooms[id];
+                if (!room || room.x === undefined) continue;
+                const g = group.appendChild(screenMark(ctx, room, { 'data-select': 'room', 'data-room': id }));
+                g.appendChild(ctx.svgNode('circle', { r: 11, cy: 22 }));
+                g.appendChild(ctx.svgNode('text', { 'text-anchor': 'middle', y: 26.5, 'font-size': 12 })).textContent = String(order.indexOf(id) + 1);
+            }
+        }
     }
 
     /** Start of the chosen task: exactly one service (spec table), optimistic, one call per tap (R11). */
