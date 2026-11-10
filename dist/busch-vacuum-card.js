@@ -805,7 +805,15 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             wlanKarte: 'WLAN-Karte',
             keineLaufKarte: 'Keine Karte für diesen Lauf.',
             keineWlanKarte: 'Keine WLAN-Karte für diesen Lauf.',
-            laufHindernisse: 'Hindernisse'
+            laufHindernisse: 'Hindernisse',
+            nachRaeume: 'Blockierte Räume zum Nachreinigen',
+            nachWaehlen: 'Wähle mindestens einen Raum.',
+            nachAufgabeLaeuft: 'Gesperrt, solange eine Aufgabe läuft.',
+            nachLaedt: 'Wartet auf die Daten des Laufs.',
+            nachOhneDaten: 'Ohne die Daten des Laufs lässt sich die Karte nicht prüfen.',
+            nachAndereKarte: 'Gesperrt: dieser Lauf war auf einer anderen Karte als der aktuellen.',
+            nachFrageAlle: 'Der Roboter verlässt das Dock und reinigt {raeume} nach.',
+            nachFrageTeil: 'Der Roboter verlässt das Dock und reinigt {raeume} als neue Raumreinigung — im Verlauf erscheint ein neuer Lauf, keine Nachreinigung dieses Laufs.'
         }
     },
     en: {
@@ -1380,7 +1388,15 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             wlanKarte: 'WiFi map',
             keineLaufKarte: 'No map for this run.',
             keineWlanKarte: 'No WiFi map for this run.',
-            laufHindernisse: 'Obstacles'
+            laufHindernisse: 'Obstacles',
+            nachRaeume: 'Blocked rooms to re-clean',
+            nachWaehlen: 'Choose at least one room.',
+            nachAufgabeLaeuft: 'Locked while a task is running.',
+            nachLaedt: 'Waiting for the run\'s data.',
+            nachOhneDaten: 'Without the run\'s data the map cannot be checked.',
+            nachAndereKarte: 'Locked: this run was on another map than the current one.',
+            nachFrageAlle: 'The robot leaves the dock and re-cleans {raeume}.',
+            nachFrageTeil: 'The robot leaves the dock and cleans {raeume} as a new room cleaning — the history shows a new run, not a re-cleaning of this one.'
         }
     }
 };
@@ -7123,6 +7139,115 @@ function runObstacleView(card, kind, run, o) {
 }
 
 /**
+ * "Nochmal reinigen" of a run (device.py#L5630): shown only for the newest
+ * run with blocked rooms, `auto_recleaning` and `vacuum_call_action`; possible
+ * only when the run's map is the current one and no task runs.
+ */
+function recleanState(model, run, { newest, load, mapId }) {
+    const rooms = [...blockedRooms(run, load).keys()];
+    const hidden = { show: false, ok: false, reason: null, rooms };
+    if (!newest || run.timestamp !== newest.timestamp || !rooms.length || !model.can('auto_recleaning') || !model.can('dreame_vacuum.vacuum_call_action')) return hidden;
+    const no = (reason) => ({ show: true, ok: false, reason, rooms });
+    if (taskActive(model, model.state ? model.state.state : 'unavailable')) return no('nachAufgabeLaeuft');
+    if (!load || load.status !== 'ready') return no(load && load.status === 'loading' ? 'nachLaedt' : 'nachOhneDaten');
+    const runMap = load.data && load.data.map_id;
+    if (runMap === undefined || runMap === null || String(runMap) !== String(mapId)) return no('nachAndereKarte');
+    return { show: true, ok: true, reason: null, rooms };
+}
+
+/**
+ * All blocked rooms: the station action `start_recleaning` (same entry as in
+ * dock, R01/R08). Some: a new room run over the same payload as clean-tasks,
+ * not coupled to the old run — the confirmation says so (decision 10.11.2026).
+ */
+function runReclean(card, rooms, all) {
+    if (all) return runStationAction(card, STATION_ACTIONS.find((a) => a.key === 'start_recleaning'));
+    const payload = taskPayload(card._model(), 'room', { rooms: rooms.map(Number), zones: [], spots: [], goto: null }, 1);
+    return trackWrite(card, 'reclean:rooms', {
+        label: translate(card._hass, 'aktNachreinigen'), failKey: 'aktionFehler',
+        call: () => card._hass.callService(payload.domain, payload.service, Object.assign({ entity_id: card._opts.entity }, payload.data))
+    });
+}
+
+function recleanConfirm(card, names, all, rooms) {
+    return {
+        title: translate(card._hass, 'aktNachreinigen') + '?',
+        kind: 'confirm',
+        render: (body, hass, dialog) => {
+            body.appendChild(noteLine(translate(hass, all ? 'nachFrageAlle' : 'nachFrageTeil', { raeume: names.join(', ') })));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            cancel.setAttribute('data-action', 'cancel');
+            const go = BuschUI.action({ label: translate(hass, 'starten'), text: translate(hass, 'starten'), variant: 'primary', onClick: () => {
+                runReclean(card, rooms, all);
+                dialog._goBack();
+            } });
+            go.setAttribute('data-action', 'confirm');
+            actions.append(cancel, go);
+            body.appendChild(actions);
+        }
+    };
+}
+
+/** The "Nochmal reinigen" block of the newest run: room chips (≥ 1, none chosen at first), reason when locked. */
+function recleanSection(card, hass, run, runs, load, detail, dialog) {
+    const model = card._model();
+    const mapId = card._map ? card._map.current().mapId : cameraAttrs(model).map_id;
+    const state = recleanState(model, run, { newest: runs[0], load, mapId });
+    if (!state.show) return null;
+    if (!detail.reclean || detail.reclean.ts !== run.timestamp) detail.reclean = { ts: run.timestamp, chosen: new Set() };
+    const chosen = detail.reclean.chosen;
+    for (const id of [...chosen]) if (!state.rooms.includes(id)) chosen.delete(id);
+    const rooms = cameraAttrs(model).rooms || {};
+    const name = (id) => historyRoomName(hass, rooms, id);
+    const section = document.createElement('div');
+    section.className = 'history-reclean';
+    const heading = document.createElement('h2');
+    heading.className = 'settings-heading';
+    heading.textContent = translate(hass, 'aktNachreinigen');
+    const list = document.createElement('div');
+    list.className = 'seq-chips';
+    list.setAttribute('role', 'group');
+    list.setAttribute('aria-label', translate(hass, 'nachRaeume'));
+    for (const id of state.rooms) {
+        const chip = BuschUI.action({ label: name(id), text: name(id), icon: (rooms[id] && rooms[id].icon) || 'mdi:floor-plan', onClick: () => {
+            if (chosen.has(id)) chosen.delete(id);
+            else chosen.add(id);
+            dialog._render();
+            const again = Array.from(dialog.shadowRoot.querySelectorAll('[data-reclean-room]')).find((n) => n.getAttribute('data-reclean-room') === id);
+            if (again) again.focus();
+        } });
+        chip.setAttribute('data-reclean-room', id);
+        chip.setAttribute('aria-pressed', String(chosen.has(id)));
+        list.appendChild(chip);
+    }
+    section.append(heading, list);
+    const picked = state.rooms.filter((id) => chosen.has(id));
+    const all = picked.length === state.rooms.length;
+    const busy = card._settingWrites.has('station:recleaning') || card._settingWrites.has('reclean:rooms');
+    const label = translate(hass, 'aktNachreinigen');
+    const button = BuschUI.action({ label: busy ? label + ' · ' + translate(hass, 'wirdGestartet') : label, text: busy ? translate(hass, 'wirdGestartet') : label,
+        icon: 'mdi:refresh-circle', variant: 'primary', disabled: busy || !state.ok || !picked.length,
+        onClick: () => dialog.show(recleanConfirm(card, picked.map(name), all, picked)) });
+    button.setAttribute('data-action', 'reclean');
+    if (busy) button.setAttribute('aria-busy', 'true');
+    const why = !state.ok ? translate(hass, state.reason) : !picked.length ? translate(hass, 'nachWaehlen') : '';
+    if (why) {
+        const line = noteLine(why);
+        line.setAttribute('data-note', 'reclean');
+        section.appendChild(line);
+    }
+    const fail = card._settingNotes.get('station:recleaning') || card._settingNotes.get('reclean:rooms');
+    if (fail) section.appendChild(noteLine(fail, 'error'));
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    actions.appendChild(button);
+    section.appendChild(actions);
+    return section;
+}
+
+/**
  * HIS-02/03: one run. Facts from the sensor at once, the map data's (counters,
  * start) as "—" until loaded; Older/Newer and ←/→ turn pages within the view
  * (back = the list, R05); the same view for cleaning and cruising (R08).
@@ -7229,6 +7354,8 @@ function historyDetail(card, name, list, ts) {
             }
             const map = runMapSection(card, hass, kind, run, load, detail, dialog);
             if (map) wrap.appendChild(map);
+            const reclean = kind.cruising ? null : recleanSection(card, hass, run, runs, load, detail, dialog);
+            if (reclean) wrap.appendChild(reclean);
             wrap.appendChild(pager);
         }
     };
@@ -10619,6 +10746,7 @@ BuschVacuumCard.__internals = {
     historyRuns,
     historySums,
     historyUrl,
+    recleanState,
     version: CARD_VERSION
 };
 

@@ -416,3 +416,65 @@ test('Hindernisse des Laufs: Liste und Marker, Foto nur mit gemeldetem Bild übe
   assert.equal($d(k2.u, '.obstacle-photo'), null);
   assert.match($d(k2.u, '.obstacle-note').textContent, /kein Foto/);
 });
+
+// ── Task 5: Nochmal reinigen ────────────────────────────────────────────────
+
+const ohneCap = (cap) => ({ states: (s) => ({ 'vacuum.robo': Object.assign({}, s['vacuum.robo'], { attributes: Object.assign({}, s['vacuum.robo'].attributes, { capabilities: s['vacuum.robo'].attributes.capabilities.filter((c) => c !== cap) }) }) }) });
+
+test('recleanState: nur neuester Lauf, Fähigkeit, Dienst, blockierte Räume, gleiche Karte, keine Aufgabe', () => {
+  const k = aufbau();
+  const runs = k.I.historyRuns(k.haus.states[HIST]);
+  const bereit = { status: 'ready', data: verlaufsdaten() };
+  const st = (model, run = runs[0], load = bereit, mapId = 2) => k.I.recleanState(model, run, { newest: runs[0], load, mapId });
+  assert.deepEqual(roh(st(k.model())), { show: true, ok: true, reason: null, rooms: ['4', '5', '9'] });
+  assert.equal(st(k.model(), runs[1]).show, false, 'nicht der neueste Lauf');
+  assert.equal(st(aufbau('voll', ohneCap('auto_recleaning')).model()).show, false, 'ohne auto_recleaning');
+  const ohneDienst = aufbau('voll', { services: (sv) => ({ ...sv, dreame_vacuum: Object.fromEntries(Object.entries(sv.dreame_vacuum).filter(([n]) => n !== 'vacuum_call_action')) }) });
+  assert.equal(st(ohneDienst.model()).show, false, 'ohne vacuum_call_action');
+  const leer = { timestamp: 1, level: 'done', group: null, entry: { completed: true } };
+  assert.equal(st(k.model(), leer, { status: 'ready', data: verlaufsdaten({ blocked_segments: null }) }).show, false, 'keine blockierten Räume');
+  const andere = st(k.model(), runs[0], bereit, 7);
+  assert.deepEqual([andere.show, andere.ok, andere.reason], [true, false, 'nachAndereKarte']);
+  const laeuft = aufbau('voll', { states: (s) => ({ 'vacuum.robo': Object.assign({}, s['vacuum.robo'], { state: 'cleaning', attributes: Object.assign({}, s['vacuum.robo'].attributes, { started: true }) }) }) });
+  assert.deepEqual([st(laeuft.model()).ok, st(laeuft.model()).reason], [false, 'nachAufgabeLaeuft']);
+  assert.deepEqual([st(k.model(), runs[0], { status: 'loading' }).ok, st(k.model(), runs[0], { status: 'loading' }).reason], [false, 'nachLaedt']);
+});
+
+const chips = (k) => $$d(k.u, '[data-reclean-room]');
+const nachKnopf = (k) => $d(k.u, '[data-action="reclean"]');
+
+test('Nochmal reinigen: Chips der blockierten Räume, Auswahl Pflicht, Bestätigung nennt Räume, genau start_recleaning', async () => {
+  const k = await geladen();
+  assert.deepEqual(chips(k).map((c) => c.textContent), ['Galerie', 'Bibliothek', 'Sauna']);
+  assert.ok(chips(k).every((c) => c.getAttribute('aria-pressed') === 'false'), 'vorgewählt: keiner');
+  assert.equal(nachKnopf(k).textContent.includes('Nachreinigen'), true, 'gleicher Text wie die Stationsaktion (R01)');
+  assert.equal(nachKnopf(k).disabled, true);
+  for (const id of ['4', '5', '9']) chips(k).find((c) => c.getAttribute('data-reclean-room') === id).click();
+  assert.equal(nachKnopf(k).disabled, false);
+  nachKnopf(k).click();
+  assert.equal(k.haus.rufe.length, 0, 'erst nach Bestätigung');
+  assert.match($d(k.u, '.body').textContent, /Galerie, Bibliothek, Sauna/);
+  $d(k.u, '[data-action="confirm"]').click();
+  assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_call_action', data: { entity_id: 'vacuum.robo', key: 'start_recleaning' } }]);
+  k.u.zurueck();
+  assert.equal(nachKnopf(k).disabled, true, 'belegt bis zur Antwort (R11)');
+});
+
+test('Nochmal reinigen mit Teilauswahl: neuer Raumlauf über vacuum_clean_segment mit Hinweis', async () => {
+  const k = await geladen();
+  chips(k).find((c) => c.getAttribute('data-reclean-room') === '5').click();
+  nachKnopf(k).click();
+  assert.match($d(k.u, '.body').textContent, /Bibliothek/);
+  assert.match($d(k.u, '.body').textContent, /neuer Lauf/);
+  $d(k.u, '[data-action="confirm"]').click();
+  const soll = k.I.taskPayload(k.model(), 'room', { rooms: [5], zones: [], spots: [], goto: null }, 1);
+  assert.deepEqual(roh(k.haus.rufe), [{ domain: soll.domain, service: 'vacuum_clean_segment', data: Object.assign({ entity_id: 'vacuum.robo' }, roh(soll.data)) }]);
+});
+
+test('Nochmal reinigen: nicht bei älteren Läufen; gesperrt mit Grund bei anderer Karte', async () => {
+  const k = await geladen({}, ZWEITER);
+  assert.equal(nachKnopf(k), null);
+  const k2 = await geladen({ antwort: datenAntwort({ [NEUESTER]: { json: verlaufsdaten({ map_id: 7 }) } }) });
+  assert.equal(nachKnopf(k2).disabled, true);
+  assert.match($d(k2.u, '[data-note="reclean"]').textContent, /anderen Karte/);
+});
