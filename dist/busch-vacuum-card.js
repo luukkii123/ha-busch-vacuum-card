@@ -11997,7 +11997,7 @@ function editCountLine(hass, art, c) {
  * The confirmation of every save (Sicherheitsrahmen 3): title, affected objects,
  * map, backup note, way back; no outside click (kind confirm); one call per
  * click; a failed backup keeps everything and offers a retry.
- * opts: { title, lines, action, destructive, irreversible, calls, undo, backup, done }
+ * opts: { title, lines, action, destructive, irreversible, calls, undo, backup, backupNote, done }
  */
 function mapConfirm(card, session, opts) {
     return {
@@ -12014,7 +12014,7 @@ function mapConfirm(card, session, opts) {
             }
             body.appendChild(list);
             body.appendChild(noteLine(translate(hass, 'kartenKarte', { karte: session.mapName })));
-            if (opts.backup !== false) {
+            if (opts.backup !== false && opts.backupNote !== false) {
                 const backupText = session.backedUpAt !== null ? translate(hass, 'kartenSicherungDa', { zeit: clockText(hass, new Date(session.backedUpAt).getHours(), new Date(session.backedUpAt).getMinutes()) })
                     : session.canBackup() ? translate(hass, 'kartenSicherungNeu') : translate(hass, 'kartenKeineSicherung');
                 body.appendChild(noteLine(backupText, 'backup'));
@@ -15469,7 +15469,11 @@ function backupsView(card, mapId) {
     const view = {
         title: translate(card._hass, 'sicherungenTitel'),
         kind: 'editor',
+        session: null, // backupSession: the list's MapEditSession, made on first use
         watch: () => backupWatch(card, mapId),
+        leave: () => {
+            if (view.session) card._mapSessions.delete(view.session);
+        },
         render: (body, hass, dialog) => {
             const model = card._model();
             const map = backupMap(model, mapId);
@@ -15760,6 +15764,100 @@ function backupImageView(card, mapId, start = 1) {
     };
     return view;
 }
+
+const BACKUP_NOW_TEXTS = {
+    de: {
+        sicherungJetzt: 'Jetzt sichern',
+        sicherungJetztTitel: 'Karte sichern',
+        sicherungJetztZeile: 'Erstellt eine Sicherung von „{karte}“ in der Cloud; die Karte selbst ändert sich nicht.',
+        sicherungErsetzt: 'Kann die Sicherung vom {datum} ersetzen — wie viele Sicherungen das Gerät aufhebt, ist nicht belegt.',
+        sicherungKnopf: 'Sichern',
+        sicherungNurAktiv: 'Sichern und Wiederherstellen gehen nur für die aktive Karte.',
+        sicherungKeineGespeichert: 'Keine gespeicherte Karte zum Sichern.'
+    },
+    en: {
+        sicherungJetzt: 'Back up now',
+        sicherungJetztTitel: 'Back up map',
+        sicherungJetztZeile: 'Makes a backup of “{karte}” in the cloud; the map itself does not change.',
+        sicherungErsetzt: 'May replace the backup of {datum} — how many backups the device keeps is not documented.',
+        sicherungKnopf: 'Back up',
+        sicherungNurAktiv: 'Backing up and restoring work only for the active map.',
+        sicherungKeineGespeichert: 'No stored map to back up.'
+    }
+};
+for (const language of Object.keys(BACKUP_NOW_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, BACKUP_NOW_TEXTS[language]);
+
+/**
+ * The list's session (Sicherheitsrahmen: one helper with the editor, R08):
+ * backup and "Karte: …" name that map; the card feeds it state updates while
+ * the list is open (backupsView.leave lets go).
+ */
+function backupSession(card, view, map) {
+    if (!view.session) {
+        view.session = new MapEditSession(card);
+        view.session.mapId = map.entry.id;
+        view.session.mapName = map.name;
+        card._mapSessions.add(view.session);
+    }
+    return view.session;
+}
+
+/** The newest Backup state of a map (its date is what a new backup may replace). */
+const lastBackup = (hass, model, mapId) => recoveryEntries(hass, model, mapId).find((e) => e.type === 'backup') || null;
+
+/** Why backing up is not possible now (text key), or ''. */
+function backupNowLock(card, session, model, map) {
+    if (!map.active) return 'sicherungNurAktiv';
+    const lock = session.lock('vacuum_backup_map', model);
+    if (lock) return lock;
+    if (taskActive(model, model.state ? model.state.state : 'unavailable')) return 'kartenSperreAufgabe';
+    if (model.attr('has_temporary_map') === true) return 'kartenSperreTemporaer';
+    if (!session.canBackup(model)) return 'sicherungKeineGespeichert';
+    return '';
+}
+
+/**
+ * BAK-02/ALL-13 manual backup ("backup_saved_map" as the service): exactly
+ * vacuum_backup_map through MapEditSession.backup, behind the one
+ * confirmation of the card (mapConfirm, the only grant) — with the note on a
+ * Backup it may replace.
+ */
+function backupNowPart(card, model, hass, dialog, view, map) {
+    if (!model.can('backup_map') || !model.can('dreame_vacuum.vacuum_backup_map')) return null;
+    const session = backupSession(card, view, map);
+    const box = document.createElement('div');
+    box.className = 'backup-now actions';
+    const reason = backupNowLock(card, session, model, map);
+    const label = translate(hass, 'sicherungJetzt');
+    const now = BuschUI.action({ label, text: label, icon: 'mdi:cloud-upload-outline', variant: 'primary', disabled: !!reason, onClick: () => {
+        const replaced = lastBackup(hass, card._model(), map.entry.id);
+        session.backedUpAt = null; // every manual backup is a new one
+        session.error = null;
+        dialog.show(mapConfirm(card, session, {
+            title: translate(hass, 'sicherungJetztTitel'),
+            lines: [translate(hass, 'sicherungJetztZeile', { karte: map.name })]
+                .concat(replaced ? [translate(hass, 'sicherungErsetzt', { datum: recoveryDate(hass, replaced) })] : []),
+            action: translate(hass, 'sicherungKnopf'),
+            calls: [],
+            backupNote: false,
+            done: (d) => backTo(d, view)
+        }));
+    } });
+    now.setAttribute('data-action', 'backup-now');
+    box.appendChild(now);
+    if (!map.active && card._map) {
+        const name = translate(hass, 'kartenWechselZu', { karte: map.name });
+        const go = BuschUI.action({ label: name, text: name, disabled: card._map._busy(), onClick: () => card._map.selectMap(map.entry.id) });
+        go.setAttribute('data-action', 'switch-map');
+        box.appendChild(go);
+    }
+    const wrap = document.createElement('div');
+    wrap.appendChild(box);
+    if (reason) wrap.appendChild(noteLine(translate(hass, reason), 'locked'));
+    if (session.error) wrap.appendChild(noteLine(session.error.text, 'error'));
+    return wrap;
+}
+BACKUP_PARTS.push(backupNowPart);
 
 // ---------------------------------------------------------------------------
 // Registration

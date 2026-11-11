@@ -266,3 +266,76 @@ test('BAK-01 Zoomlogik aus map-view wiederverwendet (R08): zoomAround/clampPan s
   const quelle = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'dist', 'busch-vacuum-card.js'), 'utf8');
   assert.match(quelle, /_zoomed\(from, zoom, client\) \{\s*return zoomAround\(/, 'MapView rechnet mit derselben Funktion');
 });
+
+// ── Task 3: Manuelles Backup (BAK-02, ALL-13) ───────────────────────────────
+
+const MIT_BACKUP = () => staende('camera.robo_map_1', [EINTRAG('2026-11-01 09:30', 'Sicherungskarte', 3), EINTRAG('2026-04-26 13:23', 'Bearbeitete Karte', 2), EINTRAG('2024-11-21 10:20', 'Originalkarte', 1)]);
+const text = (k) => dialogVon(k.u).shadowRoot.textContent;
+
+test('BAK-02 Jetzt sichern: nur can(backup_map) und aktive Karte; Bestätigung ohne Außenklick; genau vacuum_backup_map { entity_id, map_id } über MapEditSession.backup; Status bis Success; Doppeltipp = 1 Aufruf', async () => {
+  const k = aufbau();
+  const d = sicherungen(k);
+  const jetzt = knopf(k, 'backup-now');
+  assert.ok(jetzt, 'Knopf „Jetzt sichern“');
+  assert.equal(jetzt.disabled, false);
+  jetzt.click();
+  assert.equal(d._views.at(-1).kind, 'confirm', 'kein Außenklick (R04)');
+  assert.match(text(k), /Erstellt eine Sicherung von „Karte 1“/);
+  assert.doesNotMatch(text(k), /ersetzen/, 'ohne Backup-Eintrag kein Ersetzen-Hinweis');
+  assert.doesNotMatch(text(k), /Vor dem Speichern/, 'kein Speichern-Hinweis des Editors');
+  assert.deepEqual(k.haus.rufe, [], 'erst der Klick sendet');
+  knopf(k, 'confirm').click();
+  knopf(k, 'confirm').click();
+  await mikro();
+  assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_backup_map', data: { entity_id: 'vacuum.robo', map_id: 3 } }], 'Doppeltipp: ein Aufruf');
+  assert.match(text(k), /Sicherung läuft/);
+  k.sauger({ map_backup_status: 'Running' });
+  assert.match(text(k), /Sicherung läuft/);
+  k.sauger({ map_backup_status: 'Success' });
+  await mikro(); await mikro();
+  k.u.zurueck();
+  assert.equal(d._views.at(-1).title, 'Kartensicherungen', 'nach Erfolg zurück zur Liste');
+  assert.match(text(k), /Sicherung: erfolgreich/);
+  // Ein zweites Backup in derselben Ansicht sichert erneut (eigene Sitzung je Klick).
+  knopf(k, 'backup-now').click();
+  knopf(k, 'confirm').click();
+  await mikro();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_backup_map']);
+  // Sperren mit Grund (Aufgabe, Status Running, keine gespeicherte Karte, temporäre Karte, nicht aktive Karte).
+  const grund = (kk, id = 3) => { sicherungen(kk, id); const b = knopf(kk, 'backup-now'); return [b.disabled, text(kk)]; };
+  let [aus, t] = grund(aufbau({ zustand: 'cleaning' }));
+  assert.ok(aus && /solange eine Aufgabe läuft/.test(t));
+  [aus, t] = grund(aufbau({ vac: { map_backup_status: 'Running' } }));
+  assert.ok(aus && /Sicherung oder Wiederherstellung läuft/.test(t));
+  [aus, t] = grund(aufbau({ vac: { has_temporary_map: true } }));
+  assert.ok(aus && /temporäre Karte/.test(t));
+  const zwei = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2 } });
+  [aus, t] = grund(zwei, 7);
+  assert.ok(aus && /nur für die aktive Karte/.test(t), 'nicht aktive Karte');
+  knopf(zwei, 'switch-map').click();
+  assert.deepEqual(zwei.haus.rufe, [], 'Wechsel erst nach der Bestätigung von core (CORE-20)');
+  assert.match(text(zwei), /Oben/);
+  const ohne = aufbau({ vac: { capabilities: ['map', 'multi_floor_map'] } });
+  sicherungen(ohne);
+  assert.equal(knopf(ohne, 'backup-now'), null, 'ohne backup_map kein Knopf');
+});
+
+test('BAK-02 Jetzt sichern mit vorhandenem Backup: Hinweis „kann die Sicherung vom <Datum> ersetzen“; Fehler und Zeitlimit (R12) mit Erneut, Karte unverändert', async () => {
+  const k = aufbau({ kameras: { 'camera.robo_map_1': MIT_BACKUP() } });
+  sicherungen(k);
+  knopf(k, 'backup-now').click();
+  assert.match(text(k), /Kann die Sicherung vom 01\.11\.2026 09:30 ersetzen/);
+  knopf(k, 'confirm').click();
+  await mikro();
+  k.sauger({ map_backup_status: 'Running' });
+  k.sauger({ map_backup_status: 'Fail' });
+  await mikro(); await mikro();
+  assert.match(text(k), /Sicherung fehlgeschlagen \(Fail\)/);
+  assert.equal(knopf(k, 'confirm').textContent, 'Erneut versuchen');
+  knopf(k, 'confirm').click();
+  await mikro();
+  k.u.uhr.vor(60000);
+  await mikro(); await mikro();
+  assert.match(text(k), /Zeitlimit 60 s/);
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_backup_map'], 'nur Sicherungen, kein Kartendienst');
+});
