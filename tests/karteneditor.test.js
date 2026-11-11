@@ -1127,7 +1127,9 @@ const KARTENDIENSTE = ['vacuum_set_property', 'vacuum_call_action', 'vacuum_rena
   'vacuum_discard_temporary_map', 'vacuum_replace_temporary_map', 'vacuum_request_map', 'vacuum_rename_segment', 'vacuum_set_segment_type', 'vacuum_set_hidden_segments',
   'vacuum_set_floor_material', 'vacuum_split_segments', 'vacuum_merge_segments', 'vacuum_set_restricted_zone', 'vacuum_set_threshold', 'vacuum_set_virtual_threshold',
   'vacuum_set_curtain', 'vacuum_set_carpet_area', 'vacuum_set_carpet_type', 'vacuum_set_custom_carpet_cleaning', 'vacuum_set_furniture', 'vacuum_set_predefined_points',
-  'vacuum_set_walls', 'vacuum_set_router_position', 'vacuum_backup_map'];
+  'vacuum_set_walls', 'vacuum_set_router_position', 'vacuum_backup_map', 'vacuum_restore_map'];
+/** Kartendienste des Moduls map-backup: ihre Schreibweg-Zeilen prüft tests/kartensicherung.test.js (Checkpoint C dort). */
+const MAP_BACKUP_DIENSTE = ['vacuum_restore_map'];
 /** Wege außerhalb von mapWrite, je mit eigener Bestätigung oder als dokumentierte Ausnahme. */
 const EIGENE_WEGE = {
   vacuum_select_map: 'CORE-20: nur in card._confirmMapChange (MapView.selectMap, Spec „Wählen“)',
@@ -1971,7 +1973,9 @@ test('EDI-02 Checkpoint C: jede Zeile der Schreibweg-Tabellen hat einen Test mit
     assert.match(b, /data(: \{|\))|\.data\b|data: \{/, zeile + ': keine Datenform in „' + name + '“');
   }
   const gedeckt = new Set(SCHREIBWEGE.map(([, d]) => (d.startsWith('key:') ? (d.includes('multi_floor') ? 'vacuum_set_property' : 'vacuum_call_action') : d)));
-  for (const d of KARTENDIENSTE) assert.ok(gedeckt.has(d), 'Kartendienst ohne Tabellenzeile: ' + d);
+  for (const d of KARTENDIENSTE.filter((x) => !MAP_BACKUP_DIENSTE.includes(x))) assert.ok(gedeckt.has(d), 'Kartendienst ohne Tabellenzeile: ' + d);
+  const sicherung = require('node:fs').readFileSync(require('node:path').join(__dirname, 'kartensicherung.test.js'), 'utf8');
+  for (const d of MAP_BACKUP_DIENSTE) assert.match(sicherung, new RegExp("service: '" + d + "', data: \\{"), 'map-backup prüft ' + d + ' mit Datenform');
 });
 
 // ── Task 13: Befunde der Browserprüfung (render.py) ─────────────────────────

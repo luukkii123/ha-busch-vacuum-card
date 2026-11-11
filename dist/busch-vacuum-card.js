@@ -10188,7 +10188,9 @@ class BuschVacuumCard extends HTMLElement {
 
     /** Task type choice (CORE-06) and the chosen type's panel. Returns taskReady() for Start. */
     _renderTasks(hass, model, active, task) {
-        const ready = active ? { ok: true, reason: null } : taskReady(model, task, this._selection, this._taskMap());
+        // map-backup: while the map is restored, no task type is chosen or started (spec Sicherheitsrahmen 4).
+        const restoring = recoveryStatus(model.attr('map_recovery_status')) === 'running';
+        const ready = active ? { ok: true, reason: null } : restoring ? { ok: false, reason: 'aufgabeSperreWiederherstellung' } : taskReady(model, task, this._selection, this._taskMap());
         if (this._hidden('task_type')) {
             this._taskArea.replaceChildren();
             return ready;
@@ -10206,7 +10208,7 @@ class BuschVacuumCard extends HTMLElement {
             const shownChoice = types.some((t) => t.name === chosen) ? chosen : 'all';
             types.forEach((type, index) => {
                 const label = translate(hass, type.text);
-                const button = BuschUI.action({ label, text: label, icon: type.icon, disabled: active, onClick: () => this._chooseTask(type.name) });
+                const button = BuschUI.action({ label, text: label, icon: type.icon, disabled: active || restoring, onClick: () => this._chooseTask(type.name) });
                 button.classList.add('task');
                 button.setAttribute('role', 'radio');
                 button.setAttribute('data-task', type.name);
@@ -10214,7 +10216,7 @@ class BuschVacuumCard extends HTMLElement {
                 button.tabIndex = type.name === shownChoice ? 0 : -1;
                 button.addEventListener('keydown', (event) => {
                     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
-                    if (!step || active) return;
+                    if (!step || active || restoring) return;
                     event.preventDefault();
                     this._chooseTask(types[(index + step + types.length) % types.length].name, true);
                     const next = this._taskArea.querySelector('[data-task="' + this._task + '"]');
@@ -11922,9 +11924,18 @@ class MapEditSession {
 
     /** vacuum_backup_map, then wait for map_backup_status Running → Success/Idle (state updates, 60 s). */
     backup(grant, mapId = this.mapId) {
+        return this._awaitStatus(grant, 'map_backup_status', 'vacuum_backup_map', { map_id: mapId }, BACKUP_TIMEOUT_MS, 'kartenSicherungZeit');
+    }
+
+    /**
+     * A map service whose end the device reports in a status attribute
+     * (backup: map_backup_status, restore: map_recovery_status): send, then
+     * wait Running → Success/Idle from state updates (no polling) or time out.
+     */
+    _awaitStatus(grant, attr, service, data, timeoutMs, timeoutKey) {
         return new Promise((resolve, reject) => {
-            // A stale "Success"/"Failed" of an earlier backup counts only once the status moved.
-            const wait = { running: false, start: String(this.model().attr('map_backup_status') || ''), resolve, reject, timer: null };
+            // A stale "Success"/"Failed" of an earlier run counts only once the status moved.
+            const wait = { attr, running: false, start: String(this.model().attr(attr) || ''), resolve, reject, timer: null };
             const end = (error) => {
                 if (this._wait !== wait) return;
                 clearTimeout(wait.timer);
@@ -11934,16 +11945,16 @@ class MapEditSession {
             };
             wait.end = end;
             this._wait = wait;
-            wait.timer = setTimeout(() => end(new Error(translate(this.card._hass, 'kartenSicherungZeit'))), BACKUP_TIMEOUT_MS);
-            mapWrite(this.card, grant, 'vacuum_backup_map', { map_id: mapId }).then(() => this.onHass(this.model()), (error) => end(error));
+            wait.timer = setTimeout(() => end(Object.assign(new Error(translate(this.card._hass, timeoutKey)), { timeout: true })), timeoutMs);
+            mapWrite(this.card, grant, service, data).then(() => this.onHass(this.model()), (error) => end(error));
         });
     }
 
-    /** Fed by the card on every own update: the backup status decides. */
+    /** Fed by the card on every own update: the awaited status decides. */
     onHass(model) {
         const wait = this._wait;
         if (!wait) return;
-        const status = String(model.attr('map_backup_status') || '');
+        const status = String(model.attr(wait.attr) || '');
         if (/running/i.test(status)) wait.running = true;
         else if (!wait.running && status === wait.start) return;
         else if (/success|idle/i.test(status)) wait.end();
@@ -11973,12 +11984,21 @@ class MapEditSession {
             }
             this.busy = 'save';
             rerender(this.card);
-            for (const call of calls) await mapWrite(this.card, grant, call.service, call.data);
+            for (const call of calls) {
+                if (call.wait) {
+                    // map-backup: a restore ends in map_recovery_status, not in the service's answer.
+                    this.busy = call.busy || 'save';
+                    rerender(this.card);
+                    await this._awaitStatus(grant, call.wait, call.service, call.data, call.timeout || BACKUP_TIMEOUT_MS, call.timeoutKey || 'kartenSicherungZeit');
+                } else await mapWrite(this.card, grant, call.service, call.data);
+            }
             if (undo) this.undo.push(undo);
             this.saved = text;
             return true;
         } catch (error) {
-            const key = this.busy === 'backup' ? 'kartenSicherungFehler' : 'kartenSchreibFehler';
+            const key = this.busy === 'backup' ? 'kartenSicherungFehler'
+                : this.busy === 'restore' ? (error && error.timeout ? 'wiederherstellenUnbekannt' : cloudRequired(error) ? 'wiederherstellenCloud' : 'wiederherstellenFehler')
+                    : 'kartenSchreibFehler';
             this.error = { kind: this.busy, text: translate(this.card._hass, key, { grund: errorText(error) }) };
             return false;
         } finally {
@@ -11997,9 +12017,12 @@ function editCountLine(hass, art, c) {
  * The confirmation of every save (Sicherheitsrahmen 3): title, affected objects,
  * map, backup note, way back; no outside click (kind confirm); one call per
  * click; a failed backup keeps everything and offers a retry.
- * opts: { title, lines, action, destructive, irreversible, calls, undo, backup, backupNote, done }
+ * opts: { title, lines, action, destructive, irreversible, calls, undo, backup, backupNote, extra, done }
+ * (`backup` may be a function: map-backup's choice "Aktuellen Stand vorher sichern";
+ * `extra(body, hass, dialog)` adds content such as a preview.)
  */
 function mapConfirm(card, session, opts) {
+    const wantBackup = () => (typeof opts.backup === 'function' ? !!opts.backup() : opts.backup !== false);
     return {
         title: opts.title,
         kind: 'confirm',
@@ -12014,13 +12037,14 @@ function mapConfirm(card, session, opts) {
             }
             body.appendChild(list);
             body.appendChild(noteLine(translate(hass, 'kartenKarte', { karte: session.mapName })));
-            if (opts.backup !== false && opts.backupNote !== false) {
+            if (opts.extra) opts.extra(body, hass, dialog);
+            if (wantBackup() && opts.backupNote !== false) {
                 const backupText = session.backedUpAt !== null ? translate(hass, 'kartenSicherungDa', { zeit: clockText(hass, new Date(session.backedUpAt).getHours(), new Date(session.backedUpAt).getMinutes()) })
                     : session.canBackup() ? translate(hass, 'kartenSicherungNeu') : translate(hass, 'kartenKeineSicherung');
                 body.appendChild(noteLine(backupText, 'backup'));
             }
             if (opts.irreversible) body.appendChild(noteLine(translate(hass, 'kartenRueckweg'), 'warning'));
-            if (session.busy) body.appendChild(noteLine(translate(hass, session.busy === 'backup' ? 'kartenSicherungLaeuft' : 'kartenSpeichernLaeuft'), 'busy'));
+            if (session.busy) body.appendChild(noteLine(translate(hass, { backup: 'kartenSicherungLaeuft', restore: 'wiederherstellungLaeuft' }[session.busy] || 'kartenSpeichernLaeuft'), 'busy'));
             if (session.error) body.appendChild(noteLine(session.error.text, 'error'));
             const actions = document.createElement('div');
             actions.className = 'actions';
@@ -12029,7 +12053,7 @@ function mapConfirm(card, session, opts) {
             const label = session.error && session.error.kind !== 'lock' ? translate(hass, 'kartenErneut') : opts.action;
             const go = BuschUI.action({ label, text: label, variant: opts.destructive ? 'destructive' : 'primary', disabled: !!session.busy, onClick: () => {
                 if (session.busy) return; // R11: a double tap sends once
-                session.commit(confirmGrant(card), opts.calls, { undo: opts.undo, backup: opts.backup !== false, text: opts.title }).then((ok) => {
+                session.commit(confirmGrant(card), opts.calls, { undo: opts.undo, backup: wantBackup(), text: opts.title }).then((ok) => {
                     if (!ok) return dialog._render();
                     if (opts.done) opts.done(dialog);
                     else dialog.back(1);
@@ -15526,7 +15550,7 @@ function backupRow(card, model, hass, dialog, home, map, entry, position) {
     const actions = document.createElement('span');
     actions.className = 'backup-actions';
     const label = translate(hass, 'sicherungAnsehen');
-    const show = BuschUI.action({ label: label + ': ' + recoveryText(hass, entry), text: label, icon: 'mdi:fullscreen', onClick: () => dialog.show(backupImageView(card, map.entry.id, position)) });
+    const show = BuschUI.action({ label: label + ': ' + recoveryText(hass, entry), text: label, icon: 'mdi:fullscreen', onClick: () => dialog.show(backupImageView(card, map.entry.id, position, home)) });
     show.setAttribute('data-action', 'view');
     actions.appendChild(show);
     for (const action of BACKUP_ACTIONS) {
@@ -15655,7 +15679,7 @@ class ImageZoom {
  * only when shown (cloud fetch, R20) and stays cached until the view closes.
  * A transient view (kind menu): Escape and Back close it.
  */
-function backupImageView(card, mapId, start = 1) {
+function backupImageView(card, mapId, start = 1, home = null) {
     const cache = new Map(); // 'current' | k → { img, state: 'loading' | 'ok' | 'error' }
     const zoom = { zoom: 1, panX: 0, panY: 0 };
     let index = start;
@@ -15754,7 +15778,7 @@ function backupImageView(card, mapId, start = 1) {
                 spacer.className = 'backup-spacer';
                 tools.appendChild(spacer);
                 for (const action of BACKUP_ACTIONS) {
-                    const node = action(card, model, hass, dialog, view, map, item, 'full');
+                    const node = action(card, model, hass, dialog, home || view, map, item, 'full');
                     if (node) tools.appendChild(node);
                 }
             }
@@ -15845,19 +15869,174 @@ function backupNowPart(card, model, hass, dialog, view, map) {
     } });
     now.setAttribute('data-action', 'backup-now');
     box.appendChild(now);
-    if (!map.active && card._map) {
-        const name = translate(hass, 'kartenWechselZu', { karte: map.name });
-        const go = BuschUI.action({ label: name, text: name, disabled: card._map._busy(), onClick: () => card._map.selectMap(map.entry.id) });
-        go.setAttribute('data-action', 'switch-map');
-        box.appendChild(go);
-    }
     const wrap = document.createElement('div');
     wrap.appendChild(box);
-    if (reason) wrap.appendChild(noteLine(translate(hass, reason), 'locked'));
     if (session.error) wrap.appendChild(noteLine(session.error.text, 'error'));
     return wrap;
 }
 BACKUP_PARTS.push(backupNowPart);
+
+const RESTORE_TIMEOUT_MS = 120000;
+const RESTORE_TEXTS = {
+    de: {
+        wiederherstellenTitel: 'Stand wiederherstellen',
+        wiederherstellenKnopf: 'Wiederherstellen',
+        wiederherstellenStand: 'Stand: {stand} vom {datum} (Nr. {k})',
+        wiederherstellenFolge: 'Ersetzt die gespeicherte Karte: Räume, Namen, Zonen, Teppiche, Möbel, Reihenfolge und Raumeinstellungen dieser Karte.',
+        wiederherstellenVorher: 'Aktuellen Stand vorher sichern',
+        wiederherstellenOhneSicherung: 'Beim Sicherungsstand gibt es keine Sicherung davor — sie könnte genau diesen Stand ersetzen.',
+        wiederherstellenRueckwegSicherung: 'Rückweg: die Sicherung, die jetzt vorher entsteht, und die übrigen Stände unter „Sicherungen“.',
+        wiederherstellenRueckweg: 'Rückweg: die übrigen Stände unter „Sicherungen“ (Original, Bearbeitet).',
+        wiederherstellungLaeuft: 'Wiederherstellung läuft …',
+        wiederherstellenFehler: 'Wiederherstellen fehlgeschlagen ({grund}). Prüfe die Karte; hat das Gerät den Stand nicht übernommen, ist sie unverändert. Erneut versuchen oder abbrechen.',
+        wiederherstellenCloud: 'Wiederherstellen braucht die Cloud-Anmeldung der Integration. Die Karte ist unverändert. Richte die Integration mit dem Cloud-Konto ein und versuche es erneut.',
+        wiederherstellenUnbekannt: 'Ergebnis nach 120 s unbekannt — prüfe die Karte ({grund}). Erneut versuchen nur, wenn sie unverändert ist.',
+        wiederherstellenZeit: 'Zeitlimit 120 s überschritten',
+        wiederhergestellt: 'Wiederhergestellt: {stand} um {zeit}.',
+        wiederherstellenNeuLaden: 'Die Karte wird neu geladen …',
+        aufgabeSperreWiederherstellung: 'Gesperrt, solange die Karte wiederhergestellt wird.'
+    },
+    en: {
+        wiederherstellenTitel: 'Restore state',
+        wiederherstellenKnopf: 'Restore',
+        wiederherstellenStand: 'State: {stand} of {datum} (no. {k})',
+        wiederherstellenFolge: 'Replaces the stored map: rooms, names, zones, carpets, furniture, order and room settings of this map.',
+        wiederherstellenVorher: 'Back up the current state first',
+        wiederherstellenOhneSicherung: 'Restoring the backup state makes no backup first — it could replace exactly this state.',
+        wiederherstellenRueckwegSicherung: 'Way back: the backup made first now, and the other states under “Backups”.',
+        wiederherstellenRueckweg: 'Way back: the other states under “Backups” (Original, Edited).',
+        wiederherstellungLaeuft: 'Restoring …',
+        wiederherstellenFehler: 'Restore failed ({grund}). Check the map; if the device did not take the state, it is unchanged. Try again or cancel.',
+        wiederherstellenCloud: 'Restoring needs the integration\'s cloud login. The map is unchanged. Set up the integration with the cloud account and try again.',
+        wiederherstellenUnbekannt: 'Result unknown after 120 s — check the map ({grund}). Try again only if it is unchanged.',
+        wiederherstellenZeit: 'time limit of 120 s exceeded',
+        wiederhergestellt: 'Restored: {stand} at {zeit}.',
+        wiederherstellenNeuLaden: 'The map is reloading …',
+        aufgabeSperreWiederherstellung: 'Locked while the map is being restored.'
+    }
+};
+for (const language of Object.keys(RESTORE_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, RESTORE_TEXTS[language]);
+
+/** `cloud_required` of the integration (device.py#L7012): the restore needs its cloud login (R12: own text). */
+const cloudRequired = (error) => !!error && (error.translation_key === 'cloud_required' || /cloud/i.test(errorText(error)));
+
+/** "Originalkarte vom 21.11.2024 10:20" — the state in confirmation and success note. */
+const recoveryFrom = (hass, entry) => recoveryLabel(hass, entry) + ' ' + (localeOf(hass).language.startsWith('de') ? 'vom' : 'of') + ' ' + recoveryDate(hass, entry);
+
+/**
+ * BAK-02 restore (Sicherheitsrahmen 1–4): the card's confirmation (kind
+ * confirm, red) with map, state, preview, consequence and way back; the
+ * option "Aktuellen Stand vorher sichern" — preselected without a Backup
+ * state, offered unselected with the note on what it may replace, never for
+ * the Backup state itself (it could overwrite it). One call that ends in
+ * map_recovery_status (Running → Success, 120 s).
+ * `source`: { entry } of the list or { url } of the file form.
+ */
+function restoreConfirm(card, session, home, map, source) {
+    const hass = card._hass;
+    const model = card._model();
+    const entry = source.entry || null;
+    const replaced = lastBackup(hass, model, map.entry.id);
+    const isBackup = !!entry && entry.type === 'backup';
+    const can = session.canBackup(model);
+    const choice = { backup: can && !isBackup && !replaced };
+    const stand = entry ? recoveryFrom(hass, entry) : source.url;
+    session.backedUpAt = null; // the backup belongs to this restore, not to an earlier one
+    session.error = null;
+    const frame = card._map ? card._map.current().frameId : null;
+    const call = entry
+        ? { service: 'vacuum_restore_map', data: { recovery_map_index: entry.k, map_id: map.entry.id } }
+        : { service: 'vacuum_restore_map_from_file', data: { file_url: source.url, map_id: map.entry.id } };
+    return mapConfirm(card, session, {
+        title: translate(hass, 'wiederherstellenTitel'),
+        lines: [entry ? translate(hass, 'wiederherstellenStand', { stand: recoveryLabel(hass, entry), datum: recoveryDate(hass, entry), k: entry.k })
+            : translate(hass, 'wiederherstellenDatei', { url: source.url }), translate(hass, 'wiederherstellenFolge')],
+        action: translate(hass, 'wiederherstellenKnopf'),
+        destructive: true,
+        backup: () => choice.backup,
+        backupNote: false,
+        calls: [Object.assign(call, { wait: 'map_recovery_status', busy: 'restore', timeout: RESTORE_TIMEOUT_MS, timeoutKey: 'wiederherstellenZeit' })],
+        extra: (body, h, dialog) => {
+            if (entry && entry.picture) {
+                const img = document.createElement('img');
+                img.className = 'backup-preview';
+                img.setAttribute('src', card._map ? card._map._url(entry.picture) : entry.picture);
+                img.setAttribute('alt', translate(h, 'sicherungAlt', { stand }));
+                body.appendChild(img);
+            }
+            if (can && !isBackup) {
+                const wrap = document.createElement('label');
+                wrap.className = 'backup-option';
+                const input = document.createElement('input');
+                input.setAttribute('type', 'checkbox');
+                input.setAttribute('data-field', 'backup_first');
+                input.checked = choice.backup;
+                input.disabled = !!session.busy;
+                input.addEventListener('change', () => {
+                    choice.backup = !!input.checked;
+                    dialog._render();
+                });
+                const label = document.createElement('span');
+                label.textContent = translate(h, 'wiederherstellenVorher');
+                wrap.append(input, label);
+                body.appendChild(wrap);
+                if (replaced) body.appendChild(noteLine(translate(h, 'sicherungErsetzt', { datum: recoveryDate(h, replaced) })));
+            } else body.appendChild(noteLine(translate(h, isBackup ? 'wiederherstellenOhneSicherung' : 'kartenKeineSicherung'), isBackup ? 'warning' : null));
+            body.appendChild(noteLine(translate(h, choice.backup ? 'wiederherstellenRueckwegSicherung' : 'wiederherstellenRueckweg')));
+        },
+        done: (d) => {
+            const now = new Date();
+            card._restoreNote = { mapId: map.entry.id, text: translate(hass, 'wiederhergestellt', { stand, zeit: clockText(hass, now.getHours(), now.getMinutes()) }), frame };
+            backTo(d, home);
+        }
+    });
+}
+
+/** "Wiederherstellen" of one state (list and full view): only can('map_recovery'), the active map, no lock. */
+function restoreAction(card, model, hass, dialog, home, map, entry) {
+    if (!model.can('map_recovery')) return null;
+    const lock = map.active ? restoreLock(card, model) : 'sicherungNurAktiv';
+    const label = translate(hass, 'wiederherstellenKnopf');
+    const button = BuschUI.action({ label: label + ': ' + recoveryText(hass, entry), text: label, icon: 'mdi:backup-restore', disabled: !!lock,
+        onClick: () => dialog.show(restoreConfirm(card, backupSession(card, home, map), home, map, { entry })) });
+    button.setAttribute('data-action', 'restore');
+    return button;
+}
+BACKUP_ACTIONS.push(restoreAction);
+
+/** Locks of backup and restore, each reason once (R17), and the switch to a map that is not active (CORE-20). */
+function backupLockPart(card, model, hass, dialog, view, map) {
+    const reasons = new Set();
+    if (model.can('backup_map') && model.can('dreame_vacuum.vacuum_backup_map')) reasons.add(backupNowLock(card, backupSession(card, view, map), model, map));
+    if (model.can('map_recovery')) reasons.add(map.active ? restoreLock(card, model) : 'sicherungNurAktiv');
+    reasons.delete('');
+    if (!reasons.size) return null;
+    const wrap = document.createElement('div');
+    for (const reason of reasons) wrap.appendChild(noteLine(translate(hass, reason), 'locked'));
+    if (!map.active && card._map) {
+        const name = translate(hass, 'kartenWechselZu', { karte: map.name });
+        const go = BuschUI.action({ label: name, text: name, disabled: card._map._busy(), onClick: () => card._map.selectMap(map.entry.id) });
+        go.setAttribute('data-action', 'switch-map');
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        actions.appendChild(go);
+        wrap.appendChild(actions);
+    }
+    return wrap;
+}
+BACKUP_PARTS.push(backupLockPart);
+
+/** After a restore: state and time, and "wird neu geladen" until the map camera brings a new frame_id. */
+function restoreNotePart(card, model, hass, dialog, view, map) {
+    const note = card._restoreNote;
+    if (!note || String(note.mapId) !== String(map.entry.id)) return null;
+    const wrap = document.createElement('div');
+    wrap.appendChild(noteLine(note.text, 'success'));
+    const frame = card._map ? card._map.current().frameId : null;
+    if (note.frame !== null && frame === note.frame) wrap.appendChild(noteLine(translate(hass, 'wiederherstellenNeuLaden'), 'busy'));
+    return wrap;
+}
+BACKUP_PARTS.push(restoreNotePart);
 
 // ---------------------------------------------------------------------------
 // Registration

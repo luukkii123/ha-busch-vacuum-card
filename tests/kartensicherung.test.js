@@ -339,3 +339,122 @@ test('BAK-02 Jetzt sichern mit vorhandenem Backup: Hinweis „kann die Sicherung
   assert.match(text(k), /Zeitlimit 60 s/);
   assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_backup_map'], 'nur Sicherungen, kein Kartendienst');
 });
+
+// ── Task 4: Wiederherstellen (BAK-02) ───────────────────────────────────────
+
+const zeile = (k, typ) => eintraege(k).find((n) => n.getAttribute('data-type') === typ);
+const wiederherstellen = (k, typ) => zeile(k, typ).querySelectorAll('[data-action="restore"]')[0];
+const option = (k) => $d(k.u, '[data-field="backup_first"]');
+const kamera = (k, attribute) => { const alt = k.haus.states['camera.robo_map']; k.karte.hass = k.haus.setze({ 'camera.robo_map': Object.assign({}, alt, { attributes: Object.assign({}, alt.attributes, attribute) }) }); };
+
+test('BAK-02 Wiederherstellen: Bestätigung kind confirm mit Karte, Stand, Vorschau, Folge, Rückweg; Abbrechen 0 Aufrufe; bestätigt genau vacuum_restore_map { entity_id, recovery_map_index: k, map_id }; Running → Success mit Hinweis nach neuem frame_id', async () => {
+  const k = aufbau({ kameras: { 'camera.robo_map': { frame_id: 41 } } });
+  const d = sicherungen(k);
+  wiederherstellen(k, 'original').click();
+  assert.equal(d._views.at(-1).kind, 'confirm', 'kein Außenklick (R04)');
+  assert.equal($d(k.u, 'h1').textContent, 'Stand wiederherstellen');
+  const t = text(k);
+  assert.match(t, /Karte: Karte 1/);
+  assert.match(t, /Stand: Originalkarte vom 21\.11\.2024 10:20 \(Nr\. 1\)/);
+  assert.match(t, /Ersetzt die gespeicherte Karte: Räume, Namen, Zonen, Teppiche, Möbel, Reihenfolge und Raumeinstellungen dieser Karte/);
+  assert.match(t, /Rückweg/);
+  assert.match($d(k.u, '.backup-preview').getAttribute('src'), /camera_recovery_map_proxy\/camera\.robo_map_1\?.*index=1&/, 'Vorschau desselben k');
+  assert.equal(knopf(k, 'confirm').getAttribute('data-variant'), 'destructive', 'rot (endgültig)');
+  knopf(k, 'cancel').click();
+  k.u.zurueck();
+  assert.deepEqual(k.haus.rufe, [], 'Abbrechen → 0 Aufrufe');
+  wiederherstellen(k, 'original').click();
+  option(k).checked = false;
+  option(k).dispatchEvent({ type: 'change' });
+  knopf(k, 'confirm').click();
+  knopf(k, 'confirm').click();
+  await mikro();
+  assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_restore_map', data: { entity_id: 'vacuum.robo', recovery_map_index: 1, map_id: 3 } }], 'Doppeltipp: ein Aufruf');
+  assert.match(text(k), /Wiederherstellung läuft/);
+  k.sauger({ map_recovery_status: 'Running' });
+  // Während Running: Editor, Aufgabenwahl und weitere Wiederherstellungen gesperrt.
+  assert.equal(new k.I.MapEditSession(k.karte).lock('vacuum_set_restricted_zone'), 'kartenSperreSicherung');
+  assert.ok(Array.from(k.karte.shadowRoot.querySelectorAll('.task')).every((b) => b.disabled), 'Aufgabenwahl gesperrt');
+  k.sauger({ map_recovery_status: 'Success' });
+  await mikro(); await mikro();
+  k.u.zurueck();
+  assert.equal(d._views.at(-1).title, 'Kartensicherungen');
+  assert.match(text(k), /Wiederhergestellt: Originalkarte vom 21\.11\.2024 10:20/);
+  assert.match(text(k), /Karte wird neu geladen/, 'bis ein neues frame_id kommt');
+  kamera(k, { frame_id: 42 });
+  assert.doesNotMatch(text(k), /Karte wird neu geladen/);
+  assert.match(text(k), /Wiederhergestellt: Originalkarte/);
+  assert.equal(Array.from(k.karte.shadowRoot.querySelectorAll('.task')).some((b) => b.disabled), false, 'nach Success wieder frei');
+});
+
+test('BAK-02 „Aktuellen Stand vorher sichern“: vorausgewählt ohne Backup-Eintrag (erst backup_map, nach Success restore), nicht vorausgewählt mit Eintrag (Ersetzen-Hinweis), beim Backup-Stand nicht angeboten', async () => {
+  const k = aufbau();
+  sicherungen(k);
+  wiederherstellen(k, 'edited').click();
+  assert.equal(option(k).checked, true, 'ohne Backup-Eintrag vorausgewählt');
+  knopf(k, 'confirm').click();
+  await mikro();
+  assert.deepEqual(dienste(k.haus), ['vacuum_backup_map'], 'erst die Sicherung');
+  assert.match(text(k), /Sicherung läuft/);
+  k.sauger({ map_backup_status: 'Running' });
+  k.sauger({ map_backup_status: 'Success' });
+  await mikro(); await mikro();
+  assert.deepEqual(roh(k.haus.rufe.map((r) => [r.service, r.data])), [['vacuum_backup_map', { entity_id: 'vacuum.robo', map_id: 3 }],
+    ['vacuum_restore_map', { entity_id: 'vacuum.robo', recovery_map_index: 2, map_id: 3 }]], 'nach Success der Restore');
+  const mit = aufbau({ kameras: { 'camera.robo_map_1': MIT_BACKUP() } });
+  sicherungen(mit);
+  wiederherstellen(mit, 'original').click();
+  assert.equal(option(mit).checked, false, 'mit Backup-Eintrag nicht vorausgewählt');
+  assert.match(text(mit), /Kann die Sicherung vom 01\.11\.2026 09:30 ersetzen/);
+  knopf(mit, 'cancel').click();
+  mit.u.zurueck();
+  wiederherstellen(mit, 'backup').click();
+  assert.equal(option(mit), null, 'Backup-Stand: keine Sicherung davor');
+  assert.match(text(mit), /keine Sicherung davor/);
+  knopf(mit, 'confirm').click();
+  await mikro();
+  assert.deepEqual(roh(mit.haus.rufe.map((r) => [r.service, r.data])), [['vacuum_restore_map', { entity_id: 'vacuum.robo', recovery_map_index: 3, map_id: 3 }]]);
+  const ohne = aufbau({ vac: { capabilities: ['map', 'multi_floor_map'] } });
+  sicherungen(ohne);
+  wiederherstellen(ohne, 'original').click();
+  assert.equal(option(ohne), null);
+  assert.match(text(ohne), /Keine Sicherung möglich/);
+});
+
+test('BAK-02 Sperren und Fehler: nicht aktive Karte erst wechseln (CORE-20), Aufgabe, temporäre Karte, Running; Fehler, Zeitlimit 120 s, cloud_required (R12)', async () => {
+  const zwei = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2 }, kameras: { 'camera.robo_map_2': Object.assign({ map_index: 2, map_id: 7 }, staende('camera.robo_map_2', [EINTRAG('2025-01-01 10:00', 'Originalkarte', 8)])) } });
+  sicherungen(zwei, 7);
+  assert.equal(wiederherstellen(zwei, 'original').disabled, true, 'nicht aktive Karte');
+  assert.match(text(zwei), /nur für die aktive Karte/);
+  knopf(zwei, 'switch-map').click();
+  assert.match(text(zwei), /Oben/, 'CORE-20 fragt zuerst');
+  assert.deepEqual(zwei.haus.rufe, []);
+  for (const [vac, zustand, muster] of [[{}, 'cleaning', /solange eine Aufgabe läuft/], [{ has_temporary_map: true }, undefined, /temporäre Karte/], [{ map_recovery_status: 'Running' }, undefined, /Sicherung oder Wiederherstellung läuft/]]) {
+    const k = aufbau({ vac, zustand });
+    sicherungen(k);
+    assert.equal(wiederherstellen(k, 'original').disabled, true, String(muster));
+    assert.match(text(k), muster);
+  }
+  // Fehler des Dienstes: R12-Text, Erneut; cloud_required eigener Text; Zeitlimit 120 s „Ergebnis unbekannt“.
+  const fehler = async (antwort, schritt) => {
+    const k = aufbau();
+    k.haus.antwort = (domain, service) => (service === 'vacuum_restore_map' ? antwort() : Promise.resolve());
+    sicherungen(k);
+    wiederherstellen(k, 'original').click();
+    option(k).checked = false;
+    option(k).dispatchEvent({ type: 'change' });
+    knopf(k, 'confirm').click();
+    await mikro();
+    if (schritt) await schritt(k);
+    return k;
+  };
+  let k = await fehler(() => Promise.reject(Object.assign(new Error('Map recovery requires a cloud connection'), { translation_key: 'cloud_required' })));
+  assert.match(text(k), /Wiederherstellen braucht die Cloud-Anmeldung der Integration/);
+  assert.match(text(k), /Karte ist unverändert/);
+  k = await fehler(() => Promise.resolve(), async (kk) => { kk.sauger({ map_recovery_status: 'Running' }); kk.sauger({ map_recovery_status: 'Fail' }); await mikro(); await mikro(); });
+  assert.match(text(k), /Wiederherstellen fehlgeschlagen \(Fail\)/);
+  assert.equal(knopf(k, 'confirm').textContent, 'Erneut versuchen');
+  k = await fehler(() => Promise.resolve(), async (kk) => { kk.sauger({ map_recovery_status: 'Running' }); kk.u.uhr.vor(119000); await mikro(); assert.doesNotMatch(text(kk), /unbekannt/); kk.u.uhr.vor(1000); await mikro(); await mikro(); });
+  assert.match(text(k), /Ergebnis nach 120 s unbekannt — prüfe die Karte/);
+  assert.deepEqual(dienste(k.haus), ['vacuum_restore_map']);
+});
