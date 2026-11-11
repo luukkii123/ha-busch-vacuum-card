@@ -458,3 +458,83 @@ test('BAK-02 Sperren und Fehler: nicht aktive Karte erst wechseln (CORE-20), Auf
   assert.match(text(k), /Ergebnis nach 120 s unbekannt — prüfe die Karte/);
   assert.deepEqual(dienste(k.haus), ['vacuum_restore_map']);
 });
+
+// ── Task 5: Herunterladen und Wiederherstellen aus Datei-URL (BAK-02) ───────
+
+test('BAK-02 Herunterladen: Link = recovery_map_file-URL (frisch aus dem Attribut), download, Hinweis „enthält den Grundriss“; im Vollbild ebenso; ohne Datei kein Link', () => {
+  const k = aufbau();
+  const d = sicherungen(k);
+  const link = zeile(k, 'original').querySelectorAll('[data-action="download"]')[0];
+  assert.equal(link.tagName, 'A');
+  assert.equal(link.getAttribute('href'), '/api/camera_recovery_map_proxy/camera.robo_map_1?token=testtoken&index=1&v=1732180819&file=1');
+  assert.ok(link.hasAttribute('download'));
+  assert.match(text(k), /enthält den Grundriss/);
+  // Neues Token in der Kamera: der Link folgt dem Attribut.
+  const alt = k.haus.states['camera.robo_map_1'];
+  const datei = Object.fromEntries(Object.entries(alt.attributes.recovery_map_file).map(([key, url]) => [key, url.replace('testtoken', 'neu')]));
+  k.karte.hass = k.haus.setze({ 'camera.robo_map_1': Object.assign({}, alt, { attributes: Object.assign({}, alt.attributes, { recovery_map_file: datei }) }) });
+  assert.match(zeile(k, 'original').querySelectorAll('[data-action="download"]')[0].getAttribute('href'), /token=neu&index=1&/);
+  zeile(k, 'edited').querySelectorAll('[data-action="view"]')[0].click();
+  assert.match(knopf(k, 'download').getAttribute('href'), /token=neu&index=2&.*file=1$/);
+  assert.match(text(k), /enthält den Grundriss/);
+  assert.equal(d._views.at(-1).size, 'full');
+  const ohne = aufbau({ kameras: { 'camera.robo_map_1': { recovery_map_file: null }, 'camera.robo_map': { recovery_map_file: null } } });
+  sicherungen(ohne);
+  assert.equal(knopf(ohne, 'download'), null);
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('BAK-02 Aus Datei-URL wiederherstellen (Erweitert): Pflichtfeld mit Inlineprüfung http(s)://, Zielkarte, Dirty-Schutz; gleicher Bestätigungsrahmen → vacuum_restore_map_from_file { entity_id, file_url, map_id }', async () => {
+  const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2 } });
+  const d = sicherungen(k);
+  knopf(k, 'restore-file').click();
+  assert.equal(d._views.at(-1).kind, 'editor');
+  assert.equal($d(k.u, 'h1').textContent, 'Aus Datei-URL wiederherstellen');
+  assert.match(text(k), /für Home Assistant erreichbaren URL/);
+  const feld = $d(k.u, '[data-field="file_url"]');
+  assert.equal(feld.getAttribute('aria-required'), 'true');
+  assert.deepEqual(Array.from($d(k.u, '[data-field="map_id"]').querySelectorAll('option'), (o) => o.value), ['3', '7']);
+  knopf(k, 'submit').click();
+  assert.match(text(k), /vollständige Adresse mit http:\/\/ oder https:\/\//, 'leer: Inlinefehler');
+  assert.equal(d._views.at(-1).kind, 'editor');
+  feld.value = 'ftp://x/y.tbz2';
+  feld.dispatchEvent({ type: 'input' });
+  knopf(k, 'submit').click();
+  assert.equal(d._views.at(-1).kind, 'editor', 'ftp abgelehnt');
+  const feld2 = $d(k.u, '[data-field="file_url"]');
+  feld2.value = 'http://ha.local:8123/local/karte.mb.tbz2';
+  feld2.dispatchEvent({ type: 'input' });
+  // Dirty-Schutz: Escape fragt (Regel 2, R10), der Entwurf bleibt.
+  d._goBack();
+  assert.match(text(k), /Ungespeicherte Änderungen|ungespeicherte Änderung/);
+  knopf(k, 'keep').click();
+  k.u.zurueck();
+  assert.equal($d(k.u, '[data-field="file_url"]').value, 'http://ha.local:8123/local/karte.mb.tbz2');
+  // Zielkarte nicht aktiv → erst wechseln (CORE-20).
+  const wahl = $d(k.u, '[data-field="map_id"]');
+  wahl.value = '7';
+  wahl.dispatchEvent({ type: 'change' });
+  assert.equal(knopf(k, 'submit').disabled, true);
+  assert.match(text(k), /nur für die aktive Karte/);
+  const wahl2 = $d(k.u, '[data-field="map_id"]');
+  wahl2.value = '3';
+  wahl2.dispatchEvent({ type: 'change' });
+  knopf(k, 'submit').click();
+  assert.equal(d._views.at(-1).kind, 'confirm');
+  assert.match(text(k), /Stand aus Datei: http:\/\/ha\.local:8123\/local\/karte\.mb\.tbz2/);
+  assert.match(text(k), /Ersetzt die gespeicherte Karte/);
+  assert.equal(option(k).checked, true, 'Rückweg wie beim Stand: vorher sichern');
+  option(k).checked = false;
+  option(k).dispatchEvent({ type: 'change' });
+  assert.deepEqual(k.haus.rufe, []);
+  knopf(k, 'confirm').click();
+  await mikro();
+  assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_restore_map_from_file', data: { entity_id: 'vacuum.robo', file_url: 'http://ha.local:8123/local/karte.mb.tbz2', map_id: 3 } }]);
+  k.sauger({ map_recovery_status: 'Running' });
+  k.sauger({ map_recovery_status: 'Success' });
+  await mikro(); await mikro();
+  assert.equal(k.karte._drafts.has('restore-url'), false, 'Entwurf nach Erfolg verworfen');
+  const ohne = aufbau({ ohneDienste: ['vacuum_restore_map_from_file'] });
+  sicherungen(ohne);
+  assert.equal(knopf(ohne, 'restore-file'), null, 'ohne Dienst kein Formular');
+});

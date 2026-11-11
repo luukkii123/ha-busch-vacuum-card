@@ -15783,6 +15783,7 @@ function backupImageView(card, mapId, start = 1, home = null) {
                 }
             }
             body.appendChild(tools);
+            if (!item.current && item.file) body.appendChild(noteLine(translate(hass, 'sicherungGrundriss'), 'warning'));
             body.appendChild(noteLine(translate(hass, 'sicherungTasten')));
         }
     };
@@ -15930,7 +15931,7 @@ const recoveryFrom = (hass, entry) => recoveryLabel(hass, entry) + ' ' + (locale
  * state, offered unselected with the note on what it may replace, never for
  * the Backup state itself (it could overwrite it). One call that ends in
  * map_recovery_status (Running → Success, 120 s).
- * `source`: { entry } of the list or { url } of the file form.
+ * `source`: { entry } of the list or { url, done } of the file form.
  */
 function restoreConfirm(card, session, home, map, source) {
     const hass = card._hass;
@@ -15987,6 +15988,7 @@ function restoreConfirm(card, session, home, map, source) {
         done: (d) => {
             const now = new Date();
             card._restoreNote = { mapId: map.entry.id, text: translate(hass, 'wiederhergestellt', { stand, zeit: clockText(hass, now.getHours(), now.getMinutes()) }), frame };
+            if (source.done) source.done();
             backTo(d, home);
         }
     });
@@ -16037,6 +16039,185 @@ function restoreNotePart(card, model, hass, dialog, view, map) {
     return wrap;
 }
 BACKUP_PARTS.push(restoreNotePart);
+
+const BACKUP_FILE_TEXTS = {
+    de: {
+        sicherungHerunterladen: 'Herunterladen',
+        sicherungGrundriss: 'Eine heruntergeladene Datei enthält den Grundriss der Wohnung — nicht teilen.',
+        wiederherstellenDatei: 'Stand aus Datei: {url}',
+        abschnitt_sicherungErweitert: 'Erweitert',
+        dateiTitel: 'Aus Datei-URL wiederherstellen',
+        dateiHinweis: 'Die Kartendatei (.mb.tbz2) muss unter einer für Home Assistant erreichbaren URL liegen, z. B. /local/… mit voller Adresse. Hochladen aus dem Browser bietet die Integration nicht an.',
+        feld_file_url: 'Datei-URL',
+        feld_target_map: 'Zielkarte',
+        fehlerDateiUrl: 'Eine vollständige Adresse mit http:// oder https:// eingeben.'
+    },
+    en: {
+        sicherungHerunterladen: 'Download',
+        sicherungGrundriss: 'A downloaded file contains the floor plan of the home — do not share it.',
+        wiederherstellenDatei: 'State from file: {url}',
+        abschnitt_sicherungErweitert: 'Advanced',
+        dateiTitel: 'Restore from file URL',
+        dateiHinweis: 'The map file (.mb.tbz2) must be at a URL Home Assistant can reach, e.g. /local/… with the full address. The integration offers no upload from the browser.',
+        feld_file_url: 'File URL',
+        feld_target_map: 'Target map',
+        fehlerDateiUrl: 'Enter a full address with http:// or https://.'
+    }
+};
+for (const language of Object.keys(BACKUP_FILE_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, BACKUP_FILE_TEXTS[language]);
+
+/**
+ * BAK-02 raw file: a link to the state's recovery_map_file URL (camera.py#L285:
+ * attachment .mb.tbz2), read from the attribute at render and again on click
+ * (token current). A read of the cloud, no write.
+ */
+function downloadAction(card, model, hass, dialog, home, map, entry) {
+    if (!entry.file) return null;
+    const fresh = () => {
+        const now = recoveryEntries(card._hass, card._model(), map.entry.id).find((e) => e.k === entry.k);
+        const url = (now && now.file) || entry.file;
+        return card._map ? card._map._url(url) : url;
+    };
+    const link = document.createElement('a');
+    link.className = 'backup-download';
+    link.setAttribute('href', fresh());
+    link.setAttribute('download', '');
+    link.setAttribute('data-action', 'download');
+    const label = translate(hass, 'sicherungHerunterladen');
+    link.setAttribute('aria-label', label + ': ' + recoveryText(hass, entry));
+    const icon = document.createElement('ha-icon');
+    icon.setAttribute('icon', 'mdi:download');
+    icon.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.textContent = label;
+    link.append(icon, text);
+    link.addEventListener('click', () => link.setAttribute('href', fresh()));
+    return link;
+}
+BACKUP_ACTIONS.push(downloadAction);
+
+/** The floor-plan note once per list (spec Inhalt 5), when any state can be downloaded. */
+function downloadNotePart(card, model, hass, dialog, view, map) {
+    return recoveryEntries(hass, model, map.entry.id).some((e) => e.file) ? noteLine(translate(hass, 'sicherungGrundriss'), 'warning') : null;
+}
+BACKUP_PARTS.push(downloadNotePart);
+
+/** Inline check of the file URL (R10): http(s), no blanks — cv.url of the service (vacuum.py#L616). */
+const fileUrlError = (url) => (/^https?:\/\/[^\s"'<>]+$/i.test(String(url || '').trim()) ? '' : 'fehlerDateiUrl');
+
+/** "Aus Datei-URL wiederherstellen" under "Erweitert" (only with the service). */
+function restoreFilePart(card, model, hass, dialog, view, map) {
+    if (!model.can('map_recovery') || !model.can('dreame_vacuum.vacuum_restore_map_from_file')) return null;
+    const label = translate(hass, 'dateiTitel');
+    const button = BuschUI.action({ label, text: label, icon: 'mdi:file-restore-outline', onClick: () => dialog.show(restoreFileView(card, view, map)) });
+    button.setAttribute('data-action', 'restore-file');
+    const actions = document.createElement('div');
+    actions.className = 'backup-now actions';
+    actions.appendChild(button);
+    return viewSection(hass, 'sicherungErweitert', [actions]);
+}
+
+/**
+ * Restore from a file URL (spec Inhalt 6): form (kind editor) with URL and
+ * target map, draft kept on the card and guarded on leave (R10, Regel 2);
+ * then the same confirmation and way back as a state (restoreConfirm).
+ */
+function restoreFileView(card, home, start) {
+    const key = 'restore-url';
+    if (!card._drafts.has(key)) card._drafts.set(key, { url: '', mapId: start.entry.id });
+    const draft = card._drafts.get(key);
+    let checked = false;
+    const sessions = new Map();
+    const sessionFor = (map) => {
+        if (!sessions.has(String(map.entry.id))) {
+            const s = new MapEditSession(card);
+            s.mapId = map.entry.id;
+            s.mapName = map.name;
+            sessions.set(String(map.entry.id), s);
+            card._mapSessions.add(s);
+        }
+        return sessions.get(String(map.entry.id));
+    };
+    const dirty = () => draft.url.trim() !== '';
+    const submit = (dialog) => {
+        checked = true;
+        const map = backupMap(card._model(), draft.mapId);
+        if (fileUrlError(draft.url) || !map || !map.active) return dialog._render();
+        // A finished restore ends the draft; a cancelled one keeps it (R10).
+        dialog.show(restoreConfirm(card, sessionFor(map), home, map, { url: draft.url.trim(), done: () => card._drafts.delete(key) }));
+        return undefined;
+    };
+    const view = {
+        title: translate(card._hass, 'dateiTitel'),
+        kind: 'editor',
+        watch: () => [card._opts.entity, ...card._model().related.maps.map.slice(0, 1)],
+        leave: () => {
+            for (const s of sessions.values()) card._mapSessions.delete(s);
+        },
+        guard: (dialog) => {
+            if (!dirty()) return false;
+            dialog.show(dirtyChoice(card, {
+                count: () => 1,
+                save: (d) => submit(d),
+                discard: (d) => {
+                    card._drafts.delete(key);
+                    backTo(d, home);
+                }
+            }));
+            return true;
+        },
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            body.appendChild(noteLine(translate(hass, 'dateiHinweis')));
+            const input = document.createElement('input');
+            input.setAttribute('type', 'url');
+            input.setAttribute('inputmode', 'url');
+            input.setAttribute('autocomplete', 'off');
+            input.setAttribute('aria-required', 'true');
+            input.setAttribute('placeholder', 'https://…/karte.mb.tbz2');
+            input.value = draft.url;
+            const error = checked ? fileUrlError(draft.url) : '';
+            const field = formField('file_url', translate(hass, 'feld_file_url'), input, error ? translate(hass, error) : '');
+            input.addEventListener('input', () => {
+                draft.url = input.value;
+                if (checked) field.update(fileUrlError(draft.url) ? translate(hass, fileUrlError(draft.url)) : '');
+            });
+            body.appendChild(field.wrap);
+            const select = document.createElement('select');
+            for (const { entry, name } of mapEntries(model)) {
+                const opt = document.createElement('option');
+                opt.value = String(entry.id);
+                opt.textContent = name;
+                if (String(entry.id) === String(draft.mapId)) opt.selected = true;
+                select.appendChild(opt);
+            }
+            select.value = String(draft.mapId);
+            select.addEventListener('change', () => {
+                draft.mapId = Number(select.value);
+                dialog._render();
+            });
+            const target = formField('map_id', translate(hass, 'feld_target_map'), select, '');
+            body.appendChild(target.wrap);
+            const map = backupMap(model, draft.mapId);
+            const lock = !map ? 'keineKarte' : !map.active ? 'sicherungNurAktiv' : restoreLock(card, model);
+            if (lock) body.appendChild(noteLine(translate(hass, lock), 'locked'));
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            if (map && !map.active && card._map) {
+                const name = translate(hass, 'kartenWechselZu', { karte: map.name });
+                const go = BuschUI.action({ label: name, text: name, disabled: card._map._busy(), onClick: () => card._map.selectMap(map.entry.id) });
+                go.setAttribute('data-action', 'switch-map');
+                actions.appendChild(go);
+            }
+            const next = BuschUI.action({ label: translate(hass, 'weiter'), text: translate(hass, 'weiter'), variant: 'primary', disabled: !!lock, onClick: () => submit(dialog) });
+            next.setAttribute('data-action', 'submit');
+            actions.appendChild(next);
+            body.appendChild(actions);
+        }
+    };
+    return view;
+}
+BACKUP_PARTS.push(restoreFilePart);
 
 // ---------------------------------------------------------------------------
 // Registration
