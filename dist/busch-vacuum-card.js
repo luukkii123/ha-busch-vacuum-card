@@ -1902,6 +1902,8 @@ class VacuumModel {
             case 'map': return this.related.maps.map.length > 0;
             // map-editor: a map and at least one service that edits its objects (spec: Anknüpfung).
             case 'map_edit': return this.can('map') && EDIT_SERVICES.some((s) => this.can('dreame_vacuum.' + s));
+            // map-backup: the status attribute (device.py#L7006 refuses without it) and the service.
+            case 'map_recovery': return this.attr('map_recovery_status') !== undefined && this.can('dreame_vacuum.vacuum_restore_map');
             // Drying alone (dust bag) is a station too (DOCK-01).
             case 'dock': return ['self_wash_base', 'auto_empty_base', 'dust_bag_drying', 'manual_dust_bag_drying'].some((c) => this.caps.has(c));
             // Station actions (dock): the capability of the integration's button (button.py#L196–L296)
@@ -11795,7 +11797,8 @@ for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM
 
 const BACKUP_TIMEOUT_MS = 60000;
 /** Services that refuse while a task runs (device.py: carpets, points, walls, router, visibility, floor, deleting a map). */
-const EDIT_TASK_LOCKED = new Set(['vacuum_set_carpet_area', 'vacuum_set_carpet_type', 'vacuum_set_custom_carpet_cleaning', 'vacuum_set_predefined_points', 'vacuum_set_walls', 'vacuum_set_router_position', 'vacuum_set_hidden_segments', 'vacuum_set_floor_material', 'vacuum_delete_map', 'vacuum_split_segments', 'vacuum_merge_segments']);
+const EDIT_TASK_LOCKED = new Set(['vacuum_set_carpet_area', 'vacuum_set_carpet_type', 'vacuum_set_custom_carpet_cleaning', 'vacuum_set_predefined_points', 'vacuum_set_walls', 'vacuum_set_router_position', 'vacuum_set_hidden_segments', 'vacuum_set_floor_material', 'vacuum_delete_map', 'vacuum_split_segments', 'vacuum_merge_segments',
+    'vacuum_restore_map', 'vacuum_restore_map_from_file']);
 /** What a temporary map still allows: its own management and new mapping. */
 const EDIT_TEMPORARY_OK = new Set(['vacuum_save_temporary_map', 'vacuum_discard_temporary_map', 'vacuum_replace_temporary_map', 'vacuum_backup_map', 'vacuum_request_map']);
 
@@ -15177,6 +15180,106 @@ function remoteView(card) {
 }
 
 // ---------------------------------------------------------------------------
+// Map backup (map-backup: BAK-01, BAK-02, ALL-13): the states the device and
+// the cloud keep of a map — Original, Edited, Backup —, a full-screen view,
+// a manual backup, restoring (also from a file URL) and the raw file
+// ---------------------------------------------------------------------------
+
+const BACKUP_TEXTS = {
+    de: {
+        sicherungNurAnsehen: 'Wiederherstellen ist mit diesem Gerät nicht möglich; die Stände lassen sich nur ansehen und herunterladen.'
+    },
+    en: {
+        sicherungNurAnsehen: 'This device cannot restore; the states can only be viewed and downloaded.'
+    }
+};
+for (const language of Object.keys(BACKUP_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, BACKUP_TEXTS[language]);
+
+/** "04/26/26 13:23:13: Map2 (Bearbeitete Karte)" (camera.py#L1353): when, number k, type text. */
+const RECOVERY_KEY = /^(.*?): Map(\d+) \((.*)\)$/;
+
+/** RecoveryMapType (types.py#L4626) from the integration's (translated) text or the key. */
+function recoveryType(text) {
+    const t = String(text || '');
+    if (/original/i.test(t)) return 'original';
+    if (/edit|bearbeit/i.test(t)) return 'edited';
+    if (/backup|sicherung/i.test(t)) return 'backup';
+    return 'unknown';
+}
+
+/** map_backup_status / map_recovery_status (types.py#L975, #L986) as idle/running/success/failed/unknown; null = attribute missing. */
+function recoveryStatus(value) {
+    if (value === undefined || value === null) return null;
+    const v = String(value);
+    if (/running/i.test(v)) return 'running';
+    if (/success/i.test(v)) return 'success';
+    if (/fail|error/i.test(v)) return 'failed';
+    if (/idle/i.test(v)) return 'idle';
+    return 'unknown';
+}
+
+/** The map entry (vacuum `maps[]`) by id; null/undefined = the active one. */
+function backupMap(model, mapId) {
+    const maps = mapEntries(model);
+    return mapId === undefined || mapId === null ? maps.find((m) => m.active) || null : maps.find((m) => String(m.entry.id) === String(mapId)) || null;
+}
+
+/** Cameras that carry a map's states: its saved-map camera (camera.*_map_N), for the active map also camera.*_map. */
+function recoveryCameras(hass, model, mapId) {
+    const map = backupMap(model, mapId);
+    if (!map) return [];
+    const ids = model.related.maps.saved_map.filter((id) => hass.states[id] && hass.states[id].attributes.map_index === map.entry.index);
+    if (map.active && model.related.maps.map[0]) ids.push(model.related.maps.map[0]);
+    return ids;
+}
+
+/**
+ * BAK-01: the states of one map, newest first, from camera attributes only (no
+ * request, R20). recovery_map_list is newest first (types.py#L5072); its
+ * position i is number k = length − i — the number vacuum_restore_map takes
+ * (device.py#L7033: recovery_map_list[k − 1]) and the one in the picture/file
+ * keys and URLs. Without a list the keys alone give k, type and time.
+ */
+function recoveryEntries(hass, model, mapId) {
+    const cams = recoveryCameras(hass, model, mapId).map((id) => hass.states[id].attributes);
+    const listed = cams.find((a) => Array.isArray(a.recovery_map_list) && a.recovery_map_list.length);
+    const keyed = (listed && listed.recovery_map_picture ? listed : cams.find((a) => a.recovery_map_picture && typeof a.recovery_map_picture === 'object')) || {};
+    const byNumber = (attr) => {
+        const found = {};
+        for (const [key, url] of Object.entries(keyed[attr] || {})) {
+            const m = RECOVERY_KEY.exec(key);
+            const k = m ? Number(m[2]) : Number((/[?&]index=(\d+)/.exec(String(url)) || [])[1]);
+            if (k) found[k] = { url, when: m ? m[1] : '', typeText: m ? m[3] : '' };
+        }
+        return found;
+    };
+    const pictures = byNumber('recovery_map_picture'), files = byNumber('recovery_map_file');
+    const entry = (k, typeText, date) => ({
+        k, type: recoveryType(typeText), typeText: typeText || '', date: date || null,
+        when: (pictures[k] || files[k] || {}).when || '',
+        picture: pictures[k] ? pictures[k].url : null, file: files[k] ? files[k].url : null
+    });
+    if (listed) {
+        const list = listed.recovery_map_list;
+        return list.map((item, i) => entry(list.length - i, item && item.map_type, item && item.date));
+    }
+    return Object.keys(Object.assign({}, pictures, files)).map(Number).sort((a, b) => b - a)
+        .map((k) => entry(k, (pictures[k] || files[k]).typeText, null));
+}
+
+/** Why restoring is not possible now (text key), or '': the editor's locks (R08) plus the service. */
+function restoreLock(card, model) {
+    if (!model.can('map_recovery')) return 'sicherungNurAnsehen';
+    return new MapEditSession(card).lock('vacuum_restore_map', model);
+}
+
+/** What an open backup list reads: the vacuum and the cameras of that map — watched only while it is open (R20). */
+function backupWatch(card, mapId) {
+    const model = card._model();
+    return [card._opts.entity, ...recoveryCameras(card._hass, model, mapId), ...model.related.maps.map.slice(0, 1)];
+}
+
+// ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
 
@@ -15270,6 +15373,11 @@ BuschVacuumCard.__internals = {
     remoteValue,
     RemoteSender,
     remoteBlock,
+    recoveryType,
+    recoveryStatus,
+    recoveryEntries,
+    restoreLock,
+    backupWatch,
     version: CARD_VERSION
 };
 
