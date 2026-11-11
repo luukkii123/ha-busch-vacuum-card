@@ -3045,6 +3045,25 @@ const MAP_VACUUM_KEYS = ['maps', 'map_count', 'selected_map', 'has_saved_map', '
 
 /** MAP-02: zoom limits, button/key step, wheel speed, tap and double tap tolerances. */
 const MAP_ZOOM = { min: 1, max: 8, step: 2, wheel: 0.0015 };
+
+/**
+ * The view after zooming `from` to `zoom` with the point under `client` kept in
+ * place (stage centre without one); MAP_ZOOM's limits. Shared by the map and
+ * map-backup's full-screen view (R08).
+ */
+function zoomAround(from, zoom, client, rect) {
+    const z = Math.min(MAP_ZOOM.max, Math.max(MAP_ZOOM.min, zoom));
+    const sx = (client ? client.x - rect.left : rect.width / 2) - rect.width / 2;
+    const sy = (client ? client.y - rect.top : rect.height / 2) - rect.height / 2;
+    const f = z / from.zoom;
+    return { zoom: z, panX: sx * (1 - f) + from.panX * f, panY: sy * (1 - f) + from.panY * f };
+}
+
+/** Pan within limits: the picture's centre never leaves the stage, 1× is centred. `fitted` = size at 1× (or null). */
+function clampPan(zoom, panX, panY, fitted) {
+    const limitX = fitted ? fitted.width * zoom / 2 : 0, limitY = fitted ? fitted.height * zoom / 2 : 0;
+    return { panX: zoom === 1 ? 0 : Math.min(limitX, Math.max(-limitX, panX)), panY: zoom === 1 ? 0 : Math.min(limitY, Math.max(-limitY, panY)) };
+}
 const TAP = { slop: 6, doubleMs: 300, doubleSlop: 24, longMs: 500, hitPx: 22 };
 const MAP_MODES = ['view', 'pick-room', 'pick-point', 'draw-rect', 'drag'];
 const LOUPE = { size: 120, magnify: 2 };
@@ -3754,12 +3773,7 @@ class MapView {
 
     /** The view after zooming `from` to `zoom` with the image point under `client` kept in place. */
     _zoomed(from, zoom, client) {
-        const z = Math.min(MAP_ZOOM.max, Math.max(MAP_ZOOM.min, zoom));
-        const rect = this._stageRect();
-        const sx = (client ? client.x - rect.left : rect.width / 2) - rect.width / 2;
-        const sy = (client ? client.y - rect.top : rect.height / 2) - rect.height / 2;
-        const f = z / from.zoom;
-        return { zoom: z, panX: sx * (1 - f) + from.panX * f, panY: sy * (1 - f) + from.panY * f };
+        return zoomAround(from, zoom, client, this._stageRect());
     }
 
     _zoomAt(zoom, client, animate = true) {
@@ -3771,11 +3785,9 @@ class MapView {
     _setView(zoom, panX, panY, animate = false) {
         this.el.toggleAttribute('data-animate', animate);
         this._zoom = Math.min(MAP_ZOOM.max, Math.max(MAP_ZOOM.min, zoom));
-        const rect = this._stageRect();
-        const fitted = this._fitted(rect);
-        const limitX = fitted ? fitted.width * this._zoom / 2 : 0, limitY = fitted ? fitted.height * this._zoom / 2 : 0;
-        this._panX = this._zoom === 1 ? 0 : Math.min(limitX, Math.max(-limitX, panX));
-        this._panY = this._zoom === 1 ? 0 : Math.min(limitY, Math.max(-limitY, panY));
+        const pan = clampPan(this._zoom, panX, panY, this._fitted(this._stageRect()));
+        this._panX = pan.panX;
+        this._panY = pan.panY;
         this._layout();
     }
 
@@ -9406,6 +9418,61 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 .edit-item[aria-pressed=true] { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 1px; font-weight: 500; }
 .map-actions { display: flex; flex-wrap: wrap; gap: var(--ha-space-2, 8px); margin-inline-start: auto; }
 .wifi-legend i { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: middle; margin-inline-end: 4px; }
+/* map-backup: list of states, full-screen view (size full at every width) */
+:host([data-full]) {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.sheet[data-size=full] {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+}
+.sheet[data-size=full] > .body { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.backup-list { list-style: none; margin: 0 0 var(--ha-space-3, 12px); padding: 0; }
+.backup-entry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ha-space-2, 8px); padding: var(--ha-space-2, 8px) 0; border-bottom: 1px solid var(--divider-color, #e0e0e0); min-width: 0; }
+.backup-entry > ha-icon { flex: 0 0 auto; color: var(--secondary-text-color, #727272); }
+.backup-entry > .backup-text { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
+.backup-text small { display: block; color: var(--secondary-text-color, #727272); }
+.backup-actions { display: flex; flex-wrap: wrap; gap: var(--ha-space-2, 8px); margin-inline-start: auto; }
+.backup-actions .busch-ui-action, .backup-tools .busch-ui-action, .backup-now .busch-ui-action, a.backup-download { display: inline-flex; align-items: center; justify-content: center; gap: var(--ha-space-2, 8px); }
+.backup-actions .busch-ui-action ha-icon, .backup-tools .busch-ui-action ha-icon, .backup-now .busch-ui-action ha-icon { order: -1; }
+.backup-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--ha-space-2, 8px); margin: 0 0 var(--ha-space-2, 8px); }
+.backup-caption { flex: 1 1 200px; min-width: 0; margin: 0; overflow-wrap: anywhere; font-weight: 500; }
+.backup-position { margin: 0; color: var(--secondary-text-color, #727272); overflow-wrap: anywhere; }
+.backup-stage {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 240px;
+    overflow: hidden;
+    touch-action: none;
+    border-radius: 8px;
+    background: var(--secondary-background-color, #f5f5f5);
+}
+.backup-stage:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 2px; }
+.backup-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transform-origin: 50% 50%; user-select: none; -webkit-user-drag: none; }
+.backup-stage[data-animate] img { transition: transform 0.2s ease-out; }
+@media (prefers-reduced-motion: reduce) { .backup-stage[data-animate] img { transition: none; } }
+.backup-tools { display: flex; flex-wrap: wrap; gap: var(--ha-space-2, 8px); margin: var(--ha-space-2, 8px) 0 0; }
+.backup-tools .backup-spacer { flex: 1 1 auto; }
+a.backup-download {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 var(--ha-space-3, 12px);
+    box-sizing: border-box;
+    border-radius: 999px;
+    border: 1px solid var(--divider-color, #e0e0e0);
+    color: var(--primary-color, #03a9f4);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+a.backup-download:focus-visible { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 2px; }
+.backup-option { display: flex; align-items: center; gap: var(--ha-space-2, 8px); min-height: 44px; overflow-wrap: anywhere; }
+.backup-option input { width: 22px; height: 22px; flex: 0 0 auto; }
+.backup-preview { display: block; width: 100%; max-height: 140px; object-fit: contain; margin: 0 0 var(--ha-space-2, 8px); background: var(--secondary-background-color, #f5f5f5); border-radius: 8px; }
 
 `;
 
@@ -9645,6 +9712,10 @@ class BuschVacuumDialog extends HTMLElement {
         const focused = this._focusable().indexOf(this.shadowRoot.activeElement);
         const scrollTop = this._sheet.scrollTop;
         this._sheet.setAttribute('data-kind', view.kind);
+        // size 'full' (map-backup): full screen at every width, not only below 450 px.
+        if (view.size === 'full') this._sheet.setAttribute('data-size', 'full');
+        else this._sheet.removeAttribute('data-size');
+        this.toggleAttribute('data-full', view.size === 'full');
 
         const head = document.createElement('div');
         head.className = 'head';
@@ -12526,6 +12597,11 @@ function mapRow(card, model, hass, dialog, home, sessions, entry, name, current)
         edit.setAttribute('data-action', 'edit');
         group.appendChild(edit);
     }
+    if (backupsShown(card, model, entry.id)) {
+        const backups = BuschUI.action({ label: translate(hass, 'sicherungen') + ': ' + name, icon: 'mdi:history', variant: 'icon-only', onClick: () => dialog.show(backupsView(card, entry.id)) });
+        backups.setAttribute('data-action', 'backups');
+        group.appendChild(backups);
+    }
     if (model.can('dreame_vacuum.vacuum_rename_map')) {
         const rename = BuschUI.action({ label: translate(hass, 'umbenennen') + ': ' + name, icon: 'mdi:pencil-outline', variant: 'icon-only', disabled: temporary,
             onClick: () => dialog.show(renameMapView(card, home, mapSessionFor(card, sessions, entry), entry)) });
@@ -13164,6 +13240,17 @@ function editRender(card, editor, body, hass, dialog) {
         undo.setAttribute('data-action', 'undo');
         note.appendChild(undo);
         body.appendChild(note);
+    }
+    // map-backup: the active map's states — the way back of what Undo cannot reverse (spec: Einstieg).
+    const activeMap = m._activeMapId();
+    if (activeMap !== null && backupsShown(card, card._model(), activeMap)) {
+        const row = document.createElement('div');
+        row.className = 'edit-row';
+        const label = translate(hass, 'sicherungen');
+        const backups = BuschUI.action({ label, text: label, icon: 'mdi:history', onClick: () => dialog.show(backupsView(card, activeMap)) });
+        backups.setAttribute('data-action', 'backups');
+        row.appendChild(backups);
+        body.appendChild(row);
     }
     const actions = document.createElement('div');
     actions.className = 'actions';
@@ -15279,6 +15366,401 @@ function backupWatch(card, mapId) {
     return [card._opts.entity, ...recoveryCameras(card._hass, model, mapId), ...model.related.maps.map.slice(0, 1)];
 }
 
+const BACKUP_VIEW_TEXTS = {
+    de: {
+        sicherungen: 'Sicherungen',
+        sicherungenTitel: 'Kartensicherungen',
+        sicherungenLeer: 'Keine Stände für diese Karte. Das Gerät legt sie bei der ersten Kartierung und beim Bearbeiten an.',
+        sicherungTyp_original: 'Originalkarte',
+        sicherungTyp_edited: 'Bearbeitete Karte',
+        sicherungTyp_backup: 'Sicherungskarte',
+        sicherungTyp_unknown: 'Kartenstand',
+        sicherungNummer: 'Nr. {k}',
+        sicherungAnsehen: 'Ansehen',
+        sicherungAnsicht: 'Kartenstand',
+        sicherungAktuell: 'Aktuelle Karte',
+        sicherungPosition: '{n} von {gesamt}',
+        sicherungVor: 'Nächster Stand',
+        sicherungZurueck: 'Vorheriger Stand',
+        sicherungLaedt: 'Stand wird geladen …',
+        sicherungBildFehler: 'Stand nicht geladen — die Integration holt ihn aus der Cloud. Prüfe die Cloud-Anmeldung der Integration und versuche es erneut.',
+        sicherungAlt: 'Kartenstand: {stand}',
+        sicherungTasten: 'Pfeiltasten links/rechts: vorheriger/nächster Stand; + und − zoomen, 0 passt ein; Escape schließt.',
+        statusSicherung: 'Sicherung: {status}',
+        statusWiederherstellung: 'Wiederherstellung: {status}',
+        sicherungStatus_idle: 'bereit',
+        sicherungStatus_running: 'läuft …',
+        sicherungStatus_success: 'erfolgreich',
+        sicherungStatus_failed: 'fehlgeschlagen',
+        sicherungStatus_unknown: 'unbekannt'
+    },
+    en: {
+        sicherungen: 'Backups',
+        sicherungenTitel: 'Map backups',
+        sicherungenLeer: 'No states for this map. The device makes them at the first mapping and when the map is edited.',
+        sicherungTyp_original: 'Original map',
+        sicherungTyp_edited: 'Edited map',
+        sicherungTyp_backup: 'Backup map',
+        sicherungTyp_unknown: 'Map state',
+        sicherungNummer: 'No. {k}',
+        sicherungAnsehen: 'View',
+        sicherungAnsicht: 'Map state',
+        sicherungAktuell: 'Current map',
+        sicherungPosition: '{n} of {gesamt}',
+        sicherungVor: 'Next state',
+        sicherungZurueck: 'Previous state',
+        sicherungLaedt: 'Loading state …',
+        sicherungBildFehler: 'State not loaded — the integration fetches it from the cloud. Check the integration\'s cloud login and try again.',
+        sicherungAlt: 'Map state: {stand}',
+        sicherungTasten: 'Arrow keys left/right: previous/next state; + and − zoom, 0 fits; Escape closes.',
+        statusSicherung: 'Backup: {status}',
+        statusWiederherstellung: 'Restore: {status}',
+        sicherungStatus_idle: 'ready',
+        sicherungStatus_running: 'running …',
+        sicherungStatus_success: 'successful',
+        sicherungStatus_failed: 'failed',
+        sicherungStatus_unknown: 'unknown'
+    }
+};
+for (const language of Object.keys(BACKUP_VIEW_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, BACKUP_VIEW_TEXTS[language]);
+
+const RECOVERY_ICONS = { original: 'mdi:map-outline', edited: 'mdi:map-check-outline', backup: 'mdi:cloud-check-outline', unknown: 'mdi:map-clock-outline' };
+
+/** Type as the integration names it (R26), else the card's own word. */
+const recoveryLabel = (hass, entry) => entry.typeText || translate(hass, 'sicherungTyp_' + entry.type);
+
+/** "26.04.2026 13:23" in HA's format from the list's 'JJJJ-MM-TT hh:mm'; without a list the key's own text. */
+function recoveryDate(hass, entry) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(String(entry.date || ''));
+    if (!m) return entry.when || '';
+    const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+    let day;
+    try {
+        day = new Intl.DateTimeFormat(localeOf(hass).language, { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+    } catch (e) {
+        day = date.toLocaleDateString();
+    }
+    return day + ' ' + clockText(hass, date.getHours(), date.getMinutes());
+}
+
+const recoveryText = (hass, entry) => recoveryLabel(hass, entry) + ' · ' + recoveryDate(hass, entry);
+
+/** "Sicherungen" exists for a map with states, a restore service or a possible backup (R18: no dead entry). */
+function backupsShown(card, model, mapId) {
+    return recoveryEntries(card._hass, model, mapId).length > 0 || model.can('map_recovery') || new MapEditSession(card).canBackup(model);
+}
+
+/** ALL-13: map_backup_status and map_recovery_status as text with state (R17: words, not colour alone). */
+function backupStatusLines(hass, model) {
+    const lines = [];
+    for (const [attr, key] of [['map_backup_status', 'statusSicherung'], ['map_recovery_status', 'statusWiederherstellung']]) {
+        const status = recoveryStatus(model.attr(attr));
+        if (!status) continue;
+        const kind = { running: 'busy', failed: 'error', success: 'success' }[status] || null;
+        const line = noteLine(translate(hass, key, { status: translate(hass, 'sicherungStatus_' + status) }), kind);
+        line.setAttribute('data-status', attr + ':' + status);
+        lines.push(line);
+    }
+    return lines;
+}
+
+/** BAK-01: the list of one map's states (module entry "Sicherungen" from the maps view and the edit mode). */
+function backupsView(card, mapId) {
+    const view = {
+        title: translate(card._hass, 'sicherungenTitel'),
+        kind: 'editor',
+        watch: () => backupWatch(card, mapId),
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const map = backupMap(model, mapId);
+            if (!map) {
+                body.appendChild(noteLine(translate(hass, 'keineKarte')));
+                return;
+            }
+            body.appendChild(noteLine(translate(hass, 'kartenKarte', { karte: map.name })));
+            body.append(...backupStatusLines(hass, model));
+            if (!model.can('map_recovery')) body.appendChild(noteLine(translate(hass, 'sicherungNurAnsehen')));
+            for (const part of BACKUP_PARTS) {
+                const node = part(card, model, hass, dialog, view, map);
+                if (node) body.appendChild(node);
+            }
+            const entries = recoveryEntries(hass, model, map.entry.id);
+            if (!entries.length) {
+                body.appendChild(noteLine(translate(hass, 'sicherungenLeer')));
+                return;
+            }
+            const list = document.createElement('ul');
+            list.className = 'backup-list';
+            list.setAttribute('role', 'list');
+            entries.forEach((entry, i) => list.appendChild(backupRow(card, model, hass, dialog, view, map, entry, i + 1)));
+            body.appendChild(list);
+        }
+    };
+    return view;
+}
+
+/** Parts of the list view between status and list (manual backup, file URL); filled by later tasks. */
+const BACKUP_PARTS = [];
+/** Actions of one state (list and full view): view, then restore/download of later tasks. */
+const BACKUP_ACTIONS = [];
+
+function backupRow(card, model, hass, dialog, home, map, entry, position) {
+    const row = document.createElement('li');
+    row.className = 'backup-entry';
+    row.setAttribute('role', 'listitem');
+    row.setAttribute('data-k', String(entry.k));
+    row.setAttribute('data-type', entry.type);
+    const icon = document.createElement('ha-icon');
+    icon.setAttribute('icon', RECOVERY_ICONS[entry.type]);
+    icon.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.className = 'backup-text';
+    text.textContent = recoveryLabel(hass, entry);
+    const small = document.createElement('small');
+    small.textContent = recoveryDate(hass, entry) + ' · ' + translate(hass, 'sicherungNummer', { k: entry.k });
+    text.appendChild(small);
+    const actions = document.createElement('span');
+    actions.className = 'backup-actions';
+    const label = translate(hass, 'sicherungAnsehen');
+    const show = BuschUI.action({ label: label + ': ' + recoveryText(hass, entry), text: label, icon: 'mdi:fullscreen', onClick: () => dialog.show(backupImageView(card, map.entry.id, position)) });
+    show.setAttribute('data-action', 'view');
+    actions.appendChild(show);
+    for (const action of BACKUP_ACTIONS) {
+        const node = action(card, model, hass, dialog, home, map, entry, 'list');
+        if (node) actions.appendChild(node);
+    }
+    row.append(icon, text, actions);
+    return row;
+}
+
+/** The current picture of a map (its saved-map camera, for the active map else camera.*_map), as the first entry to compare. */
+function currentPicture(hass, model, mapId) {
+    for (const id of recoveryCameras(hass, model, mapId)) {
+        const picture = hass.states[id].attributes.entity_picture;
+        if (picture) return picture;
+    }
+    return null;
+}
+
+/**
+ * Zoom and pan of a picture in a stage: the map's own rules (MAP_ZOOM,
+ * zoomAround, clampPan, TAP) on a CSS transform — R08 with map-view.
+ * `state` ({ zoom, panX, panY }) outlives a redraw of the view.
+ */
+class ImageZoom {
+    constructor(stage, img, state) {
+        this.stage = stage;
+        this.img = img;
+        this.state = state;
+        this._pointers = new Map();
+        this._g = null;
+        this._lastTap = null;
+        stage.addEventListener('pointerdown', (e) => this._down(e));
+        stage.addEventListener('pointermove', (e) => this._move(e));
+        for (const type of ['pointerup', 'pointercancel']) stage.addEventListener(type, (e) => this._up(e, type === 'pointercancel'));
+        stage.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            this.zoomAt(this.state.zoom * Math.exp(-e.deltaY * MAP_ZOOM.wheel), { x: e.clientX, y: e.clientY }, false);
+        }, { passive: false });
+        this.set(state.zoom, state.panX, state.panY);
+    }
+
+    _fitted() {
+        const rect = this.stage.getBoundingClientRect();
+        const w = this.img && this.img.naturalWidth, h = this.img && this.img.naturalHeight;
+        if (!w || !h) return { width: rect.width, height: rect.height };
+        const k = Math.min(rect.width / w, rect.height / h);
+        return { width: w * k, height: h * k };
+    }
+
+    set(zoom, panX, panY, animate = false) {
+        const z = Math.min(MAP_ZOOM.max, Math.max(MAP_ZOOM.min, zoom));
+        const pan = clampPan(z, panX, panY, this._fitted());
+        Object.assign(this.state, { zoom: z, panX: pan.panX, panY: pan.panY });
+        this.stage.toggleAttribute('data-animate', !!animate);
+        if (this.img) this.img.style.transform = 'translate(' + pan.panX + 'px, ' + pan.panY + 'px) scale(' + z + ')';
+    }
+
+    zoomAt(zoom, client, animate = true) {
+        const v = zoomAround(this.state, zoom, client, this.stage.getBoundingClientRect());
+        this.set(v.zoom, v.panX, v.panY, animate);
+    }
+
+    /** + / − / 0 like the map (R03); true when handled. */
+    key(e) {
+        const act = { '+': () => this.zoomAt(this.state.zoom * MAP_ZOOM.step), '=': () => this.zoomAt(this.state.zoom * MAP_ZOOM.step),
+            '-': () => this.zoomAt(this.state.zoom / MAP_ZOOM.step), '0': () => this.set(1, 0, 0, true) }[e.key];
+        if (!act) return false;
+        act();
+        return true;
+    }
+
+    _down(e) {
+        try { this.stage.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+        this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const base = { zoom: this.state.zoom, panX: this.state.panX, panY: this.state.panY };
+        if (this._pointers.size === 1) this._g = Object.assign({ kind: 'press', start: { x: e.clientX, y: e.clientY } }, base);
+        else if (this._pointers.size === 2) {
+            const [a, b] = Array.from(this._pointers.values());
+            this._g = Object.assign({ kind: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } }, base);
+        }
+    }
+
+    _move(e) {
+        const point = this._pointers.get(e.pointerId), g = this._g;
+        if (!point || !g) return;
+        point.x = e.clientX;
+        point.y = e.clientY;
+        if (g.kind === 'pinch' && this._pointers.size >= 2) {
+            const [a, b] = Array.from(this._pointers.values());
+            const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+            const v = zoomAround(g, g.zoom * Math.hypot(a.x - b.x, a.y - b.y) / g.dist, g.mid, this.stage.getBoundingClientRect());
+            this.set(v.zoom, v.panX + mid.x - g.mid.x, v.panY + mid.y - g.mid.y);
+            return;
+        }
+        const dx = e.clientX - g.start.x, dy = e.clientY - g.start.y;
+        if (g.kind === 'press' && Math.hypot(dx, dy) < TAP.slop) return;
+        g.kind = 'pan';
+        this.set(g.zoom, g.panX + dx, g.panY + dy);
+    }
+
+    _up(e, cancelled) {
+        const g = this._g;
+        if (!this._pointers.delete(e.pointerId)) return;
+        if (this._pointers.size === 1) {
+            const [rest] = Array.from(this._pointers.values());
+            this._g = { kind: 'pan', start: { x: rest.x, y: rest.y }, zoom: this.state.zoom, panX: this.state.panX, panY: this.state.panY };
+            return;
+        }
+        if (this._pointers.size) return;
+        this._g = null;
+        if (!g || g.kind !== 'press' || cancelled) return;
+        // Double tap zooms in, like the map's view mode.
+        const now = Date.now(), last = this._lastTap, client = { x: e.clientX, y: e.clientY };
+        if (last && now - last.t < TAP.doubleMs && Math.hypot(client.x - last.x, client.y - last.y) < TAP.doubleSlop) {
+            this._lastTap = null;
+            this.zoomAt(this.state.zoom * MAP_ZOOM.step, client);
+            return;
+        }
+        this._lastTap = { t: now, x: client.x, y: client.y };
+    }
+}
+
+/**
+ * BAK-01 full screen: "Aktuelle Karte" first, then the states; a picture loads
+ * only when shown (cloud fetch, R20) and stays cached until the view closes.
+ * A transient view (kind menu): Escape and Back close it.
+ */
+function backupImageView(card, mapId, start = 1) {
+    const cache = new Map(); // 'current' | k → { img, state: 'loading' | 'ok' | 'error' }
+    const zoom = { zoom: 1, panX: 0, panY: 0 };
+    let index = start;
+    const view = {
+        title: translate(card._hass, 'sicherungAnsicht'),
+        kind: 'menu',
+        size: 'full',
+        watch: () => backupWatch(card, mapId),
+        leave: () => cache.clear(),
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const map = backupMap(model, mapId);
+            const items = [{ current: true, picture: currentPicture(hass, model, mapId) }, ...recoveryEntries(hass, model, mapId)];
+            index = Math.min(Math.max(0, index), items.length - 1);
+            const item = items[index];
+            const caption = item.current ? translate(hass, 'sicherungAktuell') : recoveryText(hass, item);
+            const go = (step) => {
+                const next = Math.min(Math.max(0, index + step), items.length - 1);
+                if (next === index) return;
+                index = next;
+                Object.assign(zoom, { zoom: 1, panX: 0, panY: 0 });
+                dialog._render();
+            };
+            const head = document.createElement('div');
+            head.className = 'backup-head';
+            const title = document.createElement('p');
+            title.className = 'backup-caption';
+            title.textContent = caption;
+            const position = document.createElement('p');
+            position.className = 'backup-position';
+            position.textContent = translate(hass, 'sicherungPosition', { n: index + 1, gesamt: items.length });
+            head.append(title, position);
+            body.appendChild(head);
+            const key = item.current ? 'current' : item.k;
+            let shown = cache.get(key);
+            if (!shown && item.picture) {
+                const img = document.createElement('img');
+                shown = { img, state: 'loading' };
+                cache.set(key, shown);
+                img.setAttribute('alt', translate(hass, 'sicherungAlt', { stand: caption }));
+                img.setAttribute('draggable', 'false');
+                img.setAttribute('src', card._map ? card._map._url(item.picture) : item.picture);
+                const done = (state) => {
+                    if (cache.get(key) !== shown) return;
+                    shown.state = state;
+                    if (dialog._views[dialog._views.length - 1] === view) dialog._render();
+                };
+                (typeof img.decode === 'function' ? img.decode() : Promise.resolve()).then(() => done('ok'), () => done('error'));
+            }
+            const stage = document.createElement('div');
+            stage.className = 'backup-stage';
+            stage.tabIndex = 0;
+            stage.setAttribute('role', 'img');
+            stage.setAttribute('aria-label', caption);
+            if (shown && shown.state !== 'error') stage.appendChild(shown.img);
+            body.appendChild(stage);
+            const zoomer = new ImageZoom(stage, shown && shown.state !== 'error' ? shown.img : null, zoom);
+            body.addEventListener('keydown', (e) => {
+                if (e.target && e.target.tagName === 'INPUT') return;
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    go(e.key === 'ArrowLeft' ? -1 : 1);
+                } else if (zoomer.key(e)) e.preventDefault();
+            });
+            if (!item.picture || (shown && shown.state === 'error')) {
+                const line = noteLine(translate(hass, 'sicherungBildFehler'), 'error');
+                line.classList.add('backup-state');
+                if (shown) {
+                    const retry = BuschUI.action({ label: translate(hass, 'kartenErneut'), text: translate(hass, 'kartenErneut'), icon: 'mdi:refresh', onClick: () => {
+                        cache.delete(key);
+                        dialog._render();
+                    } });
+                    retry.setAttribute('data-action', 'retry');
+                    line.appendChild(retry);
+                }
+                body.appendChild(line);
+            } else if (shown.state === 'loading') {
+                const line = noteLine(translate(hass, 'sicherungLaedt'), 'busy');
+                line.classList.add('backup-state');
+                body.appendChild(line);
+            }
+            const tools = document.createElement('div');
+            tools.className = 'backup-tools';
+            const tool = (action, icon, labelKey, onClick, disabled) => {
+                const button = BuschUI.action({ label: translate(hass, labelKey), icon, variant: 'icon-only', disabled, onClick });
+                button.setAttribute('data-action', action);
+                tools.appendChild(button);
+            };
+            tool('previous', 'mdi:chevron-left', 'sicherungZurueck', () => go(-1), index === 0);
+            tool('next', 'mdi:chevron-right', 'sicherungVor', () => go(1), index === items.length - 1);
+            tool('zoom-out', 'mdi:minus', 'zoomOut', () => zoomer.zoomAt(zoom.zoom / MAP_ZOOM.step));
+            tool('zoom-in', 'mdi:plus', 'zoomIn', () => zoomer.zoomAt(zoom.zoom * MAP_ZOOM.step));
+            tool('fit', 'mdi:fit-to-screen-outline', 'zoomFit', () => zoomer.set(1, 0, 0, true));
+            if (!item.current && map) {
+                const spacer = document.createElement('span');
+                spacer.className = 'backup-spacer';
+                tools.appendChild(spacer);
+                for (const action of BACKUP_ACTIONS) {
+                    const node = action(card, model, hass, dialog, view, map, item, 'full');
+                    if (node) tools.appendChild(node);
+                }
+            }
+            body.appendChild(tools);
+            body.appendChild(noteLine(translate(hass, 'sicherungTasten')));
+        }
+    };
+    return view;
+}
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
@@ -15378,6 +15860,10 @@ BuschVacuumCard.__internals = {
     recoveryEntries,
     restoreLock,
     backupWatch,
+    backupsView,
+    backupImageView,
+    zoomAround,
+    clampPan,
     version: CARD_VERSION
 };
 

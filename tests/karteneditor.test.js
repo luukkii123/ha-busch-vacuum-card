@@ -2016,8 +2016,8 @@ test('EDI-01 Kartenzeile: Wählen und Symbolknöpfe als eine Gruppe (bricht nur 
   const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
   verwaltung(k);
   const gruppe = (id) => karteZeile(k, id).querySelector('.map-actions');
-  assert.deepEqual(Array.from(gruppe(7).childNodes, (n) => n.getAttribute('data-action')), ['select', 'edit', 'rename', 'delete']);
-  assert.deepEqual(Array.from(gruppe(3).childNodes, (n) => n.getAttribute('data-action')), ['edit', 'rename', 'delete']);
+  assert.deepEqual(Array.from(gruppe(7).childNodes, (n) => n.getAttribute('data-action')), ['select', 'edit', 'backups', 'rename', 'delete']);
+  assert.deepEqual(Array.from(gruppe(3).childNodes, (n) => n.getAttribute('data-action')), ['edit', 'backups', 'rename', 'delete'], 'map-backup: „Sicherungen“ in derselben Gruppe');
 });
 
 test('EDI-02 Dirty-Dialog: eine Änderung in der Einzahl (DE/EN)', () => {

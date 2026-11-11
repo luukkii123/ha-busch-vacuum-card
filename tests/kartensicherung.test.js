@@ -123,3 +123,146 @@ test('BAK-01 Kameras gespeicherter Karten beobachtet nur die offene Liste (R20):
   assert.ok(ids.includes('vacuum.robo') && ids.includes('camera.robo_map_1') && ids.includes('camera.robo_map'), ids.join(','));
   assert.deepEqual(k.haus.rufe, []);
 });
+
+// ── Task 2: Liste und Vollbild (BAK-01) ─────────────────────────────────────
+
+/** Kartenverwaltung über das Menü öffnen. */
+function verwaltung(k) {
+  k.karte._openDialog(k.karte._menuView());
+  Array.from($$d(k.u, '.menu-item')).find((b) => b.getAttribute('data-entry') === 'maps').click();
+  return dialogVon(k.u);
+}
+const knopf = (k, action) => $d(k.u, '[data-action="' + action + '"]');
+/** Sicherungen der Karte 3 aus der Kartenverwaltung. */
+function sicherungen(k, id = 3) {
+  const d = verwaltung(k);
+  $d(k.u, '[data-map="' + id + '"]').querySelectorAll('[data-action="backups"]')[0].click();
+  return d;
+}
+/** Das Bild der Vollbildbühne (die Attrappe kennt keine Nachfahren-Selektoren). */
+const bildIn = (k) => $d(k.u, '.backup-stage').querySelectorAll('img')[0] || null;
+const eintraege = (k) => Array.from($$d(k.u, '.backup-entry'));
+
+test('BAK-01 Einstieg „Sicherungen“ je Karte (Kartenverwaltung, Bearbeitungsmodus); Liste mit Typ-Symbol + Text, Datum, Nummer; ohne Stände/Dienste kein Eintrag', () => {
+  const k = aufbau();
+  const d = sicherungen(k);
+  assert.equal($d(k.u, 'h1').textContent, 'Kartensicherungen');
+  assert.equal(d._views.at(-1).kind, 'editor');
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Karte: Karte 1/);
+  const e = eintraege(k);
+  assert.deepEqual(e.map((n) => n.getAttribute('data-k')), ['2', '1']);
+  assert.deepEqual(e.map((n) => n.getAttribute('data-type')), ['edited', 'original']);
+  assert.equal(e[0].querySelectorAll('ha-icon')[0].getAttribute('icon'), 'mdi:map-check-outline', 'Typ-Symbol');
+  assert.match(e[0].textContent, /Bearbeitete Karte/, 'Typ als Text, nicht nur Symbol (R17)');
+  assert.match(e[0].textContent, /26\.04\.2026/, 'Datum im HA-Format');
+  assert.match(e[0].textContent, /13:23/);
+  assert.match(e[0].textContent, /Nr\. 2/);
+  assert.match(e[1].textContent, /Originalkarte.*21\.11\.2024/);
+  assert.equal($d(k.u, '.backup-list').getAttribute('role'), 'list', 'Liste semantisch (R16)');
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Sicherung: bereit/);
+  assert.match(dialogVon(k.u).shadowRoot.textContent, /Wiederherstellung: bereit/);
+  assert.equal(d._seen.ids.includes('camera.robo_map_1'), true, 'die offene Liste beobachtet die gespeicherte Kamera');
+  // Neuer Stand in der Kamera → Liste neu, ohne Abruf.
+  const alt = k.haus.states['camera.robo_map_1'];
+  k.karte.hass = k.haus.setze({ 'camera.robo_map_1': Object.assign({}, alt, { attributes: Object.assign({}, alt.attributes, staende('camera.robo_map_1', [EINTRAG('2026-11-11 09:00', 'Sicherungskarte', 3), EINTRAG('2026-04-26 13:23', 'Bearbeitete Karte', 2), EINTRAG('2024-11-21 10:20', 'Originalkarte', 1)])) }) });
+  assert.deepEqual(eintraege(k).map((n) => n.getAttribute('data-type')), ['backup', 'edited', 'original']);
+  d.remove(); k.karte._dialog = null;
+  // Bearbeitungsmodus: „Sicherungen“ der aktiven Karte.
+  k.karte._map.tools.querySelector('[data-action="map-edit"]').click();
+  knopf(k, 'backups').click();
+  assert.equal($d(k.u, 'h1').textContent, 'Kartensicherungen');
+  assert.equal(eintraege(k).length, 3);
+  assert.deepEqual(k.haus.rufe, []);
+  // Ohne Stände, ohne Wiederherstellen und ohne Sicherung: kein Eintrag „Sicherungen“.
+  const ohne = aufbau({ vac: { map_recovery_status: undefined, map_backup_status: undefined }, kameras: { 'camera.robo_map_1': { recovery_map_list: null, recovery_map_picture: null, recovery_map_file: null }, 'camera.robo_map': { recovery_map_picture: null, recovery_map_file: null } } });
+  verwaltung(ohne);
+  assert.equal($d(ohne.u, '[data-map="3"]').querySelectorAll('[data-action="backups"]').length, 0);
+});
+
+test('BAK-01 Leerzustand „Keine Stände“ (R18) und nur ansehen ohne Wiederherstellen-Dienst', () => {
+  const leer = aufbau({ kameras: { 'camera.robo_map_1': { recovery_map_list: [], recovery_map_picture: {}, recovery_map_file: {} }, 'camera.robo_map': { recovery_map_picture: {}, recovery_map_file: {} } } });
+  sicherungen(leer);
+  assert.equal(eintraege(leer).length, 0);
+  assert.match(dialogVon(leer.u).shadowRoot.textContent, /Keine Stände/);
+  const ansehen = aufbau({ ohneDienste: ['vacuum_restore_map', 'vacuum_restore_map_from_file'] });
+  sicherungen(ansehen);
+  assert.equal(eintraege(ansehen).length, 2);
+  assert.match(dialogVon(ansehen.u).shadowRoot.textContent, /nur ansehen und herunterladen/);
+  assert.equal(knopf(ansehen, 'restore'), null);
+});
+
+/** img mit steuerbarem decode(): `bilder` sammelt [img, erfüllen, ablehnen]. */
+function mitBildern(k) {
+  const bilder = [];
+  const erzeuge = k.u.document.createElement.bind(k.u.document);
+  k.u.document.createElement = (tag) => {
+    const n = erzeuge(tag);
+    if (tag === 'img') n.decode = () => new Promise((ok, nein) => bilder.push([n, ok, nein]));
+    return n;
+  };
+  return bilder;
+}
+
+test('BAK-01 Vollbild: size full, kind menu; „Aktuelle Karte“ zuerst; Bild erst auf Abruf mit decode(), Lade-/Fehlerzustand mit Erneut; Vor/Zurück mit Knöpfen und Pfeiltasten; Escape schließt', async () => {
+  const k = aufbau();
+  const bilder = mitBildern(k);
+  const d = sicherungen(k);
+  assert.equal(bilder.length, 0, 'die Liste lädt kein Bild (R20)');
+  eintraege(k)[0].querySelectorAll('[data-action="view"]')[0].click();
+  const sicht = d._views.at(-1);
+  assert.equal(sicht.size, 'full');
+  assert.equal(sicht.kind, 'menu');
+  assert.equal($d(k.u, '.sheet').getAttribute('data-size'), 'full');
+  assert.match($d(k.u, '.backup-caption').textContent, /Bearbeitete Karte · 26\.04\.2026/);
+  assert.match($d(k.u, '.backup-position').textContent, /2 von 3/);
+  const img = bildIn(k);
+  assert.equal(img.getAttribute('src'), URL('camera.robo_map_1', 2, 1777202593).replace('token=t', 'token=testtoken'));
+  assert.match(img.getAttribute('alt'), /Bearbeitete Karte/, 'Alternativtext je Stand (R16)');
+  assert.match($d(k.u, '.backup-state').textContent, /wird geladen/, 'Ladezustand (R11)');
+  assert.equal(bilder.length, 1);
+  bilder[0][1]();
+  await mikro();
+  assert.equal($d(k.u, '.backup-state'), null, 'geladen: kein Hinweis mehr');
+  // Zurück zum ersten Eintrag: die aktuelle Karte (entity_picture der gespeicherten Kamera).
+  knopf(k, 'previous').click();
+  assert.match($d(k.u, '.backup-caption').textContent, /Aktuelle Karte/);
+  assert.match(bildIn(k).getAttribute('src'), /camera_proxy\/camera\.robo_map_1/);
+  assert.equal(knopf(k, 'previous').disabled, true);
+  // Pfeiltaste rechts zweimal: Original; ein Fehler zeigt R12 mit Erneut.
+  k.u.tasteAn($d(k.u, '.backup-stage'), 'keydown', { key: 'ArrowRight' });
+  k.u.tasteAn($d(k.u, '.backup-stage'), 'keydown', { key: 'ArrowRight' });
+  assert.match($d(k.u, '.backup-caption').textContent, /Originalkarte/);
+  assert.equal(knopf(k, 'next').disabled, true);
+  const original = bilder.find(([n]) => /index=1/.test(n.getAttribute('src')));
+  original[2](new Error('404'));
+  await mikro();
+  assert.match($d(k.u, '.backup-state').textContent, /nicht geladen.*Cloud/);
+  assert.equal($d(k.u, '.backup-state').getAttribute('data-kind'), 'error');
+  knopf(k, 'retry').click();
+  assert.match($d(k.u, '.backup-state').textContent, /wird geladen/);
+  // Ein schon geladener Stand lädt nicht noch einmal (Cache bis zum Schließen).
+  const vorher = bilder.length;
+  knopf(k, 'previous').click();
+  assert.equal(bilder.length, vorher);
+  // Zoom über die Knöpfe: Vergrößern verdoppelt, Einpassen setzt zurück.
+  knopf(k, 'zoom-in').click();
+  assert.match(bildIn(k).style.transform, /scale\(2\)/);
+  knopf(k, 'fit').click();
+  assert.match(bildIn(k).style.transform, /scale\(1\)/);
+  k.u.tasteAn($d(k.u, '.backup-stage'), 'keydown', { key: 'Escape' });
+  k.u.zurueck(); // Escape geht über den Verlauf zurück (history.back → popstate)
+  assert.equal(d._views.at(-1).title, 'Kartensicherungen', 'Escape schließt das Vollbild');
+  assert.deepEqual(k.haus.rufe, []);
+});
+
+test('BAK-01 Zoomlogik aus map-view wiederverwendet (R08): zoomAround/clampPan sind die Rechnung der Karte', () => {
+  const k = aufbau();
+  const rect = { left: 0, top: 0, width: 400, height: 300 };
+  const z = k.I.zoomAround({ zoom: 1, panX: 0, panY: 0 }, 2, { x: 300, y: 150 }, rect);
+  assert.deepEqual(roh(z), { zoom: 2, panX: -100, panY: 0 });
+  assert.deepEqual(roh(k.I.zoomAround({ zoom: 1, panX: 0, panY: 0 }, 99, null, rect)).zoom, 8, 'Grenze MAP_ZOOM.max');
+  assert.deepEqual(roh(k.I.clampPan(2, 900, -900, { width: 200, height: 100 })), { panX: 200, panY: -100 });
+  assert.deepEqual(roh(k.I.clampPan(1, 50, 50, { width: 200, height: 100 })), { panX: 0, panY: 0 });
+  const quelle = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'dist', 'busch-vacuum-card.js'), 'utf8');
+  assert.match(quelle, /_zoomed\(from, zoom, client\) \{\s*return zoomAround\(/, 'MapView rechnet mit derselben Funktion');
+});
