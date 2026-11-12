@@ -440,7 +440,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     repo_root = card_file.parent.parent
     fixture = json.loads((repo_root / "tests" / "fixtures" / "voll.json").read_text(encoding="utf-8"))
-    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty", "editor", "backup", "backup_running")}
+    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty", "editor", "backup", "backup_running", "temporary")}
     cam = fixture["states"]["camera.robo_map"]["attributes"]
     grid = synthetic_map_data(cam["rooms"], frame_id=cam["frame_id"])
     svg, svg_size = synthetic_map_svg(cam, grid)
