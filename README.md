@@ -1,14 +1,15 @@
 # Busch Vacuum Card
 
 A robot vacuum card for Home Assistant: one card, **`busch-vacuum-card`**.
-It aims to offer every function of the Dreame Vacuum Card that ships with
-[Tasshack/dreame-vacuum][dreame] — status, control, cleaning tasks, dock,
-device settings, history, remote control, map editing — built only on the
-integration's public entities, attributes and services and styled like the
-other Busch cards.
+It offers the functions of the Dreame Vacuum Card for
+[Tasshack/dreame-vacuum][dreame] — status, control, cleaning tasks, station,
+device and cleaning settings, shortcuts, history, remote control, map editing
+and map backups — built only on the integration's public entities, attributes
+and services and styled like the other Busch cards.
 
-> **Work in progress.** Version 0.1.0 is a scaffold and not released yet.
-> This README grows with each module.
+Version 0.1.0 is the first release. It was checked live on one robot (Dreame
+X40 Ultra); see [Known limits](#known-limits) for what is not confirmed on a
+real robot yet.
 
 ![The card while cleaning](docs/render/baseline/core-0.1.0/karte-cleaning-karte-480-dark.png)
 ![The main menu on a phone](docs/render/baseline/core-0.1.0/dialog-menu-360x640-light.png)
@@ -17,12 +18,17 @@ other Busch cards.
 
 - Home Assistant 2026.9.3 or newer
 - A robot vacuum (`vacuum.*`); Dreame devices through
-  [Tasshack/dreame-vacuum][dreame] 2.0 or newer get the full feature set
+  [Tasshack/dreame-vacuum][dreame] get the full feature set (checked with
+  version 2.0.3). Other vacuums get status, controls and what their entities
+  offer.
+- For map backups and restore: the integration's cloud login.
 
 ## Installation
 
-HACS → three dots → *Custom repositories* → this repository, category
-*Dashboard*. Then add the card from the card picker (*Busch vacuum*).
+HACS → three dots → *Custom repositories* → `https://github.com/luukkii123/ha-busch-vacuum-card`,
+category *Dashboard* → download. HACS registers the resource
+`/hacsfiles/ha-busch-vacuum-card/busch-vacuum-card.js` itself; reload the
+browser afterwards. Then add the card from the card picker (*Busch vacuum*).
 
 ## Basic usage
 
@@ -31,7 +37,7 @@ vacuum. That is all it needs: the card finds the device's other entities
 (sensors, selects, switches, buttons, map cameras) by itself and shows only
 what your device can do.
 
-What you get with the core module:
+On the card:
 
 - **Head:** name and state (in Home Assistant's language), cleaned area,
   cleaning time and battery (charging, low, charging to resume).
@@ -78,7 +84,7 @@ entity: vacuum.my_robot
 | `locked` | `auto` | When the map starts locked: `auto` (touch devices outside a panel), `only_touch`, `never`, `always`. |
 | `touch_lock` | `200` | Hold time in ms (100–400) to toggle the lock. |
 | `disable_haptic` | `false` | No vibration on taps. |
-| `hidden_card_objects` | none | Parts to hide: `title`, `state`, `menu`, `status`, `task_type`, `controls`, `action_buttons`, `animations`, `shortcuts`, `cruising_history`, `error_message`, `warning_message`, `info_message`, `low_water_message`, `map_change_confirmation`, `progress_bar`, `dock_status_indicator`. |
+| `hidden_card_objects` | none | Parts to hide: `title`, `state`, `menu`, `status`, `task_type`, `controls`, `action_buttons`, `animations`, `shortcuts`, `cruising_history`, `error_message`, `warning_message`, `info_message`, `low_water_message`, `map_change_confirmation`, `progress_bar`, `dock_status_indicator`, `map_editor`. |
 
 Hiding `map_change_confirmation` changes maps without asking first.
 
@@ -298,6 +304,9 @@ example out from under a bed.
 - At most one call is under way; the next follows its answer, at least
   200 ms later (≤ 5 per second), always with the newest value. Limits: forward
   100, backward −100, turning ±128.
+- **Not calibrated yet:** these limits are conservative values from the
+  integration's service description. Top speed, turning direction and the
+  stop after letting go have not been measured on a robot yet.
 
 ## Map editing
 
@@ -357,8 +366,18 @@ when the map has states or your device can back up or restore.
   confirmation that names map, state and consequence; a click beside it does
   not. *Back up the current state first* is preselected when there is no
   backup yet; restoring the backup state itself makes no backup before (it
-  could replace exactly that state). Only for the active map; while a
-  restore runs, editing, choosing a task and further restores are locked.
+  could replace exactly that state). Only for the active map, and only while
+  the robot neither runs nor is paused — also not paused in the station (the
+  integration refuses it then; stop the task first). While a restore runs,
+  editing, choosing a task and further restores are locked.
+- **Room settings after a restore:** the device resets the cleaning settings
+  of every room (suction, wetness, passes, mode, route) to its defaults and
+  recalculates the room borders. The confirmation says so. The card remembers
+  each room's values before the restore and then offers *Restore room
+  settings*: after a confirmation with the remembered values it writes them
+  back room by room (`vacuum_set_custom_cleaning`), stops at the first error
+  and names the rooms done. The card keeps these values only while the page
+  stays open.
 - **Download:** the raw map file (`.mb.tbz2`). It contains your floor plan —
   do not share it.
 - **Advanced — restore from file URL:** a map file at a URL Home Assistant can
@@ -366,9 +385,47 @@ when the map has states or your device can back up or restore.
   offers no upload from the browser. Same confirmation as above.
 - Restoring needs the integration's cloud login; without it the card says so
   and the list stays viewable.
-- **Not yet confirmed on a real robot:** *Back up now* and *Restore* are
-  tested against the integration's services with synthetic data; how many
-  backups a device keeps per map is still open.
+- Backup and restore were run on a real robot through the integration's
+  services; the card's own buttons for them, the write-back of the room
+  settings and how many backups a device keeps per map are not confirmed on
+  a real robot yet.
+
+## Known limits
+
+Checked live on one robot, a Dreame X40 Ultra with integration 2.0.3: status,
+map, history and every setting read and compared with the device; written
+back were the child lock, one schedule, one map backup, one room rename (and
+back) and one restore. Other models show what their attributes and entities
+report.
+
+**Not confirmed on a real robot yet** (tested with synthetic data against the
+integration's services):
+
+- Remote control: top speed, turning direction and the stop after letting go
+  (shipped with conservative limits, not calibrated).
+- Starting each task type from the card (room, zone, spot, go to), *Re-clean*
+  from the history, changing the map, ignoring an obstacle.
+- Station actions (wash, dry, empty, drain, self-repair, station cleaning) and
+  the remaining device and cleaning settings that were not written live.
+- Shortcuts, furniture, target points and several floors: the checked robot
+  reports none, so these are tested with synthetic data only.
+- Map editing: saving a change (for example a no-go zone) and *Undo*.
+- Map backups: *Back up now* and *Restore* from the card, *Restore room
+  settings*, and how many backups a device keeps.
+- Installing a voice pack and resetting a consumable.
+
+**Limits of the integration** (no public way to do more):
+
+- Low-lying areas are shown, not edited; zones and ramps cannot be rotated;
+  walls and doors can be moved and reset, not added or removed; merging takes
+  two rooms at a time.
+- Schedules are saved from what the integration reports; a new schedule needs
+  an existing one (create the first one in the Dreame app). Do not disturb has
+  no weekdays; the X40 takes one period.
+- Shortcuts are created and edited only in the Dreame app.
+- A map file cannot be uploaded from the browser (restore from a file URL
+  instead). A restore resets the room settings (see above) and is refused
+  while the robot runs or is paused.
 
 ## Theming
 

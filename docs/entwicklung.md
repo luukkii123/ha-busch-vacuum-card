@@ -437,8 +437,39 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 - **Bewusst anders als der Plan:** „Jetzt sichern“ fragt auch ohne
   vorhandenen Backup-Eintrag kurz nach (Plan: „sofort“) — sonst bräuchte es
   einen zweiten Grant-Weg neben dem Bestätigungsklick.
+- **Sperre bei Lauf/Pause (Live-Test 12.11.2026):** die Integration lehnt
+  `restore_map` ab, solange `started` (device.py#L7017) — auch pausiert im
+  Dock. `MapEditSession.lock` gibt für `vacuum_restore_map(_from_file)` dann
+  `wiederherstellenSperreLaeuft` (`robotBusy`: `started`/`paused` true oder
+  Zustand cleaning/paused/returning); `mapConfirm` kennt `blocked`, das den
+  Bestätigungsknopf mit Grund sperrt, wenn die Sperre bei offener Bestätigung
+  aufkommt.
+- **Raumeinstellungen (Live-Test 12.11.2026):** ein Restore setzt die
+  Customized-Cleaning-Werte aller Räume auf Standard und berechnet die
+  Raumgrenzen neu. `roomSnapshot(model)` merkt vor dem Restore je Raum die
+  vollständigen Daten (`roomPayload`: `segment_id`, `suction_level`,
+  `wetness_level`/`water_volume`, `repeats`, `cleaning_mode`,
+  `cleaning_route` … je Fähigkeit; Räume mit unbekanntem Wert ausgelassen) in
+  `card._restoreNote.rooms`; danach bietet die Liste „Raumeinstellungen
+  wiederherstellen“ (`roomRestoreView`): ein `vacuum_set_custom_cleaning` je
+  Raum nacheinander, Halt beim ersten Fehler, „Erneut versuchen“ nur für den
+  Rest, gesperrt über `roomLock`. Die Werte leben nur im Speicher der Seite.
 - **Grenzen:** kein Hochladen aus dem Browser (kein Dienst; daher Datei-URL);
-  wie viele Backup-Stände das Gerät hält, klärt erst der Live-Lauf (a).
+  wie viele Backup-Stände das Gerät hält, ist offen.
+
+## Ansichten und Inventar (Release)
+
+- Jede Dialogansicht trägt eine `id` (`__internals.VIEW_IDS`, 42), der Dialog
+  setzt `data-view` am Blatt. `tests/dialog.test.js` vergleicht die ids im
+  Quelltext mit `VIEW_IDS`; `render.py` zeichnet bei jedem Bild die offenen
+  ids auf (`viewIds`/`views` im Bericht, Prüfung „views:“). Eine neue Ansicht
+  ohne Bild im Render-Lauf ist rot.
+- Testnamen beginnen mit ihren Inventar-IDs (`EDI-03 …`, mehrere
+  `CORE-01/CORE-02 …`), Render-Prüfungen tragen `ids` (`RENDER_IDS` in
+  `render.py`); Entscheidungen, die einen Punkt anders erfüllen, stehen in
+  `tests/inventar-entscheidungen.json`. `hacs/scripts/vacuum-inventar-pruefen.py`
+  prüft die Abdeckung (Exit 1 bei ID ohne grünen Test, rotem Test, unbekannter
+  ID, Ansicht ohne Bild).
 
 ## Prüfung
 
@@ -532,8 +563,16 @@ Mausrad, Escape, Doppelklick auf „Sichern“ sendet genau ein
 
 Grenzen: `ha-card`, `ha-icon` und `ha-form` sind Attrappen; belegt sind
 Verdrahtung, Maße und erzeugte Konfiguration, nicht die Darstellung der
-echten HA-Selektoren. Die Abnahme mit `karten-alle.sh` und E2E läuft einmal
-am Ende aller Module.
+echten HA-Selektoren.
+
+Abnahme vor einem Tag (einmal, mit hartem Zeitlimit; Node-Tests und
+`render.py` in einem Container, Ergebnis unter `hacs/artifacts/e2e/<lauf>/`):
+
+```bash
+HACS=/pfad/zu/hacs
+KARTEN_TODO=882 KARTEN_ZWECK=abnahme timeout 4500 bash "$HACS/scripts/karten-alle.sh" --repo ha-busch-vacuum-card
+python3 "$HACS/scripts/vacuum-inventar-pruefen.py" --lauf "$HACS/artifacts/e2e/<lauf-id>"
+```
 
 ## Geprüft
 
