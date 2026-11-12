@@ -1165,9 +1165,12 @@ def main():
         build("docked")
         page.wait_for_timeout(150)
         dock_button = page.evaluate("""() => { const b = window.card().shadowRoot.querySelector('.dock'), r = b.getBoundingClientRect();
-            return { tag: b.tagName, popup: b.getAttribute('aria-haspopup'), level: b.getAttribute('data-dock'), text: b.textContent, w: r.width, h: r.height }; }""")
+            return { tag: b.tagName, popup: b.getAttribute('aria-haspopup'), level: b.getAttribute('data-dock'), text: b.textContent,
+                     label: b.getAttribute('aria-label'), w: r.width, h: r.height }; }""")
+        # 0.2.2: visible "Dock", the station's name (and any warning) in aria-label; the warning's words in the hint bar.
         check("dock button: a 44 px button with menu popup, text and level", dock_button["tag"] == "BUTTON" and dock_button["popup"] == "menu"
-              and dock_button["h"] >= 44 and dock_button["w"] >= 44 and "Station" in dock_button["text"], json.dumps(dock_button))
+              and dock_button["h"] >= 44 and dock_button["w"] >= 44 and dock_button["text"] == "Dock"
+              and str(dock_button["label"]).startswith("Station") and dock_button["level"] == "ok", json.dumps(dock_button))
         dock_geo = []
         for w, h in ((360, 640), (390, 844), (800, 600), (1280, 800)):
             for th in THEMES:
