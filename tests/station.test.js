@@ -127,7 +127,7 @@ test('CORE-11/DOCK-06 Dock-Anzeige ist ein Knopf mit Text und Farbe wie bisher; 
   assert.equal(knopf.tagName, 'BUTTON');
   assert.equal(knopf.getAttribute('aria-haspopup'), 'menu');
   assert.equal(knopf.getAttribute('data-dock'), 'warning');
-  assert.match(knopf.textContent, /Station · Staubbeutel/);
+  assert.equal(knopf.textContent, 'Dock', '0.2.2: Text in der Hinweisleiste (tests/aufbau.test.js)');
   assert.match(knopf.getAttribute('aria-label'), /Station · Staubbeutel/);
   assert.equal(dockKnopf(aufbau('ohne-dock')), null);
   assert.equal(dockKnopf(aufbau('voll', { config: { hidden_card_objects: ['dock_status_indicator'] } })), null);

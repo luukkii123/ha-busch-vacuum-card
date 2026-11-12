@@ -170,7 +170,7 @@ test('CORE-07 laufend: Pause/Stopp/Zurück wie bisher, kein Aufgabentext', () =>
 
 test('CORE-08 Aktionsleiste: Station sekundär, Primär füllt; schmal Station als 52-px-Symbolknopf; Linkshänder gespiegelt', () => {
   const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
-  assert.match(CARD_STYLES, /\.controls \.ctl\[data-variant=primary\] \{[^}]*flex: 1 1 auto;/);
+  assert.match(CARD_STYLES, /\.controls \.ctl\[data-variant=primary\] \{[^}]*flex: 1 0 auto;/);
   assert.match(CARD_STYLES, /:host\(:not\(\[data-width=wide\]\)\) \.controls \.dock \{[^}]*width: 52px;/);
   assert.match(CARD_STYLES, /:host\(:not\(\[data-width=wide\]\)\) \.controls \.dock span,[^{]*\{[^}]*display: none;/);
   assert.match(CARD_STYLES, /:host\(\[data-hand=left\]\) \.dock \{[^}]*order: 1;/);
@@ -229,4 +229,31 @@ test('MAP-02 Hinweis-Chip unten links je Aufgabe; ohne Zeiger-Ereignisse, gespie
   const { MAP_STYLES } = k.u.registry.get('busch-vacuum-card').__internals;
   assert.match(MAP_STYLES, /\.map-hint \{[^}]*pointer-events: none;/);
   assert.match(MAP_STYLES, /:host\(\[data-hand=left\]\) \.map-hint \{/);
+});
+
+// ── 0.2.2: Befunde der Live-Prüfung von 0.2.1 ────────────────────────────
+const stilRegel = (css, sel) => {
+  const i = css.indexOf('\n' + sel + ' {');
+  return i < 0 ? null : css.slice(i + sel.length + 3, css.indexOf('}', i));
+};
+
+test('CORE-08/DOCK-05 Stationswarnung: Hinweisleiste im Panel, Aktionsleiste nur „Dock“ (breit) bzw. Symbol (schmal)', () => {
+  for (const breite of [1280, 900, 390]) {
+    const k = aufbau({ attribute: { clean_water_tank_status: 'Low water' }, breite });
+    const hint = $(k, '.station-hint');
+    assert.match(hint.textContent, /Station: Frischwasser niedrig/, breite + ' Hinweisleiste');
+    assert.equal(hint.parentNode.className, 'station-slot', breite + ' im Panel');
+    const dock = $(k, '.dock');
+    assert.equal(dock.getAttribute('data-dock'), 'warning', breite + ' Farbe bleibt');
+    assert.equal(dock.textContent, 'Dock', breite + ' sichtbar nur „Dock“, nie der Warntext');
+    assert.equal(dock.getAttribute('aria-label'), 'Station · Frischwasser niedrig', breite + ' Name mit Zustand für Screenreader');
+  }
+  assert.equal($(aufbau({ breite: 1280 }), '.dock').getAttribute('aria-label'), 'Station', 'ohne Warnung nur „Station“');
+});
+
+test('CORE-08 Primärknopf kürzt nie: wächst, schrumpft nicht, Text ohne Auslassung; Dock fest', () => {
+  const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  assert.match(stilRegel(CARD_STYLES, '.controls .ctl[data-variant=primary]'), /flex: 1 0 auto;/);
+  assert.match(stilRegel(CARD_STYLES, '.controls .ctl[data-variant=primary] .ctl-text'), /overflow: visible;[^]*text-overflow: clip;/);
+  assert.match(stilRegel(CARD_STYLES, '.controls .dock'), /flex: none;/);
 });

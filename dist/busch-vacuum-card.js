@@ -359,6 +359,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             return: 'Zurück',
             zurueckZumDock: 'Zurück zum Dock',
             station: 'Station',
+            dock: 'Dock',
             frischwasserFehlt: 'Frischwassertank fehlt',
             frischwasserNiedrig: 'Frischwasser niedrig',
             schmutzwasser: 'Schmutzwassertank fehlt oder voll',
@@ -996,6 +997,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             return: 'Return',
             zurueckZumDock: 'Return to dock',
             station: 'Station',
+            dock: 'Dock',
             frischwasserFehlt: 'Clean water tank missing',
             frischwasserNiedrig: 'Clean water low',
             schmutzwasser: 'Dirty water tank missing or full',
@@ -9254,9 +9256,14 @@ ha-card {
     border-radius: var(--ha-card-border-radius, 12px);
 }
 .controls .ctl[data-variant=primary] {
-    flex: 1 1 auto;
+    flex: 1 0 auto;
     font-size: 15px;
     font-weight: var(--ha-font-weight-medium, 500);
+}
+/* 0.2.2: the primary label is never shortened; the secondary buttons give way. */
+.controls .ctl[data-variant=primary] .ctl-text {
+    overflow: visible;
+    text-overflow: clip;
 }
 .controls .ctl[data-variant=secondary] {
     border: 1px solid var(--divider-color, #e0e0e0);
@@ -12098,11 +12105,16 @@ class BuschVacuumCard extends HTMLElement {
         return node;
     }
 
-    /** Station status as the dock button (DOCK-05): colour AND text (R17), opens the station menu. */
+    /**
+     * Station status as the dock button (DOCK-05), opens the station menu. 0.2.2: the bar shows only
+     * "Dock" (wide) or the symbol (phone); a warning's words stand in the panel's hint bar
+     * (_renderStationHint, R17 colour AND text) and stay in the button's name.
+     */
     _dock(hass, model) {
         const status = dockStatus(model);
-        const words = translate(hass, 'station') + (status.key ? ' · ' + translate(hass, status.key) : '');
-        const node = BuschUI.action({ label: words, icon: status.level === 'ok' ? 'mdi:home-variant-outline' : 'mdi:home-alert-outline', variant: 'secondary',
+        const name = translate(hass, 'station') + (status.key ? ' · ' + translate(hass, status.key) : '');
+        const words = translate(hass, 'dock');
+        const node = BuschUI.action({ label: name, icon: status.level === 'ok' ? 'mdi:home-variant-outline' : 'mdi:home-alert-outline', variant: 'secondary',
             onClick: () => this._openDialog(stationMenu(this)) });
         node.classList.add('dock');
         node.setAttribute('aria-haspopup', 'menu');

@@ -189,19 +189,21 @@ test('CORE-11 Dock-Anzeige: ohne Befund neutral, mit Text', () => {
   const dock = $(karteMit('voll').karte, '.dock');
   assert.ok(dock);
   assert.equal(dock.getAttribute('data-dock'), 'ok');
-  assert.equal(dock.textContent, 'Station');
+  assert.equal(dock.textContent, 'Dock', '0.2.2: sichtbar „Dock“');
+  assert.equal(dock.getAttribute('aria-label'), 'Station');
 });
 
 test('CORE-11 Dock-Anzeige orange bei Warnung, mit Text statt nur Farbe', () => {
   const dock = $(karteMit('voll', 'docked', { clean_water_tank_status: 'Low water' }).karte, '.dock');
   assert.equal(dock.getAttribute('data-dock'), 'warning');
-  assert.match(dock.textContent, /Frischwasser niedrig/);
+  assert.equal(dock.textContent, 'Dock', '0.2.2: der Text steht in der Hinweisleiste, nicht im Knopf');
+  assert.match(dock.getAttribute('aria-label'), /Frischwasser niedrig/);
 });
 
 test('CORE-11 Dock-Anzeige rot bei Fehler, Fehler geht vor Warnung', () => {
   const dock = $(karteMit('voll', 'docked', { clean_water_tank_status: 'Low water', dirty_water_tank_status: 'Not installed or full' }).karte, '.dock');
   assert.equal(dock.getAttribute('data-dock'), 'error');
-  assert.match(dock.textContent, /Schmutzwassertank/);
+  assert.match(dock.getAttribute('aria-label'), /Schmutzwassertank/);
 });
 
 test('ohne Station keine Dock-Anzeige', () => {
