@@ -391,6 +391,55 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 - Ausblenden: `hidden_card_objects: map_editor` blendet Stift,
   Kartenwerkzeug, Menüeintrag `maps` und die Schnellbearbeitung aus.
 
+## Kartensicherung (Modul map-backup)
+
+- **Stände** (BAK-01): `recoveryEntries(hass, model, mapId)` liest nur
+  Kamera-Attribute (kein Abruf): `recovery_map_list` der gespeicherten
+  Kamera `camera.*_map_N` (per `map_index` der Karte `maps[]`), neueste
+  zuerst (types.py#L5072); Position `i` ↔ Nummer `k = Länge − i` — dieselbe
+  Nummer erwartet `vacuum_restore_map` (`recovery_map_list[k − 1]`,
+  device.py#L7033) und steht in Schlüssel „…: Map<k> (<Typ>)“ und URL
+  (`index=k`) von `recovery_map_picture`/`_file`. Ohne Liste (aktive Kamera
+  `camera.*_map`) nur aus den Schlüsseln. Typ (`original`/`edited`/`backup`)
+  aus dem übersetzten Text, angezeigt wird der Text der Integration (R26).
+- **Status** (ALL-13): `recoveryStatus` für `map_backup_status` und
+  `map_recovery_status` (idle/running/success/failed/unknown);
+  `can('map_recovery')` = Attribut `map_recovery_status` + Dienst
+  `vacuum_restore_map`; Sperren über `MapEditSession.lock` (R08):
+  Sicherung/Wiederherstellung läuft, Aufgabe (`vacuum_restore_map(_from_file)`
+  in `EDIT_TASK_LOCKED`), temporäre Karte. Während `map_recovery_status`
+  Running ruhen Editor, Aufgabenwahl und Start.
+- **Ansichten:** „Kartensicherungen“ (`backupsView`, kind editor) je Karte aus
+  der Kartenverwaltung und dem Bearbeitungsmodus; beobachtet die Kameras der
+  Karte nur, solange sie offen ist (`backupWatch`, R20). Vollbild
+  `backupImageView` mit der Dialog-Option `size: 'full'` (Vollbild bei jeder
+  Breite, kind menu): „Aktuelle Karte“ zuerst, Bild erst beim Anzeigen
+  (`decode()`, Cache bis zum Schließen), Zoom über `ImageZoom` mit
+  `zoomAround`/`clampPan` der Karte (R08).
+- **Schreibwege** — alle über `mapConfirm` + `MapEditSession.commit` (der
+  einzige Grant, Checkpoint B):
+
+  | Aktion | Dienst + Daten |
+  | --- | --- |
+  | Jetzt sichern | `vacuum_backup_map { entity_id, map_id }` über `MapEditSession.backup` (Warten auf `map_backup_status`, 60 s) |
+  | Wiederherstellen | `vacuum_restore_map { entity_id, recovery_map_index: k, map_id }`, Ende über `map_recovery_status` (120 s) |
+  | Aus Datei-URL | `vacuum_restore_map_from_file { entity_id, file_url, map_id }`, ebenso |
+  | Herunterladen | Link auf `recovery_map_file` (`&file=1`, `.mb.tbz2`, lesend) |
+
+  `map_id` ist immer `maps[].id` der Liste (live 3); die Karte muss aktiv
+  sein (sonst „Zu <Karte> wechseln“, CORE-20), weil das Gerät sonst selbst
+  wechselt.
+- **Rückweg vor dem Wiederherstellen:** „Aktuellen Stand vorher sichern“
+  vorausgewählt ohne Backup-Eintrag, sonst nicht vorausgewählt mit Hinweis
+  „kann die Sicherung vom <Datum> ersetzen“; beim Backup-Stand selbst keine
+  Sicherung davor. Fehler mit eigenen R12-Texten (Gerät, Zeitlimit
+  „Ergebnis unbekannt“, `cloud_required`).
+- **Bewusst anders als der Plan:** „Jetzt sichern“ fragt auch ohne
+  vorhandenen Backup-Eintrag kurz nach (Plan: „sofort“) — sonst bräuchte es
+  einen zweiten Grant-Weg neben dem Bestätigungsklick.
+- **Grenzen:** kein Hochladen aus dem Browser (kein Dienst; daher Datei-URL);
+  wie viele Backup-Stände das Gerät hält, klärt erst der Live-Lauf (a).
+
 ## Prüfung
 
 Syntax und Node-Tests (im Container, die Share ist FUSE):
@@ -472,6 +521,14 @@ Ungespeichert) × 360/390/800/1280 × hell/dunkel; echte Eingabe (Escape mit
 bestätigende Klick sendet `vacuum_backup_map`), Blase „Bearbeiten“ per
 Mausklick auf einen Teppich; Regel 1 je Ansicht (bei 2600 px Höhe: Karte über
 dem Werkzeug, das Blatt scrollt), Regel 2 für Verwaltung und Modus.
+Kartensicherung (map-backup): drei **synthetische** Stände (Original,
+Bearbeitet, Backup) der Karte 3; `/api/camera_recovery_map_proxy/**` liefert
+das synthetische Kartenbild. 9 Ansichten (Liste, Vollbild, Vollbild „Aktuelle
+Karte“, Wiederherstellen mit/ohne Vorab-Sicherung, Jetzt sichern, Datei-URL,
+Datei-URL mit Inline-Fehler, Wiederherstellung läuft) × 360/390/800/1280 ×
+hell/dunkel; echte Eingabe (Außenklick lässt die Bestätigung offen, Pfeiltaste,
+Mausrad, Escape, Doppelklick auf „Sichern“ sendet genau ein
+`vacuum_backup_map`); Regel 1 je Ansicht, Regel 2 für Liste und Vollbild.
 
 Grenzen: `ha-card`, `ha-icon` und `ha-form` sind Attrappen; belegt sind
 Verdrahtung, Maße und erzeugte Konfiguration, nicht die Darstellung der
@@ -479,6 +536,31 @@ echten HA-Selektoren. Die Abnahme mit `karten-alle.sh` und E2E läuft einmal
 am Ende aller Module.
 
 ## Geprüft
+
+**12.11.2026 · 0.1.0, Modul map-backup (#882, Tasks 1–6 ohne Live-Läufe (a)/(b), nicht getaggt)**
+
+1. `node --check` grün; `node --test` 579/579 (15 Tests `tests/kartensicherung.test.js`).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. `render.py`: 72/72 (4 neu), UI-Regeln 0 (Regel 1 für 9 Sicherungsansichten,
+   Regel 2 für Liste und Vollbild), 0 Konsolen-/Seitenfehler, 0 Fremdanfragen,
+   0 Dienstaufrufe ohne bestätigten Klick (72 Sicherungsansichten); der
+   bestätigende Doppelklick auf „Sichern“ sendet genau ein `vacuum_backup_map
+   { entity_id, map_id: 3 }`. Vollbild bei jeder Breite bildschirmfüllend, Bild
+   über die Recovery-Route geladen, Bühne ≥ 240 px; Liste mit 3 Ständen je
+   Ansehen/Wiederherstellen/Herunterladen ≥ 44 px; beim Backup-Stand keine
+   Vorab-Sicherung; während `map_recovery_status` Running alle
+   „Wiederherstellen“ gesperrt mit Grund. Bilder gesichtet (Liste, Vollbild,
+   Bestätigungen, Formular mit Fehler, läuft; 360 dunkel, 390/1280 hell): kein
+   Befund. Grenze: der Titel „Aus Datei-URL wiederherstellen“ wird bei 390 px in
+   der core-Titelzeile gekürzt (Knopf und Text darunter vollständig). Nur
+   synthetische Daten, kein Grundriss.
+4. Live lesend (11.11.2026, nur `GET /api/states` und eine Stand-Vorschau samt
+   Rohdatei, privat unter `claude-work`): eine Karte (`maps[].id` 3,
+   `map_index` 1), zwei Stände (Nr. 2 Bearbeitete Karte, Nr. 1 Originalkarte),
+   Nummer `k` und Typ wie in der Karte, beide Status Idle.
+5. **Live-Läufe (a) Backup und (b) Wiederherstellen dieses Backups: wartet auf
+   Nutzer-OK** (Ablauf im Plan map-backup, Task 6). Kein Kartendienst gegen das
+   Gerät aufgerufen; Anzahl der Backup-Plätze bleibt bis Lauf (a) offen.
 
 **10.11.2026 · 0.1.0, Modul map-editor (#882, Tasks 1–13 ohne Live-Kartenänderung, nicht getaggt)**
 

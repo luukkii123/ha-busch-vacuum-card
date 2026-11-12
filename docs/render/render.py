@@ -33,6 +33,13 @@ Covered (plan 2026-11-09-busch-vacuum-card-core, Task 8):
     management, edit mode per tool with one form per kind, confirmation (outside
     click keeps it), dirty dialog (Escape keeps it and shakes), WiFi switch, bubble
     "Bearbeiten" at 360/390/800/1280 light/dark; 0 calls without a confirming click
+  * map backup (plan 2026-11-10-busch-vacuum-card-map-backup, Task 6): SYNTHETIC
+    states (Original, Edited, Backup) whose pictures come through the route
+    /api/camera_recovery_map_proxy/** as the synthetic SVG; list, full screen
+    (size full at every width, picture loaded, keys, wheel), restore and backup
+    confirmations, file-URL form with inline error, running status, at
+    360/390/800/1280 light/dark; outside click keeps the confirmation, 0 calls
+    without a confirming click
   * history (plan 2026-11-10-busch-vacuum-card-history, Task 7): the history
     endpoints answer with a SYNTHETIC run (gzip JSON like the integration, an
     SVG picture, an SVG obstacle photo): list, groups, detail with cleaning and
@@ -200,7 +207,7 @@ FURNITURE = [{"x": -3461, "y": -2902, "width": 1800, "height": 900, "type": "Two
 OBSTACLE_PHOTO = ('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="#cfd8dc"/>'
                   '<circle cx="160" cy="120" r="60" fill="#90a4ae"/></svg>')
 CAMERA_ROUTES = ("/api/camera_proxy/", "/api/camera_map_data_proxy/", "/api/camera_map_obstacle_proxy/",
-                 "/api/camera_history_map_proxy/", "/api/camera_map_obstacle_history_proxy/")
+                 "/api/camera_history_map_proxy/", "/api/camera_map_obstacle_history_proxy/", "/api/camera_recovery_map_proxy/")
 
 
 def serve(directory, port_holder):
@@ -353,6 +360,16 @@ def scenario(fixture, name):
     elif name == "editor":
         # map-editor: furniture in the camera attributes (the X40 reports none), matching synthetic_edit_data.
         states["camera.robo_map"]["attributes"]["furnitures"] = [{k: f[k] for k in ("x", "y", "width", "height", "type", "furniture_id", "angle")} for f in FURNITURE]
+    elif name in ("backup", "backup_running"):
+        # map-backup: three SYNTHETIC states of map 3 (newest first, types.py#L5072), keys and URLs like camera.py#L1353.
+        cam = states["camera.robo_map_1"]["attributes"]
+        listed = [("2026-11-01 09:30", "Sicherungskarte", 3), ("2026-04-26 13:23", "Bearbeitete Karte", 2), ("2024-11-21 10:20", "Originalkarte", 1)]
+        cam["recovery_map_list"] = [{"date": d, "map_type": typ, "object_name": "cloud/geraet/1/10" + str(k)} for d, typ, k in listed]
+        keys = {k: "%s/%s/%s %s:00: Map%d (%s)" % (d[5:7], d[8:10], d[2:4], d[11:16], k, typ) for d, typ, k in listed}
+        cam["recovery_map_picture"] = {keys[k]: "/api/camera_recovery_map_proxy/camera.robo_map_1?token=testtoken&index=%d&v=17%d" % (k, k) for _, _, k in listed}
+        cam["recovery_map_file"] = {key: url + "&file=1" for key, url in zip(cam["recovery_map_picture"].keys(), cam["recovery_map_picture"].values())}
+        if name == "backup_running":
+            vac["attributes"].update({"map_recovery_status": "Running", "map_backup_status": "Success"})
     elif name == "customized":
         vac["attributes"]["customized_cleaning"] = True
     elif name == "nonstrict":
@@ -381,7 +398,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     repo_root = card_file.parent.parent
     fixture = json.loads((repo_root / "tests" / "fixtures" / "voll.json").read_text(encoding="utf-8"))
-    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty", "editor")}
+    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty", "editor", "backup", "backup_running")}
     cam = fixture["states"]["camera.robo_map"]["attributes"]
     grid = synthetic_map_data(cam["rooms"], frame_id=cam["frame_id"])
     svg, svg_size = synthetic_map_svg(cam, grid)
@@ -1754,6 +1771,125 @@ def main():
               json.dumps({"bubble": bubble, "calls": calls_bubble}))
 
         # ------------------------------------------------------------------
+        # 3k. Map backup (map-backup Task 6): list of states, full screen,
+        #     restore and backup confirmations, file-URL form, running status.
+        #     States and pictures are SYNTHETIC (scenario "backup"); every
+        #     callService lands in the harness stub: 0 calls without a
+        #     confirming click, exactly one backup after it.
+        # ------------------------------------------------------------------
+        bak_open = """async (a) => { window.closeDialogs(); const c = window.card(); const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+            const sr = () => window.dialog() && window.dialog().shadowRoot;
+            const tool = c._map && c._map.tools.querySelector('[data-action=map-maps]');
+            if (!tool) return 'missing maps tool';
+            tool.click();
+            await wait(150);
+            for (const sel of a.steps) {
+              if (sel.startsWith('key:')) { document.dispatchEvent(new KeyboardEvent('keydown', { key: sel.slice(4), bubbles: true, composed: true })); await wait(80); continue; }
+              const n = sr() && sr().querySelector(sel); if (!n) return 'missing ' + sel; n.click(); await wait(200); }
+            await wait(350); return sr() ? sr().querySelector('h1').textContent : 'missing dialog'; }"""
+        bak_measure = """() => { const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet'), r = sheet.getBoundingClientRect();
+            const fields = Array.from(sr.querySelectorAll('select, input:not([type=checkbox])')).filter((n) => n.getBoundingClientRect().height > 0 && n.getBoundingClientRect().height < 44)
+              .map((n) => n.getAttribute('data-field') + ' ' + Math.round(n.getBoundingClientRect().height));
+            const links = Array.from(sr.querySelectorAll('a')).filter((n) => { const b = n.getBoundingClientRect(); return b.width > 0 && (b.width < 44 || b.height < 44); }).map((n) => n.getAttribute('data-action'));
+            const option = sr.querySelector('.backup-option'), ob = option ? option.getBoundingClientRect() : null;
+            const img = sr.querySelector('.backup-stage img'), stage = sr.querySelector('.backup-stage'), st = stage ? stage.getBoundingClientRect() : null;
+            return { kind: sheet.getAttribute('data-kind'), size: sheet.getAttribute('data-size'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, W: innerWidth, H: innerHeight,
+                     overflowX: sheet.scrollWidth - sheet.clientWidth, small: window.smallTargets(sr).concat(links), smallFields: fields,
+                     optionH: ob ? ob.height : null, entries: sr.querySelectorAll('.backup-entry').length,
+                     image: img ? { w: img.naturalWidth, complete: img.complete } : null, stageH: st ? st.height : 0, state: sr.querySelector('.backup-state') ? sr.querySelector('.backup-state').textContent : null,
+                     confirmBtn: !!sr.querySelector('[data-action=confirm]'), restore: sr.querySelectorAll('[data-action=restore]').length,
+                     restoreLocked: sr.querySelectorAll('[data-action=restore][disabled]').length, download: sr.querySelectorAll('[data-action=download]').length,
+                     invalid: !!sr.querySelector('[aria-invalid=true]'),
+                     text: sheet.textContent.replace(/\\s+/g, ' ').slice(0, 400) }; }"""
+        bak_list = ["[data-map='3'] [data-action=backups]"]
+        bak_views = [
+            ("liste", "backup", bak_list),
+            ("vollbild", "backup", bak_list + [".backup-entry [data-action=view]"]),
+            ("vollbild-aktuell", "backup", bak_list + [".backup-entry [data-action=view]", "[data-action=previous]"]),
+            ("wiederherstellen", "backup", bak_list + [".backup-entry[data-type=original] [data-action=restore]"]),
+            ("wiederherstellen-backup", "backup", bak_list + [".backup-entry[data-type=backup] [data-action=restore]"]),
+            ("sichern", "backup", bak_list + ["[data-action=backup-now]"]),
+            ("datei", "backup", bak_list + ["[data-action=restore-file]"]),
+            ("datei-fehler", "backup", bak_list + ["[data-action=restore-file]", "[data-action=submit]"]),
+            ("laeuft", "backup_running", bak_list),
+        ]
+        page.evaluate("() => { window.__serviceCalls = []; }")
+        bak_geo = []
+        for w, h in ((360, 640), (390, 844), (800, 600), (1280, 800)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                for label, state, steps in bak_views:
+                    build(state)
+                    page.wait_for_timeout(200)
+                    title = page.evaluate(bak_open, {"steps": steps})
+                    page.wait_for_timeout(300)
+                    g = page.evaluate(bak_measure) if not str(title).startswith("missing") else {}
+                    if (w, th) in ((360, "dark"), (1280, "light"), (390, "light")):
+                        shot(f"sicherung-{label}-{w}x{h}-{th}.png")
+                    page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+                    bak_geo.append({"label": label, "w": w, "h": h, "theme": th, "title": title, **g})
+        report["backupDialogs"] = bak_geo
+        calls_bak = page.evaluate("() => window.__serviceCalls.map((c) => c.service)")
+        inside_b = lambda x: x.get("top", -9) >= -0.5 and x.get("bottom", 9e9) <= x.get("H", 0) + 0.5 and x.get("left", -9) >= -0.5 and x.get("right", 9e9) <= x.get("W", 0) + 0.5
+        bad = [x for x in bak_geo if str(x["title"]).startswith("missing") or not inside_b(x) or x["small"] or x["smallFields"] or x["overflowX"] > 1
+               or (x.get("optionH") is not None and x["optionH"] < 44)]
+        check("map backup: 9 views x 4 sizes x 2 themes inside the viewport, no sideways overflow, buttons, links, fields and the option >= 44 px",
+              not bad, json.dumps([{k: x.get(k) for k in ("label", "w", "theme", "title", "small", "smallFields", "overflowX", "optionH", "top", "bottom")} for x in bad[:5]]))
+        full = [x for x in bak_geo if x["label"] in ("vollbild", "vollbild-aktuell")]
+        check("map backup: full screen at every size (size full, sheet = viewport), picture loaded through the recovery route, stage >= 240 px, no load/error note",
+              all(x.get("size") == "full" and abs(x["top"]) <= 1 and abs(x["left"]) <= 1 and abs(x["bottom"] - x["H"]) <= 1 and abs(x["right"] - x["W"]) <= 1
+                  and x.get("image") and x["image"]["w"] > 0 and x["stageH"] >= 240 and x.get("state") is None for x in full),
+              json.dumps([{k: x.get(k) for k in ("label", "w", "theme", "size", "top", "bottom", "image", "stageH", "state")} for x in full if not (x.get("image") and x["image"]["w"] > 0)][:4]))
+        by = {x["label"]: x for x in bak_geo if x["w"] == 390 and x["theme"] == "light"}
+        check("map backup: list with 3 states (restore and download each), restore confirmation (kind confirm, with the option), backup state without option, backup confirmation, form with inline error, running status locks restore",
+              by["liste"].get("entries") == 3 and by["liste"].get("restore") == 3 and by["liste"].get("download") == 3 and by["liste"].get("restoreLocked") == 0
+              and by["wiederherstellen"].get("kind") == "confirm" and by["wiederherstellen"].get("optionH") is not None
+              and by["wiederherstellen-backup"].get("kind") == "confirm" and by["wiederherstellen-backup"].get("optionH") is None
+              and by["sichern"].get("kind") == "confirm" and by["datei"].get("kind") == "editor" and by["datei-fehler"].get("invalid")
+              and by["laeuft"].get("restoreLocked") == 3 and "läuft" in by["laeuft"].get("text", "") and not calls_bak,
+              json.dumps({k: {kk: by[k].get(kk) for kk in ("title", "kind", "entries", "restore", "restoreLocked", "download", "optionH", "invalid", "text")} for k in by} | {"calls": calls_bak})[:1500])
+
+        # Real pointer and keyboard: outside click keeps the restore confirmation, 0 calls before; in the full
+        # view the arrow key goes to "Aktuelle Karte", the wheel zooms, Escape goes back to the list; the
+        # confirming click of "Jetzt sichern" sends exactly vacuum_backup_map (the stub never reports Success).
+        page.set_viewport_size({"width": 1280, "height": 800})
+        theme("light")
+        build("backup")
+        page.wait_for_timeout(200)
+        page.evaluate(bak_open, {"steps": bak_list + [".backup-entry[data-type=original] [data-action=restore]"]})
+        page.mouse.click(12, 12)
+        page.wait_for_timeout(300)
+        outside_b = page.evaluate("() => { const d = window.dialog(); return d ? d.shadowRoot.querySelector('.sheet').getAttribute('data-kind') : null; }")
+        before_b = page.evaluate("() => window.__serviceCalls.length")
+        page.evaluate(bak_open, {"steps": bak_list + [".backup-entry [data-action=view]"]})
+        page.evaluate("() => window.dialog().shadowRoot.querySelector('.backup-stage').focus()")
+        page.keyboard.press("ArrowLeft")
+        page.wait_for_timeout(200)
+        caption = page.evaluate("() => window.dialog().shadowRoot.querySelector('.backup-caption').textContent")
+        stage_box = page.evaluate("() => { const b = window.dialog().shadowRoot.querySelector('.backup-stage').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }")
+        page.mouse.move(stage_box["x"], stage_box["y"])
+        page.mouse.wheel(0, -400)
+        page.wait_for_timeout(300)
+        zoomed = page.evaluate("() => window.dialog().shadowRoot.querySelector('.backup-stage img').style.transform")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(350)
+        back_title = page.evaluate("() => { const d = window.dialog(); return d ? d.shadowRoot.querySelector('h1').textContent : null; }")
+        box = page.evaluate("""() => { window.dialog().shadowRoot.querySelector('[data-action=backup-now]').click(); return null; }""")
+        page.wait_for_timeout(350)
+        box = page.evaluate("""() => { const b = window.dialog().shadowRoot.querySelector('[data-action=confirm]').getBoundingClientRect();
+            return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }""")
+        page.mouse.click(box["x"], box["y"])
+        page.mouse.click(box["x"], box["y"])
+        page.wait_for_timeout(300)
+        after_b = page.evaluate("() => window.__serviceCalls.map((c) => [c.service, c.payload])")
+        page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; window.__serviceCalls = []; }")
+        check("map backup real input: outside click keeps the restore confirmation, 0 calls before; arrow key shows 'Aktuelle Karte', the wheel zooms, Escape back to the list; one double click on 'Sichern' sends exactly vacuum_backup_map { map_id: 3 }",
+              outside_b == "confirm" and before_b == 0 and caption == "Aktuelle Karte" and "scale(1)" not in zoomed and back_title == "Kartensicherungen"
+              and len(after_b) == 1 and after_b[0][0] == "vacuum_backup_map" and after_b[0][1] == {"entity_id": "vacuum.robo", "map_id": 3},
+              json.dumps({"outside": outside_b, "before": before_b, "caption": caption, "zoom": zoomed, "back": back_title, "after": after_b}))
+
+        # ------------------------------------------------------------------
         # 4. HACS UI rules 1 and 2 (hacs/docs/ui-regeln.md)
         # ------------------------------------------------------------------
         report["uiRegeln"] = {}
@@ -1899,6 +2035,21 @@ def main():
                     page, breiten=(390, 960), hoehe=900,
                     messung=lambda pg, o=opener: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ="bearbeitung"),
                     vor_messung=lambda pg, s=state: (build(s), page.wait_for_timeout(200)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            for label, state, steps in bak_views:
+                opener = lambda st=steps: page.evaluate(bak_open, {"steps": st})
+                r["regel1_dialog_sicherung_" + label] = lauf_breiten(
+                    page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, ".sheet"),
+                    vor_messung=lambda pg, o=opener, s=state: (build(s), page.wait_for_timeout(200), o(), page.wait_for_timeout(400)))
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
+            # Regel 2 on the list (a view of kind editor) and the full view (kind menu) as the dialog's first view.
+            for label, js, kind in (("sicherung_liste", "c._openDialog(I.backupsView(c, 3))", "bearbeitung"),
+                                    ("sicherung_vollbild", "c._openDialog(I.backupImageView(c, 3, 1))", "ansicht")):
+                opener = lambda js=js: page.evaluate("() => { const c = window.card(), I = customElements.get('busch-vacuum-card').__internals; " + js + "; }")
+                r["regel2_dialog_" + label] = lauf_breiten(
+                    page, breiten=(390, 960), hoehe=900,
+                    messung=lambda pg, o=opener, k=kind: messe_popup(pg, o, ".sheet", '[data-action="close"]', dialog_typ=k),
+                    vor_messung=lambda pg: (build("backup"), page.wait_for_timeout(200)))
                 page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }")
             r["regel1_karte_shortcuts"] = lauf_breiten(
                 page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),

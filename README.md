@@ -328,14 +328,47 @@ Robots whose integration offers the map services get a pen on the map
 
 - **Undo:** after saving, *Undo* sends the previous state back (again with
   a confirmation). Splitting, merging and deleting cannot be undone this
-  way — the backup made before the first change is the way back (restoring
-  it from the card follows with the map backup module; until then use the
-  Dreame app).
+  way — the backup made before the first change is the way back: restore it
+  under *Backups* (below).
 - **Limits of the integration:** low-lying areas are shown, not edited;
   zones and ramps cannot be rotated; walls and doors can be moved, not added
   or removed; merging takes two rooms at a time.
 - Hide all map editing (pen, map management, *Edit* in the bubble) with
   `hidden_card_objects: map_editor`.
+
+## Map backups
+
+The states the robot and the cloud keep of a map — *Original map* (first
+mapping), *Edited map* and *Backup map* — open from *Backups*: in every row of
+*Map management* and in the edit mode (for the active map). It appears only
+when the map has states or your device can back up or restore.
+
+- **List:** type (symbol and name), date and number of each state, the status
+  of backup and restore.
+- **Full screen:** *View* shows a state with zoom (buttons, wheel, two
+  fingers, double tap, `+`/`-`/`0`), previous/next (also the arrow keys) and
+  the *Current map* first to compare. A state is fetched from the cloud only
+  when you open it.
+- **Back up now:** makes a backup of the active map in the cloud after a short
+  confirmation; when a backup exists it may replace it (the confirmation says
+  so).
+- **Restore:** replaces the stored map (rooms, names, zones, carpets,
+  furniture, order, room settings) with the chosen state — only after a
+  confirmation that names map, state and consequence; a click beside it does
+  not. *Back up the current state first* is preselected when there is no
+  backup yet; restoring the backup state itself makes no backup before (it
+  could replace exactly that state). Only for the active map; while a
+  restore runs, editing, choosing a task and further restores are locked.
+- **Download:** the raw map file (`.mb.tbz2`). It contains your floor plan —
+  do not share it.
+- **Advanced — restore from file URL:** a map file at a URL Home Assistant can
+  reach (for example `/local/…` with the full address); the integration
+  offers no upload from the browser. Same confirmation as above.
+- Restoring needs the integration's cloud login; without it the card says so
+  and the list stays viewable.
+- **Not yet confirmed on a real robot:** *Back up now* and *Restore* are
+  tested against the integration's services with synthetic data; how many
+  backups a device keeps per map is still open.
 
 ## Theming
 
