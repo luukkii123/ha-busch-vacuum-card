@@ -8704,8 +8704,9 @@ ha-card {
 }
 .task-count {
     flex: 1 1 100%;
-    color: var(--secondary-text-color, #727272);
-    font-size: var(--ha-font-size-s, 14px);
+    color: var(--primary-text-color, #212121);
+    font-size: 14px;
+    font-weight: var(--ha-font-weight-medium, 500);
 }
 .task-repeats .task-count {
     flex: 1 1 auto;
@@ -8714,6 +8715,8 @@ ha-card {
     display: inline-flex;
     align-items: center;
     gap: var(--ha-space-1, 4px);
+    /* 0.2.2: as in the concept, the selection tools sit one step below the 14 px count line. */
+    font-size: 13px;
 }
 .task-tools ha-icon,
 .task-note ha-icon {
