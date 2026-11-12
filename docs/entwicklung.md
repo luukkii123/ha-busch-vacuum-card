@@ -576,6 +576,24 @@ python3 "$HACS/scripts/vacuum-inventar-pruefen.py" --lauf "$HACS/artifacts/e2e/<
 
 ## Geprüft
 
+**12.11.2026 · 0.1.1, Patch: Titel = Gerätename (#882, Tag `v0.1.1`)**
+
+Befund der Livepruefung von 0.1.0: `friendly_name` von `vacuum.x40_ultra` ist
+„X40 Ultra  X40 Ultra“ (HA fügt Geräte- und Entitätsname zusammen), der Titel
+zeigte ihn doppelt. Jetzt: `title` aus der Konfiguration, sonst Gerätename aus
+dem Register (`name_by_user`, sonst `name`), sonst `friendly_name`, sonst
+Entitäts-ID. Dialogtitel und Editor-Vorschau nutzen keinen Gerätenamen
+(Dialoge: feste Übersetzungen; Vorschau = dieselbe Karte).
+
+1. `node --check` grün; `node --test` 591/591 (neuer Test CORE-03 zuerst rot).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. Ein Abnahmelauf `KARTEN_TODO=882 KARTEN_ZWECK=abnahme timeout 3000 karten-alle.sh
+   --repo ha-busch-vacuum-card`, Lauf `karten-20261112-151711-cad157` grün: Node
+   591/591, `render.py` 73/73 (2172 s, 335 Bilder), UI-Regeln 0 Verstöße;
+   `vacuum-inventar-pruefen.py`: 88 IDs grün, 42/42 Ansichten im Bild, 0 Befunde.
+   Bilder stichprobenartig gesichtet, kein Befund. Nur synthetische Daten.
+4. Dieser Eintrag und der Block in `hacs/docs/stand.md`.
+
 **12.11.2026 · 0.1.0, Release (#882, alle elf Module, Tag `v0.1.0`)**
 
 1. `node --check` grün; `node --test` 590/590 (Testnamen mit Inventar-IDs).

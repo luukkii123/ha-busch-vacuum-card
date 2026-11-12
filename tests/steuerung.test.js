@@ -46,6 +46,23 @@ test('CORE-03 Kopf: Gerätename und Zustand in HAs Übersetzung', () => {
   assert.deepEqual(u.fehler, []);
 });
 
+test('CORE-03 Titel = Gerätename aus dem Register, nicht der doppelte friendly_name (Live 0.1.0: „X40 Ultra  X40 Ultra“)', () => {
+  const doppelt = { friendly_name: 'X40 Ultra  X40 Ultra' };
+  const mit = (devices, config = {}) => {
+    const u = neueUmgebung(), haus = hausAus('voll', { devices });
+    haus.states = Object.assign({}, haus.states, sauger(haus, 'docked', doppelt));
+    return { u, karte: neueKarte(u, haus, config) };
+  };
+  const geraet = (extra) => ({ geraet_robo: Object.assign({ id: 'geraet_robo', name: 'X40 Ultra', name_by_user: null }, extra) });
+  const { karte, u } = mit(geraet());
+  assert.equal($(karte, '.title').textContent, 'X40 Ultra', 'Gerätename einmal');
+  assert.deepEqual(u.fehler, []);
+  assert.equal($(mit(geraet({ name_by_user: 'Robi' })).karte, '.title').textContent, 'Robi', 'eigener Gerätename zuerst');
+  assert.equal($(mit(geraet(), { title: 'Oben' }).karte, '.title').textContent, 'Oben', 'Titel aus der Konfiguration gewinnt');
+  assert.equal($(mit(undefined).karte, '.title').textContent, 'X40 Ultra  X40 Ultra', 'ohne Register: friendly_name');
+  assert.equal($(mit({ anderes: { id: 'anderes', name: 'Fremd' } }).karte, '.title').textContent, 'X40 Ultra  X40 Ultra', 'Gerät fehlt im Register: friendly_name');
+});
+
 test('CORE-04 Fläche, Zeit und Akku mit den Einheiten der HA-Entitäten', () => {
   const { karte } = karteMit('voll');
   assert.equal(wert(karte, 'area'), '24 m²');

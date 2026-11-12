@@ -214,7 +214,7 @@ const BuschUI = (() => {
  * repositories ship a single file, no sub folders).
  */
 
-const CARD_VERSION = '0.1.0';
+const CARD_VERSION = '0.1.1';
 
 const CARD_TAG = 'busch-vacuum-card';
 const EDITOR_TAG = 'busch-vacuum-card-editor';
@@ -5256,6 +5256,17 @@ function resetConfirm(card, name, label, percent) {
 }
 
 /**
+ * The robot's name for the card title (CORE-03): HA's device registry
+ * (`name_by_user`, else `name`). The vacuum's friendly_name joins device and
+ * entity name ("X40 Ultra  X40 Ultra" live), so it is only the fallback.
+ */
+function deviceName(hass, entityId) {
+    const own = hass.entities && hass.entities[entityId];
+    const device = own && own.device_id && hass.devices && hass.devices[own.device_id];
+    return (device && (device.name_by_user || device.name)) || '';
+}
+
+/**
  * Device info and status (DEV-08), display only: HA's device registry first
  * (`hass.devices`), then the vacuum's attributes and sensors. Network shows
  * SSID and signal, never an address.
@@ -10037,7 +10048,7 @@ class BuschVacuumCard extends HTMLElement {
         this._seen = watchSnapshot(hass, [this._opts.entity, ...this._opts.scripts, ...(mapCamera ? [mapCamera] : []), ...['sensor.battery_level', 'sensor.cleaned_area', 'sensor.cleaning_time', 'binary_sensor.charging_state', 'sensor.error', 'sensor.cleaning_progress', 'sensor.cleaning_history'].map((k) => model.entity(k)).filter(Boolean)]);
         const shown = this._pending ? this._pending.state : real ? real.state : 'unavailable';
 
-        this._title.textContent = this._opts.title || (real && real.attributes.friendly_name) || this._opts.entity;
+        this._title.textContent = this._opts.title || deviceName(hass, this._opts.entity) || (real && real.attributes.friendly_name) || this._opts.entity;
         this._title.hidden = this._hidden('title');
         this._stateLine.hidden = this._hidden('state');
         this._stats.hidden = this._hidden('status');

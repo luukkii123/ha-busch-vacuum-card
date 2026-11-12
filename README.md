@@ -7,7 +7,8 @@ device and cleaning settings, shortcuts, history, remote control, map editing
 and map backups — built only on the integration's public entities, attributes
 and services and styled like the other Busch cards.
 
-Version 0.1.0 is the first release. It was checked live on one robot (Dreame
+Version 0.1.1 shows the robot's device name as the title (0.1.0 showed the
+combined entity name twice). It was checked live on one robot (Dreame
 X40 Ultra); see [Known limits](#known-limits) for what is not confirmed on a
 real robot yet.
 
@@ -32,7 +33,10 @@ The pictures use synthetic test data.
 HACS → three dots → *Custom repositories* → `https://github.com/luukkii123/ha-busch-vacuum-card`,
 category *Dashboard* → download. HACS registers the resource
 `/hacsfiles/ha-busch-vacuum-card/busch-vacuum-card.js` itself; reload the
-browser afterwards. Then add the card from the card picker (*Busch vacuum*).
+browser afterwards. Since Home Assistant 2026.11 the built-in *Marketplace*
+does the same: add the repository as a custom repository (category
+*Dashboard*) and install; the resource is then
+`/local/community/ha-busch-vacuum-card/busch-vacuum-card.js`. Then add the card from the card picker (*Busch vacuum*).
 
 ## Basic usage
 
