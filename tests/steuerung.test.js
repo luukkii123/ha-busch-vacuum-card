@@ -21,28 +21,46 @@ function karteMit(name, zustand, attribute) {
 }
 
 // ── Kopf und Statuswerte ───────────────────────────────────────────────────
-test('Kopf: Gerätename und Zustand in HAs Übersetzung', () => {
+test('CORE-02 ohne Karte nutzbar: Status, Steuerung (Start sendet vacuum.start), Menü mit Einstellungen, Dock-Knopf; keine Karte, kein Fehler', () => {
+  const { karte, u, haus } = karteMit('ohne-karte');
+  assert.equal(karte.shadowRoot.querySelector('.map-stage'), null, 'keine Karte');
+  assert.ok($(karte, '.state').textContent.length > 0, 'Statuszeile');
+  assert.ok(wert(karte, 'battery'), 'Akku');
+  assert.ok(aktionen(karte).length > 0, 'Steuerknöpfe');
+  knopf(karte, aktionen(karte).includes('start') ? 'start' : aktionen(karte)[0]).click();
+  assert.equal(haus.rufe.length, 1, 'ein Steueraufruf');
+  assert.equal(haus.rufe[0].domain, 'vacuum');
+  assert.ok($(karte, '.menu-button'), 'Menü');
+  karte.shadowRoot.querySelector('.menu-button').click();
+  const d = u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG');
+  const eintraege = d.shadowRoot.querySelectorAll('.menu-item').map((b) => b.getAttribute('data-entry'));
+  assert.ok(eintraege.includes('settings'), 'Einstellungen: ' + eintraege.join(','));
+  assert.ok(karte.shadowRoot.querySelector('[data-action="dock"], .dock-button'), 'Dock-Knopf (Station vorhanden)');
+  assert.deepEqual(u.fehler, []);
+});
+
+test('CORE-03 Kopf: Gerätename und Zustand in HAs Übersetzung', () => {
   const { karte, u } = karteMit('voll');
   assert.equal($(karte, '.title').textContent, 'Robo');
   assert.equal($(karte, '.state').textContent, 'Angedockt');
   assert.deepEqual(u.fehler, []);
 });
 
-test('Fläche, Zeit und Akku mit den Einheiten der HA-Entitäten', () => {
+test('CORE-04 Fläche, Zeit und Akku mit den Einheiten der HA-Entitäten', () => {
   const { karte } = karteMit('voll');
   assert.equal(wert(karte, 'area'), '24 m²');
   assert.equal(wert(karte, 'time'), '53 min');
   assert.equal(wert(karte, 'battery'), '100 %');
 });
 
-test('Einheit folgt HA (ft² bei imperialem System)', () => {
+test('CORE-04 Einheit folgt HA (ft² bei imperialem System)', () => {
   const u = neueUmgebung(), haus = hausAus('voll');
   const alt = haus.states['sensor.robo_cleaned_area'];
   haus.states = Object.assign({}, haus.states, { 'sensor.robo_cleaned_area': { entity_id: alt.entity_id, state: '258', attributes: Object.assign({}, alt.attributes, { unit_of_measurement: 'ft²' }) } });
   assert.equal(wert(neueKarte(u, haus), 'area'), '258 ft²');
 });
 
-test('minimal: Akku aus dem Attribut, keine leeren Fläche/Zeit-Felder', () => {
+test('CORE-02/CORE-04 minimal: Akku aus dem Attribut, keine leeren Fläche/Zeit-Felder', () => {
   const { karte, u } = karteMit('minimal');
   assert.equal(wert(karte, 'battery'), '80 %');
   assert.equal(wert(karte, 'area'), null);
@@ -57,7 +75,7 @@ const AKKU = [
   ['voll', { battery: 100, charging: false }, 'normal', 'mdi:battery', /^100 %$/],
 ];
 for (const [name, attr, art, symbol, text] of AKKU) {
-  test(`Akkusymbol: ${name} (Symbol, Farbe und Text)`, () => {
+  test(`CORE-04 Akkusymbol: ${name} (Symbol, Farbe und Text)`, () => {
     const u = neueUmgebung(), haus = hausAus('voll');
     // Ohne Akku-Sensor gilt das Attribut: so steuert der Test den Wert direkt.
     const { 'sensor.robo_battery_level': _weg, ...ohneSensor } = haus.states;
@@ -81,12 +99,12 @@ const KNOEPFE = {
   unavailable: [],
 };
 for (const [zustand, erwartet] of Object.entries(KNOEPFE)) {
-  test(`Knöpfe im Zustand ${zustand}: ${erwartet.join(', ') || 'keine'}`, () => {
+  test(`CORE-07 Knöpfe im Zustand ${zustand}: ${erwartet.join(', ') || 'keine'}`, () => {
     assert.deepEqual(aktionen(karteMit('voll', zustand).karte), erwartet);
   });
 }
 
-test('angedockt mit laufendem Dock-Vorgang: Stopp beendet auch ihn', () => {
+test('CORE-07 angedockt mit laufendem Dock-Vorgang: Stopp beendet auch ihn', () => {
   assert.deepEqual(aktionen(karteMit('voll', 'docked', { washing: true }).karte), ['start', 'stop']);
   assert.deepEqual(aktionen(karteMit('voll', 'docked', { drying: true }).karte), ['start', 'stop']);
 });
@@ -94,26 +112,26 @@ test('angedockt mit laufendem Dock-Vorgang: Stopp beendet auch ihn', () => {
 const DIENSTE = [['docked', 'start', 'start'], ['cleaning', 'pause', 'pause'], ['paused', 'resume', 'start'],
   ['cleaning', 'stop', 'stop'], ['cleaning', 'return', 'return_to_base']];
 for (const [zustand, aktion, dienst] of DIENSTE) {
-  test(`${aktion} ruft genau vacuum.${dienst}`, () => {
+  test(`CORE-07 ${aktion} ruft genau vacuum.${dienst}`, () => {
     const { karte, haus } = karteMit('voll', zustand);
     knopf(karte, aktion).click();
     assert.deepEqual(JSON.parse(JSON.stringify(haus.rufe)), [{ domain: 'vacuum', service: dienst, data: { entity_id: 'vacuum.robo' } }]);
   });
 }
 
-test('Knöpfe nur mit passender Fähigkeit (ohne stop-Bit kein Stopp)', () => {
+test('CORE-07 Knöpfe nur mit passender Fähigkeit (ohne stop-Bit kein Stopp)', () => {
   const { karte } = karteMit('voll', 'cleaning', { supported_features: 31676 - 8 });
   assert.deepEqual(aktionen(karte), ['pause', 'return']);
 });
 
-test('Knöpfe haben Text, nicht nur ein Symbol', () => {
+test('CORE-07 Knöpfe haben Text, nicht nur ein Symbol', () => {
   const { karte } = karteMit('voll', 'cleaning');
   for (const b of karte.shadowRoot.querySelectorAll('.ctl')) assert.ok(b.textContent.trim() && b.getAttribute('aria-label'));
   assert.equal(knopf(karte, 'pause').textContent, 'Pause');
 });
 
 // ── Sofortanzeige ──────────────────────────────────────────────────────────
-test('Sofortanzeige: Zielzustand sofort, bleibt bei fremden Updates', () => {
+test('CORE-07 Sofortanzeige: Zielzustand sofort, bleibt bei fremden Updates', () => {
   const { karte, haus } = karteMit('voll');
   knopf(karte, 'start').click();
   assert.equal($(karte, '.state').textContent, 'Reinigt');
@@ -150,20 +168,20 @@ test('echter neuer Zustand beendet die Vorschau sofort', () => {
 });
 
 // ── Dock-Knopf ─────────────────────────────────────────────────────────────
-test('Dock-Anzeige: ohne Befund neutral, mit Text', () => {
+test('CORE-11 Dock-Anzeige: ohne Befund neutral, mit Text', () => {
   const dock = $(karteMit('voll').karte, '.dock');
   assert.ok(dock);
   assert.equal(dock.getAttribute('data-dock'), 'ok');
   assert.equal(dock.textContent, 'Station');
 });
 
-test('Dock-Anzeige orange bei Warnung, mit Text statt nur Farbe', () => {
+test('CORE-11 Dock-Anzeige orange bei Warnung, mit Text statt nur Farbe', () => {
   const dock = $(karteMit('voll', 'docked', { clean_water_tank_status: 'Low water' }).karte, '.dock');
   assert.equal(dock.getAttribute('data-dock'), 'warning');
   assert.match(dock.textContent, /Frischwasser niedrig/);
 });
 
-test('Dock-Anzeige rot bei Fehler, Fehler geht vor Warnung', () => {
+test('CORE-11 Dock-Anzeige rot bei Fehler, Fehler geht vor Warnung', () => {
   const dock = $(karteMit('voll', 'docked', { clean_water_tank_status: 'Low water', dirty_water_tank_status: 'Not installed or full' }).karte, '.dock');
   assert.equal(dock.getAttribute('data-dock'), 'error');
   assert.match(dock.textContent, /Schmutzwassertank/);

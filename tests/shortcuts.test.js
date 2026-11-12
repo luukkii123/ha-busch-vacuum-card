@@ -39,7 +39,7 @@ function menue(k) { knopf(k).click(); return k; }
 
 // ── Task 1: Einträge, Knopf, Menü (SHO-01) ───────────────────────────────────
 
-test('shortcutEntries: Scripts vor Geräte-Shortcuts (nach index), Namen/Symbol aus hass.states, fehlendes Script ausgelassen', () => {
+test('SHO-01 shortcutEntries: Scripts vor Geräte-Shortcuts (nach index), Namen/Symbol aus hass.states, fehlendes Script ausgelassen', () => {
   const k = mitShortcuts({ states: Object.assign(SKRIPT('script.gewaechshaus', 'Gewächshaus saugen', 'on', 'mdi:silverware'), SKRIPT('script.bibliothek', 'Bibliothek')) });
   const liste = k.I.shortcutEntries(k.karte._hass, k.model(), ['script.bibliothek', 'script.fehlt', 'script.gewaechshaus']);
   assert.deepEqual(roh(liste), [
@@ -62,7 +62,7 @@ test('can(shortcuts) braucht Fähigkeit und Dienst; shortcut_manage zusätzlich 
   assert.deepEqual([m.can('shortcuts'), m.can('shortcut_manage')], [false, false]);
 });
 
-test('Knopf nur mit Einträgen: voll ohne Shortcuts und minimal ohne Knopf; nur Scripts reicht; hidden_card_objects blendet aus', () => {
+test('SHO-01 Knopf nur mit Einträgen: voll ohne Shortcuts und minimal ohne Knopf; nur Scripts reicht; hidden_card_objects blendet aus', () => {
   assert.equal(knopf(aufbau()), null, 'voll: shortcuts {} und keine Scripts');
   assert.equal(knopf(aufbau('minimal')), null);
   const nurSkript = aufbau('minimal', { states: SKRIPT('script.bibliothek', 'Bibliothek'), config: { scripts: ['script.bibliothek'] } });
@@ -83,7 +83,7 @@ test('Knopf steht vor der Station und spiegelt mit Linkshänder wie die anderen 
   assert.ok(knopf(k).classList.contains('ctl'), 'gleiche Ausrichtung wie die Steuerknöpfe (CORE-08)');
 });
 
-test('Menü: flüchtig, Abschnitte Scripts und Shortcuts, läuft als Text, anderes Stockwerk genannt', () => {
+test('SHO-01 Menü: flüchtig, Abschnitte Scripts und Shortcuts, läuft als Text, anderes Stockwerk genannt', () => {
   const k = menue(mitShortcuts({ config: { scripts: ['script.bibliothek'] }, states: SKRIPT('script.bibliothek', 'Bibliothek', 'on'),
     attribute: { shortcuts: Object.assign({}, SHORTCUTS, { 30: Object.assign({}, SHORTCUTS[30], { running: true }) }), maps: [{ id: 1, index: 1, name: 'Ebene A' }, { id: 2, index: 2, name: 'Ebene B' }], selected_map: 'Ebene A' } }));
   assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'menu');
@@ -123,7 +123,7 @@ test('Editor-Hinweis nennt fehlende Scripts', () => {
 
 const start = (id) => ({ domain: 'dreame_vacuum', service: 'vacuum_start_shortcut', data: { entity_id: 'vacuum.robo', shortcut_id: id } });
 
-test('Tipp startet genau den Eintrag; Doppeltipp = ein Aufruf; Erfolg schließt das Menü', async () => {
+test('SHO-01 Tipp startet genau den Eintrag; Doppeltipp = ein Aufruf; Erfolg schließt das Menü', async () => {
   const k = menue(mitShortcuts({ config: { scripts: ['script.bibliothek'] }, states: SKRIPT('script.bibliothek', 'Bibliothek') }));
   let fertig;
   k.haus.antwort = () => new Promise((ok) => { fertig = ok; });
@@ -143,7 +143,7 @@ test('Tipp startet genau den Eintrag; Doppeltipp = ein Aufruf; Erfolg schließt 
   assert.deepEqual(aufrufe(s), [{ domain: 'script', service: 'turn_on', data: { entity_id: 'script.bibliothek' } }]);
 });
 
-test('Bei laufender Aufgabe: kein stop/pause davor, Hinweis im Menükopf (TASK-07)', () => {
+test('TASK-07 Bei laufender Aufgabe: kein stop/pause davor, Hinweis im Menükopf (TASK-07)', () => {
   for (const zustand of ['cleaning', 'paused']) {
     const k = menue(mitShortcuts({ zustand, attribute: { started: true } }));
     assert.match($d(k.u, '[data-note="task"]').textContent, /Aufgabe läuft/, zustand);
@@ -181,7 +181,7 @@ const zeile = (k, id) => $$d(k.u, '[data-manage]').find((z) => z.getAttribute('d
 const darin = (z, sel) => z.querySelectorAll(sel)[0] || null;
 const umbenennen = (id, name) => ({ domain: 'dreame_vacuum', service: 'vacuum_rename_shortcut', data: { entity_id: 'vacuum.robo', shortcut_id: id, shortcut_name: name } });
 
-test('„Verwalten“ nur mit can(shortcut_manage); Liste mit Starten, Umbenennen, Löschen; Neu laden', () => {
+test('SHO-02 „Verwalten“ nur mit can(shortcut_manage); Liste mit Starten, Umbenennen, Löschen; Neu laden', () => {
   const nurSkript = menue(aufbau('minimal', { states: SKRIPT('script.bibliothek', 'Bibliothek'), config: { scripts: ['script.bibliothek'] } }));
   assert.equal($d(nurSkript.u, '[data-action="manage"]'), null);
   const k = verwaltung();
@@ -208,7 +208,7 @@ test('Ohne Shortcuts erreichbar über Geräteeinstellungen → Sonstiges: Leerzu
   assert.equal($$d(m.u, '[data-group]').find((b) => b.getAttribute('data-group') === 'other'), undefined);
 });
 
-test('Umbenennen: Pflichtfeld, unverändert = Speichern aus, Hinweis auf Nummer; genau vacuum_rename_shortcut', () => {
+test('SHO-02 Umbenennen: Pflichtfeld, unverändert = Speichern aus, Hinweis auf Nummer; genau vacuum_rename_shortcut', () => {
   const k = verwaltung();
   darin(zeile(k, 30), '[data-action="rename"]').click();
   assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'editor');
@@ -229,7 +229,7 @@ test('Umbenennen: Pflichtfeld, unverändert = Speichern aus, Hinweis auf Nummer;
   assert.deepEqual(aufrufe(k), [umbenennen(30, 'Galerie Süd ✨')]);
 });
 
-test('Umbenennen gesperrt während einer Aufgabe; Eingabe bleibt beim Verlassen und nach Dienstfehler (R04/R12)', async () => {
+test('SHO-02 Umbenennen gesperrt während einer Aufgabe; Eingabe bleibt beim Verlassen und nach Dienstfehler (R04/R12)', async () => {
   const g = verwaltung({ zustand: 'cleaning', attribute: { started: true } });
   darin(zeile(g, 30), '[data-action="rename"]').click();
   const feld = $d(g.u, '[data-field="shortcut_name"]');
@@ -254,7 +254,7 @@ test('Umbenennen gesperrt während einer Aufgabe; Eingabe bleibt beim Verlassen 
   assert.equal($d(k.u, '[data-field="shortcut_name"]').value, 'Entwurf');
 });
 
-test('Löschen nur nach Bestätigung mit Namen; gesperrt, solange dieser Shortcut läuft', () => {
+test('SHO-02 Löschen nur nach Bestätigung mit Namen; gesperrt, solange dieser Shortcut läuft', () => {
   const k = verwaltung();
   darin(zeile(k, 31), '[data-action="delete"]').click();
   assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'confirm');

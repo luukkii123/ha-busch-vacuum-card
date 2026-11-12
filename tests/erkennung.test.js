@@ -20,7 +20,7 @@ function rollen(m) {
   return [...Object.values(r.device), ...Object.values(r.rooms).flatMap(Object.values), ...Object.values(r.maps).flat()];
 }
 
-test('voll: alle 177 Entitäten des Geräts gefunden, jede genau einer Rolle zugeordnet', () => {
+test('CORE-01 voll: alle 177 Entitäten des Geräts gefunden, jede genau einer Rolle zugeordnet', () => {
   const m = modell('voll'), f = fixture('voll');
   const ids = roh(m.related.ids);
   assert.equal(ids.length, 177);
@@ -33,7 +33,7 @@ test('voll: alle 177 Entitäten des Geräts gefunden, jede genau einer Rolle zug
   assert.deepEqual(domains, { binary_sensor: 3, button: 16, camera: 3, number: 10, select: 84, sensor: 42, switch: 18, vacuum: 1 });
 });
 
-test('voll: Rollen nach Register-Schlüssel, Räume und Karten getrennt', () => {
+test('CORE-01 voll: Rollen nach Register-Schlüssel, Räume und Karten getrennt', () => {
   const r = roh(modell('voll').related);
   assert.equal(r.device['select.suction_level'], 'select.robo_suction_level');
   assert.equal(r.device['sensor.battery_level'], 'sensor.robo_battery_level');
@@ -45,7 +45,7 @@ test('voll: Rollen nach Register-Schlüssel, Räume und Karten getrennt', () => 
   assert.deepEqual(r.maps, { map: ['camera.robo_map'], saved_map: ['camera.robo_map_1'], wifi_map: ['camera.robo_wifi_map_1'], map_data: [] });
 });
 
-test('fremde Entitäten und ein zweites Dreame-Gerät gehören nicht dazu', () => {
+test('CORE-01 fremde Entitäten und ein zweites Dreame-Gerät gehören nicht dazu', () => {
   const f = fixture('voll');
   const states = Object.assign({}, f.states, { 'sensor.anderer_battery_level': { entity_id: 'sensor.anderer_battery_level', state: '5', attributes: {} } });
   const entities = Object.assign({}, f.entities, { 'sensor.anderer_battery_level': Object.assign({}, f.entities['sensor.robo_battery_level'], { entity_id: 'sensor.anderer_battery_level', device_id: 'geraet_anderer' }) });
@@ -55,7 +55,7 @@ test('fremde Entitäten und ein zweites Dreame-Gerät gehören nicht dazu', () =
   assert.ok(!ids.some((id) => id.startsWith('sensor.fremd_')));
 });
 
-test('ohne device_id im Register: Rückfall über das Präfix der Entitäts-ID', () => {
+test('CORE-01 ohne device_id im Register: Rückfall über das Präfix der Entitäts-ID', () => {
   const r = roh(modell('voll', { entities: {} }).related);
   assert.equal(r.ids.length, 177);
   assert.equal(r.device['select.suction_level'], 'select.robo_suction_level');
@@ -63,7 +63,7 @@ test('ohne device_id im Register: Rückfall über das Präfix der Entitäts-ID',
   assert.deepEqual(r.maps, { map: ['camera.robo_map'], saved_map: ['camera.robo_map_1'], wifi_map: ['camera.robo_wifi_map_1'], map_data: [] });
 });
 
-test('minimal: nur der Sauger, nichts fehlt-gemeldet, Karte ohne Fehler', () => {
+test('CORE-02 minimal: nur der Sauger, nichts fehlt-gemeldet, Karte ohne Fehler', () => {
   const r = roh(modell('minimal').related);
   assert.deepEqual(r, { ids: ['vacuum.robo'], device: {}, rooms: {}, maps: { map: [], saved_map: [], wifi_map: [], map_data: [] } });
   const u = neueUmgebung();
@@ -111,7 +111,7 @@ const TABELLE = {
 };
 const NAMEN = ['voll', 'minimal', 'ohne-dock', 'ohne-karte'];
 for (const [i, name] of NAMEN.entries()) {
-  test(`can() für ${name}`, () => {
+  test(`CORE-01 can() für ${name}`, () => {
     const m = modell(name);
     const ist = Object.fromEntries(Object.keys(TABELLE).map((k) => [k, m.can(k) ? 1 : 0]));
     const soll = Object.fromEntries(Object.entries(TABELLE).map(([k, v]) => [k, v[i]]));

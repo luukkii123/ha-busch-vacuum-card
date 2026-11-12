@@ -56,7 +56,7 @@ const grund = (k, key) => {
 const GLOBAL = ['cleaning_mode', 'suction_level', 'mop_pad_humidity', 'wetness_level', 'water_volume', 'cleaning_route', 'mop_pressure',
   'customized_cleaning', 'cleangenius', 'cleangenius_mode'];
 
-test('SETTINGS: ALL-01-Anteil in Gruppe clean; Raumschlüssel vollständig clean-settings oder map-editor', () => {
+test('ALL-01 SETTINGS: ALL-01-Anteil in Gruppe clean; Raumschlüssel vollständig clean-settings oder map-editor', () => {
   const { I } = aufbau();
   for (const key of GLOBAL) assert.equal(I.SETTINGS[key] && I.SETTINGS[key].group, 'clean', key);
   const raum = [...SCHLUESSEL.raum.select, ...SCHLUESSEL.raum.number];
@@ -65,7 +65,7 @@ test('SETTINGS: ALL-01-Anteil in Gruppe clean; Raumschlüssel vollständig clean
   assert.deepEqual(I.ROOM_KEYS['map-editor'].sort(), ['floor_material', 'floor_material_direction', 'name', 'visibility']);
 });
 
-test('Knopf „Einstellungen“ je Zustand (SET-01): Ruhe/Aufgabe ja; geplant, Shortcut, CleanGenius-Aufgabe nein', () => {
+test('SET-01 Knopf „Einstellungen“ je Zustand (SET-01): Ruhe/Aufgabe ja; geplant, Shortcut, CleanGenius-Aufgabe nein', () => {
   const sichtbar = (opt) => !!knopf(aufbau('voll', opt));
   assert.equal(sichtbar(), true, 'Ruhe');
   assert.equal(sichtbar({ zustand: 'cleaning', attribute: { started: true } }), true, 'normale Aufgabe');
@@ -78,7 +78,7 @@ test('Knopf „Einstellungen“ je Zustand (SET-01): Ruhe/Aufgabe ja; geplant, S
   assert.equal(knopf(aufbau()).textContent.includes('Einstellungen'), true, 'Text, nicht nur Symbol');
 });
 
-test('Dialog „Reinigungseinstellungen“: kind editor, Abschnitte in Reihenfolge, leere entfallen', () => {
+test('SET-02 Dialog „Reinigungseinstellungen“: kind editor, Abschnitte in Reihenfolge, leere entfallen', () => {
   const k = einstellungen();
   assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'editor');
   assert.equal($d(k.u, 'h1').textContent, 'Reinigungseinstellungen');
@@ -88,7 +88,7 @@ test('Dialog „Reinigungseinstellungen“: kind editor, Abschnitte in Reihenfol
   assert.deepEqual(abschnitte(ohne).filter((s) => ['cleangenius', 'customized'].includes(s)), [], 'ohne Fähigkeit/Wert kein Abschnitt');
 });
 
-test('Grundeinstellungen: Wert aus voll.json, genau ein vacuum_set_property je Änderung', () => {
+test('ALL-01/DEV-04/SET-02 Grundeinstellungen: Wert aus voll.json, genau ein vacuum_set_property je Änderung', () => {
   const soll = { cleaning_mode: ['Mopping after sweeping', 'Sweeping'], suction_level: ['Turbo', 'Quiet'], mop_pad_humidity: ['Moist', 'Wet'], cleaning_route: ['Deep', 'Quick'] };
   for (const [key, [ist, neu]] of Object.entries(soll)) {
     const k = einstellungen();
@@ -119,7 +119,7 @@ test('Grundeinstellungen: Wert aus voll.json, genau ein vacuum_set_property je �
   assert.deepEqual(aufrufe(syn), [setze('water_volume', 'High'), setze('mop_pressure', 'Normal')]);
 });
 
-test('Sperren mit Grund: leere _list, CleanGenius, Customized Cleaning, laufende Aufgabe', () => {
+test('SET-02 Sperren mit Grund: leere _list, CleanGenius, Customized Cleaning, laufende Aufgabe', () => {
   assert.match(grund(aufbau('voll', { attribute: { cleaning_route_list: [] } }), 'cleaning_route'), /erlaubt die Änderung gerade nicht/);
   assert.match(grund(aufbau('voll', { attribute: { cleangenius_cleaning: true } }), 'suction_level'), /CleanGenius/);
   assert.match(grund(aufbau('voll', { attribute: { customized_cleaning: true } }), 'suction_level'), /je Raum/);
@@ -131,7 +131,7 @@ test('Sperren mit Grund: leere _list, CleanGenius, Customized Cleaning, laufende
   assert.equal(grund(aufbau(), 'suction_level'), '');
 });
 
-test('Wiederholungen (repeatsRow): 1–3 im Speicher der Karte, geteilt mit der Aufgabenwahl', () => {
+test('SET-02/TASK-06 Wiederholungen (repeatsRow): 1–3 im Speicher der Karte, geteilt mit der Aufgabenwahl', () => {
   const k = einstellungen();
   const zeile = () => $d(k.u, '.task-repeats');
   assert.match(zeile().textContent, /1×/);
@@ -155,7 +155,7 @@ test('„Weitere Reinigungseinstellungen“ springt in device-settings, Gruppe R
 
 // ── Task 2: CleanGenius ─────────────────────────────────────────────────────
 
-test('CleanGenius: Auswahl schreibt über vacuum_set_property; Modus nur bei CleanGenius an', () => {
+test('ALL-01/SET-03 CleanGenius: Auswahl schreibt über vacuum_set_property; Modus nur bei CleanGenius an', () => {
   const k = einstellungen();
   const feld = zeileD(k, 'cleangenius').querySelector('select');
   assert.equal(feld.value, 'Off');
@@ -171,7 +171,7 @@ test('CleanGenius: Auswahl schreibt über vacuum_set_property; Modus nur bei Cle
   assert.deepEqual(aufrufe(an), [setze('cleangenius_mode', 'Vacuum and mop')]);
 });
 
-test('CleanGenius an: Customized Cleaning ausgeblendet mit Satz, Grundwerte gesperrt mit Grund', () => {
+test('SET-03 CleanGenius an: Customized Cleaning ausgeblendet mit Satz, Grundwerte gesperrt mit Grund', () => {
   const k = einstellungen('voll', { attribute: { cleangenius: 'Routine cleaning', cleangenius_cleaning: true } });
   assert.equal(zeileD(k, 'customized_cleaning'), null);
   assert.match($d(k.u, '[data-section="customized"]').textContent, /CleanGenius wählt die Einstellungen je Raum selbst/);
@@ -181,7 +181,7 @@ test('CleanGenius an: Customized Cleaning ausgeblendet mit Satz, Grundwerte gesp
   }
 });
 
-test('CleanGenius selbst gesperrt (leere Liste: Aufgabe, Zone/Spot, Mop fehlt) mit Grund', () => {
+test('SET-03 CleanGenius selbst gesperrt (leere Liste: Aufgabe, Zone/Spot, Mop fehlt) mit Grund', () => {
   assert.match(grund(aufbau('voll', { attribute: { cleangenius_list: [] } }), 'cleangenius'), /Zone\/Spot|Mop/);
   assert.match(grund(aufbau('voll', { zustand: 'cleaning', attribute: { started: true } }), 'cleangenius'), /Während einer Aufgabe/);
 });
@@ -191,7 +191,7 @@ test('CleanGenius selbst gesperrt (leere Liste: Aufgabe, Zone/Spot, Mop fehlt) m
 const custom = (data) => ({ domain: 'dreame_vacuum', service: 'vacuum_set_custom_cleaning', data: Object.assign({ entity_id: 'vacuum.robo' }, data) });
 const SYNTH = (c) => c.filter((x) => !['wetness_level', 'cleaning_route', 'custom_cleaning_mode'].includes(x)).concat('mop_pressure', 'mop_temperature');
 
-test('roomPayload X40: Raum mit allen Werten als Codes, nur Felder mit Fähigkeit', () => {
+test('SET-04 roomPayload X40: Raum mit allen Werten als Codes, nur Felder mit Fähigkeit', () => {
   const k = aufbau();
   const raum = k.haus.states[CAM].attributes.rooms['3'];
   assert.deepEqual(roh(k.I.roomPayload(k.model(), raum, { suction_level: 0 })),
@@ -235,7 +235,7 @@ function neueRaeume(k, werte) {
   k.karte.hass = k.haus.setze({ [CAM]: Object.assign({}, c, { attributes: Object.assign({}, c.attributes, { rooms: r }) }) });
 }
 
-test('Räume einstellen: Liste in Reihenfolge mit Kurzwerten; Schalter Customized Cleaning schreibt', () => {
+test('SET-04 Räume einstellen: Liste in Reihenfolge mit Kurzwerten; Schalter Customized Cleaning schreibt', () => {
   const k = einstellungen();
   const schalter = zeileD(k, 'customized_cleaning').querySelector('[role="switch"]');
   schalter.click();
@@ -247,7 +247,7 @@ test('Räume einstellen: Liste in Reihenfolge mit Kurzwerten; Schalter Customize
   assert.match(liste[0].textContent, /Salon.*Turbo · 16 · 2×/);
 });
 
-test('Raumseite: Wert ändern sendet den Raum mit allen Werten; optimistisch bis Kamera bestätigt', () => {
+test('SET-04 Raumseite: Wert ändern sendet den Raum mit allen Werten; optimistisch bis Kamera bestätigt', () => {
   const k = raumSeite(3);
   assert.equal($d(k.u, 'h1').textContent, 'Salon');
   const feld = () => raumFeld(k, 'suction_level').querySelector('select');
@@ -279,7 +279,7 @@ test('Raumseite gesperrt mit Grund: Aufgabe läuft, temporäre Karte', () => {
   }
 });
 
-test('Auf alle Räume übertragen: Bestätigung mit Raumliste, nacheinander, Abbruch beim ersten Fehler', async () => {
+test('SET-04 Auf alle Räume übertragen: Bestätigung mit Raumliste, nacheinander, Abbruch beim ersten Fehler', async () => {
   const { mikro } = require('./attrappe.js');
   const k = raumSeite(3);
   $d(k.u, '[data-action="apply-all"]').click();
@@ -301,7 +301,7 @@ test('Auf alle Räume übertragen: Bestätigung mit Raumliste, nacheinander, Abb
 
 // ── Task 4: Mop-Typ ─────────────────────────────────────────────────────────
 
-test('Mop-Typ: X40 ohne Zeile; mit auto_change_mop genau vacuum_set_mop_type ohne map_id', () => {
+test('SET-06 Mop-Typ: X40 ohne Zeile; mit auto_change_mop genau vacuum_set_mop_type ohne map_id', () => {
   assert.equal(raumFeld(raumSeite(3), 'mop_type'), null, 'X40 kann es nicht');
   const k = raumSeite(3, { caps: (c) => c.concat('auto_change_mop'), raeume: { 3: { mop_type: 'A' } } });
   const feld = raumFeld(k, 'mop_type').querySelector('select');
@@ -323,7 +323,7 @@ const FOLGE = ['3', '5', '7', '1', '6', '9', '4'];
 const NICHT_STRIKT = (c) => c.filter((x) => x !== 'cleaning_sequence_v2');
 const folgeAufruf = (liste) => ({ domain: 'dreame_vacuum', service: 'vacuum_set_cleaning_sequence', data: { entity_id: 'vacuum.robo', cleaning_sequence: liste } });
 
-test('sequenceModel: strikt volle Liste; nicht strikt mit „ohne Reihenfolge“; unbekannte IDs nie', () => {
+test('SET-05 sequenceModel: strikt volle Liste; nicht strikt mit „ohne Reihenfolge“; unbekannte IDs nie', () => {
   const k = aufbau('voll', { attribute: { cleaning_sequence: [3, 99, 5] } });
   const raeume = k.haus.states[CAM].attributes.rooms;
   const s = roh(k.I.sequenceModel(k.model(), raeume));
@@ -364,7 +364,7 @@ test('Menü und Einstellungen öffnen dieselbe Ansicht (kind editor, listbox/opt
   assert.deepEqual(zeilen(e), FOLGE);
 });
 
-test('Knöpfe, Tastatur, Ziehen und Antipp-Modus ergeben dieselbe Liste', () => {
+test('SET-05 Knöpfe, Tastatur, Ziehen und Antipp-Modus ergeben dieselbe Liste', () => {
   const soll = ['1', '3', '5', '7', '6', '9', '4'];
   const knoepfe = folge();
   zeileR(knoepfe, '1').querySelector('[data-action="top"]').click();
@@ -423,7 +423,7 @@ test('Ziehen per Touch erst nach 300 ms Halten', () => {
   assert.deepEqual(zeilen(k)[0], '1');
 });
 
-test('Speichern: genau ein vacuum_set_cleaning_sequence; Entwurf bleibt bis das Gerät ihn meldet, auch beim Verlassen', () => {
+test('SET-05 Speichern: genau ein vacuum_set_cleaning_sequence; Entwurf bleibt bis das Gerät ihn meldet, auch beim Verlassen', () => {
   const k = folge();
   zeileR(k, '1').querySelector('[data-action="top"]').click();
   assert.match($d(k.u, '.body').textContent, /nicht gespeichert/);
@@ -451,7 +451,7 @@ test('Speichern-Fehler (R12): Hinweis, Entwurf bleibt', async () => {
   assert.deepEqual(zeilen(k)[0], '1');
 });
 
-test('Strikt ohne „Reihenfolge aus“; nicht strikt: aus mit Rückgängig, leere Liste gesendet', () => {
+test('SET-05 Strikt ohne „Reihenfolge aus“; nicht strikt: aus mit Rückgängig, leere Liste gesendet', () => {
   assert.equal($d(folge().u, '[data-action="sequence-off"]'), null);
   const k = folge({ caps: NICHT_STRIKT, attribute: { cleaning_sequence: [3, 5] } });
   assert.deepEqual(zeilen(k), ['3', '5']);

@@ -41,7 +41,7 @@ function flach(schema) {
   return schema.flatMap((f) => (f.type === 'expandable' ? (f.flatten ? flach(f.schema) : [f]) : [f]));
 }
 
-test('Schema: jede Option der Karte hat ein Feld', () => {
+test('CORE-18 Schema: jede Option der Karte hat ein Feld', () => {
   const { SCHEMA } = intern(neueUmgebung());
   assert.deepEqual(flach(SCHEMA).map((f) => f.name).sort(), [...OPTIONEN, 'override_colors', 'map_config'].sort());
   const farben = flach(SCHEMA).find((f) => f.name === 'override_colors');
@@ -59,7 +59,7 @@ test('Entität nur vacuum.*, Skripte nur script.* (mehrere)', () => {
   assert.equal(alle.hidden_card_objects.selector.select.multiple, true);
 });
 
-test('hidden_card_objects: alle Namen aus dem Inventar CORE-18', () => {
+test('CORE-18 hidden_card_objects: alle Namen aus dem Inventar CORE-18', () => {
   const alle = Object.fromEntries(felder(intern(neueUmgebung()).SCHEMA).map((f) => [f.name, f]));
   assert.deepEqual(roh(alle.hidden_card_objects.selector.select.options), [
     'title', 'state', 'menu', 'status', 'task_type', 'controls', 'action_buttons', 'animations', 'shortcuts',
@@ -81,7 +81,7 @@ test('Labels und Helfer DE/EN für jedes Feld und jeden Abschnitt (HACS-Regel 3)
   }
 });
 
-test('Editor zeigt DE bzw. EN, Auswahlwerte übersetzt', () => {
+test('CORE-16 Editor zeigt DE bzw. EN, Auswahlwerte übersetzt', () => {
   const de = editor().form;
   assert.equal(de.computeLabel({ name: 'locked' }), 'Karten-Sperre');
   assert.match(de.computeHelper({ name: 'touch_lock' }), /Vorgabe 200/);
@@ -131,20 +131,20 @@ function karteMit(config, zustand, attribute, extra = {}) {
 }
 const versteckt = (namen) => ({ hidden_card_objects: namen });
 
-test('ohne hidden_card_objects ist alles sichtbar', () => {
+test('CORE-18 ohne hidden_card_objects ist alles sichtbar', () => {
   const { karte } = karteMit({});
   for (const sel of ['.title', '.state', '.menu-button', '.stats', '.controls']) assert.equal($(karte, sel).hidden, false, sel);
   assert.ok($(karte, '.tasks'));
   assert.ok($(karte, '.dock'));
 });
 
-test('title, state, menu, status, task_type, controls ausblendbar (CORE-03)', () => {
+test('CORE-03 title, state, menu, status, task_type, controls ausblendbar (CORE-03)', () => {
   const { karte } = karteMit(versteckt(['title', 'state', 'menu', 'status', 'task_type', 'controls']));
   for (const sel of ['.title', '.state', '.menu-button', '.stats', '.controls']) assert.equal($(karte, sel).hidden, true, sel);
   assert.equal($(karte, '.tasks'), null);
 });
 
-test('action_buttons und dock_status_indicator getrennt', () => {
+test('CORE-08 action_buttons und dock_status_indicator getrennt', () => {
   const ohneKnoepfe = karteMit(versteckt(['action_buttons'])).karte;
   assert.deepEqual($$(ohneKnoepfe, '.ctl'), []);
   assert.ok($(ohneKnoepfe, '.dock'));
@@ -153,7 +153,7 @@ test('action_buttons und dock_status_indicator getrennt', () => {
   assert.ok($$(ohneDock, '.ctl').length > 0);
 });
 
-test('progress_bar und Meldungsarten einzeln ausblendbar', () => {
+test('CORE-18 progress_bar und Meldungsarten einzeln ausblendbar', () => {
   const fortschritt = { 'sensor.robo_cleaning_progress': { entity_id: 'sensor.robo_cleaning_progress', state: '42', attributes: {} } };
   assert.equal($(karteMit(versteckt(['progress_bar']), 'cleaning', { started: true }, fortschritt).karte, '.progress'), null);
   const attr = { error: 'Remove mop', low_water: true, cleaning_paused: 1, started: true };
@@ -164,7 +164,7 @@ test('progress_bar und Meldungsarten einzeln ausblendbar', () => {
   assert.deepEqual(kinds(karteMit(versteckt(['error_message']), 'error', { error: 'Wheel stuck', has_error: true }).karte), []);
 });
 
-test('cruising_history nimmt den Menüeintrag weg', () => {
+test('CORE-18 cruising_history nimmt den Menüeintrag weg', () => {
   const { u, karte } = karteMit(versteckt(['cruising_history']));
   $(karte, '.menu-button').click();
   const eintraege = dialogVon(u).shadowRoot.querySelectorAll('.menu-item').map((b) => b.getAttribute('data-entry'));
@@ -182,7 +182,7 @@ test('animations: Dialog öffnet ohne Animation', () => {
   assert.match(intern(ohne.u).DIALOG_STYLES, /:host\(\[data-still\]\) \.scrim,\s*:host\(\[data-still\]\) \.sheet \{\s*animation: none;/);
 });
 
-test('eigener Titel statt Gerätename', () => {
+test('CORE-03 eigener Titel statt Gerätename', () => {
   assert.equal($(karteMit({ title: 'Unten' }).karte, '.title').textContent, 'Unten');
 });
 
@@ -198,7 +198,7 @@ test('normalizeConfig: unbekannte Objekte und Nicht-Skripte fallen weg', () => {
 });
 
 // ── Kartenwechsel-Bestätigung (CORE-20) ────────────────────────────────────
-test('Kartenwechsel fragt nach; Abbrechen wechselt nicht, Wechseln schon', () => {
+test('CORE-20 Kartenwechsel fragt nach; Abbrechen wechselt nicht, Wechseln schon', () => {
   const { u, karte } = karteMit({});
   let gewechselt = 0;
   karte._confirmMapChange('Oben', () => gewechselt++);
@@ -220,7 +220,7 @@ test('Kartenwechsel fragt nach; Abbrechen wechselt nicht, Wechseln schon', () =>
   assert.equal(dialogVon(u), null);
 });
 
-test('map_change_confirmation ausgeblendet: wechselt ohne Rückfrage', () => {
+test('CORE-20 map_change_confirmation ausgeblendet: wechselt ohne Rückfrage', () => {
   const { u, karte } = karteMit(versteckt(['map_change_confirmation']));
   let gewechselt = 0;
   karte._confirmMapChange('Oben', () => gewechselt++);
@@ -229,14 +229,14 @@ test('map_change_confirmation ausgeblendet: wechselt ohne Rückfrage', () => {
 });
 
 // ── Sprache (CORE-16) ─────────────────────────────────────────────────────
-test('Wörterbuch: jeder Text in beiden Sprachen', () => {
+test('CORE-16 Wörterbuch: jeder Text in beiden Sprachen', () => {
   const { TEXTE } = intern(neueUmgebung());
   for (const teil of ['labels', 'helpers', 'texte']) {
     assert.deepEqual(Object.keys(TEXTE.de[teil]).sort(), Object.keys(TEXTE.en[teil]).sort(), teil);
   }
 });
 
-test('Karte englisch bei englischem HA', () => {
+test('CORE-16 Karte englisch bei englischem HA', () => {
   const u = neueUmgebung(), haus = hausAus('voll', { sprache: 'en' });
   const karte = neueKarte(u, haus);
   assert.equal($$(karte, '.ctl').find((b) => b.getAttribute('data-action') === 'start').textContent, 'Clean');
@@ -244,7 +244,7 @@ test('Karte englisch bei englischem HA', () => {
   assert.equal($$(karte, '.task').find((b) => b.getAttribute('data-task') === 'all').textContent, 'All');
 });
 
-test('Uhrzeit nach HAs 12/24-h-Einstellung, erster Wochentag nach HA', () => {
+test('CORE-16 Uhrzeit nach HAs 12/24-h-Einstellung, erster Wochentag nach HA', () => {
   const { clockText, firstWeekday } = intern(neueUmgebung());
   const hass = (locale) => ({ locale: Object.assign({ language: 'en' }, locale) });
   assert.equal(clockText(hass({ time_format: '24' }), 14, 5), '14:05');
@@ -258,7 +258,7 @@ test('Uhrzeit nach HAs 12/24-h-Einstellung, erster Wochentag nach HA', () => {
 });
 
 // ── Theme (CORE-17) ───────────────────────────────────────────────────────
-test('--bvc-*-Haken mit HA-Rückfall, nie auf :host gesetzt', () => {
+test('CORE-17 --bvc-*-Haken mit HA-Rückfall, nie auf :host gesetzt', () => {
   const { CARD_STYLES, DIALOG_STYLES } = intern(neueUmgebung());
   // Ohne den gemeinsamen BuschUI-Block (wörtlich synchronisiert, nicht kartenspezifisch).
   const css = (CARD_STYLES + DIALOG_STYLES).split('\n').filter((z) => !z.includes('busch-ui')).join('\n');
@@ -285,7 +285,7 @@ function kartenEditor(config = {}, sprache = 'de') {
 }
 const abschnitt = (schema, name) => flach(schema).find((f) => f.name === name);
 
-test('Karte: je Stockwerk aus maps ein aufklappbarer Block map_config', () => {
+test('MAP-07 Karte: je Stockwerk aus maps ein aufklappbarer Block map_config', () => {
   const { form } = kartenEditor();
   const bloecke = abschnitt(form.schema, 'map_config').schema;
   assert.deepEqual(bloecke.map((b) => b.name), ['map_1']);
@@ -333,7 +333,7 @@ test('Karte: schreibt nur Abweichungen, auch verschachtelt', () => {
   assert.deepEqual(aenderungen.at(-1), { type: 'custom:busch-vacuum-card', entity: 'vacuum.robo' }, 'zurück auf Vorgabe entfernt alles');
 });
 
-test('override_colors aus dem Farbwähler ([r, g, b]) wirkt in der Karte', () => {
+test('MAP-09 override_colors aus dem Farbwähler ([r, g, b]) wirkt in der Karte', () => {
   const { normalizeConfig } = intern(neueUmgebung());
   const n = normalizeConfig({ entity: 'vacuum.robo', override_colors: { floor: [10, 20, 30], dark: { wall: [300, -1, 5] } } });
   assert.deepEqual(roh(n.override_colors), { floor: 'rgb(10, 20, 30)', dark: { wall: 'rgb(255, 0, 5)' } });

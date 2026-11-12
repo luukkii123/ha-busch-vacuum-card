@@ -46,7 +46,7 @@ const gruppe = (k, name) => $$d(k.u, '[data-group]').find((b) => b.getAttribute(
 
 // ── Task 1: Tabelle, Zustand, Zeile, Schreibweg, Menü-Registry ─────────────────
 
-test('Vollständigkeit: jeder Geräteschlüssel v2.0.3 steht in SETTINGS mit seiner Plattform', () => {
+test('ALL-01/ALL-02 Vollständigkeit: jeder Geräteschlüssel v2.0.3 steht in SETTINGS mit seiner Plattform', () => {
   const { I } = aufbau();
   const fehlt = [], falsch = [];
   for (const [plattform, keys] of Object.entries(SCHLUESSEL.geraet)) {
@@ -95,7 +95,7 @@ test('leere Liste der Integration = Zeile gesperrt mit Grund', () => {
   assert.match(z.querySelector('.setting-status').textContent, /gerade nicht/);
 });
 
-test('Schalter: genau ein vacuum_set_property mit 1/0, Doppeltipp = ein Aufruf, role=switch', () => {
+test('ALL-10/DEV-10 Schalter: genau ein vacuum_set_property mit 1/0, Doppeltipp = ein Aufruf, role=switch', () => {
   const k = aufbau();
   const z = zeile(k, 'child_lock');
   const knopf = z.querySelector('[role="switch"]');
@@ -111,7 +111,7 @@ test('Schalter: genau ein vacuum_set_property mit 1/0, Doppeltipp = ein Aufruf, 
   assert.match(zeile(k, 'child_lock').querySelector('.setting-status').textContent, /Speichert/);
 });
 
-test('Auswahl, Zahl, Zeit: je genau ein Aufruf in der Form der Integration', () => {
+test('ALL-02/DEV-03 Auswahl, Zahl, Zeit: je genau ein Aufruf in der Form der Integration', () => {
   const k = aufbau();
   const sel = zeile(k, 'carpet_cleaning').querySelector('select');
   assert.deepEqual(sel.childNodes.map((o) => o.value), ['Avoidance', 'Adaptation', 'Remove mop', 'Vacuum and mop', 'Ignore']);
@@ -129,7 +129,7 @@ test('Auswahl, Zahl, Zeit: je genau ein Aufruf in der Form der Integration', () 
   assert.deepEqual(aufrufe(k), [setze(k, 'carpet_cleaning', 'Ignore'), setze(k, 'volume', 55), setze(k, 'off_peak_charging_start', '23:30')]);
 });
 
-test('Zahl außerhalb der Grenzen: kein Aufruf, Hinweis in der Zeile (R10)', () => {
+test('DEV-04 Zahl außerhalb der Grenzen: kein Aufruf, Hinweis in der Zeile (R10)', () => {
   const k = aufbau();
   const zahl = zeile(k, 'volume').querySelector('input');
   zahl.value = '120';
@@ -203,7 +203,7 @@ function uebersicht(name) {
   return k;
 }
 
-test('Übersicht: Gruppen nur mit Inhalt (voll, ohne Dock, minimal)', () => {
+test('DEV-10 Übersicht: Gruppen nur mit Inhalt (voll, ohne Dock, minimal)', () => {
   const k = einstellungen();
   assert.deepEqual(gruppen(k), ['cleaning', 'mopping', 'carpet', 'station', 'camera', 'audio', 'dnd', 'schedule', 'battery', 'consumables', 'info', 'other']);
   for (const b of $$d(k.u, '[data-group]')) assert.ok(b.textContent.trim(), 'Text, nicht nur Symbol');
@@ -231,7 +231,7 @@ test('Gruppe als Unterseite; Escape geht genau eine Ebene zurück', () => {
   assert.ok(gruppe(k, 'carpet'));
 });
 
-test('Suche über alle Zeilen mit Ergebnisanzahl; leeres Ergebnis mit Text (R14/R18)', () => {
+test('DEV-10 Suche über alle Zeilen mit Ergebnisanzahl; leeres Ergebnis mit Text (R14/R18)', () => {
   const k = einstellungen();
   const feld = $d(k.u, 'input[type="search"]') || $d(k.u, '.settings-search');
   assert.equal(feld.getAttribute('aria-label'), 'Einstellungen durchsuchen');
@@ -279,8 +279,9 @@ const ERWARTET_GRUPPEN = {
   carpet: { carpet_recognition: true, carpet_avoidance: false, carpet_boost: true, intensive_carpet_cleaning: true, clean_carpets_first: false, side_brush_carpet_rotate: false, carpet_cleaning: 'Remove mop' }
 };
 
+const GRUPPEN_IDS = { cleaning: 'ALL-01', mopping: 'DEV-04/ALL-01', carpet: 'DEV-03/ALL-02' };
 for (const [name, erwartet] of Object.entries(ERWARTET_GRUPPEN)) {
-  test(`${name}: jede Zeile der Spec-Tabelle mit Fixture-Wert und eigenem Schreibaufruf`, () => {
+  test(`${GRUPPEN_IDS[name]} ${name}: jede Zeile der Spec-Tabelle mit Fixture-Wert und eigenem Schreibaufruf`, () => {
     const k = einstellungen();
     gruppe(k, name).click();
     assert.deepEqual(zeilen(k), Object.keys(erwartet));
@@ -307,7 +308,7 @@ test('side_reach: Wert aus der seit 10.11.2026 aktivierten Entität', () => {
   assert.deepEqual([s.source, s.value], ['entity', true]);
 });
 
-test('Teppich-Unterpunkte gesperrt mit Grund: Erkennung aus, Meiden an, Aufgabe läuft', () => {
+test('ALL-02/DEV-03 Teppich-Unterpunkte gesperrt mit Grund: Erkennung aus, Meiden an, Aufgabe läuft', () => {
   const unter = ['carpet_boost', 'intensive_carpet_cleaning', 'clean_carpets_first', 'side_brush_carpet_rotate', 'carpet_cleaning'];
   for (const [attribute, grund, zustand] of [[{ carpet_recognition: 0 }, /Teppicherkennung/], [{ carpet_avoidance: true }, /Teppich-Meiden/], [{ started: true }, /Aufgabe/, 'cleaning']]) {
     const k = aufbau('voll', { attribute, zustand });
@@ -323,7 +324,7 @@ test('Teppich-Unterpunkte gesperrt mit Grund: Erkennung aus, Meiden an, Aufgabe 
   for (const key of unter) assert.equal(zeile(frei, key).getAttribute('data-state'), 'ok', key);
 });
 
-test('Wischen verweist auf Station → Waschen (gleiche Zeilen, Abnahme dock); ohne Dock kein Verweis', () => {
+test('DEV-04 Wischen verweist auf Station → Waschen (gleiche Zeilen, Abnahme dock); ohne Dock kein Verweis', () => {
   const k = einstellungen();
   gruppe(k, 'mopping').click();
   const link = $d(k.u, '[data-action="station"]');
@@ -339,7 +340,7 @@ test('Wischen verweist auf Station → Waschen (gleiche Zeilen, Abnahme dock); o
 
 const zustand = (id, state, attributes = {}) => ({ [id]: { entity_id: id, state, attributes } });
 
-test('Kamera und KI: alle Zeilen des Geräts, Werte aus Attribut bzw. aktivierter Entität', () => {
+test('ALL-06/DEV-05 Kamera und KI: alle Zeilen des Geräts, Werte aus Attribut bzw. aktivierter Entität', () => {
   const k = einstellungen();
   gruppe(k, 'camera').click();
   assert.deepEqual(zeilen(k), ['obstacle_avoidance', 'ai_obstacle_detection', 'ai_obstacle_image_upload', 'ai_obstacle_picture', 'ai_pet_detection',
@@ -352,7 +353,7 @@ test('Kamera und KI: alle Zeilen des Geräts, Werte aus Attribut bzw. aktivierte
   assert.deepEqual([k.I.settingState(k.karte, m, 'human_follow').source, k.I.settingState(k.karte, m, 'human_follow').value], ['entity', false]);
 });
 
-test('Die sieben früher deaktivierten Einstellungen: Entitätswert oder ehrlich „unbekannt“ mit Ein/Aus', () => {
+test('ALL-06 Die sieben früher deaktivierten Einstellungen: Entitätswert oder ehrlich „unbekannt“ mit Ein/Aus', () => {
   const k = aufbau('voll', { attribute: { ai_obstacle_detection: true } });
   for (const key of ['ai_furniture_detection', 'ai_fluid_detection', 'fuzzy_obstacle_detection', 'camera_light_brightness_auto']) {
     const z = zeile(k, key);
@@ -366,7 +367,7 @@ test('Die sieben früher deaktivierten Einstellungen: Entitätswert oder ehrlich
   assert.equal(zeile(h, 'human_follow').querySelector('[role="switch"]').getAttribute('aria-checked'), 'true');
 });
 
-test('KI-Unterpunkte gesperrt, solange die KI-Hinderniserkennung aus ist; Fleckenmeiden braucht Flüssigkeitserkennung', () => {
+test('ALL-06/DEV-05 KI-Unterpunkte gesperrt, solange die KI-Hinderniserkennung aus ist; Fleckenmeiden braucht Flüssigkeitserkennung', () => {
   const k = aufbau();
   assert.match(zeile(k, 'pet_focused_detection').querySelector('.setting-status').textContent, /KI-Hinderniserkennung/);
   const f = aufbau('voll', { attribute: { ai_obstacle_detection: true }, states: zustand('switch.robo_ai_fluid_detection', 'off') });
@@ -374,7 +375,7 @@ test('KI-Unterpunkte gesperrt, solange die KI-Hinderniserkennung aus ist; Flecke
   assert.equal(zeile(f, 'pet_focused_detection').getAttribute('data-state'), 'ok');
 });
 
-test('Kameralicht-Helligkeit 40–100; mit Automatik gesperrt', () => {
+test('ALL-06/DEV-05 Kameralicht-Helligkeit 40–100; mit Automatik gesperrt', () => {
   const k = aufbau('voll', { states: zustand('number.robo_camera_light_brightness', '70', { min: 40, max: 100, step: 1 }) });
   const feld = zeile(k, 'camera_light_brightness').querySelector('input');
   assert.deepEqual([feld.getAttribute('min'), feld.getAttribute('max'), feld.value], ['40', '100', '70']);
@@ -389,7 +390,7 @@ test('Kameralicht-Helligkeit 40–100; mit Automatik gesperrt', () => {
   assert.match(zeile(a, 'camera_light_brightness').querySelector('.setting-status').textContent, /Automatik/);
 });
 
-test('Kameralicht automatisch über den belegten Umweg: an = Helligkeit 40 mit params [101], aus = 40', () => {
+test('ALL-06/DEV-05 Kameralicht automatisch über den belegten Umweg: an = Helligkeit 40 mit params [101], aus = 40', () => {
   const an = aufbau('voll', { states: zustand('switch.robo_camera_light_brightness_auto', 'off') });
   zeile(an, 'camera_light_brightness_auto').querySelector('[role="switch"]').click();
   assert.deepEqual(aufrufe(an), [{ domain: 'dreame_vacuum', service: 'vacuum_set_property', data: { entity_id: 'vacuum.robo', key: 'camera_light_brightness', value: 40, params: [101] } }]);
@@ -417,7 +418,7 @@ function audio() {
   return k;
 }
 
-test('Audio: Lautstärke 0–100, Sprachassistent, Sprache als Liste, Streaming-Ansage, Sprachpaket als Anzeige', () => {
+test('ALL-07/DEV-02 Audio: Lautstärke 0–100, Sprachassistent, Sprache als Liste, Streaming-Ansage, Sprachpaket als Anzeige', () => {
   const k = audio();
   assert.deepEqual(zeilen(k), ['voice_assistant', 'streaming_voice_prompt', 'voice_assistant_language', 'volume']);
   const sprache = $$d(k.u, '.setting').find((z) => z.getAttribute('data-setting') === 'voice_assistant_language').querySelector('select');
@@ -428,7 +429,7 @@ test('Audio: Lautstärke 0–100, Sprachassistent, Sprache als Liste, Streaming-
   assert.equal(paket.querySelector('button, select, input'), null, 'nur Anzeige: Buchstaben-IDs lassen sich nicht über vacuum_set_property setzen');
 });
 
-test('Sprachpaket installieren: Pflichtfelder und Inline-Prüfung, kein Aufruf bei Fehlern (R10)', () => {
+test('ALL-07/DEV-02 Sprachpaket installieren: Pflichtfelder und Inline-Prüfung, kein Aufruf bei Fehlern (R10)', () => {
   const k = audio();
   $d(k.u, '[data-action="voice-pack"]').click();
   assert.equal($d(k.u, 'h1').textContent, 'Sprachpaket installieren');
@@ -452,7 +453,7 @@ test('Sprachpaket installieren: Pflichtfelder und Inline-Prüfung, kein Aufruf b
   assert.deepEqual(k.haus.rufe, []);
 });
 
-test('Sprachpaket: Bestätigung nennt das Paket; erst dann genau vacuum_install_voice_pack', () => {
+test('ALL-07/DEV-02 Sprachpaket: Bestätigung nennt das Paket; erst dann genau vacuum_install_voice_pack', () => {
   const k = audio();
   $d(k.u, '[data-action="voice-pack"]').click();
   tippe(k, 'lang_id', 'DE');
@@ -492,7 +493,7 @@ test('Sprachpaket: Eingaben bleiben beim Verlassen und nach einem Dienstfehler e
   assert.equal(feld(k, 'url').value, 'https://beispiel.invalid/de.pkg');
 });
 
-test('Sprachpaket: Erfolg schließt den Dialog und meldet die Anfrage in „Audio“ (R11)', async () => {
+test('ALL-07 Sprachpaket: Erfolg schließt den Dialog und meldet die Anfrage in „Audio“ (R11)', async () => {
   const k = audio();
   k.haus.antwort = () => Promise.resolve();
   $d(k.u, '[data-action="voice-pack"]').click();
@@ -528,7 +529,7 @@ const zeitraum = (k, id) => $d(k.u, `[data-dnd="${id}"]`);
 const dndAufruf = (liste) => setze(null, 'dnd_task', JSON.stringify(liste));
 function tag(k, d) { $d(k.u, `[data-day="${d}"]`).click(); }
 
-test('Zeitplan-Wochentage positionsweise ab Sonntag (App-Beispiel 10.11.2026: Mo + Mi = "0101000")', () => {
+test('DEV-01 Zeitplan-Wochentage positionsweise ab Sonntag (App-Beispiel 10.11.2026: Mo + Mi = "0101000")', () => {
   const { I } = aufbau();
   assert.deepEqual(roh(I.daysOfMask(I.maskOfRepeats('0101000'))), [1, 3], 'Zeichen d = Date#getDay d');
   assert.equal(I.repeatsOfMask(I.maskOfDays([1, 3])), '0101000', 'zurück wie vom Gerät');
@@ -548,7 +549,7 @@ test('Zeitplan-Wochentage positionsweise ab Sonntag (App-Beispiel 10.11.2026: Mo
   assert.doesNotMatch(plan(k, '1').textContent, /Fr/);
 });
 
-test('Liste der Zeiträume aus dnd (Start–Ende, an/aus, keine Wochentage wie in der App); ein Zeitraum = kein Hinzufügen', () => {
+test('ALL-08/DEV-06 Liste der Zeiträume aus dnd (Start–Ende, an/aus, keine Wochentage wie in der App); ein Zeitraum = kein Hinzufügen', () => {
   const k = nichtStoeren();
   const z = zeitraum(k, '0');
   assert.match(z.textContent, /20:00/);
@@ -563,7 +564,7 @@ test('Liste der Zeiträume aus dnd (Start–Ende, an/aus, keine Wochentage wie i
   assert.ok($d(nichtStoeren(DREI).u, '[data-action="dnd-add"]'), 'meldet das Gerät mehrere, geht Hinzufügen');
 });
 
-test('Einzelner Zeitraum: nur Ein/Start/Ende, kein Tage-Feld, kein Löschen; id, wk, ss und en-Form bleiben', () => {
+test('DEV-06 Einzelner Zeitraum: nur Ein/Start/Ende, kein Tage-Feld, kein Löschen; id, wk, ss und en-Form bleiben', () => {
   const k = nichtStoeren();
   zeitraum(k, '0').querySelector('[data-action="dnd-edit"]').click();
   assert.equal($d(k.u, '[data-day="1"]'), null, 'keine Wochentage');
@@ -573,7 +574,7 @@ test('Einzelner Zeitraum: nur Ein/Start/Ende, kein Tage-Feld, kein Löschen; id,
   assert.deepEqual(JSON.parse(aufrufe(k)[0].data.value), [{ id: 0, en: true, st: '21:00', et: '09:00', wk: 127, ss: 0 }]);
 });
 
-test('Anlegen schreibt die ganze Liste als dnd_task-JSON; neue id = höchste + 1', () => {
+test('ALL-08/DEV-06 Anlegen schreibt die ganze Liste als dnd_task-JSON; neue id = höchste + 1', () => {
   const k = nichtStoeren(DREI);
   $d(k.u, '[data-action="dnd-add"]').click();
   assert.equal($d(k.u, 'h1').textContent, 'Zeitraum hinzufügen');
@@ -589,7 +590,7 @@ test('Anlegen schreibt die ganze Liste als dnd_task-JSON; neue id = höchste + 1
   assert.deepEqual(JSON.parse(r[0].data.value), soll);
 });
 
-test('Bearbeiten eines von drei Zeiträumen lässt die anderen und ss unverändert', () => {
+test('DEV-06 Bearbeiten eines von drei Zeiträumen lässt die anderen und ss unverändert', () => {
   const k = nichtStoeren(DREI);
   zeitraum(k, '3').querySelector('[data-action="dnd-edit"]').click();
   assert.equal($d(k.u, 'h1').textContent, 'Zeitraum bearbeiten');
@@ -602,7 +603,7 @@ test('Bearbeiten eines von drei Zeiträumen lässt die anderen und ss unverände
   assert.deepEqual(liste[2], { id: 7, en: true, st: '06:00', et: '07:00', wk: 65, ss: -1 });
 });
 
-test('Ein/Aus in der Liste: ganze Liste mit geändertem en, Doppeltipp = ein Aufruf', () => {
+test('DEV-06 Ein/Aus in der Liste: ganze Liste mit geändertem en, Doppeltipp = ein Aufruf', () => {
   const k = nichtStoeren(DREI);
   zeitraum(k, '7').querySelector('[role="switch"]').click();
   zeitraum(k, '7').querySelector('[role="switch"]').click();
@@ -623,7 +624,7 @@ test('Validierung: Start ≠ Ende; kein Aufruf (R10)', () => {
   assert.deepEqual(k.haus.rufe, []);
 });
 
-test('Löschen nur nach Bestätigung mit Objekt → vacuum_call_action delete_dnd_task (R13)', () => {
+test('DEV-06 Löschen nur nach Bestätigung mit Objekt → vacuum_call_action delete_dnd_task (R13)', () => {
   const k = nichtStoeren(DREI);
   zeitraum(k, '3').querySelector('[data-action="dnd-edit"]').click();
   $d(k.u, '[data-action="delete"]').click();
@@ -637,7 +638,7 @@ test('Löschen nur nach Bestätigung mit Objekt → vacuum_call_action delete_dn
   assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_call_action', data: { entity_id: 'vacuum.robo', key: 'delete_dnd_task', value: '3' } }]);
 });
 
-test('Optionen nur bei aktivem DnD; ohne aktiven Zeitraum gesperrt mit Grund', () => {
+test('ALL-08/DEV-06 Optionen nur bei aktivem DnD; ohne aktiven Zeitraum gesperrt mit Grund', () => {
   const k = nichtStoeren();
   assert.deepEqual(zeilen(k), ['dnd_disable_auto_empty', 'dnd_disable_resume_cleaning', 'dnd_reduce_volume']);
   assert.equal($d(k.u, '[data-setting="dnd_reduce_volume"]').getAttribute('data-state'), 'ok');
@@ -645,7 +646,7 @@ test('Optionen nur bei aktivem DnD; ohne aktiven Zeitraum gesperrt mit Grund', (
   assert.match($d(aus.u, '[data-setting="dnd_reduce_volume"]').querySelector('.setting-status').textContent, /Nicht stören/);
 });
 
-test('Geräte ohne dnd_task: Schalter dnd und Zeiten dnd_start/dnd_end (HH:MM)', () => {
+test('ALL-08 Geräte ohne dnd_task: Schalter dnd und Zeiten dnd_start/dnd_end (HH:MM)', () => {
   const caps = hausAus('voll').states['vacuum.robo'].attributes.capabilities.filter((c) => c !== 'dnd_task');
   const k = nichtStoeren(true, { capabilities: caps, dnd_start: '22:00', dnd_end: '07:00' });
   assert.deepEqual(zeilen(k), ['dnd', 'dnd_disable_auto_empty', 'dnd_disable_resume_cleaning', 'dnd_reduce_volume', 'dnd_start', 'dnd_end']);
@@ -694,7 +695,7 @@ function wahl(k, key, wert) {
   sel.dispatchEvent(k.u.neuesEreignis('change'));
 }
 
-test('Akku: Nebenzeit-Laden mit Beginn/Ende (HH:MM)', () => {
+test('ALL-09/DEV-07 Akku: Nebenzeit-Laden mit Beginn/Ende (HH:MM)', () => {
   const k = einstellungen();
   gruppe(k, 'battery').click();
   assert.deepEqual(zeilen(k), ['off_peak_charging', 'off_peak_charging_start', 'off_peak_charging_end']);
@@ -705,7 +706,7 @@ test('Akku: Nebenzeit-Laden mit Beginn/Ende (HH:MM)', () => {
   assert.deepEqual(aufrufe(k), [setze(k, 'off_peak_charging', 1), setze(k, 'off_peak_charging_end', '06:00')]);
 });
 
-test('Weitere Modelle: Ladegrenze 80/90/100 % als Auswahl', () => {
+test('ALL-09/DEV-07 Weitere Modelle: Ladegrenze 80/90/100 % als Auswahl', () => {
   const k = aufbau('voll', { attribute: { battery_charge_level: '90%', battery_charge_level_list: ['80%', '90%', '100%'] } });
   const sel = zeile(k, 'battery_charge_level').querySelector('select');
   assert.equal(sel.value, '90%');
@@ -714,7 +715,7 @@ test('Weitere Modelle: Ladegrenze 80/90/100 % als Auswahl', () => {
   assert.deepEqual(aufrufe(k), [setze(k, 'battery_charge_level', '80%')]);
 });
 
-test('Sonstiges: Kindersicherung, Mehrstockwerkskarte, Kartenwahl, Kartenrotation', () => {
+test('ALL-10/DEV-10 Sonstiges: Kindersicherung, Mehrstockwerkskarte, Kartenwahl, Kartenrotation', () => {
   const k = einstellungen();
   gruppe(k, 'other').click();
   assert.deepEqual(zeilen(k), ['child_lock', 'multi_floor_map', 'selected_map', 'map_rotation']);
@@ -727,7 +728,7 @@ test('Sonstiges: Kindersicherung, Mehrstockwerkskarte, Kartenwahl, Kartenrotatio
   assert.deepEqual(aufrufe(k), [setze(k, 'multi_floor_map', 1)]);
 });
 
-test('Kartenrotation nur nach Bestätigung mit Wert (ändert die Roboterkarte, R13)', () => {
+test('ALL-10 Kartenrotation nur nach Bestätigung mit Wert (ändert die Roboterkarte, R13)', () => {
   const k = einstellungen();
   gruppe(k, 'other').click();
   wahl(k, 'map_rotation', '90');
@@ -742,7 +743,7 @@ test('Kartenrotation nur nach Bestätigung mit Wert (ändert die Roboterkarte, R
   assert.deepEqual(aufrufe(k), [setze(k, 'map_rotation', 180)]);
 });
 
-test('Kartenwahl über MapView.selectMap mit der Bestätigung von core (CORE-20)', () => {
+test('ALL-10 Kartenwahl über MapView.selectMap mit der Bestätigung von core (CORE-20)', () => {
   const maps = [{ id: 3, index: 1, name: 'Karte 1', custom_name: null }, { id: 7, index: 2, name: 'Karte 2', custom_name: null }];
   const k = einstellungen('voll', { attribute: { maps, map_count: 2 } });
   gruppe(k, 'other').click();
@@ -764,14 +765,14 @@ function zubehoer(attribute) {
 }
 const teil = (k, name) => $d(k.u, `[data-part="${name}"]`);
 
-test('Feste Zuordnung statt Regex: dust_bag_drying_left und drying_left zählen nicht als Verbrauchsteil', () => {
+test('ALL-11/DEV-09 Feste Zuordnung statt Regex: dust_bag_drying_left und drying_left zählen nicht als Verbrauchsteil', () => {
   const k = aufbau('voll', { attribute: { dust_bag_drying_left: 5, track_cleaning_left: 40 } });
   assert.deepEqual(roh(k.model().consumables()), { main_brush_left: 84, side_brush_left: 98, filter_left: 69, sensor_dirty_left: 88, track_cleaning_left: 40 });
   menue(k);
   assert.equal(eintrag(k.u, 'consumables').querySelector('.badge'), null, 'kein Badge durch die Staubbeutel-Trocknung');
 });
 
-test('Zubehör: Rest-% und Restzeit je Teil (HA-Einheiten), Summen', () => {
+test('ALL-11/DEV-09 Zubehör: Rest-% und Restzeit je Teil (HA-Einheiten), Summen', () => {
   const k = zubehoer();
   assert.equal($d(k.u, 'h1').textContent, 'Zubehör');
   assert.deepEqual($$d(k.u, '[data-part]').map((z) => z.getAttribute('data-part')), ['main_brush', 'side_brush', 'filter', 'sensor_dirty']);
@@ -781,7 +782,7 @@ test('Zubehör: Rest-% und Restzeit je Teil (HA-Einheiten), Summen', () => {
   for (const key of ['total_cleaning_time', 'total_runtime', 'total_cruise_time', 'cleaning_count', 'first_cleaning_date']) assert.ok($d(k.u, `[data-info="${key}"]`), key);
 });
 
-test('Zurücksetzen nur unter 100 %, Bestätigung nennt Teil und Restwert → vacuum_reset_consumable', () => {
+test('ALL-11/DEV-09 Zurücksetzen nur unter 100 %, Bestätigung nennt Teil und Restwert → vacuum_reset_consumable', () => {
   const k = zubehoer({ side_brush_left: 100 });
   assert.equal(teil(k, 'side_brush').querySelector('[data-action="reset"]').disabled, true);
   teil(k, 'sensor_dirty').querySelector('[data-action="reset"]').click();
@@ -793,7 +794,7 @@ test('Zurücksetzen nur unter 100 %, Bestätigung nennt Teil und Restwert → va
   assert.deepEqual(aufrufe(k), [{ domain: 'dreame_vacuum', service: 'vacuum_reset_consumable', data: { entity_id: 'vacuum.robo', consumable: 'sensor' } }]);
 });
 
-test('Spurreinigung: Zurücksetzen über vacuum_call_action reset_track_cleaning', () => {
+test('ALL-11 Spurreinigung: Zurücksetzen über vacuum_call_action reset_track_cleaning', () => {
   const k = zubehoer({ track_cleaning_left: 40 });
   teil(k, 'track_cleaning').querySelector('[data-action="reset"]').click();
   $d(k.u, '[data-action="confirm"]').click();
@@ -813,7 +814,7 @@ function geraeteinfo({ devices, attribute } = {}) {
 }
 const info = (k, name) => $d(k.u, `[data-info="${name}"]`);
 
-test('Geräteinfo: Hersteller, Modell, Firmware, Seriennummer aus dem HA-Geräteregister', () => {
+test('ALL-12/DEV-08 Geräteinfo: Hersteller, Modell, Firmware, Seriennummer aus dem HA-Geräteregister', () => {
   const k = geraeteinfo({ devices: GERAET });
   assert.match(info(k, 'manufacturer').textContent, /Dreame/);
   assert.match(info(k, 'model').textContent, /Testmodell/);
@@ -824,7 +825,7 @@ test('Geräteinfo: Hersteller, Modell, Firmware, Seriennummer aus dem HA-Geräte
   assert.equal(info(ohne, 'serial_number'), null);
 });
 
-test('Netzwerk nur SSID und Signal (nie eine IP), Zeitzone, Status, Station, Fehler', () => {
+test('ALL-12/DEV-08 Netzwerk nur SSID und Signal (nie eine IP), Zeitzone, Status, Station, Fehler', () => {
   // Zusammengesetzt, damit der Datenschutztest (keine IPv4 im Testquelltext) hier nicht anschlägt.
   const ip = ['10', '0', '0', '5'].join('.');
   const k = geraeteinfo({ attribute: { ap: { ssid: 'Testnetz', rssi: -54, ip } } });
@@ -832,7 +833,7 @@ test('Netzwerk nur SSID und Signal (nie eine IP), Zeitzone, Status, Station, Feh
   assert.match(info(k, 'rssi').textContent, /-54 dBm/);
   assert.ok(!$d(k.u, '.body').textContent.includes(ip));
   assert.match(info(k, 'timezone').textContent, /Europe\/Vienna/);
-  for (const key of ['status', 'task_type', 'relocation_status', 'current_room']) assert.ok(info(k, key), key);
+  for (const key of ['status', 'state', 'task_status', 'task_type', 'relocation_status', 'current_room']) assert.ok(info(k, key), key);
   assert.match(info(k, 'current_room').textContent, /Atelier/);
   assert.match(info(k, 'station').textContent, /in Ordnung|Frischwasser|Schmutzwasser|Staubbeutel|Ablauf|Reinigungsmittel/);
   assert.match(info(k, 'faults').textContent, /Keine/);
@@ -868,7 +869,7 @@ function zeitplaene(schedule) {
 const plan = (k, id) => $d(k.u, `[data-schedule="${id}"]`);
 const rohAufruf = (k) => { const r = aufrufe(k); assert.equal(r.length, 1); assert.equal(r[0].data.key, 'schedule'); return r[0].data.value; };
 
-test('Zeitplan-Rohzeichenkette: verlustfrei hin und zurück für das App-Beispiel und alle Feldarten', () => {
+test('DEV-01 Zeitplan-Rohzeichenkette: verlustfrei hin und zurück für das App-Beispiel und alle Feldarten', () => {
   const { I } = aufbau();
   const kette = I.scheduleValue(PLAN);
   assert.equal(kette, '1-1-09:30-0000000-0-0-0-146-0;4-0-18:00-0111110-1-3-2-2-1,5;6-3-07:15-1000001-1-3-1-3-0');
@@ -876,7 +877,7 @@ test('Zeitplan-Rohzeichenkette: verlustfrei hin und zurück für das App-Beispie
   for (const t of PLAN) assert.deepEqual(integrationParst(kette).find((x) => x.id === t.id), t);
 });
 
-test('Liste aus schedule: Zeit, Tage/einmalig, an/aus, ungültig, Karte, Saugstufe/Wasser; Hinweis auf verlustbehaftetes Rückschreiben', () => {
+test('DEV-01 Liste aus schedule: Zeit, Tage/einmalig, an/aus, ungültig, Karte, Saugstufe/Wasser; Hinweis auf verlustbehaftetes Rückschreiben', () => {
   const k = zeitplaene(PLAN);
   assert.deepEqual($$d(k.u, '[data-schedule]').map((z) => z.getAttribute('data-schedule')), ['6', '1', '4'], 'nach Uhrzeit');
   assert.match(plan(k, '1').textContent, /09:30/);
@@ -891,14 +892,14 @@ test('Liste aus schedule: Zeit, Tage/einmalig, an/aus, ungültig, Karte, Saugstu
   assert.match($d(leer.u, '.schedule-empty').textContent, /Keine Zeitpläne/);
 });
 
-test('Ein/Aus schreibt alle Einträge als Rohzeichenkette, nur das Flag ändert sich', () => {
+test('DEV-01 Ein/Aus schreibt alle Einträge als Rohzeichenkette, nur das Flag ändert sich', () => {
   const k = zeitplaene(PLAN);
   plan(k, '4').querySelector('[role="switch"]').click();
   plan(k, '4').querySelector('[role="switch"]').click();
   assert.equal(rohAufruf(k), '1-1-09:30-0000000-0-0-0-146-0;4-1-18:00-0111110-1-3-2-2-1,5;6-3-07:15-1000001-1-3-1-3-0');
 });
 
-test('Bearbeiten: Uhrzeit und Tage; ohne Tag = einmalig', () => {
+test('DEV-01 Bearbeiten: Uhrzeit und Tage; ohne Tag = einmalig', () => {
   const k = zeitplaene(PLAN);
   plan(k, '1').querySelector('[data-action="schedule-edit"]').click();
   assert.equal($d(k.u, 'h1').textContent, 'Zeitplan bearbeiten');
@@ -910,7 +911,7 @@ test('Bearbeiten: Uhrzeit und Tage; ohne Tag = einmalig', () => {
   assert.equal(rohAufruf(k).split(';')[0], '1-1-10:00-0101000-1-0-0-146-0', 'Mo + Mi positionsweise ab Sonntag');
 });
 
-test('Neu: id = höchste + 1, Reinigungswerte vom vorhandenen Zeitplan; ohne Vorlage gesperrt mit Grund', () => {
+test('DEV-01 Neu: id = höchste + 1, Reinigungswerte vom vorhandenen Zeitplan; ohne Vorlage gesperrt mit Grund', () => {
   const k = zeitplaene(PLAN.slice(0, 1));
   $d(k.u, '[data-action="schedule-add"]').click();
   assert.equal($d(k.u, 'h1').textContent, 'Zeitplan hinzufügen');
@@ -922,7 +923,7 @@ test('Neu: id = höchste + 1, Reinigungswerte vom vorhandenen Zeitplan; ohne Vor
   assert.match($d(leer.u, '.schedule-empty').textContent, /Dreame-App/);
 });
 
-test('Löschen nach Bestätigung über delete_scheduled_task — auch der letzte Zeitplan (device.py#L4394)', () => {
+test('DEV-01 Löschen nach Bestätigung über delete_scheduled_task — auch der letzte Zeitplan (device.py#L4394)', () => {
   const k = zeitplaene(PLAN.slice(0, 1));
   plan(k, '1').querySelector('[data-action="schedule-edit"]').click();
   $d(k.u, '[data-action="delete"]').click();

@@ -1,0 +1,32 @@
+{
+  "DEV-05": {
+    "entscheidung": "Kameralicht-Automatik über den belegten Umweg vacuum_set_property mit params [101] statt einer eigenen Entität.",
+    "datum": "2026-11-10",
+    "beleg": "Nutzerentscheidung in der Capability Map (10.11.2026); Test mit Präfix DEV-05 in tests/einstellungen.test.js"
+  },
+  "DEV-06": {
+    "entscheidung": "Nicht stören ohne Wochentage; anlegen/löschen nur, wo das Gerät mehrere Zeiträume meldet (X40 nimmt einen).",
+    "datum": "2026-11-10",
+    "beleg": "Korrektur im Inventar (DEV-06); Tests mit Präfix DEV-06 in tests/einstellungen.test.js"
+  },
+  "ALL-07": {
+    "entscheidung": "Sprachpaket-Installation als Formular (vacuum_install_voice_pack mit Paket-ID, URL, MD5, Größe).",
+    "datum": "2026-11-10",
+    "beleg": "Nutzerentscheidung in der Capability Map (10.11.2026); Tests mit Präfix ALL-07 in tests/einstellungen.test.js"
+  },
+  "EDI-05": {
+    "entscheidung": "Niedrige Bereiche (low_lying_areas) nur anzeigen: vacuum_set_low_lying_area lehnt in Integration 2.0.3 ab (device.py#L6820).",
+    "datum": "2026-11-10",
+    "beleg": "Nutzerentscheidung in der Capability Map (10.11.2026); Tests mit Präfix EDI-05 in tests/karteneditor.test.js"
+  },
+  "REM-01": {
+    "entscheidung": "Fernsteuerung mit vorsichtigen Grenzwerten (vorwärts 100, rückwärts -100, drehen ±128) ausgeliefert, nicht live kalibriert.",
+    "datum": "2026-11-11",
+    "beleg": "Nutzerentscheidung in der Capability Map (11.11.2026); Tests mit Präfix REM-01 in tests/fernsteuerung.test.js"
+  },
+  "BAK-02": {
+    "entscheidung": "Wiederherstellen aus Datei-URL statt Hochladen (kein Dienst dafür); „Jetzt sichern“ fragt immer kurz nach (einziger Grant-Weg); Wiederherstellen gesperrt, solange der Roboter läuft oder pausiert ist; Raumeinstellungen werden vorher gemerkt und danach angeboten.",
+    "datum": "2026-11-12",
+    "beleg": "Spec map-backup (Live-Test 12.11.2026); Tests mit Präfix BAK-02 in tests/kartensicherung.test.js"
+  }
+}

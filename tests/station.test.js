@@ -26,7 +26,7 @@ const caps = (k) => k.haus.states['vacuum.robo'].attributes.capabilities;
 
 // ── Task 1: Schlüssel, Fähigkeiten, Stationsstatus ────────────────────────────
 
-test('Alle Dock-Schlüssel der Spec stehen in SETTINGS (Gruppe station) mit genau einem Reiter', () => {
+test('ALL-03/DOCK-02/DOCK-03/DOCK-04 Alle Dock-Schlüssel der Spec stehen in SETTINGS (Gruppe station) mit genau einem Reiter', () => {
   const { I } = aufbau();
   const spec = {
     wash: ['self_clean', 'washing_mode', 'water_temperature', 'smart_mop_washing', 'auto_rewashing', 'auto_recleaning', 'self_clean_frequency',
@@ -71,7 +71,7 @@ test('can() synthetisch: nur Entleeren, nur Waschen, nur Beuteltrocknung; ohne v
   assert.deepEqual(['dock', 'wash', 'empty', 'drain'].map((n) => k.model().can(n)), [true, false, false, false]);
 });
 
-test('stationStatus: alle Stationswerte mit Stufe, Text und Symbol; Probleme zuerst', () => {
+test('ALL-05/DOCK-06 stationStatus: alle Stationswerte mit Stufe, Text und Symbol; Probleme zuerst', () => {
   const k = aufbau();
   const liste = k.I.stationStatus(k.model());
   const keys = liste.map((s) => s.key);
@@ -90,7 +90,7 @@ test('stationStatus: alle Stationswerte mit Stufe, Text und Symbol; Probleme zue
   assert.deepEqual((() => { const o = aufbau("ohne-dock"); return o.I.stationStatus(o.model()); })(), []);
 });
 
-test('stationStatus: laufende Vorgänge als Text (Waschen, pausiert, Trocknen mit Rest)', () => {
+test('ALL-04/DOCK-06 stationStatus: laufende Vorgänge als Text (Waschen, pausiert, Trocknen mit Rest)', () => {
   const k = aufbau('voll', { attribute: { washing: true, washing_paused: true, drying: true } });
   const nach = Object.fromEntries(k.I.stationStatus(k.model()).map((s) => [s.key, s]));
   assert.equal(nach.washing.level, 'info');
@@ -99,7 +99,7 @@ test('stationStatus: laufende Vorgänge als Text (Waschen, pausiert, Trocknen mi
   assert.match(nach.draining_available.text, /Ja/);
 });
 
-test('Geräteinfo (ALL-12) nennt die Stationsprobleme aus stationStatus', () => {
+test('ALL-12 Geräteinfo (ALL-12) nennt die Stationsprobleme aus stationStatus', () => {
   const k = aufbau('voll', { attribute: { dust_bag_status: 'Check' } });
   k.karte._openDialog(k.I.MODULE_VIEWS.settings(k.karte));
   const d = k.u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG');
@@ -121,7 +121,7 @@ function dockMenue(name = 'voll', optionen) {
 const menueEintraege = (k) => $$d(k.u, '[data-station-action]').map((b) => b.getAttribute('data-station-action'));
 const menueEintrag = (k, name) => $$d(k.u, '[data-station-action]').find((b) => b.getAttribute('data-station-action') === name);
 
-test('Dock-Anzeige ist ein Knopf mit Text und Farbe wie bisher; ohne Dock keiner', () => {
+test('CORE-11/DOCK-06 Dock-Anzeige ist ein Knopf mit Text und Farbe wie bisher; ohne Dock keiner', () => {
   const k = aufbau('voll', { attribute: { dust_bag_status: 'Check' } });
   const knopf = dockKnopf(k);
   assert.equal(knopf.tagName, 'BUTTON');
@@ -134,7 +134,7 @@ test('Dock-Anzeige ist ein Knopf mit Text und Farbe wie bisher; ohne Dock keiner
   assert.deepEqual(k.haus.rufe, []);
 });
 
-test('Menü je Zustand mit genau den möglichen Einträgen', () => {
+test('ALL-04/ALL-05/DOCK-03/DOCK-05 Menü je Zustand mit genau den möglichen Einträgen', () => {
   const weg = { washing_available: false, drying_available: false, dust_collection_available: false };
   const faelle = [
     ['angedockt', {}, 'docked', ['wash', 'dry', 'empty', 'return?', 'settings']],
@@ -155,7 +155,7 @@ test('Menü je Zustand mit genau den möglichen Einträgen', () => {
   assert.ok(menueEintraege(beutel).includes('dust_bag_dry'), 'Beutel trocknen, wenn vorhanden');
 });
 
-test('Jeder Eintrag ruft genau seinen Dienst; Doppeltipp = ein Aufruf', () => {
+test('ALL-05/DOCK-04/DOCK-05 Jeder Eintrag ruft genau seinen Dienst; Doppeltipp = ein Aufruf', () => {
   const soll = { wash: aktion('toggle_washing'), dry: aktion('toggle_drying'), empty: aktion('start_auto_empty'), dust_bag_dry: aktion('toggle_dust_bag_drying') };
   for (const [name, aufruf] of Object.entries(soll)) {
     const k = dockMenue('voll', { attribute: { capabilities: caps(aufbau()).concat('dust_bag_drying') } });
@@ -172,7 +172,7 @@ test('Jeder Eintrag ruft genau seinen Dienst; Doppeltipp = ein Aufruf', () => {
   assert.deepEqual(aufrufe(z), [{ domain: 'vacuum', service: 'return_to_base', data: { entity_id: 'vacuum.robo' } }]);
 });
 
-test('Laufender Aufruf zeigt Zustand; Erfolg schließt das Menü, Fehler bleibt mit R12-Text', async () => {
+test('DOCK-05 Laufender Aufruf zeigt Zustand; Erfolg schließt das Menü, Fehler bleibt mit R12-Text', async () => {
   const k = dockMenue();
   let fertig;
   k.haus.antwort = () => new Promise((ok) => { fertig = ok; });
@@ -195,7 +195,7 @@ test('Laufender Aufruf zeigt Zustand; Erfolg schließt das Menü, Fehler bleibt 
   assert.equal(menueEintrag(f, 'empty').disabled, false, 'wieder bedienbar');
 });
 
-test('Station-Einstellungen aus dem Dock-Menü', () => {
+test('DOCK-01 Station-Einstellungen aus dem Dock-Menü', () => {
   const k = dockMenue();
   menueEintrag(k, 'settings').click();
   assert.equal($d(k.u, 'h1').textContent, 'Station');
@@ -227,7 +227,7 @@ function speicher(start = {}, { lesenWirft = false, schreibenWirft = false } = {
 }
 const SPEICHER_KEY = 'busch-vacuum-card:dock-tab:vacuum.robo';
 
-test('Gleiche Ansicht aus Dock-Menü und Geräteeinstellungen → Station; Reiter als tablist', () => {
+test('DOCK-01 Gleiche Ansicht aus Dock-Menü und Geräteeinstellungen → Station; Reiter als tablist', () => {
   const k = station();
   assert.equal($d(k.u, 'h1').textContent, 'Station');
   assert.equal($d(k.u, '.sheet').getAttribute('data-kind'), 'editor');
@@ -245,7 +245,7 @@ test('Gleiche Ansicht aus Dock-Menü und Geräteeinstellungen → Station; Reite
   assert.deepEqual(k.haus.rufe, []);
 });
 
-test('Reiter nur je Fähigkeit: nur Entleeren, nur Waschen', () => {
+test('DOCK-01 Reiter nur je Fähigkeit: nur Entleeren, nur Waschen', () => {
   const basis = caps(aufbau());
   const nurLeeren = station('voll', { attribute: { capabilities: basis.filter((c) => c !== 'self_wash_base') } });
   assert.deepEqual(reiter(nurLeeren), ['empty']);
@@ -273,7 +273,7 @@ test('Pfeiltasten, Home und End wechseln den Reiter und den Fokus', () => {
   assert.equal(aktiv(k), 'dry');
 });
 
-test('Letzter Reiter je Sauger aus localStorage; fehlender oder defekter Speicher → erster, kein Fehler', () => {
+test('DOCK-01 Letzter Reiter je Sauger aus localStorage; fehlender oder defekter Speicher → erster, kein Fehler', () => {
   const s = speicher();
   const k = station('voll', { speicher: s });
   $$d(k.u, '[role="tab"]')[2].click();
@@ -291,7 +291,7 @@ test('Letzter Reiter je Sauger aus localStorage; fehlender oder defekter Speiche
   assert.equal(aktiv(nurLeeren), 'empty', 'gemerkter Reiter fehlt auf diesem Gerät');
 });
 
-test('Statusliste oben mit Symbol und Text, Probleme zuerst', () => {
+test('DOCK-06 Statusliste oben mit Symbol und Text, Probleme zuerst', () => {
   const k = station('voll', { attribute: { dust_bag_status: 'Check' } });
   const punkte = $$d(k.u, '[data-status]');
   assert.ok(punkte.length >= 15, 'alle Werte vorhanden');
@@ -316,8 +316,9 @@ const REITER_ZEILEN = {
 };
 const setze = (key, value) => ({ domain: 'dreame_vacuum', service: 'vacuum_set_property', data: { entity_id: 'vacuum.robo', key, value } });
 
+const REITER_IDS = { wash: 'DOCK-02/ALL-03', dry: 'DOCK-03/ALL-04', empty: 'DOCK-04/ALL-05' };
 for (const [name, erwartet] of Object.entries(REITER_ZEILEN)) {
-  test(`Reiter ${name}: jede Zeile mit Fixture-Wert und eigenem Schreibaufruf (settingRow)`, () => {
+  test(`${REITER_IDS[name] || 'DOCK-01'} Reiter ${name}: jede Zeile mit Fixture-Wert und eigenem Schreibaufruf (settingRow)`, () => {
     const k = station('voll', { speicher: speicher({ [SPEICHER_KEY]: name }) });
     assert.deepEqual(zeilenIm(k).slice().sort(), Object.keys(erwartet).sort());
     const soll = [];
@@ -348,7 +349,7 @@ for (const [name, erwartet] of Object.entries(REITER_ZEILEN)) {
   });
 }
 
-test('Aktionen im Reiter: gleicher Text, gleiches Symbol, gleicher Aufruf wie im Dock-Menü (R01)', () => {
+test('ALL-03/ALL-04/DOCK-02/DOCK-03 Aktionen im Reiter: gleicher Text, gleiches Symbol, gleicher Aufruf wie im Dock-Menü (R01)', () => {
   const k = station('voll', { speicher: speicher({ [SPEICHER_KEY]: 'dry' }) });
   const knopf = $in(k, '[role="tabpanel"]', '[data-station-action="dry"]');
   assert.match(knopf.textContent, /Trocknen starten/);
@@ -356,7 +357,7 @@ test('Aktionen im Reiter: gleicher Text, gleiches Symbol, gleicher Aufruf wie im
   assert.deepEqual(aufrufe(k), [aktion('toggle_drying')]);
 });
 
-test('Wartung: jede Aktion nach Bestätigung mit Folgetext; Station reinigen und Nachreinigen sagen, dass der Roboter das Dock verlässt', () => {
+test('ALL-03/DOCK-02/DOCK-04 Wartung: jede Aktion nach Bestätigung mit Folgetext; Station reinigen und Nachreinigen sagen, dass der Roboter das Dock verlässt', () => {
   const wartung = (k) => $$in(k, '.station-upkeep', '[data-station-action]').map((b) => b.getAttribute('data-station-action'));
   assert.deepEqual(wartung(station()), ['drain', 'empty_tank', 'station_cleaning', 'self_repair', 'recleaning']);
   for (const [name, soll, folge] of [['drain', aktion('start_draining'), /lässt ihr Wasser ab/], ['empty_tank', aktion('start_draining', '1'), /verworfen/],
@@ -381,7 +382,7 @@ test('Wartung: jede Aktion nach Bestätigung mit Folgetext; Station reinigen und
   assert.deepEqual(wartung(k), ['station_cleaning', 'self_repair', 'recleaning'], 'Ablassen nur wenn möglich');
 });
 
-test('Sperrgründe sichtbar: Wassertemperatur, Waschmodus, Selbstreinigungsfläche, Trocknungsdauer', () => {
+test('ALL-03/ALL-04/ALL-05/DOCK-02/DOCK-03/DOCK-04 Sperrgründe sichtbar: Wassertemperatur, Waschmodus, Selbstreinigungsfläche, Trocknungsdauer', () => {
   const grund = (k, key) => {
     const z = k.I.settingRow(k.karte, k.model(), key);
     return z.getAttribute('data-state') === 'locked' ? z.querySelector('.setting-status').textContent : '';
@@ -398,7 +399,7 @@ test('Sperrgründe sichtbar: Wassertemperatur, Waschmodus, Selbstreinigungsfläc
   assert.match(grund(aufbau('voll', { attribute: { auto_dust_collecting: false, auto_empty_frequency: 1 } }), 'auto_empty_frequency'), /Auto-Entleeren/);
 });
 
-test('Roboter außerhalb des Docks im Ruhezustand: „Zurück zum Dock“ zuerst und hervorgehoben', () => {
+test('DOCK-05 Roboter außerhalb des Docks im Ruhezustand: „Zurück zum Dock“ zuerst und hervorgehoben', () => {
   const knoepfe = (k) => k.karte.shadowRoot.querySelectorAll('.ctl').map((b) => b.getAttribute('data-action') + ':' + b.getAttribute('data-variant'));
   assert.deepEqual(knoepfe(aufbau('voll', { zustand: 'idle', attribute: { docked: false } })), ['return:primary', 'start:secondary']);
   assert.deepEqual(knoepfe(aufbau('voll', { zustand: 'idle', attribute: { docked: true } })), ['start:primary', 'return:secondary'], 'ohne Befund bleibt Start vorn');

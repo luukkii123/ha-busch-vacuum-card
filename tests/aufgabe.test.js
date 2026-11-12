@@ -26,7 +26,7 @@ function karteMit(name, zustand, attribute, extra = {}) {
 const fehlerSensor = (state, beschreibung) => ({ 'sensor.robo_error': { entity_id: 'sensor.robo_error', state, attributes: { description: beschreibung, friendly_name: 'Robo Fehler' } } });
 
 // ── Aufgabenwahl (CORE-06) ─────────────────────────────────────────────────
-test('voll: fünf Aufgabenarten mit Text, Gesamt vorgewählt', () => {
+test('CORE-06 voll: fünf Aufgabenarten mit Text, Gesamt vorgewählt', () => {
   const { karte, u } = karteMit('voll');
   assert.deepEqual(arten(karte), ['all', 'room', 'zone', 'spot', 'goto']);
   assert.deepEqual(gewaehlt(karte), ['all']);
@@ -36,7 +36,7 @@ test('voll: fünf Aufgabenarten mit Text, Gesamt vorgewählt', () => {
   assert.deepEqual(u.fehler, []);
 });
 
-test('ohne Karte oder minimal: nur Gesamt möglich, keine leere Auswahl', () => {
+test('CORE-02 ohne Karte oder minimal: nur Gesamt möglich, keine leere Auswahl', () => {
   assert.equal($(karteMit('ohne-karte').karte, '.tasks'), null);
   assert.equal($(karteMit('minimal').karte, '.tasks'), null);
 });
@@ -65,7 +65,7 @@ test('Wahl bleibt bei fremden Updates und eigenen Zustandswechseln erhalten', ()
   assert.deepEqual(gewaehlt(karte), ['zone']);
 });
 
-test('laufende Aufgabe sperrt die Wahl und zeigt die laufende Art', () => {
+test('CORE-06 laufende Aufgabe sperrt die Wahl und zeigt die laufende Art', () => {
   const { karte } = karteMit('voll', 'cleaning', { started: true, segment_cleaning: true });
   assert.deepEqual(gewaehlt(karte), ['room']);
   for (const b of $$(karte, '.task')) assert.equal(b.disabled, true);
@@ -78,7 +78,7 @@ test('pausiert ist die Aufgabe weiter aktiv; angedockt nicht', () => {
   assert.equal(art(karteMit('voll', 'docked', { started: false }).karte, 'all').disabled, false);
 });
 
-test('Symbol mit Text: geplante und Shortcut-Aufgabe', () => {
+test('CORE-06 Symbol mit Text: geplante und Shortcut-Aufgabe', () => {
   const geplant = $(karteMit('voll', 'cleaning', { started: true, scheduled_clean: true }).karte, '.task-badge');
   assert.match(geplant.textContent, /Geplante Aufgabe/);
   assert.equal(geplant.querySelector('ha-icon').getAttribute('icon'), 'mdi:calendar-clock');
@@ -93,7 +93,7 @@ test('ohne Befund keine Meldungen', () => {
   assert.deepEqual(meldungen(karteMit('minimal').karte), []);
 });
 
-test('Fehler: Text aus HAs Fehlersensor, Stufe als Wort (nicht nur Farbe)', () => {
+test('CORE-10 Fehler: Text aus HAs Fehlersensor, Stufe als Wort (nicht nur Farbe)', () => {
   const { karte } = karteMit('voll', 'error', { has_error: true, error: 'Wheels blocked' }, fehlerSensor('wheels_blocked', 'Räder blockiert'));
   assert.deepEqual(meldungen(karte), ['error']);
   const m = meldung(karte, 'error');
@@ -110,7 +110,7 @@ test('ohne Fehlersensor: Text aus dem Sauger-Attribut', () => {
   assert.match(meldung(neueKarte(u, haus), 'error').textContent, /Wheels blocked/);
 });
 
-test('Warnung: über button.*_clear_warning löschbar', () => {
+test('CORE-10 Warnung: über button.*_clear_warning löschbar', () => {
   const { karte, haus } = karteMit('voll', 'docked', { has_error: false, error: 'Remove mop' }, fehlerSensor('remove_mop', 'Mopp abnehmen'));
   const m = meldung(karte, 'warning');
   assert.match(m.textContent, /Warnung/);
@@ -129,7 +129,7 @@ function ohneLoeschknopf(services) {
   return { haus, karte: neueKarte(u, haus) };
 }
 
-test('Warnung ohne Knopf: Dienst vacuum_clear_warning nur, wenn vorhanden', () => {
+test('CORE-10 Warnung ohne Knopf: Dienst vacuum_clear_warning nur, wenn vorhanden', () => {
   const ohne = ohneLoeschknopf();
   assert.equal(meldung(ohne.karte, 'warning').querySelector('[data-action="clear"]'), null);
   const mit = ohneLoeschknopf((s) => Object.assign({}, s, { dreame_vacuum: Object.assign({}, s.dreame_vacuum, { vacuum_clear_warning: { fields: {} } }) }));
@@ -137,19 +137,19 @@ test('Warnung ohne Knopf: Dienst vacuum_clear_warning nur, wenn vorhanden', () =
   assert.deepEqual(roh(mit.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_clear_warning', data: { entity_id: 'vacuum.robo' } }]);
 });
 
-test('Wassermangel als eigene Meldung', () => {
+test('CORE-10 Wassermangel als eigene Meldung', () => {
   const { karte } = karteMit('voll', 'docked', { low_water: true, low_water_warning: 'Please fill clean water tank' });
   const m = meldung(karte, 'low_water');
   assert.match(m.textContent, /Wassermangel/);
   assert.match(m.textContent, /Please fill clean water tank/);
 });
 
-test('Info: unterbrochene Reinigung lädt und setzt fort', () => {
+test('CORE-10 Info: unterbrochene Reinigung lädt und setzt fort', () => {
   const { karte } = karteMit('voll', 'docked', { cleaning_paused: 1, started: true });
   assert.match(meldung(karte, 'info').textContent, /Hinweis/);
 });
 
-test('wegwischen merkt bis zum neuen Zustand', () => {
+test('CORE-10 wegwischen merkt bis zum neuen Zustand', () => {
   const { karte, haus } = karteMit('voll', 'docked', { error: 'Remove mop' });
   meldung(karte, 'warning').querySelector('[data-action="dismiss"]').click();
   assert.deepEqual(meldungen(karte), []);
@@ -172,24 +172,24 @@ test('Meldungsknöpfe haben Namen', () => {
 // ── Fortschritt (CORE-09) ──────────────────────────────────────────────────
 const fortschritt = (wert) => ({ 'sensor.robo_cleaning_progress': { entity_id: 'sensor.robo_cleaning_progress', state: wert, attributes: { unit_of_measurement: '%' } } });
 
-test('Fortschrittsbalken bei laufender Aufgabe mit cleaning_progress', () => {
+test('CORE-09 Fortschrittsbalken bei laufender Aufgabe mit cleaning_progress', () => {
   const { karte } = karteMit('voll', 'cleaning', { started: true, cleaning_progress: 10 }, fortschritt('42'));
   const balken = $(karte, '.progress');
   assert.equal(Number(balken.value), 42);
   assert.match(balken.getAttribute('aria-label'), /42/);
 });
 
-test('ohne Sensor: Fortschritt aus dem Attribut', () => {
+test('CORE-09 ohne Sensor: Fortschritt aus dem Attribut', () => {
   const { karte } = karteMit('voll', 'cleaning', { started: true, cleaning_progress: 10 }, fortschritt('unavailable'));
   assert.equal(Number($(karte, '.progress').value), 10);
 });
 
-test('kein Balken ohne Aufgabe oder ohne Fähigkeit', () => {
+test('CORE-09 kein Balken ohne Aufgabe oder ohne Fähigkeit', () => {
   assert.equal($(karteMit('voll').karte, '.progress'), null);
   assert.equal($(karteMit('minimal', 'cleaning', { started: true, cleaning_progress: 40 }).karte, '.progress'), null);
 });
 
-test('Fortschritt aktualisiert ohne Neubau der Knöpfe bei fremden Updates', () => {
+test('CORE-09 Fortschritt aktualisiert ohne Neubau der Knöpfe bei fremden Updates', () => {
   const { karte, haus } = karteMit('voll', 'cleaning', { started: true }, fortschritt('42'));
   const vorher = knopf(karte, 'pause');
   karte.hass = haus.fremd();

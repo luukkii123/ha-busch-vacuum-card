@@ -31,7 +31,7 @@ function sender(name = 'voll') {
 
 // ── Task 1: Wertabbildung ───────────────────────────────────────────────────
 
-test('remoteValue: Totzone ±0,15 → 0, außerhalb linear bis 100/−100/±128, ganzzahlig', () => {
+test('REM-01 remoteValue: Totzone ±0,15 → 0, außerhalb linear bis 100/−100/±128, ganzzahlig', () => {
   const { I } = sender();
   const v = (raw, m) => I.remoteValue('velocity', raw, m), r = (raw, m) => I.remoteValue('rotation', raw, m);
   for (const x of [0, 0.1, -0.15, 0.15]) { assert.strictEqual(v(x), 0); assert.strictEqual(r(x), 0); }
@@ -64,7 +64,7 @@ test('remoteValue: Umschalt halbiert Tempo, Strg halbiert Drehen, Präzision bei
 
 // ── Task 1: Sende-Logik ─────────────────────────────────────────────────────
 
-test('RemoteSender: Aufruf genau dreame_vacuum.vacuum_remote_control_move_step ohne prompt', () => {
+test('REM-01 RemoteSender: Aufruf genau dreame_vacuum.vacuum_remote_control_move_step ohne prompt', () => {
   const { haus, s } = sender();
   s.set({ v: 40, r: -12 });
   assert.deepEqual(roh(haus.rufe), [{ domain: 'dreame_vacuum', service: DIENST, data: { entity_id: 'vacuum.robo', velocity: 40, rotation: -12 } }]);
@@ -206,7 +206,7 @@ function ansicht(name = 'voll', sauger) {
 }
 const letzterIstStopp = (haus) => assert.deepEqual(schritte(haus).at(-1), [0, 0]);
 
-test('Menü → Fernsteuerung: eigene Ansicht statt Platzhalter, unscharf mit Warnhinweis', () => {
+test('REM-03 Menü → Fernsteuerung: eigene Ansicht statt Platzhalter, unscharf mit Warnhinweis', () => {
   const { u, haus, I, zustand } = ansicht();
   assert.equal(typeof I.MODULE_VIEWS.remote, 'function');
   assert.equal($d(u, 'h1').textContent, 'Fernsteuerung');
@@ -400,7 +400,7 @@ function regler(k, achse) {
 }
 const halte = (k, richtung) => { const el = $d(k.u, '[data-hold="' + richtung + '"]'); el.gefangen = []; el.setPointerCapture = (id) => el.gefangen.push(id); return el; };
 
-test('Regler: role=slider mit Namen, Ausrichtung, Grenzen und Text „Mitte“; touch-action none', () => {
+test('REM-01 Regler: role=slider mit Namen, Ausrichtung, Grenzen und Text „Mitte“; touch-action none', () => {
   const k = ansicht();
   const v = regler(k, 'velocity'), t = regler(k, 'turn');
   for (const [el, name, lage] of [[v, 'Tempo', 'vertical'], [t, 'Lenken', 'horizontal']]) {
@@ -452,7 +452,7 @@ test('Regler: Zeigerfang, Wert aus der Position, Text „vorwärts 41 %“, neue
   assert.equal(t.getAttribute('aria-valuetext'), 'rechts 41 %');
 });
 
-test('zwei Zeiger gleichzeitig: Tempo und Lenken in einem Schritt, Loslassen einzeln', async () => {
+test('REM-01 zwei Zeiger gleichzeitig: Tempo und Lenken in einem Schritt, Loslassen einzeln', async () => {
   const k = ansicht();
   k.starten();
   const v = regler(k, 'velocity'), t = regler(k, 'turn');
@@ -494,7 +494,7 @@ test('Zurückfedern: Übergang nur beim Loslassen, keiner bei reduzierter Bewegu
   assert.match(I.DIALOG_STYLES, /prefers-reduced-motion: reduce\)\s*\{[^}]*\.remote-knob\s*\{\s*transition: none/);
 });
 
-test('Haptik beim Verlassen der Totzone und beim Stopp, nicht in der Totzone; disable_haptic schaltet ab', async () => {
+test('CORE-15/REM-01 Haptik beim Verlassen der Totzone und beim Stopp, nicht in der Totzone; disable_haptic schaltet ab', async () => {
   for (const [aus, erwartet] of [[false, 2], [true, 0]]) {
     const u = neueUmgebung(), haus = hausAus('voll');
     steuerbar(haus);
@@ -751,7 +751,7 @@ async function mitKarte(name = 'voll', sauger) {
 }
 const prozent = (k, pos) => { const p = k.map.toImage(pos); return 'translate(' + (p.x / 10).toFixed(2) + '%, ' + (p.y / 8).toFixed(2) + '%)'; };
 
-test('Karte: Bild der aktiven Kamera (gleiche Adresse, kein eigener Abruf) und Marker über toImage', async () => {
+test('REM-03 Karte: Bild der aktiven Kamera (gleiche Adresse, kein eigener Abruf) und Marker über toImage', async () => {
   const k = await mitKarte();
   const abrufe = k.map.stats.images;
   const bild = $d(k.u, '.remote-map-base');
@@ -791,7 +791,7 @@ test('Karte: im Datenmodus eine Kopie des gemalten Canvas, neu bei map-frame', a
   k.u.document.createElement = orig;
 });
 
-test('Karte: ohne Kartenkamera bzw. ohne Position Hinweis, Regler bleiben (R18)', async () => {
+test('REM-03 Karte: ohne Kartenkamera bzw. ohne Position Hinweis, Regler bleiben (R18)', async () => {
   const k = ansicht('ohne-karte');
   assert.equal($d(k.u, '.remote-map').hidden, true);
   assert.match($d(k.u, '.remote-map-note').textContent, /Keine Karte/);
@@ -809,14 +809,14 @@ test('Karte: verlassen entfernt den map-frame-Zuhörer', async () => {
   assert.equal((k.map.el.listeners['map-frame'] || []).length, vorher - 1);
 });
 
-test('Zustand: HA-Übersetzung des Zustands in der Ansicht', () => {
+test('ALL-12 Zustand: HA-Übersetzung des Zustands in der Ansicht', () => {
   const k = ansicht();
   assert.equal($d(k.u, '.remote-state').textContent, 'Angedockt');
   k.sauger('cleaning', { status: 'remote_control' });
   assert.equal($d(k.u, '.remote-state').textContent, 'Reinigt');
 });
 
-test('Fortsetzen/Zurück zur Station je Zustand über core _call (vacuum.start / return_to_base)', async () => {
+test('REM-03 Fortsetzen/Zurück zur Station je Zustand über core _call (vacuum.start / return_to_base)', async () => {
   const k = ansicht();
   assert.equal($d(k.u, '[data-control="resume"]').hidden, true, 'angedockt: kein Fortsetzen');
   assert.equal($d(k.u, '[data-control="return"]').hidden, true, 'angedockt: kein Zurück');
@@ -848,7 +848,7 @@ test('Fortsetzen während der Fahrt: erst Stopp, dann der core-Aufruf', async ()
   assert.ok(namen.includes('start'));
 });
 
-test('Layout: Hochformat Karte oben; Querformat am Handy Regler an den Rändern mit Safe Areas; Linkshänder gespiegelt', () => {
+test('REM-01 Layout: Hochformat Karte oben; Querformat am Handy Regler an den Rändern mit Safe Areas; Linkshänder gespiegelt', () => {
   const k = ansicht('voll');
   const kinder = $d(k.u, '.remote').childNodes.map((n) => n.className.split(' ')[0]);
   assert.ok(kinder.indexOf('remote-map-wrap') < kinder.indexOf('remote-pad'), 'Karte vor den Reglern');

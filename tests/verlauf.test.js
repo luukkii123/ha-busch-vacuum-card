@@ -24,7 +24,7 @@ const sensor = (laeufe, id = HIST) => ({ entity_id: id, state: '2026-11-09T12:47
 
 // ── Task 1: Läufe, Stufen, Gruppen, Summen ──────────────────────────────────
 
-test('historyRuns: Fixture voll — 30 Läufe nach timestamp absteigend', () => {
+test('HIS-01 historyRuns: Fixture voll — 30 Läufe nach timestamp absteigend', () => {
   const { I, haus } = aufbau();
   const runs = I.historyRuns(haus.states[HIST]);
   assert.equal(runs.length, 30);
@@ -45,7 +45,7 @@ test('historyRuns: Sortierung nach timestamp, nicht nach dem Schlüsseltext (Jah
   assert.deepEqual(runs.map((r) => r.key), ['01-02 08:00', '2027-01-01 00:20', '12-31 23:50']);
 });
 
-test('historyRuns: Stufen unterbrochen / auffällig / fertig', () => {
+test('HIS-01 historyRuns: Stufen unterbrochen / auffällig / fertig', () => {
   const { I, haus } = aufbau();
   const runs = I.historyRuns(haus.states[HIST]);
   const stufe = (key) => runs.find((r) => r.key === key).level;
@@ -58,7 +58,7 @@ test('historyRuns: Stufen unterbrochen / auffällig / fertig', () => {
   assert.equal(syn[0].level, 'notice', 'Unterbrechungsgrund bei fertigem Lauf');
 });
 
-test('historyRuns: Gruppen über gleiches multiple_cleaning_time (nur ab zwei Läufen)', () => {
+test('HIS-01 historyRuns: Gruppen über gleiches multiple_cleaning_time (nur ab zwei Läufen)', () => {
   const { I, haus } = aufbau();
   const runs = I.historyRuns(haus.states[HIST]);
   const g = (key) => runs.find((r) => r.key === key).group;
@@ -68,7 +68,7 @@ test('historyRuns: Gruppen über gleiches multiple_cleaning_time (nur ab zwei L�
   assert.equal(g('11-07 11:38'), null, 'ohne multiple_cleaning_time');
 });
 
-test('historySums: Fläche, Zeit, Anzahl aus den Texten; ft² mit HA-Einheiten', () => {
+test('HIS-01 historySums: Fläche, Zeit, Anzahl aus den Texten; ft² mit HA-Einheiten', () => {
   const { I, haus } = aufbau();
   const runs = I.historyRuns(sensor({
     a: { timestamp: 3, cleaning_time: '50 min', cleaned_area: '10 m²' },
@@ -123,7 +123,7 @@ test('Menü: history/cruising_history aus MODULE_VIEWS statt Platzhalter', () =>
   assert.ok($$d(k.u, '[data-run]').length > 0);
 });
 
-test("can('cruising_history') = Fähigkeit cruising und Sensor; hidden_card_objects blendet aus", () => {
+test("HIS-03 can('cruising_history') = Fähigkeit cruising und Sensor; hidden_card_objects blendet aus", () => {
   assert.ok(menueEintraege(aufbau()).includes('cruising_history'));
   const ohneCap = aufbau('voll', { states: (s) => ({ 'vacuum.robo': Object.assign({}, s['vacuum.robo'], { attributes: Object.assign({}, s['vacuum.robo'].attributes, { capabilities: s['vacuum.robo'].attributes.capabilities.filter((c) => c !== 'cruising') }) }) }) });
   assert.equal(ohneCap.model().can('cruising_history'), false);
@@ -139,7 +139,7 @@ test("can('cruising_history') = Fähigkeit cruising und Sensor; hidden_card_obje
   assert.ok(e.includes('history') && !e.includes('cruising_history'));
 });
 
-test('Liste: Datum nach HA, Status übersetzt (Rückfall Rohtext), Fläche, Dauer, Statuspunkt mit Symbol und Wort', () => {
+test('HIS-01 Liste: Datum nach HA, Status übersetzt (Rückfall Rohtext), Fläche, Dauer, Statuspunkt mit Symbol und Wort', () => {
   const k = aufbau('voll', { haus: mitTexten });
   oeffne(k);
   // Gruppen zu: oberste Zeile ist der Kopf der Gruppe 1794228271.
@@ -169,7 +169,7 @@ test('Liste: Datum nach HA, Status übersetzt (Rückfall Rohtext), Fläche, Daue
   assert.match(z2.querySelector('.run-status').textContent, /Unterbrochen/);
 });
 
-test('Liste: Gruppen per Shift+Plus/Minus auf- und zuklappen; Summenzeile', () => {
+test('HIS-01 Liste: Gruppen per Shift+Plus/Minus auf- und zuklappen; Summenzeile', () => {
   const k = aufbau();
   oeffne(k);
   const summe = $d(k.u, '.history-sums');
@@ -233,7 +233,7 @@ function detail(optionen = {}, ts = NEUESTER) {
 }
 const wert = (k, name) => { const dd = $d(k.u, '[data-fact="' + name + '"]'); return dd ? dd.textContent : null; };
 
-test('Detail: Sensorwerte sofort, Daten-JSON-Werte „—“ mit Ladeanzeige, danach Zähler/Startmethode', async () => {
+test('HIS-02 Detail: Sensorwerte sofort, Daten-JSON-Werte „—“ mit Ladeanzeige, danach Zähler/Startmethode', async () => {
   const k = detail();
   assert.equal($d(k.u, 'h1').textContent.includes(':'), true, 'Titel = Datum und Uhrzeit');
   assert.equal(wert(k, 'area'), '24 m²');
@@ -263,7 +263,7 @@ test('Kein Abruf ohne geöffnetes Detail (Liste, fremde Updates)', async () => {
   assert.equal(verlaufAbrufe(k).length, 0);
 });
 
-test('Blättern: Älter/Neuer und ←/→, am Rand gesperrt; ein Abruf je Lauf, Abbruch beim Blättern', async () => {
+test('HIS-02 Blättern: Älter/Neuer und ←/→, am Rand gesperrt; ein Abruf je Lauf, Abbruch beim Blättern', async () => {
   let offen = null;
   const k = detail({ antwort: datenAntwort({ [ZWEITER]: () => new Promise((r) => { offen = r; }) }) });
   await mikro(); await mikro();
@@ -335,7 +335,7 @@ async function geladen(optionen, ts) {
 }
 const leinwand = (k) => $d(k.u, '.history-map-canvas');
 
-test('Datenmodus: Karte des Laufs als Canvas aus dem Daten-JSON, Alternativtext, Pfad; kein weiterer Abruf', async () => {
+test('HIS-02 Datenmodus: Karte des Laufs als Canvas aus dem Daten-JSON, Alternativtext, Pfad; kein weiterer Abruf', async () => {
   const k = await geladen();
   const c = leinwand(k);
   assert.ok(c, 'Canvas');
@@ -349,7 +349,7 @@ test('Datenmodus: Karte des Laufs als Canvas aus dem Daten-JSON, Alternativtext,
   assert.equal(verlaufAbrufe(k).length, 1);
 });
 
-test('Umschalter Reinigungs-/WLAN-Karte nur mit wifi_map_data; Tastatur; WLAN ohne Pfad', async () => {
+test('HIS-02 Umschalter Reinigungs-/WLAN-Karte nur mit wifi_map_data; Tastatur; WLAN ohne Pfad', async () => {
   const k = await geladen();
   const tabs = $$d(k.u, '[role="tab"]');
   assert.deepEqual(tabs.map((t) => t.textContent), ['Reinigungskarte', 'WLAN-Karte']);
@@ -395,7 +395,7 @@ test('Zoom per Knopf: +, −, Einpassen', async () => {
   assert.equal(stufe(), '1');
 });
 
-test('Hindernisse des Laufs: Liste und Marker, Foto nur mit gemeldetem Bild über den Verlaufs-Endpunkt, kein Ignorieren', async () => {
+test('MAP-04 Hindernisse des Laufs: Liste und Marker, Foto nur mit gemeldetem Bild über den Verlaufs-Endpunkt, kein Ignorieren', async () => {
   const k = await geladen();
   const eintraege = $$d(k.u, '[data-obstacle]');
   assert.equal(eintraege.length, 1, 'blockierte Räume stehen schon oben');
@@ -481,7 +481,7 @@ test('Nochmal reinigen: nicht bei älteren Läufen; gesperrt mit Grund bei ander
 
 // ── Task 6: Cruising-Verlauf ────────────────────────────────────────────────
 
-test('Cruising: Liste ohne Flächensumme, Detail mit cruising=1, Dauer/Art/Karte, kein Nochmal-reinigen, kein Umschalter', async () => {
+test('HIS-03 Cruising: Liste ohne Flächensumme, Detail mit cruising=1, Dauer/Art/Karte, kein Nochmal-reinigen, kein Umschalter', async () => {
   const k = aufbau('voll', { antwort: datenAntwort({ 1745078136: { json: verlaufsdaten({ wifi_map_data: Object.assign({}, verlaufsdaten().wifi_map_data), map_name: undefined }) } }), states: (s) => {
     const c = s['sensor.robo_cruising_history'];
     const e = Object.assign({}, c.attributes['2025-04-19 17:55'], { map_name: 'Karte 1' });

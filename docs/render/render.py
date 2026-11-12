@@ -61,7 +61,27 @@ import sys
 import threading
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, Page
+
+# Release Task 2: every picture records which dialog views (data-view = the
+# view's id) are open, so each id of the card's VIEW_IDS needs a picture.
+VIEWS_SEEN = {}
+_SCREENSHOT = Page.screenshot
+
+
+def _screenshot_with_views(self, *args, **kwargs):
+    try:
+        ids = self.evaluate("""() => Array.from(document.querySelectorAll('busch-vacuum-dialog')).map((d) => {
+            const s = d.shadowRoot && d.shadowRoot.querySelector('.sheet'); return s ? (s.getAttribute('data-view') || '(ohne id)') : null; }).filter(Boolean)""")
+    except Exception:  # a page without the harness (e.g. closed) records nothing
+        ids = []
+    name = Path(str(kwargs.get("path") or "")).name
+    for view_id in ids:
+        VIEWS_SEEN.setdefault(view_id, []).append(name)
+    return _SCREENSHOT(self, *args, **kwargs)
+
+
+Page.screenshot = _screenshot_with_views
 
 HERE = Path(__file__).resolve().parent
 
@@ -75,6 +95,25 @@ try:
 except ImportError:
     REGELN_DA = False
     THEMA_CSS = ""
+
+# Inventory IDs of the render checks (release Task 1, scripts/vacuum-inventar-pruefen.py): by name start.
+RENDER_IDS = [
+    ("matrix: card renders", ["CORE-03", "CORE-17"]), ("matrix: control buttons", ["CORE-07"]),
+    ("matrix: error state", ["CORE-10", "CORE-11", "CORE-09"]), ("matrix: five task types", ["CORE-06"]),
+    ("matrix: every visible card button", ["CORE-08"]), ("panel mode", ["CORE-13"]),
+    ("map: data mode", ["MAP-01", "MAP-08"]), ("map: robot symbol", ["MAP-03"]), ("English UI", ["CORE-16"]),
+    ("dialog ", ["CORE-12"]), ("overflowing sheet", ["CORE-12"]), ("page behind is locked", ["CORE-12"]),
+    ("every dialog button", ["CORE-12"]), ("after turning the phone", ["CORE-12"]),
+    ("confirmation dialog", ["CORE-12", "CORE-20"]), ("editor renders", ["CORE-18"]),
+    ("map image fallback", ["MAP-01"]), ("map zoom", ["MAP-02"]), ("map locked", ["CORE-14"]),
+    ("map motion", ["MAP-02"]), ("map dialogs", ["MAP-04", "CORE-19", "MAP-07"]), ("obstacle", ["MAP-04"]),
+    ("device settings", ["DEV-01", "DEV-06", "DEV-09"]), ("dock button", ["DOCK-05", "CORE-11"]),
+    ("station", ["DOCK-01", "DOCK-02", "DOCK-05"]), ("shortcuts", ["SHO-01", "SHO-02"]),
+    ("tasks room", ["TASK-02"]), ("tasks zone", ["TASK-03"]), ("tasks spot", ["TASK-04"]), ("tasks go-to", ["TASK-05"]),
+    ("tasks matrix", ["TASK-02", "TASK-03", "TASK-04", "TASK-05"]), ("history", ["HIS-01", "HIS-02"]),
+    ("remote keyboard", ["REM-02"]), ("remote", ["REM-01", "REM-03"]), ("clean settings", ["SET-02", "SET-04", "SET-05"]),
+    ("map editor", ["EDI-01", "EDI-02"]), ("map backup", ["BAK-01", "BAK-02"]), ("views:", ["CORE-12"]),
+]
 
 WIDTHS = (320, 390, 480, 960, 1280)
 THEMES = ("light", "dark")
@@ -370,6 +409,9 @@ def scenario(fixture, name):
         cam["recovery_map_file"] = {key: url + "&file=1" for key, url in zip(cam["recovery_map_picture"].keys(), cam["recovery_map_picture"].values())}
         if name == "backup_running":
             vac["attributes"].update({"map_recovery_status": "Running", "map_backup_status": "Success"})
+    elif name == "temporary":
+        # map-editor: a temporary map (synthetic) — save, discard and replace one of the stored maps.
+        vac["attributes"]["has_temporary_map"] = True
     elif name == "customized":
         vac["attributes"]["customized_cleaning"] = True
     elif name == "nonstrict":
@@ -424,8 +466,9 @@ def main():
     report = {"cardFile": str(card_file), "requests": [], "badResponses": [], "requestFailures": [],
               "consoleErrors": [], "pageErrors": [], "checks": [], "screenshots": []}
 
-    def check(name, passed, detail=""):
-        report["checks"].append({"name": name, "pass": bool(passed), "detail": detail})
+    def check(name, passed, detail="", ids=None):
+        found = ids if ids is not None else next((v for k, v in RENDER_IDS if name.startswith(k)), [])
+        report["checks"].append({"name": name, "pass": bool(passed), "detail": detail, "ids": list(found)})
 
     with sync_playwright() as p:
         browser = p.chromium.launch(args=["--force-color-profile=srgb"])
@@ -479,8 +522,9 @@ def main():
             page.evaluate("() => { window.closeDialogs(); window.card().shadowRoot.querySelector('.menu-button').click(); }")
 
         def open_placeholder():
+            # The release has no placeholder view any more: the settings view (kind editor) takes its place here.
             page.evaluate("""() => { window.closeDialogs(); const c = window.card();
-                c._openDialog(c._placeholderView({ name: 'settings', text: 'entrySettings', module: 'device-settings' })); }""")
+                c._openDialog(customElements.get('busch-vacuum-card').__internals.MODULE_VIEWS.settings(c)); }""")
 
         def open_confirm():
             page.evaluate("() => { window.closeDialogs(); window.card()._confirmMapChange('Obergeschoss mit sehr langem Namen', () => {}); }")
@@ -679,7 +723,7 @@ def main():
             build("docked")
             open_placeholder()
             page.wait_for_timeout(400)
-            shot = f"dialog-platzhalter-{w}x{h}-dark.png"
+            shot = f"dialog-einstellungen-{w}x{h}-dark.png"
             page.screenshot(path=str(out_dir / shot))
             report["screenshots"].append(shot)
             page.evaluate("() => { window.dialog().close(); }")
@@ -891,6 +935,10 @@ def main():
             ("sprachpaket-fehler", [("[data-group=audio]", None), ("[data-action=voice-pack]", None), ("[data-action=submit]", None)]),
             ("zubehoer-zuruecksetzen", [("[data-group=consumables]", None), ("[data-part=filter] [data-action=reset]", None)]),
             ("rotation-bestaetigen", [("[data-group=other]", None), ("[data-setting=map_rotation] select", "90")]),
+            ("dnd-loeschen", [("[data-group=dnd]", None), ("[data-action=dnd-edit]", None), ("[data-action=delete]", None)]),
+            ("sprachpaket-bestaetigen", [("[data-group=audio]", None), ("[data-action=voice-pack]", None), ("[data-field=lang_id]", "de2"),
+                                         ("[data-field=url]", "https://example.invalid/pack.zip"), ("[data-field=md5]", "0123456789abcdef0123456789abcdef"),
+                                         ("[data-field=size]", "1234"), ("[data-action=submit]", None)]),
         ]
         settings_geo = []
         for w, h in ((360, 640), (390, 844), (800, 600), (1280, 800)):
@@ -915,13 +963,13 @@ def main():
         report["settingsDialogs"] = settings_geo
         inside = lambda x: x["top"] >= -0.5 and x["bottom"] <= x["H"] + 0.5 and x["left"] >= -0.5 and x["right"] <= x["W"] + 0.5
         bad = [x for x in settings_geo if not inside(x) or x["small"] or x["smallFields"] or x["overflowX"] > 1 or str(x["title"]).startswith("missing")]
-        check("device settings: 22 views x 4 sizes x 2 themes inside the viewport, no sideways overflow, 44 px buttons and fields",
+        check(f"device settings: {len(settings_views)} views x 4 sizes x 2 themes inside the viewport, no sideways overflow, 44 px buttons and fields",
               not bad, json.dumps(bad[:4]))
         by = {x["label"]: x for x in settings_geo if x["w"] == 390 and x["theme"] == "light"}
         check("device settings: titles, rows and states as expected (search hits, inline errors, confirmations narrow)",
               by["uebersicht"]["title"] == "Geräteeinstellungen" and by["gruppe-carpet"]["rows"] == 7 and by["suche"]["rows"] >= 7
               and by["suche-leer"]["rows"] == 0 and by["dnd-fehler"]["errors"] == 1 and by["sprachpaket-fehler"]["errors"] == 4
-              and all(by[k]["kind"] == "confirm" for k in ("zeitplan-loeschen", "zubehoer-zuruecksetzen", "rotation-bestaetigen"))
+              and all(by[k]["kind"] == "confirm" for k in ("zeitplan-loeschen", "zubehoer-zuruecksetzen", "rotation-bestaetigen", "dnd-loeschen", "sprachpaket-bestaetigen"))
               and by["gruppe-station"]["title"] == "Station" and by["gruppe-info"]["rows"] >= 8,
               json.dumps({k: {"title": v["title"], "rows": v["rows"], "errors": v["errors"], "kind": v["kind"]} for k, v in by.items()}))
 
@@ -1784,6 +1832,10 @@ def main():
             tool.click();
             await wait(150);
             for (const sel of a.steps) {
+              // map-backup fix 12.11.2026: the note after a restore, with the rooms remembered before it.
+              if (sel === 'note:rooms') { const I = customElements.get('busch-vacuum-card').__internals;
+                c._restoreNote = { mapId: 3, text: 'Wiederhergestellt: Originalkarte vom 21.11.2024 10:20 um 13:44.', frame: null,
+                  rooms: I.roomSnapshot(c._model()), roomRun: { done: [], error: '', running: false } }; continue; }
               if (sel.startsWith('key:')) { document.dispatchEvent(new KeyboardEvent('keydown', { key: sel.slice(4), bubbles: true, composed: true })); await wait(80); continue; }
               const n = sr() && sr().querySelector(sel); if (!n) return 'missing ' + sel; n.click(); await wait(200); }
             await wait(350); return sr() ? sr().querySelector('h1').textContent : 'missing dialog'; }"""
@@ -1812,6 +1864,8 @@ def main():
             ("datei", "backup", bak_list + ["[data-action=restore-file]"]),
             ("datei-fehler", "backup", bak_list + ["[data-action=restore-file]", "[data-action=submit]"]),
             ("laeuft", "backup_running", bak_list),
+            ("raeume-zurueck", "backup", ["note:rooms"] + bak_list + ["[data-action=restore-rooms]"]),
+            ("temporaer-ersetzen", "temporary", ["[data-action=replace_temporary]"]),
         ]
         page.evaluate("() => { window.__serviceCalls = []; }")
         bak_geo = []
@@ -1834,7 +1888,7 @@ def main():
         inside_b = lambda x: x.get("top", -9) >= -0.5 and x.get("bottom", 9e9) <= x.get("H", 0) + 0.5 and x.get("left", -9) >= -0.5 and x.get("right", 9e9) <= x.get("W", 0) + 0.5
         bad = [x for x in bak_geo if str(x["title"]).startswith("missing") or not inside_b(x) or x["small"] or x["smallFields"] or x["overflowX"] > 1
                or (x.get("optionH") is not None and x["optionH"] < 44)]
-        check("map backup: 9 views x 4 sizes x 2 themes inside the viewport, no sideways overflow, buttons, links, fields and the option >= 44 px",
+        check(f"map backup: {len(bak_views)} views x 4 sizes x 2 themes inside the viewport, no sideways overflow, buttons, links, fields and the option >= 44 px",
               not bad, json.dumps([{k: x.get(k) for k in ("label", "w", "theme", "title", "small", "smallFields", "overflowX", "optionH", "top", "bottom")} for x in bad[:5]]))
         full = [x for x in bak_geo if x["label"] in ("vollbild", "vollbild-aktuell")]
         check("map backup: full screen at every size (size full, sheet = viewport), picture loaded through the recovery route, stage >= 240 px, no load/error note",
@@ -1842,12 +1896,14 @@ def main():
                   and x.get("image") and x["image"]["w"] > 0 and x["stageH"] >= 240 and x.get("state") is None for x in full),
               json.dumps([{k: x.get(k) for k in ("label", "w", "theme", "size", "top", "bottom", "image", "stageH", "state")} for x in full if not (x.get("image") and x["image"]["w"] > 0)][:4]))
         by = {x["label"]: x for x in bak_geo if x["w"] == 390 and x["theme"] == "light"}
-        check("map backup: list with 3 states (restore and download each), restore confirmation (kind confirm, with the option), backup state without option, backup confirmation, form with inline error, running status locks restore",
+        check("map backup: list with 3 states (restore and download each), restore confirmation (kind confirm, with the option), backup state without option, backup confirmation, form with inline error, running status locks restore, room settings write-back confirmation, replace the temporary map",
               by["liste"].get("entries") == 3 and by["liste"].get("restore") == 3 and by["liste"].get("download") == 3 and by["liste"].get("restoreLocked") == 0
               and by["wiederherstellen"].get("kind") == "confirm" and by["wiederherstellen"].get("optionH") is not None
               and by["wiederherstellen-backup"].get("kind") == "confirm" and by["wiederherstellen-backup"].get("optionH") is None
               and by["sichern"].get("kind") == "confirm" and by["datei"].get("kind") == "editor" and by["datei-fehler"].get("invalid")
-              and by["laeuft"].get("restoreLocked") == 3 and "läuft" in by["laeuft"].get("text", "") and not calls_bak,
+              and by["laeuft"].get("restoreLocked") == 3 and "läuft" in by["laeuft"].get("text", "") and not calls_bak
+              and by["raeume-zurueck"].get("kind") == "confirm" and by["raeume-zurueck"].get("confirmBtn") and "Atelier" in by["raeume-zurueck"].get("text", "")
+              and by["temporaer-ersetzen"].get("kind") == "editor",
               json.dumps({k: {kk: by[k].get(kk) for kk in ("title", "kind", "entries", "restore", "restoreLocked", "download", "optionH", "invalid", "text")} for k in by} | {"calls": calls_bak})[:1500])
 
         # Real pointer and keyboard: outside click keeps the restore confirmation, 0 calls before; in the full
@@ -2067,6 +2123,13 @@ def main():
             report["uiRegelnVerstoesse"] = bewerte(r)
 
         report["serviceCalls"] = page.evaluate("() => window.__serviceCalls")
+        build("docked")
+        report["viewIds"] = page.evaluate("() => customElements.get('busch-vacuum-card').__internals.VIEW_IDS")
+        report["views"] = {k: v for k, v in sorted(VIEWS_SEEN.items())}
+        unseen = [v for v in report["viewIds"] if not VIEWS_SEEN.get(v)]
+        unknown = [v for v in VIEWS_SEEN if v not in report["viewIds"]]
+        check("views: every dialog view of the card (VIEW_IDS) opened and pictured, no view without id",
+              report["viewIds"] and not unseen and not unknown, json.dumps({"unseen": unseen, "unknown": unknown}))
         browser.close()
     httpd.shutdown()
 

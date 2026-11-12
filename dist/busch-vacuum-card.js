@@ -2308,6 +2308,7 @@ function confirmSetting(card, key, value) {
     const hass = card._hass;
     const view = {
         title: translate(hass, 'bestaetigenTitel', { name: settingLabel(hass, key) }),
+        id: 'setting-confirm',
         kind: 'confirm',
         render: (body, h, dialog) => {
             body.appendChild(noteLine(translate(h, 'frage_' + key, { wert: optionLabel(h, key, value) })));
@@ -4236,6 +4237,7 @@ class MapView {
     _infoView(picked) {
         return {
             title: translate(this.hass, 'karteninfo'),
+            id: 'map-info',
             kind: 'menu',
             watch: () => [this._cameraId],
             render: (body, hass, dialog) => {
@@ -4427,6 +4429,7 @@ class MapView {
     _obstacleView(id) {
         return {
             title: translate(this.hass, 'hindernis'),
+            id: 'obstacle',
             kind: 'menu',
             watch: () => [this._cameraId, this.card._opts.entity],
             render: (body, hass) => {
@@ -4547,6 +4550,7 @@ class MapView {
     _floorsView() {
         return {
             title: translate(this.hass, 'stockwerkWaehlen'),
+            id: 'floors',
             kind: 'menu',
             // Other cameras are watched only while this dialog is open.
             watch: () => [this.card._opts.entity, ...this._maps().map((m) => this._floorCamera(m.index)).filter(Boolean)],
@@ -4772,6 +4776,18 @@ const settingsWatch = (card) => {
 };
 
 /** Menu entries filled by a module; the others keep core's placeholder until theirs arrives. */
+/**
+ * Every dialog view of the card by its `id` (release Task 2): each one sets
+ * data-view on the sheet; render.py must open and picture each one (a new
+ * view without a render check is red in tests and in vacuum-inventar-pruefen.py).
+ */
+const VIEW_IDS = ['menu', 'map-change', 'map-info', 'obstacle', 'floors', 'settings', 'settings-group', 'setting-confirm',
+    'dnd-form', 'dnd-delete', 'consumable-reset', 'schedule-form', 'schedule-delete', 'voice-pack', 'voice-pack-confirm',
+    'clean-settings', 'rooms', 'room', 'rooms-apply-all', 'sequence', 'station-menu', 'station', 'station-confirm',
+    'shortcut-menu', 'shortcut-manage', 'shortcut-rename', 'shortcut-delete', 'history', 'history-detail', 'history-obstacle',
+    'reclean-confirm', 'remote', 'maps', 'map-rename', 'map-temporary', 'map-edit', 'map-confirm', 'map-dirty',
+    'backups', 'backup-image', 'backup-file', 'room-restore'];
+
 const MODULE_VIEWS = {
     settings: (card) => settingsView(card),
     consumables: (card) => groupView(card, 'consumables'),
@@ -4790,6 +4806,7 @@ function settingsView(card) {
     let query = ''; // survives redraws while the view is open; a new visit starts empty (R21)
     return {
         title: translate(card._hass, 'entrySettings'),
+        id: 'settings',
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
@@ -4843,6 +4860,7 @@ function groupView(card, name) {
     const group = SETTING_GROUPS.find((g) => g.name === name);
     return {
         title: translate(card._hass, 'gruppe_' + name),
+        id: 'settings-group',
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
@@ -5079,6 +5097,7 @@ function dndForm(card, id) {
     let checked = false;
     return {
         title: translate(hass0, id === null ? 'zeitraumNeu' : 'zeitraumBearbeiten'),
+        id: 'dnd-form',
         kind: 'editor',
         watch: () => [],
         render: (body, hass, dialog) => {
@@ -5141,6 +5160,7 @@ function dndForm(card, id) {
 function dndDelete(card, task) {
     return {
         title: translate(card._hass, 'zeitraumLoeschenTitel'),
+        id: 'dnd-delete',
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
@@ -5213,6 +5233,7 @@ const SUM_UNITS = { total_cleaned_area: 'm²', total_cleaning_time: 'min' };
 function resetConfirm(card, name, label, percent) {
     return {
         title: translate(card._hass, 'zuruecksetzenTitel', { name: label }),
+        id: 'consumable-reset',
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
@@ -5358,6 +5379,7 @@ function scheduleForm(card, id) {
     let checked = false;
     return {
         title: translate(card._hass, id === null ? 'planNeu' : 'planBearbeiten'),
+        id: 'schedule-form',
         kind: 'editor',
         watch: () => [],
         render: (body, hass, dialog) => {
@@ -5419,6 +5441,7 @@ function scheduleForm(card, id) {
 function scheduleDelete(card, task) {
     return {
         title: translate(card._hass, 'planLoeschenTitel'),
+        id: 'schedule-delete',
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
@@ -5526,6 +5549,7 @@ function voicePackView(card) {
     let checked = false;
     return {
         title: translate(card._hass, 'sprachpaketTitel'),
+        id: 'voice-pack',
         kind: 'editor',
         watch: () => [],
         render: (body, hass, dialog) => {
@@ -5565,6 +5589,7 @@ function voicePackConfirm(card, draft) {
     const data = { entity_id: card._opts.entity, lang_id: draft.lang_id.trim(), url: draft.url.trim(), md5: draft.md5.trim().toLowerCase(), size: Number(draft.size.trim()) };
     return {
         title: translate(card._hass, 'sprachpaketFrageTitel'),
+        id: 'voice-pack-confirm',
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
@@ -5666,6 +5691,7 @@ function cleanSettingsView(card) {
     loadSettingTexts(card);
     return {
         title: translate(card._hass, 'reinigungseinstellungen'),
+        id: 'clean-settings',
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
@@ -5871,6 +5897,7 @@ function roomFieldRow(hass, { key, label, value, options, number, state, words, 
 function roomsView(card) {
     return {
         title: translate(card._hass, 'raeumeEinstellen'),
+        id: 'rooms',
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
@@ -5901,6 +5928,7 @@ function roomView(card, id) {
     let field = null; // the field of the last change: its row shows the outcome (R17)
     return {
         title: roomName(roomsOf(model0)[id], id),
+        id: 'room',
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
@@ -5983,6 +6011,7 @@ function applyAllView(card, sourceId) {
     let run = null;
     return {
         title: translate(card._hass, 'aufAlleTitel') + '?',
+        id: 'rooms-apply-all',
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
@@ -6064,6 +6093,7 @@ function sequenceView(card) {
     let spoken = '';
     return {
         title: translate(card._hass, 'entrySequence'),
+        id: 'sequence',
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
@@ -6364,6 +6394,7 @@ function stationConfirm(card, action) {
     const hass = card._hass;
     const view = {
         title: translate(hass, action.text(card._model())) + '?',
+        id: 'station-confirm',
         kind: 'confirm',
         render: (body, h, dialog) => {
             body.appendChild(noteLine(translate(h, 'folge_' + action.name)));
@@ -6389,6 +6420,7 @@ function stationConfirm(card, action) {
 function stationMenu(card) {
     return {
         title: translate(card._hass, 'station'),
+        id: 'station-menu',
         kind: 'menu',
         watch: () => [card._opts.entity],
         render: (body, hass, dialog) => {
@@ -6445,6 +6477,7 @@ function stationView(card) {
     let tab = storedTab(storeKey);
     return {
         title: translate(card._hass, 'gruppe_station'),
+        id: 'station',
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
@@ -6624,6 +6657,7 @@ function shortcutItem(card, model, hass, entry, done) {
 function shortcutMenu(card) {
     return {
         title: translate(card._hass, 'shortcuts'),
+        id: 'shortcut-menu',
         kind: 'menu',
         watch: () => [card._opts.entity, ...card._opts.scripts],
         render: (body, hass, dialog) => {
@@ -6661,6 +6695,7 @@ function shortcutMenu(card) {
 function shortcutManageView(card) {
     return {
         title: translate(card._hass, 'shortcutsVerwalten'),
+        id: 'shortcut-manage',
         kind: 'editor',
         watch: () => [card._opts.entity],
         render: (body, hass, dialog) => {
@@ -6718,6 +6753,7 @@ function shortcutRenameView(card, entry) {
     let checked = false;
     return {
         title: translate(card._hass, 'umbenennen') + ': ' + entry.name,
+        id: 'shortcut-rename',
         kind: 'editor',
         watch: () => [card._opts.entity],
         render: (body, hass, dialog) => {
@@ -6767,6 +6803,7 @@ function shortcutRenameView(card, entry) {
 function shortcutDeleteView(card, entry) {
     return {
         title: translate(card._hass, 'loeschen') + '?',
+        id: 'shortcut-delete',
         kind: 'confirm',
         render: (body, hass, dialog) => {
             body.appendChild(noteLine(translate(hass, 'frageShortcutLoeschen', { name: entry.name })));
@@ -6945,6 +6982,7 @@ function historyView(card, name) {
     const state = { cache: null, open: new Set(), back: null, scroll: 0, detail: null };
     return {
         title: translate(card._hass, kind.title),
+        id: 'history',
         kind: 'editor',
         watch: () => [card._model().entity(kind.sensor)].filter(Boolean),
         render: (body, hass, dialog) => {
@@ -7358,6 +7396,7 @@ function runObstacleUrl(hass, card, kind, run, key, file) {
 function runObstacleView(card, kind, run, o) {
     return {
         title: translate(card._hass, 'hindernis'),
+        id: 'history-obstacle',
         kind: 'editor',
         render: (body, hass) => {
             const facts = document.createElement('dl');
@@ -7430,6 +7469,7 @@ function runReclean(card, rooms, all) {
 function recleanConfirm(card, names, all, rooms) {
     return {
         title: translate(card._hass, 'aktNachreinigen') + '?',
+        id: 'reclean-confirm',
         kind: 'confirm',
         render: (body, hass, dialog) => {
             body.appendChild(noteLine(translate(hass, all ? 'nachFrageAlle' : 'nachFrageTeil', { raeume: names.join(', ') })));
@@ -7520,6 +7560,7 @@ function historyDetail(card, name, list, ts) {
         get title() {
             return runDateText(card._hass, current);
         },
+        id: 'history-detail',
         kind: 'editor',
         watch: () => [card._model().entity(kind.sensor), historyCamera(card)].filter(Boolean),
         render: (body, hass, dialog) => {
@@ -9712,6 +9753,8 @@ class BuschVacuumDialog extends HTMLElement {
         const focused = this._focusable().indexOf(this.shadowRoot.activeElement);
         const scrollTop = this._sheet.scrollTop;
         this._sheet.setAttribute('data-kind', view.kind);
+        // Task 2 (release): every view names itself; render.py records it with each picture.
+        this._sheet.setAttribute('data-view', view.id || '');
         // size 'full' (map-backup): full screen at every width, not only below 450 px.
         if (view.size === 'full') this._sheet.setAttribute('data-size', 'full');
         else this._sheet.removeAttribute('data-size');
@@ -10078,6 +10121,7 @@ class BuschVacuumCard extends HTMLElement {
     _menuView() {
         return {
             title: translate(this._hass, 'menu'),
+            id: 'menu',
             kind: 'menu',
             watch: () => [this._opts.entity],
             render: (body, hass, dialog) => {
@@ -10092,7 +10136,7 @@ class BuschVacuumCard extends HTMLElement {
                         if (entry.name === 'locate') {
                             hass.callService('vacuum', 'locate', { entity_id: this._opts.entity });
                             dialog.close();
-                        } else dialog.show(MODULE_VIEWS[entry.name] ? MODULE_VIEWS[entry.name](this) : this._placeholderView(entry));
+                        } else dialog.show(MODULE_VIEWS[entry.name](this));
                     } });
                     item.classList.add('menu-item');
                     item.setAttribute('data-entry', entry.name);
@@ -10106,20 +10150,6 @@ class BuschVacuumCard extends HTMLElement {
                     list.appendChild(item);
                 }
                 body.appendChild(list);
-            }
-        };
-    }
-
-    /** Filled by the entry's module; until then it says so. Kind editor: these become settings (R04). */
-    _placeholderView(entry) {
-        return {
-            title: translate(this._hass, entry.text),
-            kind: 'editor',
-            render: (body, hass) => {
-                const note = document.createElement('p');
-                note.className = 'placeholder';
-                note.textContent = translate(hass, 'platzhalter', { modul: entry.module });
-                body.appendChild(note);
             }
         };
     }
@@ -10154,6 +10184,7 @@ class BuschVacuumCard extends HTMLElement {
         const leave = (dialog) => (this._mapEdit ? dialog._goBack() : dialog.close());
         return {
             title: translate(this._hass, 'kartenWechselTitel'),
+            id: 'map-change',
             kind: 'confirm',
             render: (body, hass, dialog) => {
                 const question = document.createElement('p');
@@ -12034,6 +12065,7 @@ function mapConfirm(card, session, opts) {
     const wantBackup = () => (typeof opts.backup === 'function' ? !!opts.backup() : opts.backup !== false);
     return {
         title: opts.title,
+        id: 'map-confirm',
         kind: 'confirm',
         watch: () => [card._opts.entity],
         render: (body, hass, dialog) => {
@@ -12102,6 +12134,7 @@ function mapUndoConfirm(card, session, done) {
 function dirtyChoice(card, { count, save, discard, blocked = null }) {
     return {
         title: translate(card._hass, 'kartenWackeln'),
+        id: 'map-dirty',
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
@@ -12557,6 +12590,7 @@ function mapsView(card) {
     const sessions = new Map();
     const view = {
         title: translate(card._hass, 'entryMaps'),
+        id: 'maps',
         kind: 'editor',
         watch: () => {
             const model = card._model();
@@ -12694,6 +12728,7 @@ function renameMapView(card, home, session, entry) {
     const dirty = () => card._drafts.has(key) && card._drafts.get(key) !== original;
     const view = {
         title: translate(hass, 'kartenUmbenennenTitel'),
+        id: 'map-rename',
         kind: 'editor',
         watch: () => [card._opts.entity],
         guard: (dialog) => {
@@ -12806,6 +12841,7 @@ function temporaryBlock(card, model, hass, dialog, home, sessions, entries) {
     if (entries.length) {
         add('replace_temporary', 'temporaerErsetzen', 'vacuum_replace_temporary_map', () => dialog.show({
             title: translate(hass, 'temporaerErsetzen'),
+            id: 'map-temporary',
             kind: 'editor',
             render: (body, h) => {
                 body.appendChild(noteLine(translate(h, 'temporaerErsetzenWahl')));
@@ -13126,6 +13162,7 @@ function mapEditView(card, mapId, quick = null) {
     let editor = null;
     const view = {
         title: translate(card._hass, 'kartenBearbeiten'),
+        id: 'map-edit',
         kind: 'editor',
         watch: () => {
             const model = card._model();
@@ -14927,7 +14964,7 @@ function remoteBlock(model, hass) {
  * blur, hidden tab, leaving the view, an error, a lost connection.
  */
 function remoteView(card) {
-    const view = { title: translate(card._hass, 'entryRemote'), kind: 'editor', watch: () => [] };
+    const view = { id: 'remote', title: translate(card._hass, 'entryRemote'), kind: 'editor', watch: () => [] };
     // R21 on purpose: arming lives only while the view is open; a remembered arming would let a stray touch move the robot.
     const ctl = view.remote = { armed: false, note: null, block: null, moving: false, sources: new Map(), mods: {}, precision: false, root: null, parts: {}, listening: false, sticks: [], holds: [], keys: new Set(), dialog: null };
     const hass = () => card._hass;
@@ -15504,6 +15541,7 @@ function backupStatusLines(hass, model) {
 function backupsView(card, mapId) {
     const view = {
         title: translate(card._hass, 'sicherungenTitel'),
+        id: 'backups',
         kind: 'editor',
         session: null, // backupSession: the list's MapEditSession, made on first use
         watch: () => backupWatch(card, mapId),
@@ -15697,6 +15735,7 @@ function backupImageView(card, mapId, start = 1, home = null) {
     let index = start;
     const view = {
         title: translate(card._hass, 'sicherungAnsicht'),
+        id: 'backup-image',
         kind: 'menu',
         size: 'full',
         watch: () => backupWatch(card, mapId),
@@ -16122,6 +16161,7 @@ function roomRestoreView(card, note) {
     const run = note.roomRun;
     return {
         title: translate(card._hass, 'raeumeZurueck'),
+        id: 'room-restore',
         kind: 'confirm',
         watch: () => [card._opts.entity],
         render: (body, hass, dialog) => {
@@ -16287,6 +16327,7 @@ function restoreFileView(card, home, start) {
     };
     const view = {
         title: translate(card._hass, 'dateiTitel'),
+        id: 'backup-file',
         kind: 'editor',
         watch: () => [card._opts.entity, ...card._model().related.maps.map.slice(0, 1)],
         leave: () => {
@@ -16377,6 +16418,7 @@ BuschVacuumCard.__internals = {
     settingState,
     settingRow,
     MODULE_VIEWS,
+    VIEW_IDS,
     ROOM_KEYS,
     roomPayload,
     roomSnapshot,

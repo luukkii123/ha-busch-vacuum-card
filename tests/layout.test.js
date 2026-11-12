@@ -21,14 +21,14 @@ const halten = (u, node, ms) => { node.dispatchEvent(u.neuesEreignis('pointerdow
 const loslassen = (u, node) => node.dispatchEvent(u.neuesEreignis('pointerup'));
 
 // ── Layout (CORE-13) ───────────────────────────────────────────────────────
-test('normale Karte: begrenzte Höhe, Versatz 0', () => {
+test('CORE-13 normale Karte: begrenzte Höhe, Versatz 0', () => {
   const { karte: k } = karte();
   assert.equal(k.getAttribute('data-layout'), 'card');
   assert.equal(k.style['--bvc-height-offset'], '0px');
   assert.equal(k.style['--bvc-header-height'], 'var(--header-height, 56px)', 'Kopfhöhe von HA');
 });
 
-test('Panel Mode über isPanel und layout = panel', () => {
+test('CORE-13 Panel Mode über isPanel und layout = panel', () => {
   const a = karte().karte;
   a.isPanel = true;
   assert.equal(a.getAttribute('data-layout'), 'panel');
@@ -39,13 +39,13 @@ test('Panel Mode über isPanel und layout = panel', () => {
   assert.equal(b.getAttribute('data-layout'), 'card');
 });
 
-test('full_height füllt die Höhe, max_height_offset zieht ab', () => {
+test('CORE-13 full_height füllt die Höhe, max_height_offset zieht ab', () => {
   const { karte: k } = karte({ full_height: true, max_height_offset: 120 });
   assert.equal(k.getAttribute('data-layout'), 'full');
   assert.equal(k.style['--bvc-height-offset'], '120px');
 });
 
-test('aspect_ratio: 16:9, 16/9 und Zahl; Unsinn und full_height ohne Seitenverhältnis', () => {
+test('CORE-13 aspect_ratio: 16:9, 16/9 und Zahl; Unsinn und full_height ohne Seitenverhältnis', () => {
   assert.equal(karte({ aspect_ratio: '16:9' }).karte.style['--bvc-aspect-ratio'], '16 / 9');
   assert.equal(karte({ aspect_ratio: '4/3' }).karte.style['--bvc-aspect-ratio'], '4 / 3');
   assert.equal(karte({ aspect_ratio: 1.5 }).karte.style['--bvc-aspect-ratio'], '1.5');
@@ -54,7 +54,7 @@ test('aspect_ratio: 16:9, 16/9 und Zahl; Unsinn und full_height ohne Seitenverh�
   assert.equal(karte({ aspect_ratio: '16:9', full_height: true }).karte.hasAttribute('data-aspect'), false);
 });
 
-test('CSS: Panel randlos, Höhe aus Variable, Seitenverhältnis, Linkshänder gespiegelt', () => {
+test('CORE-13 CSS: Panel randlos, Höhe aus Variable, Seitenverhältnis, Linkshänder gespiegelt', () => {
   const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
   assert.match(CARD_STYLES, /:host\(\[data-layout=panel\]\) ha-card \{[^}]*border-radius: 0;[^}]*box-shadow: none;/);
   assert.match(CARD_STYLES, /max-height: calc\(100dvh - var\(--bvc-header-height, 56px\) - var\(--bvc-height-offset, 0px\)\)/);
@@ -64,13 +64,13 @@ test('CSS: Panel randlos, Höhe aus Variable, Seitenverhältnis, Linkshänder ge
 });
 
 // ── Linkshänder (CORE-08) ──────────────────────────────────────────────────
-test('Aktionsknöpfe rechts, Linkshänder links', () => {
+test('CORE-08 Aktionsknöpfe rechts, Linkshänder links', () => {
   assert.equal(karte().karte.getAttribute('data-hand'), 'right');
   assert.equal(karte({ left_handed: true }).karte.getAttribute('data-hand'), 'left');
 });
 
 // ── Karten-Sperre (CORE-14) ────────────────────────────────────────────────
-test('locked auto: am Touchgerät gesperrt, im Panel nicht', () => {
+test('CORE-14 locked auto: am Touchgerät gesperrt, im Panel nicht', () => {
   const touch = karte({}, { touch: true }).karte;
   assert.equal(touch.getAttribute('data-locked'), 'true');
   assert.equal(schloss(touch).hidden, false);
@@ -82,7 +82,7 @@ test('locked auto: am Touchgerät gesperrt, im Panel nicht', () => {
   assert.equal(karte().karte.getAttribute('data-locked'), 'false', 'Desktop: frei');
 });
 
-test('locked always/never/only_touch', () => {
+test('CORE-14 locked always/never/only_touch', () => {
   assert.equal(karte({ locked: 'always' }).karte.getAttribute('data-locked'), 'true');
   const nie = karte({ locked: 'never' }, { touch: true }).karte;
   assert.equal(nie.getAttribute('data-locked'), 'false');
@@ -98,7 +98,7 @@ test('ohne Karte kein Schloss (nichts zu sperren)', () => {
   assert.equal(schloss(karte({ locked: 'always' }, {}, 'ohne-karte').karte).hidden, true);
 });
 
-test('Entsperren durch Halten (touch_lock), kurzes Tippen reicht nicht', () => {
+test('CORE-14 Entsperren durch Halten (touch_lock), kurzes Tippen reicht nicht', () => {
   const { u, karte: k } = karte({ locked: 'always', touch_lock: 300 });
   halten(u, schloss(k), 299);
   assert.equal(k.getAttribute('data-locked'), 'true');
@@ -116,7 +116,7 @@ test('Entsperren durch Halten (touch_lock), kurzes Tippen reicht nicht', () => {
   assert.equal(k.getAttribute('data-locked'), 'true', 'erneutes Halten sperrt wieder');
 });
 
-test('touch_lock begrenzt auf 100–400 ms, Vorgabe 200 ms', () => {
+test('CORE-14 touch_lock begrenzt auf 100–400 ms, Vorgabe 200 ms', () => {
   const kurz = karte({ locked: 'always', touch_lock: 20 });
   halten(kurz.u, schloss(kurz.karte), 100);
   assert.equal(kurz.karte.getAttribute('data-locked'), 'false');
@@ -130,7 +130,7 @@ test('touch_lock begrenzt auf 100–400 ms, Vorgabe 200 ms', () => {
   assert.equal(vorgabe.karte.getAttribute('data-locked'), 'false');
 });
 
-test('Tastatur: Enter/Leertaste schaltet die Sperre ohne Halten', () => {
+test('CORE-14 Tastatur: Enter/Leertaste schaltet die Sperre ohne Halten', () => {
   const { u, karte: k } = karte({ locked: 'always' });
   schloss(k).dispatchEvent(u.neuesEreignis('click', { detail: 0 }));
   assert.equal(k.getAttribute('data-locked'), 'false');
@@ -145,7 +145,7 @@ test('Sperre überlebt eigene und fremde Updates', () => {
 });
 
 // ── Haptik (CORE-15) ───────────────────────────────────────────────────────
-test('Haptik bei Steuerknopf, Aufgabenart und Entsperren', () => {
+test('CORE-15 Haptik bei Steuerknopf, Aufgabenart und Entsperren', () => {
   const { u, karte: k } = karte({ locked: 'always' });
   const aufgabe = (name) => k.shadowRoot.querySelectorAll('.task').find((b) => b.getAttribute('data-task') === name);
   aufgabe('zone').click();
@@ -155,7 +155,7 @@ test('Haptik bei Steuerknopf, Aufgabenart und Entsperren', () => {
   assert.equal(u.vibriert.length, 4);
 });
 
-test('disable_haptic schaltet ab; ohne vibrate kein Fehler', () => {
+test('CORE-15 disable_haptic schaltet ab; ohne vibrate kein Fehler', () => {
   const aus = karte({ disable_haptic: true });
   knopf(aus.karte, 'start').click();
   assert.deepEqual(aus.u.vibriert, []);

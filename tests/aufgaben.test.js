@@ -26,13 +26,13 @@ const leer = () => ({ rooms: [], zones: [], spots: [], goto: null });
 const auswahl = (teil) => Object.assign(leer(), teil);
 
 // ── Task 1: Payload und Vorabprüfungen ─────────────────────────────────────
-test('taskPayload Raum ohne Customized Cleaning: Räume in Wahlreihenfolge, repeats als Zahl', () => {
+test('TASK-02 taskPayload Raum ohne Customized Cleaning: Räume in Wahlreihenfolge, repeats als Zahl', () => {
   const { taskPayload } = intern();
   const p = taskPayload(modell({ vacuum: { customized_cleaning: false } }), 'room', auswahl({ rooms: [5, 3, 9] }), 2);
   assert.deepEqual(roh(p), { domain: 'dreame_vacuum', service: 'vacuum_clean_segment', data: { segments: [5, 3, 9], repeats: 2 } });
 });
 
-test('taskPayload Raum mit Customized Cleaning: Listen aus den Raumwerten in Wahlreihenfolge', () => {
+test('TASK-02 taskPayload Raum mit Customized Cleaning: Listen aus den Raumwerten in Wahlreihenfolge', () => {
   const { taskPayload } = intern();
   const p = taskPayload(modell({ vacuum: { customized_cleaning: true } }), 'room', auswahl({ rooms: [5, 1] }), 3);
   const r = raeume();
@@ -44,14 +44,14 @@ test('taskPayload Raum mit Customized Cleaning: Listen aus den Raumwerten in Wah
   }, 'Wiederholungen-Regler gilt hier nicht');
 });
 
-test('taskPayload Zone: ganzzahlig, min/max je Achse sortiert, repeats je Zone', () => {
+test('TASK-03 taskPayload Zone: ganzzahlig, min/max je Achse sortiert, repeats je Zone', () => {
   const { taskPayload } = intern();
   const zones = [{ x0: 1000.4, y0: 900.6, x1: -200.2, y1: 2500 }, { x0: 0, y0: 0, x1: 800, y1: 800 }];
   const p = taskPayload(modell(), 'zone', auswahl({ zones }), 2);
   assert.deepEqual(roh(p), { domain: 'dreame_vacuum', service: 'vacuum_clean_zone', data: { zone: [[-200, 901, 1000, 2500], [0, 0, 800, 800]], repeats: [2, 2] } });
 });
 
-test('taskPayload Spot und Go-To', () => {
+test('TASK-04 taskPayload Spot und Go-To', () => {
   const { taskPayload } = intern();
   const spot = taskPayload(modell(), 'spot', auswahl({ spots: [{ x: 10.6, y: -20.2 }, { x: 300, y: 400 }] }), 1);
   assert.deepEqual(roh(spot), { domain: 'dreame_vacuum', service: 'vacuum_clean_spot', data: { points: [[11, -20], [300, 400]], repeats: [1, 1] } });
@@ -103,7 +103,7 @@ test('taskReady Zone: kleiner als 2 × grid_size gesperrt; alle neun Stichpunkte
   assert.equal(taskReady(m, 'zone', auswahl({ zones: [{ x0: 0, y0: 0, x1: 1000, y1: 1000 }] }), karte(() => null)).ok, true, 'Bildmodus: unbekannt → erlaubt');
 });
 
-test('taskReady Spot/Go-To: passable false gesperrt, null erlaubt', () => {
+test('TASK-05 taskReady Spot/Go-To: passable false gesperrt, null erlaubt', () => {
   const { taskReady } = intern();
   const m = modell();
   assert.equal(taskReady(m, 'spot', auswahl({ spots: [{ x: 0, y: 0 }, { x: 5, y: 5 }] }), karte((p) => p.x === 0)).reason, 'punktAusserhalb');
@@ -159,7 +159,7 @@ async function kartenKarte({ config = {}, fixture: name = 'voll', vacuum, zustan
 /** Auswahl direkt setzen (die Wege über Karte/Chips prüfen die späteren Tasks). */
 const waehle = (karte, art, teil) => { karte._task = art; Object.assign(karte._selection, teil); karte._update(); };
 
-test('Start je Art: genau ein Dienst mit entity_id; Gesamt weiter vacuum.start', async () => {
+test('TASK-01/TASK-02 Start je Art: genau ein Dienst mit entity_id; Gesamt weiter vacuum.start', async () => {
   const faelle = [
     ['room', { rooms: [3, 5] }, 'vacuum_clean_segment', { segments: [3, 5], repeats: 1 }],
     ['zone', { zones: [{ x0: -3000, y0: -3000, x1: -2000, y1: -2000 }] }, 'vacuum_clean_zone', { zone: [[-3000, -3000, -2000, -2000]], repeats: [1] }],
@@ -200,7 +200,7 @@ test('Dienstfehler → R12-Text mit Grund, Auswahl bleibt, erneuter Start mögli
   assert.equal(knopf(karte, 'start').disabled, false);
 });
 
-test('Go-To: keine Aktionsknöpfe, Shortcut-/Stationsknopf bleiben (CORE-08)', async () => {
+test('CORE-08/TASK-05 Go-To: keine Aktionsknöpfe, Shortcut-/Stationsknopf bleiben (CORE-08)', async () => {
   const { karte } = await kartenKarte({ zustand: 'idle' });
   art(karte, 'goto').click();
   assert.equal(knopf(karte, 'start'), null);
@@ -213,7 +213,7 @@ test('Go-To: keine Aktionsknöpfe, Shortcut-/Stationsknopf bleiben (CORE-08)', a
 /** Verlaufssensor mit einem Eintrag `vor` Sekunden nach dem Start. */
 const verlauf = (haus, eintrag) => ersetze(haus, 'sensor.robo_cleaning_history', Object.assign({}, haus.states['sensor.robo_cleaning_history'].attributes, { 'neu': eintrag }));
 
-test('Natürliches Ende (Verlauf completed nach Start) → Gesamt, Auswahl leer', async () => {
+test('TASK-01 Natürliches Ende (Verlauf completed nach Start) → Gesamt, Auswahl leer', async () => {
   const { u, haus, karte } = await kartenKarte();
   waehle(karte, 'room', { rooms: [3] });
   knopf(karte, 'start').click();
@@ -226,7 +226,7 @@ test('Natürliches Ende (Verlauf completed nach Start) → Gesamt, Auswahl leer'
   assert.deepEqual(roh(karte._selection), { rooms: [], zones: [], spots: [], goto: null });
 });
 
-test('Verlauf ohne completed (abgebrochen) → bleibt', async () => {
+test('TASK-01 Verlauf ohne completed (abgebrochen) → bleibt', async () => {
   const { u, haus, karte } = await kartenKarte();
   waehle(karte, 'room', { rooms: [3] });
   knopf(karte, 'start').click();
@@ -237,7 +237,7 @@ test('Verlauf ohne completed (abgebrochen) → bleibt', async () => {
   assert.deepEqual(roh(karte._selection.rooms), [3]);
 });
 
-test('Eigenes Stopp → Typ und Auswahl bleiben, auch bei completed im Verlauf', async () => {
+test('TASK-01 Eigenes Stopp → Typ und Auswahl bleiben, auch bei completed im Verlauf', async () => {
   const { u, haus, karte } = await kartenKarte();
   waehle(karte, 'room', { rooms: [3] });
   knopf(karte, 'start').click();
@@ -276,7 +276,7 @@ test('Ohne Verlaufssensor: Ende ohne eigenes Stopp setzt zurück', async () => {
   assert.deepEqual(gewaehlt(karte), ['all']);
 });
 
-test('Laufende Aufgabe: Wahl gesperrt, Karte zeigt active_* statt Auswahl; Shortcut-Knopf bedienbar (TASK-07)', async () => {
+test('CORE-06/TASK-07 Laufende Aufgabe: Wahl gesperrt, Karte zeigt active_* statt Auswahl; Shortcut-Knopf bedienbar (TASK-07)', async () => {
   const aktiv = { active_areas: [{ x0: -3000, y0: -3000, x1: -2000, y1: -3000, x2: -2000, y2: -2000, x3: -3000, y3: -2000, angle: null }],
     active_points: [{ x: -3461, y: -2902 }], active_segments: [3, 5], active_cruise_points: { 1: { x: 100, y: 200, type: 0, completed: false } } };
   const { haus, karte } = await kartenKarte({
@@ -356,7 +356,7 @@ test('Raum: Badges = gespeicherte Reinigungsreihenfolge mit Hinweis (customized_
   assert.match(notiz(karte, 'order').textContent, /Reinigungsreihenfolge/);
 });
 
-test('Raum: Badges = Tipp-Reihenfolge auf Geräten ohne customized_cleaning', async () => {
+test('TASK-02 Raum: Badges = Tipp-Reihenfolge auf Geräten ohne customized_cleaning', async () => {
   const { haus, karte } = await kartenKarte();
   const caps = haus.states['vacuum.robo'].attributes.capabilities.filter((c) => c !== 'customized_cleaning');
   karte.hass = haus.setze(saugerNeu(haus, { capabilities: caps }));
@@ -439,7 +439,7 @@ async function zoneKarte(opts) {
   return r;
 }
 
-test('Zone: Tipp auf freie Fläche legt 1,5 × 1,5 m um den Punkt an; Liste nennt Maße', async () => {
+test('TASK-03 Zone: Tipp auf freie Fläche legt 1,5 × 1,5 m um den Punkt an; Liste nennt Maße', async () => {
   const { u, karte } = await zoneKarte();
   assert.equal(karte._map._mode, 'draw-rect');
   const r = raeume()['5'];
@@ -479,7 +479,7 @@ test('Zone: Ziehen zeichnet höchstens einmal je Animationsframe, das Ende sofor
   assert.equal(n, 2);
 });
 
-test('Zone: Knopf „Bereich hinzufügen“ legt in der Mitte der sichtbaren Karte an', async () => {
+test('TASK-03 Zone: Knopf „Bereich hinzufügen“ legt in der Mitte der sichtbaren Karte an', async () => {
   const { karte } = await zoneKarte();
   const m = karte._map, rect = m._stageRect();
   const mitte = m.toRobot(m.fromScreen({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }));
@@ -488,14 +488,14 @@ test('Zone: Knopf „Bereich hinzufügen“ legt in der Mitte der sichtbaren Kar
   assert.equal(aktion(karte, 'zone-0').getAttribute('aria-pressed'), 'true', 'neue Zone gewählt');
 });
 
-test('Zone: Tipp auf Teppich übernimmt seinen Umriss', async () => {
+test('TASK-03 Zone: Tipp auf Teppich übernimmt seinen Umriss', async () => {
   const { u, haus, karte } = await zoneKarte();
   const t = haus.states[CAM].attributes.carpets[0];
   tippe(u, karte, bildschirm(karte, { x: (t.x0 + t.x1) / 2, y: (t.y0 + t.y2) / 2 }));
   assert.deepEqual(zonen(karte), [[Math.round(Math.min(t.x0, t.x1)), Math.round(Math.min(t.y0, t.y2)), Math.round(Math.max(t.x0, t.x1)), Math.round(Math.max(t.y0, t.y2))]]);
 });
 
-test('Zone: Fläche ziehen verschiebt, Eckgriff skaliert, Untergrenze hält, × entfernt', async () => {
+test('TASK-03 Zone: Fläche ziehen verschiebt, Eckgriff skaliert, Untergrenze hält, × entfernt', async () => {
   const { u, karte } = await zoneKarte();
   karte._selection.zones.push({ x0: -5000, y0: -5000, x1: -3000, y1: -3000 });
   karte._selectionChanged();
@@ -589,7 +589,7 @@ async function spotKarte(opts) {
   return r;
 }
 
-test('Spot: Tipps setzen mehrere Punkte mit 1,5-m-Vorschau; unbegehbar → nicht gesetzt + Hinweis', async () => {
+test('TASK-04 Spot: Tipps setzen mehrere Punkte mit 1,5-m-Vorschau; unbegehbar → nicht gesetzt + Hinweis', async () => {
   const { u, karte, karten } = await spotKarte();
   assert.equal(karte._map._mode, 'pick-point');
   const a = raeume()['5'], b = raeume()['3'];
@@ -619,14 +619,14 @@ test('Spot: × am Punkt entfernt; Liste mit Pfeilen, Tasten und Entfernen (R15)'
   assert.deepEqual(punkte(karte), []);
 });
 
-test('Spot: „Punkt an Roboterposition“ setzt den Punkt am Roboter', async () => {
+test('TASK-04 Spot: „Punkt an Roboterposition“ setzt den Punkt am Roboter', async () => {
   const { haus, karte } = await spotKarte();
   const r = haus.states[CAM].attributes.vacuum_position;
   aktion(karte, 'spot-robot').click();
   assert.deepEqual(punkte(karte), [[r.x, r.y]]);
 });
 
-test('„Spot hier“ im Hindernis-Dialog: wechselt auf Spot, setzt den Punkt, startet nicht', async () => {
+test('TASK-04 „Spot hier“ im Hindernis-Dialog: wechselt auf Spot, setzt den Punkt, startet nicht', async () => {
   const { u, haus, karte } = await kartenKarte();
   const o = haus.states[CAM].attributes.obstacles['2'];
   tippe(u, karte, bildschirm(karte, o));
@@ -650,7 +650,7 @@ async function gotoKarte(opts = {}) {
 }
 const ziel = (karte) => karte._selection.goto && [Math.round(karte._selection.goto.x), Math.round(karte._selection.goto.y)];
 
-test('Go-To: Tipp setzt ein Ziel (zweiter ersetzt), Zielblase „Hierhin fahren“ ist der einzige Start', async () => {
+test('TASK-05 Go-To: Tipp setzt ein Ziel (zweiter ersetzt), Zielblase „Hierhin fahren“ ist der einzige Start', async () => {
   const { u, haus, karte } = await gotoKarte({ zustand: 'idle' });
   assert.equal(karte._map._mode, 'pick-point');
   const a = raeume()['5'], b = raeume()['3'];
@@ -668,7 +668,7 @@ test('Go-To: Tipp setzt ein Ziel (zweiter ersetzt), Zielblase „Hierhin fahren�
   assert.deepEqual(roh(haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_goto', data: { entity_id: 'vacuum.robo', x: ziel(karte)[0], y: ziel(karte)[1] } }]);
 });
 
-test('Go-To: × in der Blase verwirft das Ziel; unbegehbar → nicht gesetzt mit Grund', async () => {
+test('TASK-05 Go-To: × in der Blase verwirft das Ziel; unbegehbar → nicht gesetzt mit Grund', async () => {
   const { u, karte, karten } = await gotoKarte();
   tippe(u, karte, bildschirm(karte, raeume()['5']));
   $(karte, '[data-action="goto-clear"]').click();
@@ -680,7 +680,7 @@ test('Go-To: × in der Blase verwirft das Ziel; unbegehbar → nicht gesetzt mit
   assert.match(notiz(karte, 'outside').textContent, /nicht auf befahrbarer Fläche/);
 });
 
-test('Go-To: gespeicherte Zielpunkte als Chips', async () => {
+test('TASK-05 Go-To: gespeicherte Zielpunkte als Chips', async () => {
   const { haus, karte } = await kartenKarte();
   karte.hass = haus.setze(ersetze(haus, CAM, { predefined_points: { 1: { x: -3400, y: -2900, type: 0, completed: false }, 2: { x: -6000, y: -8000, type: 0, completed: false } } }));
   art(karte, 'goto').click();
@@ -717,8 +717,23 @@ test('Go-To simuliert: Hinweis „kleine Zonenreinigung“, Ziel am Roboter gesp
   assert.ok(nativ.karte._selection.goto, 'nativ darf neben dem Roboter');
 });
 
+test('TASK-03 Zone: Tipp auf ein Möbel übernimmt sein Rechteck; das kleinere Objekt unter dem Tipp gewinnt', async () => {
+  const { u, karte } = await zoneKarte();
+  const r = raeume()['5'];
+  assert.ok(karte._map._data && karte._map._data.raw, 'Datenmodus');
+  // Möbel wie map.py get_data: [x, y, Breite, Höhe, Typ, edit_type, Winkel] in mm.
+  karte._map._data.raw.furnitures = [[r.x, r.y, 800, 400, 1, 0, 0], [r.x, r.y, 2000, 1600, 2, 0, 0]];
+  tippe(u, karte, bildschirm(karte, { x: r.x + 100, y: r.y + 50 }));
+  naheGleich(zonen(karte), [[r.x - 400, r.y - 200, r.x + 400, r.y + 200]], 2, 'Möbel-Rechteck');
+  // Gedreht (90°): das umschließende Rechteck.
+  const b = await zoneKarte();
+  b.karte._map._data.raw.furnitures = [[r.x, r.y, 800, 400, 1, 0, 90]];
+  tippe(b.u, b.karte, bildschirm(b.karte, { x: r.x, y: r.y + 100 }));
+  naheGleich(zonen(b.karte), [[r.x - 200, r.y - 400, r.x + 200, r.y + 400]], 2, 'gedreht');
+});
+
 // ── Task 7: Wiederholungen ─────────────────────────────────────────────────
-test('Wiederholungen 1–3 bei Zone: Stepper begrenzt, Start sendet den Wert je Zone', async () => {
+test('TASK-06 Wiederholungen 1–3 bei Zone: Stepper begrenzt, Start sendet den Wert je Zone', async () => {
   const { haus, karte } = await zoneKarte();
   assert.equal(notiz(karte, 'repeats').textContent.includes('1×'), true);
   assert.equal(aktion(karte, 'repeats-minus').disabled, true);
@@ -731,7 +746,7 @@ test('Wiederholungen 1–3 bei Zone: Stepper begrenzt, Start sendet den Wert je 
   assert.deepEqual(roh(haus.rufe[0].data.repeats), [3]);
 });
 
-test('Wiederholungen: Raum ohne Customized Cleaning ja (Zahl), mit Customized Cleaning und bei Go-To ausgeblendet', async () => {
+test('TASK-06 Wiederholungen: Raum ohne Customized Cleaning ja (Zahl), mit Customized Cleaning und bei Go-To ausgeblendet', async () => {
   const { haus, karte } = await kartenKarte();
   art(karte, 'room').click();
   aktion(karte, 'repeats-plus').click();
@@ -745,6 +760,19 @@ test('Wiederholungen: Raum ohne Customized Cleaning ja (Zahl), mit Customized Cl
   assert.equal(aktion(cc.karte, 'repeats-plus'), null);
   art(cc.karte, 'spot').click();
   assert.ok(aktion(cc.karte, 'repeats-plus'), 'Spot ja');
+});
+
+test('TASK-06 Wiederholungen bei Spot: Stepper bis 3, Start sendet den Wert je Punkt (vacuum_clean_spot)', async () => {
+  const { u, haus, karte } = await kartenKarte();
+  art(karte, 'spot').click();
+  aktion(karte, 'repeats-plus').click();
+  aktion(karte, 'repeats-plus').click();
+  assert.equal(aktion(karte, 'repeats-plus').disabled, true, 'höchstens 3');
+  for (const id of ['5', '3']) tippe(u, karte, bildschirm(karte, raeume()[id]));
+  knopf(karte, 'start').click();
+  assert.equal(haus.rufe[0].service, 'vacuum_clean_spot');
+  assert.deepEqual(roh(haus.rufe[0].data.repeats), [3, 3]);
+  assert.equal(haus.rufe[0].data.points.length, 2);
 });
 
 test('Wiederholungen werden nicht gemerkt (R21): neue Karte beginnt bei 1', async () => {

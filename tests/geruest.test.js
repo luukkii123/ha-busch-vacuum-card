@@ -21,7 +21,7 @@ test('Picker-Eintrag englisch bei englischem Browser', () => {
   assert.match(u.kontext.window.customCards[0].name, /vacuum/i);
 });
 
-test('mit entity: leerer Rahmen in ha-card, keine Fehler', () => {
+test('CORE-01 mit entity: leerer Rahmen in ha-card, keine Fehler', () => {
   const u = neueUmgebung();
   const karte = neueKarte(u, neuesHaus());
   const card = karte.shadowRoot.querySelector('ha-card');
@@ -41,7 +41,7 @@ test('ohne entity: Fehlerkasten im Wörterbuchtext statt Absturz', () => {
   assert.match(box.textContent, /Saugroboter/);
 });
 
-test('falsche Domain wird abgewiesen', () => {
+test('CORE-01 falsche Domain wird abgewiesen', () => {
   const u = neueUmgebung();
   const karte = neueKarte(u, neuesHaus(), { entity: 'light.decke' });
   assert.ok(karte.shadowRoot.querySelector('.error'));

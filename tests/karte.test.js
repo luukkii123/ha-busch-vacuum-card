@@ -25,7 +25,7 @@ test('Lauflängen-Dekodierung: Gitter, Größe und Teppich wie get_data', () => 
   assert.equal(decodeMapData({ size: 'kaputt', data: {} }), null, 'Unsinn wirft nicht');
 });
 
-test('roomAt (Datenmodus) trifft jeden Mittelpunkt und an gemeinsamen Kanten nie den Nachbarn', () => {
+test('MAP-08 roomAt (Datenmodus) trifft jeden Mittelpunkt und an gemeinsamen Kanten nie den Nachbarn', () => {
   const { decodeMapData, roomAtGrid } = intern();
   const daten = ausFixture();
   const karte = decodeMapData(daten);
@@ -45,7 +45,7 @@ test('roomAt (Datenmodus) trifft jeden Mittelpunkt und an gemeinsamen Kanten nie
   assert.equal(roomAtGrid(karte, { x: left - 500, y: top - 500 }), null, 'außerhalb');
 });
 
-test('Rückfall Rechteck+Mittelpunkt: Überlappung → nächster Mittelpunkt', () => {
+test('MAP-08 Rückfall Rechteck+Mittelpunkt: Überlappung → nächster Mittelpunkt', () => {
   const { roomAtRects } = intern();
   const rooms = {
     1: { room_id: 1, x: 100, y: 100, x0: 0, y0: 0, x1: 1000, y1: 1000 },
@@ -89,7 +89,7 @@ const nah = (a, b, tol = 0.5, was = '') => {
   assert.ok(Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol, `${was} ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`);
 };
 
-test('affineFrom: Kalibrierpunkte aus voll.json exakt, hin und zurück', () => {
+test('MAP-01 affineFrom: Kalibrierpunkte aus voll.json exakt, hin und zurück', () => {
   const { affineFrom, invertAffine, applyAffine } = intern();
   for (const cam of ['camera.robo_map', 'camera.robo_map_1', 'camera.robo_wifi_map_1']) {
     const cal = fixture('voll').states[cam].attributes.calibration_points;
@@ -156,7 +156,7 @@ test('gridAffine: Datenmodus-Bild = Gitter (1 px je Zelle, y gespiegelt, Geräte
   nah(applyAffine(mc.matrix, p), { x: q.x - 2, y: q.y - 3 }, 1e-9, 'Zuschnitt');
 });
 
-test('viewMatrix: Einpassen, Zoom/Verschieben, Anzeige-Drehung und scale, mit Inverse', () => {
+test('MAP-06 viewMatrix: Einpassen, Zoom/Verschieben, Anzeige-Drehung und scale, mit Inverse', () => {
   const { viewMatrix, applyAffine, invertAffine } = intern();
   const basis = { width: 400, height: 200, stageWidth: 800, stageHeight: 800 };
   const m = viewMatrix(basis);
@@ -218,7 +218,7 @@ async function kartenKarte(fixture = 'voll', config = {}, opts = {}) {
   return { u, haus, karte };
 }
 
-test('Kartenbereich nur bei can(map), zwischen Kopf und Meldungen', async () => {
+test('CORE-02 Kartenbereich nur bei can(map), zwischen Kopf und Meldungen', async () => {
   const { karte } = await kartenKarte();
   const slot = karte.shadowRoot.querySelector('.map-slot');
   assert.ok(slot && !slot.hidden, 'Platz da');
@@ -233,7 +233,7 @@ test('Kartenbereich nur bei can(map), zwischen Kopf und Meldungen', async () => 
   }
 });
 
-test('Bild aus entity_picture, decode() vor dem Tausch, mit Alternativtext', async () => {
+test('MAP-01 Bild aus entity_picture, decode() vor dem Tausch, mit Alternativtext', async () => {
   const u = bildUmgebung(), haus = hausAus('voll');
   const karte = neueKarte(u, haus);
   assert.deepEqual(hinweise(karte), ['loading'], 'lädt (R11)');
@@ -364,7 +364,7 @@ test('sichtbare Knöpfe Vergrößern/Verkleinern/Einpassen mit Namen (R22)', asy
   assert.deepEqual(ansichtZustand(karte), { zoom: 1, x: 0, y: 0 });
 });
 
-test('Ziehen verschiebt, transform ändert sich', async () => {
+test('MAP-02 Ziehen verschiebt, transform ändert sich', async () => {
   const { u, karte } = await kartenKarte();
   werkzeug(karte, 'zoom-in').click();
   const vorher = karte._map.pan.style.transform;
@@ -378,7 +378,7 @@ test('Ziehen verschiebt, transform ändert sich', async () => {
   assert.ok(!karte._map.el.hasAttribute('data-gesture'));
 });
 
-test('Zwei Finger zoomen um ihre Mitte', async () => {
+test('MAP-02 Zwei Finger zoomen um ihre Mitte', async () => {
   const { u, karte } = await kartenKarte();
   const unter = karte._map.fromScreen({ x: 100, y: 50 });
   zeiger(u, karte, 'pointerdown', 90, 50, 1);
@@ -392,7 +392,7 @@ test('Zwei Finger zoomen um ihre Mitte', async () => {
   zeiger(u, karte, 'pointerup', 120, 50, 2);
 });
 
-test('Doppeltipp vergrößert um den Punkt, Mausrad um den Zeiger', async () => {
+test('MAP-02 Doppeltipp vergrößert um den Punkt, Mausrad um den Zeiger', async () => {
   const { u, karte } = await kartenKarte();
   const unter = karte._map.fromScreen({ x: 150, y: 30 });
   for (let i = 0; i < 2; i++) { zeiger(u, karte, 'pointerdown', 150, 30); zeiger(u, karte, 'pointerup', 150, 30); u.uhr.vor(100); }
@@ -410,7 +410,7 @@ test('Doppeltipp vergrößert um den Punkt, Mausrad um den Zeiger', async () => 
   assert.equal(karte._map._zoom, 1, 'Grenze 1×');
 });
 
-test('Tastatur bei fokussierter Karte: + - 0 und Pfeile', async () => {
+test('MAP-02 Tastatur bei fokussierter Karte: + - 0 und Pfeile', async () => {
   const { u, karte } = await kartenKarte();
   assert.equal(karte._map.region.tabIndex, 0, 'fokussierbar (R03)');
   assert.ok(taste(u, karte, '+').defaultPrevented);
@@ -484,7 +484,7 @@ test('toScreen/fromScreen mit Zoom und Verschiebung, Karte startet eingepasst (R
   assert.deepEqual(ansichtZustand(karte), { zoom: 1, x: 0, y: 0 });
 });
 
-test('showLoupe/hideLoupe zeigt den Ausschnitt unter dem Zeiger', async () => {
+test('MAP-02 showLoupe/hideLoupe zeigt den Ausschnitt unter dem Zeiger', async () => {
   const { karte } = await kartenKarte();
   const m = karte._map;
   const lupe = karte.shadowRoot.querySelector('.map-loupe');
@@ -524,7 +524,7 @@ test('addLayer/removeLayer/refresh mit z-Reihenfolge', async () => {
   assert.equal(aufrufe.length, 4, 'refresh() ohne id: alle fremden Ebenen');
 });
 
-test('je Objektart eine Ebene aus den Kamera-Attributen', async () => {
+test('MAP-03 je Objektart eine Ebene aus den Kamera-Attributen', async () => {
   const { haus, karte } = await kartenKarte();
   const a = haus.states[CAM].attributes;
   const zahl = (name, sel = '[data-object]') => ebene(karte, name).querySelectorAll(sel).length;
@@ -545,14 +545,14 @@ test('je Objektart eine Ebene aus den Kamera-Attributen', async () => {
   assert.equal(atelier.querySelectorAll('text').find((n) => n.getAttribute('data-role') === 'order').textContent, '4');
 });
 
-test('Raum-Symbole (cleaning_settings) nur bei aktivem Customized Cleaning (SET-04)', async () => {
+test('MAP-03/SET-04 Raum-Symbole (cleaning_settings) nur bei aktivem Customized Cleaning (SET-04)', async () => {
   const { haus, karte } = await kartenKarte();
   assert.equal(ebene(karte, 'cleaning_settings').querySelectorAll('[data-object]').length, 0, 'aus');
   karte.hass = haus.setze(sauger(haus, { customized_cleaning: true }));
   assert.equal(ebene(karte, 'cleaning_settings').querySelectorAll('[data-object]').length, Object.keys(haus.states[CAM].attributes.rooms).length);
 });
 
-test('Roboter-Update ändert nur ein transform', async () => {
+test('MAP-03 Roboter-Update ändert nur ein transform', async () => {
   const { haus, karte } = await kartenKarte();
   const m = karte._map;
   const roboter = ebene(karte, 'robot').querySelector('[data-object]');
@@ -567,7 +567,7 @@ test('Roboter-Update ändert nur ein transform', async () => {
   assert.match(roboter.style.transform, new RegExp('translate\\(' + p.x + 'px, ?' + p.y + 'px\\)'));
 });
 
-test('Symbole skalieren mit object_scale, nicht mit dem Zoom; font_size, object_opacity', async () => {
+test('MAP-06 Symbole skalieren mit object_scale, nicht mit dem Zoom; font_size, object_opacity', async () => {
   const { karte } = await kartenKarte('voll', { map_config: { map_1: { object_scale: 2, font_size: 16, object_opacity: 0.5 } } });
   const m = karte._map;
   const k = Math.hypot(m._view.a, m._view.b);
@@ -582,7 +582,7 @@ test('Symbole skalieren mit object_scale, nicht mit dem Zoom; font_size, object_
   assert.equal(normal._map.config(1).font_size, 12, 'Vorgabe');
 });
 
-test('hidden_objects global und je Karte blendet genau die genannte Ebene aus', async () => {
+test('MAP-03 hidden_objects global und je Karte blendet genau die genannte Ebene aus', async () => {
   const { karte } = await kartenKarte('voll', { hidden_objects: ['carpets'], map_config: { map_1: { hidden_objects: ['obstacles'] } } });
   const aus = ebenenReihe(karte).filter((n) => ebene(karte, n).hidden);
   assert.deepEqual(aus.sort(), ['carpets', 'obstacles']);
@@ -594,7 +594,7 @@ test('hidden_objects global und je Karte blendet genau die genannte Ebene aus', 
   assert.deepEqual(karte._map.config(1).hidden_objects.sort(), ['carpets', 'obstacles']);
 });
 
-test('Objekte nicht nur über Farbe unterscheidbar (R17)', async () => {
+test('MAP-03 Objekte nicht nur über Farbe unterscheidbar (R17)', async () => {
   const { karte } = await kartenKarte();
   const formen = ['robot', 'charger', 'router', 'obstacles'].map((n) => ebene(karte, n).querySelector('[data-object]').getAttribute('data-symbol'));
   assert.equal(new Set(formen).size, 4, 'eigene Form je Symbol: ' + formen);
@@ -631,7 +631,7 @@ const ereignisse = (karte, ...typen) => {
 const tippe = (u, karte, client) => { zeiger(u, karte, 'pointerdown', client.x, client.y); zeiger(u, karte, 'pointerup', client.x, client.y); u.uhr.vor(400); };
 const bildschirm = (karte, robot) => karte._map.toScreen(karte._map.toImage(robot));
 
-test('Datenmodus: Kartendaten nur bei neuem frame_id, URL mit &v=<frame_id>', async () => {
+test('MAP-01 Datenmodus: Kartendaten nur bei neuem frame_id, URL mit &v=<frame_id>', async () => {
   const { u, haus, karte } = await datenKarte();
   assert.equal(u.abrufe.length, 1);
   assert.equal(u.abrufe[0], '/api/camera_map_data_proxy/camera.robo_map?token=testtoken&v=1180');
@@ -667,7 +667,7 @@ test('roomAt/passable im Datenmodus exakt; unbekannte Raum-ID → null', async (
   assert.equal(m.passable({ x: r.x, y: r.y }), true);
 });
 
-test('hitTest: Raum, Objekt (Hindernis), außerhalb', async () => {
+test('MAP-08 hitTest: Raum, Objekt (Hindernis), außerhalb', async () => {
   const { haus, karte } = await datenKarte();
   const m = karte._map;
   const r = raeume()['3'];
@@ -739,7 +739,7 @@ test('Hindernis antippen → map-object-tap', async () => {
   assert.equal(liste[0][1].layer, 'obstacles');
 });
 
-test('Raum-Chips: Liste mit Namen, Symbol, Reihenfolge, Tastatur; Chip = Fläche (R08/R15/R16)', async () => {
+test('MAP-08 Raum-Chips: Liste mit Namen, Symbol, Reihenfolge, Tastatur; Chip = Fläche (R08/R15/R16)', async () => {
   const { u, karte } = await datenKarte();
   const m = karte._map;
   const chips = karte.shadowRoot.querySelector('.room-chips');
@@ -810,7 +810,7 @@ async function stockwerkKarte({ config = {}, vacuum, zustand } = {}) {
   return { u, haus, karte };
 }
 
-test('Stockwerkswahl erst ab map_count > 1, mit Vorschau je Stockwerk', async () => {
+test('MAP-07 Stockwerkswahl erst ab map_count > 1, mit Vorschau je Stockwerk', async () => {
   const { karte: eins } = await kartenKarte();
   assert.equal(werkzeug(eins, 'floors'), null, 'eine Karte: keine Wahl');
   const { u, karte } = await stockwerkKarte();
@@ -830,7 +830,7 @@ test('Stockwerkswahl erst ab map_count > 1, mit Vorschau je Stockwerk', async ()
   assert.equal(vorschau.getAttribute('alt'), '');
 });
 
-test('Wechsel nur über _confirmMapChange, dann genau vacuum_select_map { entity_id, map_id }', async () => {
+test('CORE-20/MAP-07 Wechsel nur über _confirmMapChange, dann genau vacuum_select_map { entity_id, map_id }', async () => {
   const { u, haus, karte } = await stockwerkKarte();
   werkzeug(karte, 'floors').click();
   dialogVon(u).shadowRoot.querySelectorAll('.floor')[1].click();
@@ -850,13 +850,13 @@ test('Wechsel nur über _confirmMapChange, dann genau vacuum_select_map { entity
   assert.equal(dialogVon(b.u), null);
 });
 
-test('ohne Bestätigung (hidden_card_objects) sofortiger Wechsel', async () => {
+test('CORE-20 ohne Bestätigung (hidden_card_objects) sofortiger Wechsel', async () => {
   const { haus, karte } = await stockwerkKarte({ config: { hidden_card_objects: ['map_change_confirmation'] } });
   assert.equal(karte._map.selectMap(7), true);
   assert.deepEqual(JSON.parse(JSON.stringify(haus.rufe)), [{ domain: 'dreame_vacuum', service: 'vacuum_select_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
 });
 
-test('Stockwerkswahl gesperrt bei laufender Aufgabe, Grund sichtbar', async () => {
+test('MAP-07 Stockwerkswahl gesperrt bei laufender Aufgabe, Grund sichtbar', async () => {
   const { haus, karte } = await stockwerkKarte({ vacuum: { started: true }, zustand: 'cleaning' });
   const knopf = werkzeug(karte, 'floors');
   assert.equal(knopf.disabled, true);
@@ -866,7 +866,7 @@ test('Stockwerkswahl gesperrt bei laufender Aufgabe, Grund sichtbar', async () =
   assert.deepEqual(haus.rufe, []);
 });
 
-test('map-changed bei anderem Kartenindex', async () => {
+test('MAP-07 map-changed bei anderem Kartenindex', async () => {
   const { haus, karte } = await stockwerkKarte();
   const liste = ereignisse(karte, 'map-changed');
   karte.hass = haus.setze(kamera(haus, { frame_id: 5 }));
@@ -876,7 +876,7 @@ test('map-changed bei anderem Kartenindex', async () => {
   assert.equal(karte._map.current().name, 'Karte 2');
 });
 
-test('config(index): map_config.map_<index> mit rotation, scale, opacity, crop über den Kartenwerten', async () => {
+test('MAP-06 config(index): map_config.map_<index> mit rotation, scale, opacity, crop über den Kartenwerten', async () => {
   const cfg = { map_config: { map_1: { rotation: 90, scale: 0.5, opacity: 0.6, crop: { left: 10, right: 20, top: 0, bottom: 5 } }, map_2: { rotation: 180 } } };
   const { karte } = await kartenKarte('voll', cfg);
   const m = karte._map;
@@ -898,7 +898,7 @@ test('config(index): map_config.map_<index> mit rotation, scale, opacity, crop �
   assert.deepEqual(Object.keys(k2._opts.map_config), ['map_1']);
 });
 
-test('background_image/overlay_image: Ecken in Roboter-mm, unter bzw. über der Karte', async () => {
+test('MAP-06 background_image/overlay_image: Ecken in Roboter-mm, unter bzw. über der Karte', async () => {
   const bild = { url: '/local/grundriss.png', x0: -1000, y0: -2000, x1: 3000, y1: 1000 };
   const { karte } = await kartenKarte('voll', { map_config: { map_1: { background_image: bild, overlay_image: Object.assign({}, bild, { url: '/local/oben.svg' }) } } });
   const m = karte._map;
@@ -921,7 +921,7 @@ test('background_image/overlay_image: Ecken in Roboter-mm, unter bzw. über der 
 // ── Task 8: Darstellung, Farbschema, Icon-Set ──────────────────────────────
 const px = (bild, x, y) => Array.from(bild.data.slice((y * bild.width + x) * 4, (y * bild.width + x) * 4 + 4));
 
-test('Datenmodus: Canvas aus den Pixelebenen statt Bild, Geometrie aus dem Gitter', async () => {
+test('MAP-01 Datenmodus: Canvas aus den Pixelebenen statt Bild, Geometrie aus dem Gitter', async () => {
   const { karte, daten } = await datenKarte();
   const m = karte._map;
   const basis = karte.shadowRoot.querySelector('.map-base');
@@ -950,7 +950,7 @@ test('Datenmodus: neu gemalt nur bei neuem frame_id oder anderem Farbschema', as
   assert.equal(m.stats.paints, 3, 'auto folgt dem dunklen Thema');
 });
 
-test('paintMapPixels: Räume nach color_index, Wand, Teppich, Grundriss mit Konturen, Drehung', () => {
+test('MAP-05 paintMapPixels: Räume nach color_index, Wand, Teppich, Grundriss mit Konturen, Drehung', () => {
   const { paintMapPixels, decodeMapData } = intern();
   const daten = kartendaten({ 1: { room_id: 1, x: 125, y: 125, x0: 0, y0: 0, x1: 249, y1: 249, color_index: 0 }, 2: { room_id: 2, x: 375, y: 125, x0: 250, y0: 0, x1: 499, y1: 249, color_index: 2 } });
   const grid = decodeMapData(daten);
@@ -979,7 +979,7 @@ test('paintMapPixels: Räume nach color_index, Wand, Teppich, Grundriss mit Kont
   assert.deepEqual(px(gedreht, grid.height - 1 - z2[1], grid.width - 1 - z2[0]), [30, 0, 0, 255]);
 });
 
-test('color_scheme hell/dunkel/grau/auto über --bvc-map-*; override_colors auch dunkel', async () => {
+test('CORE-17/MAP-05/MAP-09 color_scheme hell/dunkel/grau/auto über --bvc-map-*; override_colors auch dunkel', async () => {
   const farbe = (k, name) => k._map.el.style['--bvc-map-' + name];
   const { karte: hell } = await kartenKarte('voll', { color_scheme: 'light' });
   const { karte: dunkel } = await kartenKarte('voll', { color_scheme: 'dark' });
@@ -1001,7 +1001,7 @@ test('color_scheme hell/dunkel/grau/auto über --bvc-map-*; override_colors auch
   assert.deepEqual(JSON.parse(JSON.stringify(boese._opts.override_colors)), {}, 'unsichere Werte verworfen');
 });
 
-test('map_display floor_plan nur im Datenmodus; Vorgabe standard', async () => {
+test('MAP-05 map_display floor_plan nur im Datenmodus; Vorgabe standard', async () => {
   const { karte } = await datenKarte({ config: { map_display: 'floor_plan' } });
   assert.equal(karte._opts.map_display, 'floor_plan');
   assert.equal(karte._map._painted.floorPlan, true);
@@ -1010,7 +1010,7 @@ test('map_display floor_plan nur im Datenmodus; Vorgabe standard', async () => {
   assert.equal(normal._map._painted.floorPlan, false);
 });
 
-test('icon_set busch (eigene Formen) oder material (mdi:)', async () => {
+test('MAP-05 icon_set busch (eigene Formen) oder material (mdi:)', async () => {
   const { karte } = await kartenKarte();
   const roboter = ebene(karte, 'robot').querySelector('[data-object]');
   assert.ok(roboter.querySelector('circle'), 'Busch-Form');
@@ -1038,7 +1038,7 @@ async function hindernisKarte({ obstacle = {}, vacuum, zustand, config } = {}) {
 }
 const oeffneDetails = (r) => blase(r.karte).querySelector('[data-action="obstacle-details"]').click();
 
-test('Hindernis antippen → Blase mit Typ, Raum, Grund; Escape und Tipp daneben schließen', async () => {
+test('MAP-04 Hindernis antippen → Blase mit Typ, Raum, Grund; Escape und Tipp daneben schließen', async () => {
   const r = await hindernisKarte();
   const b = blase(r.karte);
   assert.equal(b.hidden, false);
@@ -1052,7 +1052,7 @@ test('Hindernis antippen → Blase mit Typ, Raum, Grund; Escape und Tipp daneben
   assert.equal(blase(r.karte).hidden, true, 'Tipp daneben');
 });
 
-test('Dialog (menu) mit Foto nur bei vorhandenem Bild, Download &file=1; sonst Hinweis', async () => {
+test('MAP-04 Dialog (menu) mit Foto nur bei vorhandenem Bild, Download &file=1; sonst Hinweis', async () => {
   const r = await hindernisKarte({ obstacle: { picture_status: 'Uploaded' } });
   oeffneDetails(r);
   const d = dialogVon(r.u);
@@ -1071,7 +1071,7 @@ test('Dialog (menu) mit Foto nur bei vorhandenem Bild, Download &file=1; sonst H
   assert.match($d(ohne.u, '.obstacle-note').textContent, /kein Foto/);
 });
 
-test('Ignorieren/Rückgängig: genau vacuum_set_obstacle_ignore { x, y, obstacle_ignored }, kein Doppelaufruf (R11/R13)', async () => {
+test('MAP-04 Ignorieren/Rückgängig: genau vacuum_set_obstacle_ignore { x, y, obstacle_ignored }, kein Doppelaufruf (R11/R13)', async () => {
   const r = await hindernisKarte();
   oeffneDetails(r);
   const knopf = () => $d(r.u, '[data-action="obstacle-ignore"]');
@@ -1091,7 +1091,7 @@ test('Ignorieren/Rückgängig: genau vacuum_set_obstacle_ignore { x, y, obstacle
   assert.equal(ebene(r.karte, 'obstacles').querySelector('[data-object="2"]').getAttribute('data-ignored'), 'true', 'ignoriert sichtbar blass');
 });
 
-test('Ignorieren gesperrt bei laufender Aufgabe und bei Selbst-Ignoriert, mit Grund; ohne Dienst kein Knopf', async () => {
+test('MAP-04 Ignorieren gesperrt bei laufender Aufgabe und bei Selbst-Ignoriert, mit Grund; ohne Dienst kein Knopf', async () => {
   const lauf = await hindernisKarte({ vacuum: { started: true }, zustand: 'cleaning' });
   oeffneDetails(lauf);
   assert.equal($d(lauf.u, '[data-action="obstacle-ignore"]').disabled, true);
@@ -1126,7 +1126,7 @@ test('Aktionsplatz für andere Module: fremde Aktion erscheint und bekommt das H
 // ── Task 10: Karteninfo (CORE-19) ──────────────────────────────────────────
 const fakten = (u) => Object.fromEntries(dialogVon(u).shadowRoot.querySelectorAll('dt').map((dt, i) => [dt.textContent, dialogVon(u).shadowRoot.querySelectorAll('dd')[i].textContent]));
 
-test('Karteninfo über das Kartenwerkzeug: Rohgröße, Kalibrierung, Maßstab, Ursprung, Drehung', async () => {
+test('CORE-19 Karteninfo über das Kartenwerkzeug: Rohgröße, Kalibrierung, Maßstab, Ursprung, Drehung', async () => {
   const u = bildUmgebung(), haus = hausAus('voll');
   const karte = neueKarte(u, haus, { map_config: { map_1: { rotation: 90 } } });
   await mikro();
@@ -1149,7 +1149,7 @@ test('Karteninfo über das Kartenwerkzeug: Rohgröße, Kalibrierung, Maßstab, U
   assert.ok(u.verlauf.aufrufe.includes('go -1'));
 });
 
-test('Karteninfo im Datenmodus: Gitter in Zellen und mm', async () => {
+test('CORE-19 Karteninfo im Datenmodus: Gitter in Zellen und mm', async () => {
   const { u, karte, daten } = await datenKarte();
   werkzeug(karte, 'info').click();
   const f = fakten(u);
@@ -1158,7 +1158,7 @@ test('Karteninfo im Datenmodus: Gitter in Zellen und mm', async () => {
   assert.equal(f['Modus'], 'Kartendaten (exakt)');
 });
 
-test('Koordinate wählen: Tipp → Roboter-mm und Objekt darunter, Kopieren; Escape bricht ab', async () => {
+test('CORE-19 Koordinate wählen: Tipp → Roboter-mm und Objekt darunter, Kopieren; Escape bricht ab', async () => {
   const { u, karte } = await datenKarte();
   const kopiert = [];
   u.kontext.navigator.clipboard = { writeText: async (s) => { kopiert.push(s); } };
