@@ -598,6 +598,13 @@ python3 "$HACS/scripts/vacuum-inventar-pruefen.py" --lauf "$HACS/artifacts/e2e/<
 
 ## Geprüft
 
+**12.11.2026 · 0.2.1, Kartenwähler ohne Live-Vorschau (#1011, Tag `v0.2.1`)** — Beschreibung ein Satz mit Verb; `getStubConfig` merkt die Vorgabe je Entitätsregister (ein Durchlauf über `hass.states`). Layout von 0.2.0 unverändert.
+
+1. `node --check` grün; neue Tests `tests/kartenwaehler.test.js` (preview false, ein Satz Beschreibung de/en, höchstens ein Durchlauf je Register, kein Netz) zuerst rot, danach grün.
+2. `python3 scripts/ui-regeln-pruefen.py`: 0 Verstöße, mit der neuen Prüfung R3.6 (Kartenwähler-Vertrag), die vorher für dieses Repo rot war.
+3. Einziger Abnahmelauf `karten-alle.sh` für alle fünf geänderten Kartenrepos (Lauf `karten-20261112-175558-77c23e`): 2/2 Schritte grün, Node 618 Tests grün, 385 Bilder.
+4. Eintrag in `docs/stand.md` der Projektverwaltung, Block 12.11.2026 (#1011).
+
 **12.11.2026 · 0.2.0, Layout nach Designkonzept (#1002, Tag `v0.2.0`)**
 
 1. `node --check` grün; `node --test` 615/615 (24 neue Tests, jeweils zuerst rot).

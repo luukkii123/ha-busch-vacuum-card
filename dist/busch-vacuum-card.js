@@ -214,7 +214,9 @@ const BuschUI = (() => {
  * repositories ship a single file, no sub folders).
  */
 
-const CARD_VERSION = '0.2.0';
+const CARD_VERSION = '0.2.1';
+/** #1011: default entity of getStubConfig per entity registry, see there. */
+const STUB_PICKS = new WeakMap();
 
 const CARD_TAG = 'busch-vacuum-card';
 const EDITOR_TAG = 'busch-vacuum-card-editor';
@@ -235,7 +237,7 @@ const domainOf = (entityId) => String(entityId || '').split('.')[0];
 const TEXTE_BUSCH_VACUUM_CARD = {
     de: {
         name: 'Busch Saugroboter',
-        description: 'Status und Steuerung eines Saugroboters mit allem, was das Gerät kann, auch ohne Karte.',
+        description: 'Zeigt und steuert einen Saugroboter mit allem, was das Gerät kann, auch ohne Karte.',
         labels: {
             entity: 'Saugroboter',
             title: 'Titel',
@@ -872,7 +874,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
     },
     en: {
         name: 'Busch vacuum',
-        description: 'Status and control of a robot vacuum with everything the device can do, even without a map.',
+        description: 'Shows and controls a robot vacuum with everything the device can do, even without a map.',
         labels: {
             entity: 'Robot vacuum',
             title: 'Title',
@@ -10642,8 +10644,17 @@ class BuschVacuumCard extends HTMLElement {
     }
 
     static getStubConfig(hass, entities) {
-        const pool = Array.isArray(entities) && entities.length ? entities : Object.keys((hass && hass.states) || {});
-        return { type: `custom:${CARD_TAG}`, entity: pool.find((id) => domainOf(id) === 'vacuum') || '' };
+        const pick = (pool) => pool.find((id) => domainOf(id) === 'vacuum') || '';
+        if (Array.isArray(entities) && entities.length) return { type: `custom:${CARD_TAG}`, entity: pick(entities) };
+        // #1011 card picker: one pass over hass.states per picker visit, remembered
+        // on the entity registry (hass.states is replaced on every state change).
+        const key = hass && (hass.entities || hass.states);
+        let entity = key && typeof key === 'object' ? STUB_PICKS.get(key) : undefined;
+        if (entity === undefined) {
+            entity = pick(Object.keys((hass && hass.states) || {}));
+            if (key && typeof key === 'object') STUB_PICKS.set(key, entity);
+        }
+        return { type: `custom:${CARD_TAG}`, entity };
     }
 
     setConfig(raw) {
@@ -17452,7 +17463,7 @@ if (!window.customCards.some((c) => c.type === CARD_TAG)) {
         type: CARD_TAG,
         name: picker.name,
         description: picker.description,
-        preview: true,
+        preview: false,
         documentationURL: 'https://github.com/luukkii123/ha-busch-vacuum-card'
     });
 }

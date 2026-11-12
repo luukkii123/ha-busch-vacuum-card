@@ -10,10 +10,10 @@ test('Karte, Editor und Picker-Eintrag sind registriert', () => {
   assert.ok(u.registry.get('busch-vacuum-card-editor'), 'Editor definiert');
   const eintrag = u.kontext.window.customCards.find((c) => c.type === 'busch-vacuum-card');
   assert.ok(eintrag, 'customCards-Eintrag');
-  assert.equal(eintrag.preview, true);
+  assert.equal(eintrag.preview, false);
   assert.match(eintrag.name, /Saugroboter/, 'Name deutsch bei deutschem Browser');
   assert.ok(eintrag.description.endsWith('.'));
-  assert.equal(u.registry.get('busch-vacuum-card').__internals.version, '0.2.0');
+  assert.equal(u.registry.get('busch-vacuum-card').__internals.version, '0.2.1');
 });
 
 test('Picker-Eintrag englisch bei englischem Browser', () => {
