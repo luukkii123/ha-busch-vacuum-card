@@ -22,8 +22,25 @@ const VERBOTENE_WOERTER = new Set([
   'ENTFERNT-M7',
 ]);
 
+// Heimnetz-Domain: der Name steht nur privat außerhalb des Repos; hier liegt der
+// SHA-256 (mit Salz, kleingeschrieben) seines Kennteils fester Länge. Geprüft wird
+// jeder Ausschnitt dieser Länge jeder Buchstabenfolge, also auch in Subdomains,
+// URLs und zusammengesetzten Wörtern.
+const DOMAIN = { salz: 'busch-vacuum-domain:', laenge: 7, werte: new Set(['ENTFERNT-M7']) };
+
+/** Fundstellen der Heimnetz-Domain per Hash-Vergleich (leer = sauber). */
+function domainFunde(text, domain = DOMAIN) {
+  for (const folge of new Set(text.toLowerCase().match(/\p{L}+/gu) || [])) {
+    for (let i = 0; i + domain.laenge <= folge.length; i++) {
+      const wert = crypto.createHash('sha256').update(domain.salz + folge.slice(i, i + domain.laenge)).digest('hex');
+      if (domain.werte.has(wert)) return ['Heimnetz-Domain (Hash)'];
+    }
+  }
+  return [];
+}
+
 /** Liefert die Fundstellen privater Werte in einem Text (leer = sauber). */
-function privateFunde(text, woerter = VERBOTENE_WOERTER) {
+function privateFunde(text, woerter = VERBOTENE_WOERTER, domain = DOMAIN) {
   const funde = [];
   const muster = {
     IPv4: /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g,
@@ -33,6 +50,7 @@ function privateFunde(text, woerter = VERBOTENE_WOERTER) {
     HexToken: /\b[0-9a-f]{40,}\b/gi,
   };
   for (const [art, re] of Object.entries(muster)) for (const m of text.matchAll(re)) funde.push(`${art}: ${m[0]}`);
+  funde.push(...domainFunde(text, domain));
   for (const wort of new Set(text.toLowerCase().match(/\p{L}+/gu) || [])) {
     if (woerter.has(crypto.createHash('sha256').update(wort).digest('hex'))) funde.push('echter Name (Hash)');
   }
@@ -106,6 +124,9 @@ test('Gegenprobe: die Prüfung schlägt an', () => {
   assert.equal(privateFunde('token=' + 'ab'.repeat(32)).length, 1);
   const probe = new Set([crypto.createHash('sha256').update('probewort').digest('hex')]);
   assert.equal(privateFunde('Raum Probewort', probe).length, 1, 'Name per Hash erkannt, auch großgeschrieben');
+  const domain = { ...DOMAIN, werte: new Set([crypto.createHash('sha256').update(DOMAIN.salz + 'probedo').digest('hex')]) };
+  assert.deepEqual(privateFunde('https://ha.ProbeDomain.example/', probe, domain), ['Heimnetz-Domain (Hash)'], 'Domain per Hash erkannt, auch in Subdomain und großgeschrieben');
+  assert.deepEqual(privateFunde('https://ha.probedx.example/', probe, domain), [], 'andere Domain bleibt sauber');
   assert.deepEqual(privateFunde('Version 2.0.3, Raum Atelier'), [], 'Versionsnummer ist keine IP');
 });
 
