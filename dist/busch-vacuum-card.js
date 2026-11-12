@@ -214,7 +214,7 @@ const BuschUI = (() => {
  * repositories ship a single file, no sub folders).
  */
 
-const CARD_VERSION = '0.1.1';
+const CARD_VERSION = '0.2.0';
 
 const CARD_TAG = 'busch-vacuum-card';
 const EDITOR_TAG = 'busch-vacuum-card-editor';
@@ -9247,6 +9247,7 @@ ha-card {
 .controls .ctl {
     flex: 1 1 0;
     justify-content: center;
+    min-width: 44px;
     min-height: 48px;
     border-radius: var(--ha-card-border-radius, 12px);
 }
