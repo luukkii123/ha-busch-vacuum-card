@@ -7,7 +7,7 @@ device and cleaning settings, shortcuts, history, remote control, map editing
 and map backups — built only on the integration's public entities, attributes
 and services and styled like the other Busch cards.
 
-Version 0.2.1 keeps the new layout of 0.2.0 and loads faster in the card picker (no live preview there). The layout: from a card width of about 900 px (also in
+Version 0.2.2 fixes the layout of 0.2.0/0.2.1: in a panel view on a phone the action bar stays on screen and the sheet scrolls, a station warning shows in the panel's hint bar while the action bar keeps a short "Dock" button, so the start label is never cut. The layout: from a card width of about 900 px (also in
 a panel view) the map fills the left side and a 380 px control panel sits on
 the right; narrower cards show the head, the map and a sheet with the task
 controls below it. Nothing was removed. The card was checked live on one robot

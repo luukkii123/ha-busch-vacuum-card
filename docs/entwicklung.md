@@ -598,6 +598,13 @@ python3 "$HACS/scripts/vacuum-inventar-pruefen.py" --lauf "$HACS/artifacts/e2e/<
 
 ## Geprüft
 
+**12.11.2026 · 0.2.2, Befunde der Live-Prüfung von 0.2.1 (#1002, Tag `v0.2.2`)** — Panel Mode nimmt genau die Höhe unter HAs Kopf (100dvh − `--header-height` − Safe Areas − Versatz), das Blatt scrollt am Handy selbst, die Aktionsleiste bleibt sichtbar; Stationswarnung nur in der Hinweisleiste, Aktionsleiste „Dock“ (breit) bzw. Symbol (schmal), Primärknopf kürzt nie; Auswahlwerkzeuge 13 px unter der 14-px-Zählzeile.
+
+1. Je Befund zuerst rote Node-Tests (`tests/aufbau.test.js`), danach grün; `node --check` grün; `node --test` 622/622.
+2. Render-Harness bildet HAs Panel-Ansicht nach (fester Kopf, kein Elter mit fester Höhe, Seite darf scrollen); neue Fälle `ha_panel_checks` einmal gezielt gegen v0.2.1: 5/6 rot (Seite scrollte 295 px, „Alles reinigen“ um 76 px gekürzt, Dock mit Warntext, Werkzeuge 16 px).
+3. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße (mit R3.6).
+4. Abnahmelauf `karten-20261112-195711-ee008e` grün: Node 622, render 87/87 (2255 s, 391 Bilder), UI-Regeln 0, 0 Seiten-/Konsolenfehler, 0 Dienstaufrufe, 0 Fremdanfragen; Inventar 88 IDs, 42/42 Ansichten. Vorlauf `karten-20261112-191711-dc095f` brach nur an einer veralteten Prüferwartung (Dock-Text) ab, zählt nicht.
+
 **12.11.2026 · 0.2.1, Kartenwähler ohne Live-Vorschau (#1011, Tag `v0.2.1`)** — Beschreibung ein Satz mit Verb; `getStubConfig` merkt die Vorgabe je Entitätsregister (ein Durchlauf über `hass.states`). Layout von 0.2.0 unverändert.
 
 1. `node --check` grün; neue Tests `tests/kartenwaehler.test.js` (preview false, ein Satz Beschreibung de/en, höchstens ein Durchlauf je Register, kein Netz) zuerst rot, danach grün.
