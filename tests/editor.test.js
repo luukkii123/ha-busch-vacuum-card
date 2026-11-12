@@ -239,7 +239,7 @@ test('CORE-16 Wörterbuch: jeder Text in beiden Sprachen', () => {
 test('CORE-16 Karte englisch bei englischem HA', () => {
   const u = neueUmgebung(), haus = hausAus('voll', { sprache: 'en' });
   const karte = neueKarte(u, haus);
-  assert.equal($$(karte, '.ctl').find((b) => b.getAttribute('data-action') === 'start').textContent, 'Clean');
+  assert.equal($$(karte, '.ctl').find((b) => b.getAttribute('data-action') === 'start').textContent, 'Clean everything', '#1002: der Primärknopf nennt die Aufgabe');
   assert.equal($(karte, '.menu-button').getAttribute('aria-label'), 'Menu');
   assert.equal($$(karte, '.task').find((b) => b.getAttribute('data-task') === 'all').textContent, 'All');
 });

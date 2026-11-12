@@ -140,3 +140,40 @@ test('TASK-02 Raum: Auswahl im Panel mit Reihenfolge-Badges, alle Chips sichtbar
   assert.ok($(k, '.task-repeats'), 'Wiederholungen da');
   assert.ok($(k, '[data-action="repeats-plus"]'));
 });
+
+// ── Task 4: Aktionsleiste ────────────────────────────────────────────────
+test('CORE-07 Primärknopf nennt die Aufgabe: „Alles reinigen“, „N Räume reinigen“, Zone, Spot', () => {
+  const k = aufbau();
+  assert.equal(ctl(k, 'start').textContent, 'Alles reinigen');
+  assert.equal(ctl(k, 'start').getAttribute('aria-label'), 'Alles reinigen');
+  aufgabe(k, 'room').click();
+  const chip = (id) => $$(k, '.room-chip').find((c) => c.getAttribute('data-room') === String(id));
+  chip(3).click();
+  assert.equal(ctl(k, 'start').textContent, '1 Raum reinigen');
+  chip(5).click();
+  assert.equal(ctl(k, 'start').textContent, '2 Räume reinigen');
+  aufgabe(k, 'zone').click();
+  assert.equal(ctl(k, 'start').textContent, 'Zone reinigen');
+  k.karte._addZone(k.karte._fitZone({ x0: -1000, y0: -1000, x1: 0, y1: 0 }));
+  k.karte._addZone(k.karte._fitZone({ x0: 500, y0: 500, x1: 1500, y1: 1500 }));
+  assert.equal(ctl(k, 'start').textContent, '2 Zonen reinigen');
+  aufgabe(k, 'spot').click();
+  assert.equal(ctl(k, 'start').textContent, 'Spot reinigen');
+  const en = aufbau({ fixture: 'voll' });
+  assert.ok(en);
+});
+
+test('CORE-07 laufend: Pause/Stopp/Zurück wie bisher, kein Aufgabentext', () => {
+  const k = aufbau({ zustand: 'cleaning' });
+  assert.deepEqual($$(k, '.ctl').filter((b) => b.getAttribute('data-action') !== 'shortcuts').map((b) => b.getAttribute('data-action')), ['pause', 'stop', 'return']);
+});
+
+test('CORE-08 Aktionsleiste: Station sekundär, Primär füllt; schmal Station als 52-px-Symbolknopf; Linkshänder gespiegelt', () => {
+  const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  assert.match(CARD_STYLES, /\.controls \.ctl\[data-variant=primary\] \{[^}]*flex: 1 1 auto;/);
+  assert.match(CARD_STYLES, /:host\(:not\(\[data-width=wide\]\)\) \.controls \.dock \{[^}]*width: 52px;/);
+  assert.match(CARD_STYLES, /:host\(:not\(\[data-width=wide\]\)\) \.controls \.dock span,[^{]*\{[^}]*display: none;/);
+  assert.match(CARD_STYLES, /:host\(\[data-hand=left\]\) \.dock \{[^}]*order: 1;/);
+  const k = aufbau();
+  assert.match($(k, '.dock').getAttribute('aria-label'), /^Station/, 'Symbolknopf behält seinen Namen');
+});

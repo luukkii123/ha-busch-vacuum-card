@@ -9129,6 +9129,67 @@ ha-card {
 .task-repeats .busch-ui-action ha-icon {
     display: inline-block;
 }
+/* Action bar: station secondary, the primary start fills the rest (CORE-07/08). */
+.controls .ctl {
+    flex: 1 1 0;
+    justify-content: center;
+    min-height: 48px;
+    border-radius: var(--ha-card-border-radius, 12px);
+}
+.controls .ctl[data-variant=primary] {
+    flex: 1 1 auto;
+    font-size: 15px;
+    font-weight: var(--ha-font-weight-medium, 500);
+}
+.controls .ctl[data-variant=secondary] {
+    border: 1px solid var(--divider-color, #e0e0e0);
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+}
+.controls .dock {
+    flex: none;
+    min-height: 48px;
+    margin-inline-end: 0;
+    justify-content: center;
+    color: var(--primary-text-color, #212121);
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+}
+:host(:not([data-width=wide])) .controls .ctl,
+:host(:not([data-width=wide])) .controls .dock {
+    min-height: 52px;
+    border-radius: 14px;
+}
+:host(:not([data-width=wide])) .controls .dock {
+    width: 52px;
+    padding: 0;
+}
+:host(:not([data-width=wide])) .controls .dock span,
+.controls[data-many] .dock span {
+    display: none;
+}
+.controls[data-many] .dock {
+    width: 48px;
+    padding: 0;
+}
+.controls .ctl[data-variant=secondary] {
+    flex: 0 1 auto;
+}
+.ctl-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.controls .ctl ha-icon {
+    flex: none;
+}
+/* A phone with three or more buttons: words beat symbols, so the symbols of the secondary ones go. */
+:host(:not([data-width=wide])) .controls[data-many] .ctl[data-variant=secondary] {
+    flex: 1 1 0;
+    padding: 0 var(--ha-space-2, 8px);
+}
+:host(:not([data-width=wide])) .controls[data-many] .ctl[data-variant=secondary] ha-icon {
+    display: none;
+}
 `;
 
 const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
@@ -10636,10 +10697,16 @@ class BuschVacuumCard extends HTMLElement {
         const names = this._hidden('action_buttons') || (!active && task === 'goto') ? [] : controlsFor(model, shown);
         const outside = names[0] === 'return'; // idle outside the dock (controlsFor)
         const buttons = names.map((name) => {
-            const label = translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
+            // #1002: the primary start says what it cleans (CORE-07).
+            const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
             const blocked = name === 'start' && !ready.ok;
             const variant = outside ? (name === 'return' ? 'primary' : 'secondary') : CONTROLS[name].variant || 'secondary';
-            const button = BuschUI.action({ label, text: label, icon: CONTROLS[name].icon, variant, disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
+            const button = BuschUI.action({ label, icon: CONTROLS[name].icon, variant, disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
+            // #1002: the words in their own box, so a narrow bar shortens them instead of cutting the symbol.
+            const words = document.createElement('span');
+            words.className = 'ctl-text';
+            words.textContent = label;
+            button.appendChild(words);
             if (blocked) button.setAttribute('aria-describedby', 'task-hint');
             button.classList.add('ctl');
             button.setAttribute('data-action', name);
@@ -10655,6 +10722,9 @@ class BuschVacuumCard extends HTMLElement {
         }
         if (model.can('dock') && !this._hidden('dock_status_indicator')) buttons.push(this._dock(hass, model));
         this._controls.replaceChildren(...buttons);
+        // #1002: with three or more buttons the station shrinks to its symbol (name stays in aria-label).
+        if (buttons.length > 2) this._controls.setAttribute('data-many', '');
+        else this._controls.removeAttribute('data-many');
     }
 
     _openDialog(view) {
@@ -11040,6 +11110,18 @@ class BuschVacuumCard extends HTMLElement {
         else picked.push(id);
         this._lastRoom = id;
         this._selectionChanged();
+    }
+
+    /** #1002: "Alles reinigen", "2 Räume reinigen", "Zone reinigen" … for the chosen task. */
+    _startLabel(hass, task) {
+        const sel = this._selection;
+        if (task === 'room') {
+            const n = sel.rooms.length;
+            return n ? translate(hass, n === 1 ? 'raumReinigen' : 'raeumeReinigen', { n }) : translate(hass, 'start');
+        }
+        if (task === 'zone') return translate(hass, sel.zones.length > 1 ? 'zonenReinigen' : 'zoneReinigen', { n: sel.zones.length });
+        if (task === 'spot') return translate(hass, sel.spots.length > 1 ? 'spotsReinigen' : 'spotReinigen', { n: sel.spots.length });
+        return translate(hass, 'allesReinigen');
     }
 
     /** #1002: the chip slot, view mode collapsed to `limit` chips (null: all). */
