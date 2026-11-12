@@ -817,7 +817,10 @@ test('MAP-07 Stockwerkswahl erst ab map_count > 1, mit Vorschau je Stockwerk', a
   const { u, karte } = await stockwerkKarte();
   const knopf = werkzeug(karte, 'floors');
   assert.ok(knopf);
-  assert.equal(knopf.getAttribute('aria-label'), 'Stockwerk wählen');
+  assert.equal(knopf.getAttribute('aria-label'), 'Stockwerk wählen: Erdgeschoss', '#1002: Chip nennt das aktive Stockwerk');
+  assert.ok(knopf.classList.contains('map-floor'), 'Stockwerk-Chip oben links');
+  assert.equal(knopf.parentNode, karte._map.region, 'nicht in der Werkzeugleiste');
+  assert.equal(knopf.querySelector('.map-floor-text').textContent, 'Erdgeschoss');
   knopf.click();
   const d = dialogVon(u);
   assert.ok(d, 'Dialog offen');

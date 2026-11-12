@@ -177,3 +177,56 @@ test('CORE-08 Aktionsleiste: Station sekundär, Primär füllt; schmal Station a
   const k = aufbau();
   assert.match($(k, '.dock').getAttribute('aria-label'), /^Station/, 'Symbolknopf behält seinen Namen');
 });
+
+// ── Task 5: Kartenwerkzeuge ──────────────────────────────────────────────
+const werkzeuge = (k) => k.karte._map.tools.childNodes.filter((n) => !n.hidden).map((n) => n.getAttribute('data-action') || n.className);
+
+test('MAP-02 Werkzeugleiste: eine Gruppe – Zoom +, Zoom −, Einpassen | Bearbeiten, Karten, Info; dazu der Werkzeugknopf', () => {
+  const k = aufbau();
+  const folge = werkzeuge(k);
+  assert.deepEqual(folge.slice(0, 4), ['map-zoom-in', 'map-zoom-out', 'map-fit', 'map-tools-divider']);
+  assert.deepEqual(folge.slice(-2), ['map-info', 'map-more']);
+  for (const mitte of folge.slice(4, -2)) assert.ok(['map-edit', 'map-maps'].includes(mitte), mitte);
+  const mehr = $(k, '[data-action="map-more"]');
+  assert.equal(mehr.getAttribute('aria-label'), 'Kartenwerkzeuge');
+  assert.equal(mehr.getAttribute('aria-expanded'), 'false');
+});
+
+test('MAP-02 schmal: Werkzeugknopf klappt die übrigen Werkzeuge auf, Escape klappt zu und gibt den Fokus zurück', () => {
+  const k = aufbau({ breite: 390 });
+  const m = k.karte._map, mehr = $(k, '[data-action="map-more"]');
+  mehr.click();
+  assert.equal(m.tools.hasAttribute('data-open'), true);
+  assert.equal(mehr.getAttribute('aria-expanded'), 'true');
+  const e = k.u.neuesEreignis('keydown', { key: 'Escape' });
+  m.tools.dispatchEvent(e);
+  assert.equal(m.tools.hasAttribute('data-open'), false);
+  assert.equal(mehr.getAttribute('aria-expanded'), 'false');
+  assert.equal(k.sr.activeElement, mehr, 'Fokus zurück am Werkzeugknopf');
+  const { CARD_STYLES } = k.u.registry.get('busch-vacuum-card').__internals;
+  assert.match(CARD_STYLES, /:host\(:not\(\[data-width=wide\]\)\) \.layout \.map-tools:not\(\[data-open\]\) \.map-tool:not\(\[data-action=map-fit\]\):not\(\[data-action=map-more\]\) \{[^}]*display: none;/);
+  assert.match(CARD_STYLES, /:host\(\[data-width=wide\]\) \.layout \[data-action=map-more\] \{[^}]*display: none;/);
+});
+
+test('MAP-02 Hinweis-Chip unten links je Aufgabe; ohne Zeiger-Ereignisse, gespiegelt bei Linkshändern', () => {
+  const k = aufbau();
+  const hint = () => k.karte._map.hint;
+  assert.equal(hint().textContent, 'Ziehen verschiebt · Mausrad zoomt');
+  aufgabe(k, 'room').click();
+  assert.equal(hint().textContent, 'Räume antippen – Reihenfolge wie eingestellt', 'customized_cleaning: Folge des Geräts');
+  aufgabe(k, 'zone').click();
+  assert.equal(hint().textContent, 'Rechteck aufziehen');
+  aufgabe(k, 'spot').click();
+  assert.equal(hint().textContent, 'Punkt antippen');
+  aufgabe(k, 'goto').click();
+  assert.equal(hint().textContent, 'Ziel antippen');
+  const laufend = aufbau({ zustand: 'cleaning' });
+  assert.equal(laufend.karte._map.hint.hidden, true, 'laufend kein Hinweis');
+  const gesperrt = aufbau({ config: { locked: 'always' } });
+  assert.equal(gesperrt.karte._map.hint.textContent, 'Karte gesperrt');
+  gesperrt.karte._toggleLock();
+  assert.equal(gesperrt.karte._map.hint.textContent, 'Ziehen verschiebt · Mausrad zoomt', 'folgt der Sperre sofort');
+  const { MAP_STYLES } = k.u.registry.get('busch-vacuum-card').__internals;
+  assert.match(MAP_STYLES, /\.map-hint \{[^}]*pointer-events: none;/);
+  assert.match(MAP_STYLES, /:host\(\[data-hand=left\]\) \.map-hint \{/);
+});

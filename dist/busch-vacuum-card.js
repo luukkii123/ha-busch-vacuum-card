@@ -3488,12 +3488,35 @@ class MapView {
             button.classList.add('map-tool');
             this._tool[name] = { button, icon, key, act };
             this.tools.appendChild(button);
+            // #1002: one group – view tools, a divider, then edit, maps and info.
+            if (name === 'fit') {
+                const divider = document.createElement('div');
+                divider.className = 'map-tools-divider';
+                divider.setAttribute('aria-hidden', 'true');
+                this.tools.appendChild(divider);
+            }
         }
+        // #1002: on a phone only "fit" and this button show; it folds the other tools out (Escape folds them in).
+        this._moreButton = BuschUI.action({ label: translate(null, 'kartenwerkzeuge'), icon: 'mdi:layers-outline', variant: 'secondary', onClick: () => this._toggleTools() });
+        this._moreButton.setAttribute('data-action', 'map-more');
+        this._moreButton.setAttribute('aria-expanded', 'false');
+        this._moreButton.classList.add('map-tool');
+        this.tools.appendChild(this._moreButton);
+        this.tools.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape' || !this.tools.hasAttribute('data-open')) return;
+            e.preventDefault();
+            e.stopPropagation();
+            this._toggleTools(false);
+            this._moreButton.focus();
+        });
+        this.hint = document.createElement('span');
+        this.hint.className = 'map-hint';
+        this.hint.hidden = true;
         this.bubble = document.createElement('div');
         this.bubble.className = 'map-bubble';
         this.bubble.hidden = true;
         this.bubble.setAttribute('role', 'dialog');
-        this.region.append(this.stage, this.tools, this.loupe, this.bubble);
+        this.region.append(this.stage, this.tools, this.hint, this.loupe, this.bubble);
         this.el.append(this.region, this.notes);
     }
 
@@ -3867,6 +3890,19 @@ class MapView {
         return { width: (turned ? height : width) * k, height: (turned ? width : height) * k };
     }
 
+    /** #1002: folds the phone's tool bar out or in. */
+    _toggleTools(open = !this.tools.hasAttribute('data-open')) {
+        if (open) this.tools.setAttribute('data-open', '');
+        else this.tools.removeAttribute('data-open');
+        this._moreButton.setAttribute('aria-expanded', String(open));
+    }
+
+    /** #1002: the hint chip at the bottom of the map; '' hides it. */
+    setHint(text) {
+        this.hint.textContent = text || '';
+        this.hint.hidden = !text;
+    }
+
     /** Called by the card when the lock changes: gestures and buttons follow data-locked. */
     lockChanged() {
         this._renderTools();
@@ -3878,12 +3914,13 @@ class MapView {
             this._floorReason = document.createElement('span');
             this._floorReason.id = 'map-floor-reason';
             this._floorReason.hidden = true;
-            this._floorButton = BuschUI.action({ label: translate(this.hass, 'stockwerkWaehlen'), icon: 'mdi:layers-triple-outline', variant: 'secondary', onClick: () => this.card._openDialog(this._floorsView()) });
+            this._floorButton = BuschUI.action({ label: translate(this.hass, 'stockwerkWaehlen'), variant: 'secondary', onClick: () => this.card._openDialog(this._floorsView()) });
             this._floorButton.setAttribute('data-action', 'map-floors');
             this._floorButton.setAttribute('aria-haspopup', 'dialog');
-            this._floorButton.classList.add('map-tool');
+            // #1002: a chip with the floor's name at the top of the map, outside the tool bar.
+            this._floorButton.classList.add('map-floor');
             this.tools.insertBefore(this._floorReason, this.tools.firstChild);
-            this.tools.insertBefore(this._floorButton, this._floorReason);
+            this.region.insertBefore(this._floorButton, this.tools);
         } else if (!many && this._floorButton) {
             this._floorButton.remove();
             this._floorReason.remove();
@@ -3892,7 +3929,14 @@ class MapView {
         if (this._floorButton) {
             const busy = this._busy();
             this._floorReason.textContent = translate(this.hass, 'stockwerkGesperrt');
-            BuschUI.action({ node: this._floorButton, label: translate(this.hass, 'stockwerkWaehlen'), icon: 'mdi:layers-triple-outline', variant: 'secondary', disabled: busy, onClick: () => this.card._openDialog(this._floorsView()) });
+            const floor = this._mapName();
+            BuschUI.action({ node: this._floorButton, label: floor ? translate(this.hass, 'stockwerkAktuell', { name: floor }) : translate(this.hass, 'stockwerkWaehlen'), text: '', variant: 'secondary', disabled: busy, onClick: () => this.card._openDialog(this._floorsView()) });
+            const words = document.createElement('span');
+            words.className = 'map-floor-text';
+            words.textContent = floor || translate(this.hass, 'stockwerkWaehlen');
+            const chevron = BuschUI.ha.icon('mdi:chevron-down');
+            chevron.setAttribute('aria-hidden', 'true');
+            this._floorButton.append(words, chevron);
             if (busy) this._floorButton.setAttribute('aria-describedby', 'map-floor-reason');
             else this._floorButton.removeAttribute('aria-describedby');
         }
@@ -3909,7 +3953,9 @@ class MapView {
             if (locked) tool.button.setAttribute('aria-describedby', 'map-lock-reason');
             else tool.button.removeAttribute('aria-describedby');
         }
+        BuschUI.action({ node: this._moreButton, label: translate(this.hass, 'kartenwerkzeuge'), icon: 'mdi:layers-outline', variant: 'secondary', onClick: () => this._toggleTools() });
         this.tools.hidden = !this._view;
+        if (this._floorButton) this._floorButton.hidden = !this._view;
     }
 
     /**
@@ -7813,13 +7859,78 @@ const MAP_STYLES = `
     /* As specific as the animate rule, or it would lose (found in the browser run). */
     .map-view[data-animate] .map-pan { transition: none; }
 }
+/* #1002: one grouped tool bar at the top (left-handed: left). */
 .map-tools {
     position: absolute;
     right: var(--ha-space-2, 8px);
-    bottom: var(--ha-space-2, 8px);
+    top: var(--ha-space-2, 8px);
+    z-index: 2;
     display: flex;
     flex-direction: column;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.map-tools-divider {
+    height: 1px;
+    margin: 2px 6px;
+    background: var(--divider-color, #e0e0e0);
+}
+.map-tool[data-action=map-more] {
+    display: none;
+}
+/* Floor chip at the top, hint chip at the bottom (no pointer: drags reach the map). */
+.map-floor {
+    position: absolute;
+    left: var(--ha-space-2, 8px);
+    top: var(--ha-space-2, 8px);
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
     gap: var(--ha-space-1, 4px);
+    max-width: calc(100% - 84px);
+    min-width: 0;
+    border-radius: 22px;
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    font-size: var(--ha-font-size-s, 13px);
+}
+.map-floor ha-icon {
+    flex: none;
+    --mdc-icon-size: 16px;
+}
+.map-floor-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+:host([data-hand=left]) .map-floor {
+    left: auto;
+    right: var(--ha-space-2, 8px);
+}
+.map-hint {
+    position: absolute;
+    left: var(--ha-space-2, 8px);
+    bottom: var(--ha-space-2, 8px);
+    z-index: 1;
+    max-width: calc(100% - 2 * var(--ha-space-2, 8px));
+    box-sizing: border-box;
+    padding: var(--ha-space-1, 4px) 10px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--ha-card-background, var(--card-background-color, #ffffff)) 92%, transparent);
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-xs, 12px);
+    pointer-events: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+:host([data-hand=left]) .map-hint {
+    left: auto;
+    right: var(--ha-space-2, 8px);
 }
 :host([data-hand=left]) .map-bubble {
     left: 68px;
@@ -7831,8 +7942,11 @@ const MAP_STYLES = `
 }
 .map-tool {
     padding: 0;
-    background: var(--ha-card-background, var(--card-background-color, #ffffff));
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    border-radius: 9px;
+    background: transparent;
+}
+.map-tool:not(:disabled):hover {
+    background: var(--secondary-background-color, #eeeeee);
 }
 .map-bubble {
     position: absolute;
@@ -9173,6 +9287,44 @@ ha-card {
 .controls .ctl[data-variant=secondary] {
     flex: 0 1 auto;
 }
+/* #1002 phone tool bar: "fit" and the tools button; open, the rest folds out in a second column. */
+:host(:not([data-width=wide])) .layout .map-tool[data-action=map-more] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+:host(:not([data-width=wide])) .layout .map-tools:not([data-open]) .map-tool:not([data-action=map-fit]):not([data-action=map-more]) {
+    display: none;
+}
+:host(:not([data-width=wide])) .layout .map-tools-divider {
+    display: none;
+}
+:host(:not([data-width=wide])) .layout .map-tools[data-open] {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(4, auto);
+    direction: rtl;
+}
+:host(:not([data-width=wide])[data-hand=left]) .layout .map-tools[data-open] {
+    direction: ltr;
+}
+:host(:not([data-width=wide])) .layout .map-tools > * {
+    direction: ltr;
+}
+:host(:not([data-width=wide])) .layout [data-action=map-fit] { order: 1; }
+:host(:not([data-width=wide])) .layout [data-action=map-more] { order: 2; }
+:host(:not([data-width=wide])) .layout [data-action=map-zoom-in] { order: 3; }
+:host(:not([data-width=wide])) .layout [data-action=map-zoom-out] { order: 4; }
+:host(:not([data-width=wide])) .layout [data-action=map-edit] { order: 5; }
+:host(:not([data-width=wide])) .layout [data-action=map-maps] { order: 6; }
+:host(:not([data-width=wide])) .layout [data-action=map-info] { order: 7; }
+:host([data-width=wide]) .layout [data-action=map-more] {
+    display: none;
+}
+/* The sheet overlaps the map's last 16 px on a phone: the hint sits above it. */
+:host(:not([data-width=wide])) .layout .map-hint {
+    bottom: calc(var(--ha-space-4, 16px) + var(--ha-space-2, 8px));
+}
 .ctl-text {
     min-width: 0;
     overflow: hidden;
@@ -10454,6 +10606,11 @@ class BuschVacuumCard extends HTMLElement {
         this.setAttribute('data-locked', String(this._locked));
         this._renderLock();
         if (this._map) this._map.lockChanged();
+        if (this._map && this._hass) {
+            const model = this._model();
+            const shown = model.state ? model.state.state : 'unavailable';
+            this._renderHint(model, taskActive(model, shown), this._chosenTask(model));
+        }
     }
 
     _renderLock() {
@@ -11008,6 +11165,7 @@ class BuschVacuumCard extends HTMLElement {
             else m.removeLayer('tasks');
             this._activeSig = null;
         }
+        this._renderHint(model, active, task);
         // Running targets change with the camera's attributes, not always with its frame.
         const a = cameraAttrs(model);
         const sig = active ? JSON.stringify([a.active_segments, a.active_areas, a.active_points, a.active_cruise_points]) : null;
@@ -11015,6 +11173,23 @@ class BuschVacuumCard extends HTMLElement {
             this._activeSig = sig;
             m.refresh('tasks');
         }
+    }
+
+    /** #1002: the hint chip on the map says what a tap or drag does now. */
+    _renderHint(model, active, task) {
+        const m = this._map;
+        if (!m || this._mapEdit) return;
+        const hass = this._hass;
+        let key = null;
+        if (!active) {
+            if (this._locked && this._lockShown) key = 'hinweisGesperrt';
+            else if (task === 'room') key = model.can('customized_cleaning') ? 'hinweisRaumFest' : 'hinweisRaum';
+            else if (task === 'zone') key = 'hinweisZone';
+            else if (task === 'spot') key = 'hinweisSpot';
+            else if (task === 'goto') key = this._selection.goto ? null : 'hinweisZiel'; // the target bubble takes the place
+            else key = touchDevice() ? 'hinweisAnsichtTouch' : 'hinweisAnsicht';
+        }
+        m.setHint(key ? translate(hass, key) : '');
     }
 
     /** Options of setMode for a task type: pick-room shows the selection and its order on the chips. */
@@ -17190,6 +17365,7 @@ BuschVacuumCard.__internals = {
     callAction,
     DIALOG_STYLES,
     CARD_STYLES,
+    MAP_STYLES,
     clockText,
     firstWeekday,
     decodeMapData,
