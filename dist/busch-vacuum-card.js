@@ -369,7 +369,29 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskRoom: 'Raum',
             taskZone: 'Zone',
             taskSpot: 'Spot',
-            taskGoto: 'Hinfahren',
+            taskGoto: 'Ziel',
+            // #1002 layout
+            alleRaeume: 'Alle {n} Räume',
+            reihenfolgeAendern: 'Reihenfolge ändern',
+            weitereRaeume: '+ {n} weitere',
+            wenigerRaeume: 'Weniger',
+            allesReinigen: 'Alles reinigen',
+            raumReinigen: '1 Raum reinigen',
+            raeumeReinigen: '{n} Räume reinigen',
+            zoneReinigen: 'Zone reinigen',
+            zonenReinigen: '{n} Zonen reinigen',
+            spotReinigen: 'Spot reinigen',
+            spotsReinigen: '{n} Spots reinigen',
+            kartenwerkzeuge: 'Kartenwerkzeuge',
+            hinweisAnsicht: 'Ziehen verschiebt · Mausrad zoomt',
+            hinweisAnsichtTouch: 'Ziehen verschiebt · zwei Finger zoomen',
+            hinweisGesperrt: 'Karte gesperrt',
+            hinweisRaum: 'Räume antippen – Reihenfolge = Tippfolge',
+            hinweisRaumFest: 'Räume antippen – Reihenfolge wie eingestellt',
+            hinweisZone: 'Rechteck aufziehen',
+            hinweisSpot: 'Punkt antippen',
+            hinweisZiel: 'Ziel antippen',
+            stockwerkAktuell: 'Stockwerk wählen: {name}',
             aufgabeLaeuft: 'Aufgabe läuft',
             wiederholungen: 'Wiederholungen',
             wiederholungenWert: 'Wiederholungen: {n}×',
@@ -985,6 +1007,28 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             taskZone: 'Zone',
             taskSpot: 'Spot',
             taskGoto: 'Go to',
+            // #1002 layout
+            alleRaeume: 'All {n} rooms',
+            reihenfolgeAendern: 'Change order',
+            weitereRaeume: '+ {n} more',
+            wenigerRaeume: 'Show less',
+            allesReinigen: 'Clean everything',
+            raumReinigen: 'Clean 1 room',
+            raeumeReinigen: 'Clean {n} rooms',
+            zoneReinigen: 'Clean zone',
+            zonenReinigen: 'Clean {n} zones',
+            spotReinigen: 'Clean spot',
+            spotsReinigen: 'Clean {n} spots',
+            kartenwerkzeuge: 'Map tools',
+            hinweisAnsicht: 'Drag to pan · scroll to zoom',
+            hinweisAnsichtTouch: 'Drag to pan · pinch to zoom',
+            hinweisGesperrt: 'Map locked',
+            hinweisRaum: 'Tap rooms – order = tap order',
+            hinweisRaumFest: 'Tap rooms – order as set',
+            hinweisZone: 'Drag a rectangle',
+            hinweisSpot: 'Tap a point',
+            hinweisZiel: 'Tap the destination',
+            stockwerkAktuell: 'Choose floor: {name}',
             aufgabeLaeuft: 'Task running',
             wiederholungen: 'Repeats',
             wiederholungenWert: 'Repeats: {n}×',
@@ -8786,6 +8830,199 @@ ha-card {
 :host([data-width=wide][data-map][data-layout=card]:not([data-aspect])) ha-card {
     height: min(780px, max(520px, calc(100dvh - var(--bvc-header-height, 56px) - var(--bvc-height-offset, 0px))));
 }
+/* Head: name, status dot + state text, lock, menu. */
+.state {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+    font-size: var(--ha-font-size-s, 13px);
+}
+.state::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--secondary-text-color, #727272);
+}
+.state[data-level=ok]::before {
+    background: var(--bvc-success-color, var(--success-color, #43a047));
+}
+.state[data-level=active]::before {
+    background: var(--bvc-accent-color, var(--primary-color, #03a9f4));
+}
+.state[data-level=error]::before {
+    background: var(--bvc-error-color, var(--error-color, #db4437));
+}
+:host(:not([data-width=wide])) .title {
+    font-size: var(--ha-font-size-l, 18px);
+}
+/* Status: pills on a phone (symbol + value, the word for screen readers), tiles in two columns. */
+.stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.metric {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+    height: 30px;
+    padding: 0 10px;
+    box-sizing: border-box;
+    border-radius: 15px;
+    background: var(--secondary-background-color, #f4f5f7);
+}
+.metric ha-icon {
+    order: -1;
+    flex: none;
+    --mdc-icon-size: 16px;
+}
+/* The word stays for screen readers; on a phone the pill shows symbol and value only. */
+.metric {
+    position: relative;
+}
+.metric-label {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.metric-value {
+    font-size: var(--ha-font-size-s, 13px);
+    font-weight: var(--ha-font-weight-normal, 400);
+}
+:host([data-width=wide]) .stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--ha-space-2, 8px);
+}
+:host([data-width=wide]) .metric {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    height: auto;
+    padding: 10px 12px;
+    border-radius: var(--ha-card-border-radius, 12px);
+}
+:host([data-width=wide]) .metric ha-icon {
+    display: none;
+}
+:host([data-width=wide]) .metric-label {
+    position: static;
+    opacity: 1;
+    max-width: 100%;
+    font-size: var(--ha-font-size-s, 12px);
+}
+:host([data-width=wide]) .metric-value {
+    max-width: 100%;
+    font-size: 18px;
+    font-weight: var(--ha-font-weight-medium, 500);
+}
+/* Station hint: warning or error of the dock, opens the station view (DOCK-05). */
+.station-slot:empty {
+    display: none;
+}
+.station-hint {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: start;
+    color: var(--primary-text-color, #212121);
+    border-inline-start: 4px solid var(--bvc-warning-color, var(--warning-color, #ffa600));
+}
+.station-hint[data-level=error] {
+    border-inline-start-color: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.station-hint > ha-icon {
+    flex: none;
+    --mdc-icon-size: 18px;
+    color: var(--bvc-warning-color, var(--warning-color, #ffa600));
+}
+.station-hint[data-level=error] > ha-icon:first-child {
+    color: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.station-hint > ha-icon:last-child {
+    color: var(--secondary-text-color, #727272);
+}
+.station-hint-text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: var(--ha-font-size-s, 13px);
+}
+/* Task type as one segmented control (CORE-06). */
+.task-head {
+    display: block;
+}
+:host .tasks {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--secondary-background-color, #eef0f3);
+}
+:host .task {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 var(--ha-space-1, 4px);
+    border-radius: 9px;
+    background: transparent;
+    color: var(--secondary-text-color, #3d4550);
+    font-size: var(--ha-font-size-s, 13px);
+}
+:host .task ha-icon {
+    display: none;
+}
+:host .task[aria-checked=true] {
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    color: var(--primary-text-color, #212121);
+    font-weight: var(--ha-font-weight-medium, 500);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+}
+/* Settings summary: mode · suction · wetness, opens the cleaning settings (SET-01). */
+.settings-row {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-2, 8px);
+    width: 100%;
+    text-align: start;
+    background: transparent;
+    border: 1px solid var(--divider-color, #e0e0e0);
+}
+.settings-row > ha-icon {
+    flex: none;
+    --mdc-icon-size: 18px;
+}
+.settings-row > ha-icon:last-child {
+    color: var(--secondary-text-color, #727272);
+}
+.settings-words {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+.settings-title {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-xs, 12px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.settings-summary {
+    font-size: var(--ha-font-size-s, 13px);
+    overflow-wrap: anywhere;
+}
 `;
 
 const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
@@ -10178,7 +10415,9 @@ class BuschVacuumCard extends HTMLElement {
             handle.setAttribute('aria-hidden', 'true');
             this._panelNode = document.createElement('div');
             this._panelNode.className = 'panel';
-            this._panelNode.append(handle, this._messages, this._taskArea, this._controls);
+            this._stationSlot = document.createElement('div');
+            this._stationSlot.className = 'station-slot';
+            this._panelNode.append(handle, this._messages, this._stationSlot, this._taskArea, this._controls);
             const layout = document.createElement('div');
             layout.className = 'layout';
             layout.append(lead, this._mapSlot, this._panelNode);
@@ -10243,6 +10482,8 @@ class BuschVacuumCard extends HTMLElement {
         this._menuButton.hidden = this._hidden('menu') || this._menuEntries(model).length === 0;
         this._renderLock();
         this._stateLine.textContent = real ? formatState(hass, real, shown) : shown;
+        // #1002: the status dot's level (R17: the state text stays the message).
+        this._stateLine.setAttribute('data-level', shown === 'error' ? 'error' : ['cleaning', 'returning', 'paused'].includes(shown) ? 'active' : UNUSABLE.includes(shown) ? 'off' : 'ok');
         this._mapSlot.hidden = !mapCamera;
         if (mapCamera) this.setAttribute('data-map', '');
         else this.removeAttribute('data-map');
@@ -10257,17 +10498,18 @@ class BuschVacuumCard extends HTMLElement {
         if (this._editSession) this._editSession.onHass(model);
         for (const session of this._mapSessions) if (session !== this._editSession) session.onHass(model);
 
+        // #1002: Akku, Fläche, Zeit (tiles in two columns, pills on a phone).
         const stats = [];
-        const area = statText(hass, model, 'sensor.cleaned_area', 'cleaned_area', 'm²');
-        if (area !== null) stats.push(this._metric('area', 'flaeche', area, 'mdi:texture-box'));
-        const time = statText(hass, model, 'sensor.cleaning_time', 'cleaning_time', 'min');
-        if (time !== null) stats.push(this._metric('time', 'zeit', time, 'mdi:timer-outline'));
         const battery = batteryInfo(hass, model);
         if (battery) {
             const node = this._metric('battery', 'akku', battery.text, battery.icon);
             node.setAttribute('data-battery', battery.kind);
             stats.push(node);
         }
+        const area = statText(hass, model, 'sensor.cleaned_area', 'cleaned_area', 'm²');
+        if (area !== null) stats.push(this._metric('area', 'flaeche', area, 'mdi:texture-box'));
+        const time = statText(hass, model, 'sensor.cleaning_time', 'cleaning_time', 'min');
+        if (time !== null) stats.push(this._metric('time', 'zeit', time, 'mdi:timer-outline'));
         this._stats.replaceChildren(...stats);
 
         const active = taskActive(model, shown);
@@ -10275,6 +10517,7 @@ class BuschVacuumCard extends HTMLElement {
         const percent = active && model.can('cleaning_progress') && !this._hidden('progress_bar') ? progressOf(hass, model) : null;
         this._progress.replaceChildren(...(percent === null ? [] : [this._progressBar(percent)]));
         this._renderMessages(hass, model);
+        this._renderStationHint(hass, model);
         const task = this._chosenTask(model);
         const ready = this._renderTasks(hass, model, active, task);
         this._syncTaskMap(model, active, task);
@@ -10456,12 +10699,33 @@ class BuschVacuumCard extends HTMLElement {
             head.appendChild(group);
         }
         // SET-01: not while a scheduled, shortcut or CleanGenius task runs (their settings are fixed).
+        // #1002: the settings summary row closes the panel's task part (built here, placed last below).
+        let settingsRow = null;
         if (model.can('settings') && !(active && ['scheduled_clean', 'shortcut_task', 'cleangenius_cleaning'].some((k) => model.attr(k) === true))) {
-            const label = translate(hass, 'einstellungen');
-            const button = BuschUI.action({ label: translate(hass, 'reinigungseinstellungen'), text: label, icon: 'mdi:tune-variant', onClick: () => this._openDialog(cleanSettingsView(this)) });
-            button.classList.add('task-settings');
-            button.setAttribute('data-action', 'clean-settings');
-            head.appendChild(button);
+            const summary = this._settingsSummary(hass, model);
+            const name = translate(hass, 'reinigungseinstellungen');
+            settingsRow = BuschUI.action({ label: summary ? name + ': ' + summary : name, onClick: () => this._openDialog(cleanSettingsView(this)) });
+            settingsRow.classList.add('settings-row');
+            settingsRow.setAttribute('data-action', 'clean-settings');
+            settingsRow.setAttribute('aria-haspopup', 'dialog');
+            const symbol = BuschUI.ha.icon('mdi:tune-variant');
+            symbol.setAttribute('aria-hidden', 'true');
+            const words = document.createElement('span');
+            words.className = 'settings-words';
+            const title = document.createElement('span');
+            title.className = 'settings-title';
+            title.textContent = translate(hass, 'einstellungen');
+            const line = document.createElement('span');
+            line.className = 'settings-summary';
+            line.textContent = summary;
+            line.hidden = !summary;
+            words.append(title, line);
+            const chevron = BuschUI.ha.icon('mdi:chevron-right');
+            chevron.setAttribute('aria-hidden', 'true');
+            settingsRow.append(symbol, words, chevron);
+            // Option names in the integration's words (R26), loaded once; the row redraws when they arrive.
+            loadSettingTexts(this);
+            if (this._settingTexts && !this._summaryTexts) this._summaryTexts = this._settingTexts.then(() => this._update());
         }
         if (head.childNodes.length) nodes.push(head);
         if (active) {
@@ -10499,6 +10763,7 @@ class BuschVacuumCard extends HTMLElement {
                 nodes.push(error);
             }
         }
+        if (settingsRow) nodes.push(settingsRow);
         const root = this.shadowRoot;
         const focused = root.activeElement && root.activeElement.getAttribute ? root.activeElement.getAttribute('data-action') : null;
         this._taskArea.replaceChildren(...nodes);
@@ -11335,6 +11600,48 @@ class BuschVacuumCard extends HTMLElement {
             return node;
         });
         this._messages.replaceChildren(...nodes);
+    }
+
+    /** #1002: the station's warning or error as a bar in the panel; a tap opens the station view (DOCK-05). */
+    _renderStationHint(hass, model) {
+        const status = model.can('dock') && !this._hidden('dock_status_indicator') ? dockStatus(model) : { level: 'ok' };
+        if (status.level !== 'warning' && status.level !== 'error') {
+            this._stationSlot.replaceChildren();
+            return;
+        }
+        const text = translate(hass, status.key);
+        const label = translate(hass, 'station') + ': ' + text;
+        const bar = BuschUI.action({ label, variant: 'secondary', onClick: () => this._openDialog(stationView(this)) });
+        bar.classList.add('station-hint');
+        bar.setAttribute('data-action', 'station-hint');
+        bar.setAttribute('data-level', status.level);
+        bar.setAttribute('aria-haspopup', 'dialog');
+        const symbol = BuschUI.ha.icon(LEVEL_ICON[status.level]);
+        symbol.setAttribute('aria-hidden', 'true');
+        const words = document.createElement('span');
+        words.className = 'station-hint-text';
+        const strong = document.createElement('strong');
+        strong.textContent = translate(hass, 'station') + ': ';
+        const rest = document.createElement('span');
+        rest.textContent = text;
+        words.append(strong, rest);
+        const chevron = BuschUI.ha.icon('mdi:chevron-right');
+        chevron.setAttribute('aria-hidden', 'true');
+        bar.append(symbol, words, chevron);
+        this._stationSlot.replaceChildren(bar);
+    }
+
+    /** #1002: cleaning mode · suction · wetness of the device, the summary row's text. */
+    _settingsSummary(hass, model) {
+        const parts = [];
+        const wet = ['wetness_level', 'mop_pad_humidity'].find((key) => SETTINGS[key] && settingState(this, model, key).present);
+        for (const key of ['cleaning_mode', 'suction_level', wet]) {
+            if (!key || !SETTINGS[key]) continue;
+            const s = settingState(this, model, key);
+            if (!s.present || !s.known) continue;
+            parts.push(s.def.control === 'select' ? optionLabel(hass, key, s.value) : s.label + ' ' + s.value);
+        }
+        return parts.join(' · ');
     }
 
     _clearWarning(model) {
