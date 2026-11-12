@@ -15908,7 +15908,18 @@ const RESTORE_TEXTS = {
         wiederhergestellt: 'Wiederhergestellt: {stand} um {zeit}.',
         wiederherstellenNeuLaden: 'Die Karte wird neu geladen …',
         aufgabeSperreWiederherstellung: 'Gesperrt, solange die Karte wiederhergestellt wird.',
-        wiederherstellenSperreLaeuft: 'Wiederherstellen geht nicht, solange der Roboter läuft oder pausiert ist — auch pausiert in der Station. Erst die Aufgabe beenden (Stopp).'
+        wiederherstellenSperreLaeuft: 'Wiederherstellen geht nicht, solange der Roboter läuft oder pausiert ist — auch pausiert in der Station. Erst die Aufgabe beenden (Stopp).',
+        wiederherstellenRaeume: 'Das Gerät setzt dabei die Reinigungseinstellungen aller Räume (Saugstufe, Feuchte, Durchgänge, Modus, Route) auf Standard zurück und berechnet die Raumgrenzen neu.',
+        wiederherstellenRaeumeMerken: 'Die Karte merkt sich die Raumeinstellungen von {raeume} und bietet danach an, sie zurückzuschreiben (solange die Seite offen bleibt).',
+        raeumeAnzahl_eins: '1 Raum',
+        raeumeAnzahl: '{n} Räumen',
+        raeumeZurueck: 'Raumeinstellungen wiederherstellen',
+        raeumeZurueckHinweis: 'Das Gerät hat die Raumeinstellungen auf Standard gesetzt; die Werte von vorher sind gemerkt.',
+        raeumeZurueckFrage: 'Schreibt die gemerkten Werte von {raeume} zurück, ein Aufruf je Raum:',
+        raeumeZurueckKnopf: 'Zurückschreiben',
+        raeumeZurueckStand: '{n} von {gesamt} Räumen zurückgeschrieben …',
+        raeumeZurueckFehler: 'Angehalten ({grund}). Fertig: {raeume}. „Erneut versuchen“ schreibt die übrigen Räume.',
+        raeumeZurueckFertig: 'Raumeinstellungen von {raeume} wiederhergestellt.'
     },
     en: {
         wiederherstellenTitel: 'Restore state',
@@ -15927,13 +15938,44 @@ const RESTORE_TEXTS = {
         wiederhergestellt: 'Restored: {stand} at {zeit}.',
         wiederherstellenNeuLaden: 'The map is reloading …',
         aufgabeSperreWiederherstellung: 'Locked while the map is being restored.',
-        wiederherstellenSperreLaeuft: 'Restoring is not possible while the robot is running or paused — also paused in the dock. End the task first (Stop).'
+        wiederherstellenSperreLaeuft: 'Restoring is not possible while the robot is running or paused — also paused in the dock. End the task first (Stop).',
+        wiederherstellenRaeume: 'The device resets the cleaning settings of all rooms (suction, wetness, passes, mode, route) to their defaults and recalculates the room borders.',
+        wiederherstellenRaeumeMerken: 'The card remembers the room settings of {raeume} and offers to write them back afterwards (while the page stays open).',
+        raeumeAnzahl_eins: '1 room',
+        raeumeAnzahl: '{n} rooms',
+        raeumeZurueck: 'Restore room settings',
+        raeumeZurueckHinweis: 'The device set the room settings to their defaults; the values from before are remembered.',
+        raeumeZurueckFrage: 'Writes back the remembered values of {raeume}, one call per room:',
+        raeumeZurueckKnopf: 'Write back',
+        raeumeZurueckStand: '{n} of {gesamt} rooms written back …',
+        raeumeZurueckFehler: 'Stopped ({grund}). Done: {raeume}. “Try again” writes the other rooms.',
+        raeumeZurueckFertig: 'Room settings of {raeume} restored.'
     }
 };
 for (const language of Object.keys(RESTORE_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, RESTORE_TEXTS[language]);
 
 /** `cloud_required` of the integration (device.py#L7012): the restore needs its cloud login (R12: own text). */
 const cloudRequired = (error) => !!error && (error.translation_key === 'cloud_required' || /cloud/i.test(errorText(error)));
+
+/**
+ * A restore resets every room's customized-cleaning values to the defaults and
+ * recalculates the room borders (live 12.11.2026). Before it the card
+ * remembers each room's full vacuum_set_custom_cleaning data (roomPayload, the
+ * fields this device takes); rooms with an unknown value are left out (never
+ * guessed). null without customized cleaning or its service.
+ */
+function roomSnapshot(model) {
+    if (!model.can('customized_cleaning') || !model.can('dreame_vacuum.vacuum_set_custom_cleaning')) return null;
+    const list = [];
+    for (const [id, room] of Object.entries(cameraAttrs(model).rooms || {})) {
+        const data = room ? roomPayload(model, room) : null;
+        if (data) list.push({ id, name: roomName(room, id), room: Object.assign({}, room), data });
+    }
+    return list.length ? list : null;
+}
+
+/** "7 Räumen" / "1 Raum" for the room texts. */
+const roomCount = (hass, n) => translate(hass, n === 1 ? 'raeumeAnzahl_eins' : 'raeumeAnzahl', { n });
 
 /** "Originalkarte vom 21.11.2024 10:20" — the state in confirmation and success note. */
 const recoveryFrom = (hass, entry) => recoveryLabel(hass, entry) + ' ' + (localeOf(hass).language.startsWith('de') ? 'vom' : 'of') + ' ' + recoveryDate(hass, entry);
@@ -15959,13 +16001,15 @@ function restoreConfirm(card, session, home, map, source) {
     session.backedUpAt = null; // the backup belongs to this restore, not to an earlier one
     session.error = null;
     const frame = card._map ? card._map.current().frameId : null;
+    const rooms = roomSnapshot(model);
     const call = entry
         ? { service: 'vacuum_restore_map', data: { recovery_map_index: entry.k, map_id: map.entry.id } }
         : { service: 'vacuum_restore_map_from_file', data: { file_url: source.url, map_id: map.entry.id } };
     return mapConfirm(card, session, {
         title: translate(hass, 'wiederherstellenTitel'),
         lines: [entry ? translate(hass, 'wiederherstellenStand', { stand: recoveryLabel(hass, entry), datum: recoveryDate(hass, entry), k: entry.k })
-            : translate(hass, 'wiederherstellenDatei', { url: source.url }), translate(hass, 'wiederherstellenFolge')],
+            : translate(hass, 'wiederherstellenDatei', { url: source.url }), translate(hass, 'wiederherstellenFolge'), translate(hass, 'wiederherstellenRaeume')]
+            .concat(rooms ? [translate(hass, 'wiederherstellenRaeumeMerken', { raeume: roomCount(hass, rooms.length) })] : []),
         action: translate(hass, 'wiederherstellenKnopf'),
         destructive: true,
         blocked: () => restoreLock(card, card._model()),
@@ -16002,7 +16046,8 @@ function restoreConfirm(card, session, home, map, source) {
         },
         done: (d) => {
             const now = new Date();
-            card._restoreNote = { mapId: map.entry.id, text: translate(hass, 'wiederhergestellt', { stand, zeit: clockText(hass, now.getHours(), now.getMinutes()) }), frame };
+            card._restoreNote = { mapId: map.entry.id, text: translate(hass, 'wiederhergestellt', { stand, zeit: clockText(hass, now.getHours(), now.getMinutes()) }), frame,
+                rooms, roomRun: { done: [], error: '', running: false } };
             if (source.done) source.done();
             backTo(d, home);
         }
@@ -16051,9 +16096,87 @@ function restoreNotePart(card, model, hass, dialog, view, map) {
     wrap.appendChild(noteLine(note.text, 'success'));
     const frame = card._map ? card._map.current().frameId : null;
     if (note.frame !== null && frame === note.frame) wrap.appendChild(noteLine(translate(hass, 'wiederherstellenNeuLaden'), 'busy'));
+    if (note.rooms && note.roomRun.done.length < note.rooms.length) {
+        wrap.appendChild(noteLine(translate(hass, 'raeumeZurueckHinweis'), 'warning'));
+        const lock = roomLock(model);
+        if (lock) wrap.appendChild(noteLine(translate(hass, lock), 'locked'));
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const label = translate(hass, 'raeumeZurueck');
+        const go = BuschUI.action({ label, text: label, icon: 'mdi:home-import-outline', variant: 'primary', disabled: !!lock, onClick: () => dialog.show(roomRestoreView(card, note)) });
+        go.setAttribute('data-action', 'restore-rooms');
+        actions.appendChild(go);
+        wrap.appendChild(actions);
+    }
     return wrap;
 }
 BACKUP_PARTS.push(restoreNotePart);
+
+/**
+ * „Raumeinstellungen wiederherstellen“ after a restore (R13): asks with the
+ * remembered values, then one vacuum_set_custom_cleaning per room, one after
+ * the other with progress (R11); stops at the first error and names the rooms
+ * done (R12); "Erneut versuchen" sends only the rest.
+ */
+function roomRestoreView(card, note) {
+    const run = note.roomRun;
+    return {
+        title: translate(card._hass, 'raeumeZurueck'),
+        kind: 'confirm',
+        watch: () => [card._opts.entity],
+        render: (body, hass, dialog) => {
+            const model = card._model();
+            const rest = note.rooms.filter((r) => !run.done.includes(r.id));
+            const names = () => note.rooms.filter((r) => run.done.includes(r.id)).map((r) => r.name).join(', ') || '–';
+            const lock = run.running ? '' : roomLock(model);
+            if (!rest.length) body.appendChild(noteLine(translate(hass, 'raeumeZurueckFertig', { raeume: roomCount(hass, note.rooms.length) }), 'success'));
+            else {
+                body.appendChild(noteLine(translate(hass, 'raeumeZurueckFrage', { raeume: roomCount(hass, rest.length) })));
+                const list = document.createElement('ul');
+                list.className = 'edit-objects';
+                for (const r of rest) {
+                    const item = document.createElement('li');
+                    item.textContent = r.name + ': ' + roomShort(hass, model, r.room);
+                    list.appendChild(item);
+                }
+                body.appendChild(list);
+                if (run.running) body.appendChild(noteLine(translate(hass, 'raeumeZurueckStand', { n: run.done.length, gesamt: note.rooms.length }), 'busy'));
+                if (run.error) body.appendChild(noteLine(translate(hass, 'raeumeZurueckFehler', { grund: run.error, raeume: names() }), 'error'));
+                if (lock) body.appendChild(noteLine(translate(hass, lock), 'locked'));
+            }
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const closeKey = rest.length ? 'abbrechen' : 'zurueck';
+            const close = BuschUI.action({ label: translate(hass, closeKey), text: translate(hass, closeKey), disabled: run.running, onClick: () => dialog._goBack() });
+            close.setAttribute('data-action', 'cancel');
+            actions.appendChild(close);
+            if (rest.length) {
+                const label = translate(hass, run.error ? 'kartenErneut' : 'raeumeZurueckKnopf');
+                const go = BuschUI.action({ label, text: label, variant: 'primary', disabled: run.running || !!lock, onClick: async () => {
+                    if (run.running) return; // R11: a double tap sends once
+                    run.running = true;
+                    run.error = '';
+                    dialog._render();
+                    for (const r of rest) {
+                        try {
+                            await card._hass.callService('dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, r.data));
+                            run.done.push(r.id);
+                        } catch (error) {
+                            run.error = errorText(error);
+                            break;
+                        }
+                        if (dialog.isConnected) dialog._render();
+                    }
+                    run.running = false;
+                    if (dialog.isConnected) dialog._render();
+                } });
+                go.setAttribute('data-action', 'confirm');
+                actions.appendChild(go);
+            }
+            body.appendChild(actions);
+        }
+    };
+}
 
 const BACKUP_FILE_TEXTS = {
     de: {
@@ -16256,6 +16379,7 @@ BuschVacuumCard.__internals = {
     MODULE_VIEWS,
     ROOM_KEYS,
     roomPayload,
+    roomSnapshot,
     sequenceModel,
     moveRoom,
     daysOfMask,

@@ -485,6 +485,84 @@ test('BAK-02 Wiederherstellen gesperrt mit Grund, solange der Roboter läuft ode
   assert.deepEqual(spaet.haus.rufe, []);
 });
 
+/** Restore der Karte 3 ohne Vorab-Sicherung bis Success; das Gerät setzt dabei die Raumwerte zurück (live 12.11.2026). */
+async function wiederhergestellt(k) {
+  const vorher = roh(k.haus.states['camera.robo_map'].attributes.rooms);
+  const d = sicherungen(k);
+  wiederherstellen(k, 'original').click();
+  const bestaetigung = text(k);
+  option(k).checked = false;
+  option(k).dispatchEvent({ type: 'change' });
+  knopf(k, 'confirm').click();
+  await mikro();
+  k.sauger({ map_recovery_status: 'Running' });
+  kamera(k, { rooms: Object.fromEntries(Object.entries(vorher).map(([id, r]) => [id, Object.assign({}, r, { suction_level: 1, wetness_level: 16, cleaning_times: 1, cleaning_route: 1 })])) });
+  k.sauger({ map_recovery_status: 'Success' });
+  await mikro(); await mikro();
+  k.u.zurueck();
+  return { d, vorher, bestaetigung };
+}
+const raeumeFertig = async () => { for (let i = 0; i < 20; i++) await mikro(); };
+
+test('BAK-02 Wiederherstellen setzt die Raumeinstellungen zurück: Bestätigung sagt es; Karte merkt alle Räume vorher und bietet danach „Raumeinstellungen wiederherstellen“ an — ein vacuum_set_custom_cleaning je Raum', async () => {
+  const k = aufbau();
+  const { d, vorher, bestaetigung } = await wiederhergestellt(k);
+  assert.match(bestaetigung, /setzt dabei die Reinigungseinstellungen aller Räume \(Saugstufe, Feuchte, Durchgänge, Modus, Route\) auf Standard zurück und berechnet die Raumgrenzen neu/);
+  assert.match(bestaetigung, /Die Karte merkt sich die Raumeinstellungen von 7 Räumen/);
+  assert.equal(d._views.at(-1).title, 'Kartensicherungen');
+  assert.match(text(k), /Raumeinstellungen wiederherstellen/);
+  const n = k.haus.rufe.length;
+  knopf(k, 'restore-rooms').click();
+  assert.equal(d._views.at(-1).kind, 'confirm', 'kein Außenklick (R04)');
+  assert.match(text(k), /Atelier: Turbo · 27 · 3×/, 'gemerkte Werte je Raum');
+  assert.deepEqual(k.haus.rufe.length, n, 'Öffnen sendet nichts');
+  knopf(k, 'confirm').click();
+  knopf(k, 'confirm').click();
+  await raeumeFertig();
+  const rufe = roh(k.haus.rufe.slice(n));
+  assert.equal(rufe.length, Object.keys(vorher).length, 'ein Aufruf je Raum (Doppeltipp: einmal)');
+  assert.ok(rufe.every((r) => r.domain === 'dreame_vacuum' && r.service === 'vacuum_set_custom_cleaning'));
+  assert.deepEqual(rufe.map((r) => r.data.segment_id[0]).sort((a, b) => a - b), Object.keys(vorher).map(Number).sort((a, b) => a - b));
+  assert.deepEqual(rufe.find((r) => r.data.segment_id[0] === 1).data,
+    { entity_id: 'vacuum.robo', segment_id: [1], suction_level: [3], wetness_level: [27], repeats: [3], cleaning_mode: [2], cleaning_route: [2] });
+  assert.match(text(k), /Raumeinstellungen von 7 Räumen wiederhergestellt/);
+  knopf(k, 'cancel').click();
+  k.u.zurueck();
+  assert.equal(d._views.at(-1).title, 'Kartensicherungen');
+  assert.equal(knopf(k, 'restore-rooms'), null, 'nach Erfolg kein Angebot mehr');
+});
+
+test('BAK-02 Raumeinstellungen wiederherstellen: gesperrt während einer Aufgabe; Fehler hält an, nennt die fertigen Räume, Erneut sendet nur die übrigen', async () => {
+  const k = aufbau();
+  await wiederhergestellt(k);
+  k.sauger({}, 'cleaning');
+  assert.equal(knopf(k, 'restore-rooms').disabled, true, 'während einer Aufgabe');
+  assert.match(text(k), /Während einer Aufgabe nicht änderbar/);
+  k.sauger({}, 'docked');
+  let anzahl = 0;
+  k.haus.antwort = (domain, service) => (service === 'vacuum_set_custom_cleaning' && ++anzahl === 3 ? Promise.reject(new Error('Gerät antwortet nicht')) : Promise.resolve());
+  const n = k.haus.rufe.length;
+  knopf(k, 'restore-rooms').click();
+  knopf(k, 'confirm').click();
+  await raeumeFertig();
+  assert.equal(k.haus.rufe.length - n, 3, 'hält beim ersten Fehler an');
+  assert.match(text(k), /Gerät antwortet nicht/);
+  assert.match(text(k), /Fertig: Atelier, Salon/, 'nennt, was schon zurückgeschrieben ist (R12)');
+  assert.equal(knopf(k, 'confirm').textContent, 'Erneut versuchen');
+  knopf(k, 'confirm').click();
+  await raeumeFertig();
+  const zweite = k.haus.rufe.slice(n + 3).map((r) => r.data.segment_id[0]);
+  assert.equal(zweite.length, 5, 'nur der fehlgeschlagene und die übrigen Räume');
+  assert.ok(!zweite.includes(1) && !zweite.includes(3));
+  assert.match(text(k), /Raumeinstellungen von 7 Räumen wiederhergestellt/);
+  // Ohne Customized Cleaning merkt sich die Karte nichts und bietet nichts an.
+  const ohne = aufbau({ ohneDienste: ['vacuum_set_custom_cleaning'] });
+  const { bestaetigung } = await wiederhergestellt(ohne);
+  assert.doesNotMatch(bestaetigung, /merkt sich die Raumeinstellungen/);
+  assert.match(bestaetigung, /auf Standard zurück/, 'die Folge steht trotzdem da');
+  assert.equal(knopf(ohne, 'restore-rooms'), null);
+});
+
 // ── Task 5: Herunterladen und Wiederherstellen aus Datei-URL (BAK-02) ───────
 
 test('BAK-02 Herunterladen: Link = recovery_map_file-URL (frisch aus dem Attribut), download, Hinweis „enthält den Grundriss“; im Vollbild ebenso; ohne Datei kein Link', () => {
