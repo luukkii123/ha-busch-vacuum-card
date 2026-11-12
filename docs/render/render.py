@@ -113,9 +113,12 @@ RENDER_IDS = [
     ("tasks matrix", ["TASK-02", "TASK-03", "TASK-04", "TASK-05"]), ("history", ["HIS-01", "HIS-02"]),
     ("remote keyboard", ["REM-02"]), ("remote", ["REM-01", "REM-03"]), ("clean settings", ["SET-02", "SET-04", "SET-05"]),
     ("map editor", ["EDI-01", "EDI-02"]), ("map backup", ["BAK-01", "BAK-02"]), ("views:", ["CORE-12"]),
+    ("layout:", ["CORE-13", "CORE-08"]),
 ]
 
 WIDTHS = (320, 390, 480, 960, 1280)
+# #1002: card widths of the new layout (two columns from 900 px card width).
+LAYOUT_WIDTHS = (360, 390, 480, 800, 1280, 1600)
 THEMES = ("light", "dark")
 STATES = ("docked", "cleaning", "error")
 DIALOG_SIZES = ((360, 640), (360, 480), (640, 360), (800, 600), (1280, 800))
@@ -621,6 +624,84 @@ def main():
         page.screenshot(path=str(out_dir / "karte-cleaning-en-390.png"), full_page=True)
         report["screenshots"].append("karte-cleaning-en-390.png")
         check("English UI with English HA", en == ["Pause", "Stop", "Return"], json.dumps(en))
+
+        # ------------------------------------------------------------------
+        # 1b. Layout (#1002): card widths x themes x normal/panel, task Gesamt and Raum
+        # ------------------------------------------------------------------
+        room_pick = """() => { const sr = window.card().shadowRoot; sr.querySelector('.task[data-task=room]').click();
+            ['3', '5'].forEach((id) => sr.querySelector('.room-chip[data-room="' + id + '"]').click()); }"""
+        layout = []
+        for panel in (False, True):
+            for width in LAYOUT_WIDTHS:
+                for th in THEMES:
+                    # The stage pads 8 px each side: the viewport is chosen so the CARD has this width.
+                    page.set_viewport_size({"width": width + 16, "height": 900})
+                    theme(th)
+                    build("docked", panel=panel)
+                    page.wait_for_timeout(150)
+                    for task in ("all", "room"):
+                        if task == "room":
+                            page.evaluate(room_pick)
+                            page.wait_for_timeout(120)
+                        m = page.evaluate("""() => {
+                            const c = window.card(), sr = c.shadowRoot, ha = sr.querySelector('ha-card').getBoundingClientRect();
+                            const box = (sel) => { const n = sr.querySelector(sel); if (!n) return null; const r = n.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height }; };
+                            const chips = sr.querySelector('.room-chips');
+                            const more = sr.querySelector('[data-action=map-more]');
+                            return { cardW: ha.width, width: c.getAttribute('data-width'), panel: box('.panel'), map: box('.map-stage'),
+                                     tools: box('.map-tools'), controls: box('.controls'), card: box('ha-card'), start: (sr.querySelector('[data-action=start] .ctl-text') || {}).textContent,
+                                     chipsInPanel: !!(chips && chips.closest('.panel')), chipsUnderMap: !!sr.querySelector('.map-view > .room-chips'),
+                                     visibleChips: Array.from(sr.querySelectorAll('.room-chip')).filter((b) => b.getBoundingClientRect().width > 0).length,
+                                     more: !!more && more.getBoundingClientRect().width > 0,
+                                     small: window.smallTargets(sr), pageOverflow: document.documentElement.scrollWidth - innerWidth };
+                        }""")
+                        name = f"layout-{'panel' if panel else 'karte'}-{task}-{width}-{th}.png"
+                        page.screenshot(path=str(out_dir / name), full_page=not panel)
+                        report["screenshots"].append(name)
+                        layout.append({"panel": panel, "width": width, "theme": th, "task": task, **m})
+        report["layout"] = layout
+        lbad = lambda pred: [(x["panel"], x["width"], x["theme"], x["task"]) for x in layout if not pred(x)]
+        wide = lambda x: x["cardW"] >= 900
+        check("layout: two columns from 900 px card width, narrow below (48 cases, card width not window)",
+              not lbad(lambda x: x["width"] == ("wide" if wide(x) else "narrow")), json.dumps(lbad(lambda x: x["width"] == ("wide" if wide(x) else "narrow"))))
+        check("layout: wide = map left (flex), panel right 380 px; narrow = map 320 px above the sheet",
+              not lbad(lambda x: (abs(x["panel"]["w"] - 380) <= 1.5 and x["map"]["r"] <= x["panel"]["l"] + 1) if wide(x)
+                       else (x["map"]["b"] - 16 <= x["panel"]["t"] + 1 and abs(x["map"]["h"] - 320) <= 1)),
+              json.dumps([(x["width"], x["panel"], x["map"]) for x in layout][:2]))
+        check("layout: tool bar top right of the map; phone shows the tools button, two columns do not",
+              not lbad(lambda x: x["tools"]["t"] - x["map"]["t"] <= 12 and x["map"]["r"] - x["tools"]["r"] <= 12 and x["more"] == (not wide(x))), "")
+        check("layout: room chips in the panel, none below the map; Gesamt 3 + more, Raum all 7",
+              not lbad(lambda x: x["chipsInPanel"] and not x["chipsUnderMap"] and x["visibleChips"] == (3 if x["task"] == "all" else 7)),
+              json.dumps([(x["width"], x["task"], x["visibleChips"]) for x in layout][:6]))
+        check("layout: primary label names the task (Alles reinigen / 2 Räume reinigen)",
+              not lbad(lambda x: x["start"] == ("Alles reinigen" if x["task"] == "all" else "2 Räume reinigen")), "")
+        # Sticky: at the panel's end, or at the card's visible bottom while the card scrolls (phone, long room list).
+        check("layout: action bar at the bottom of the panel, sticky at the card's bottom while it scrolls",
+              not lbad(lambda x: abs(x["controls"]["b"] - min(x["panel"]["b"], x["card"]["b"])) <= 1.5),
+              json.dumps([(x["width"], x["task"], x["controls"]["b"], x["panel"]["b"], x["card"]["b"]) for x in layout
+                          if abs(x["controls"]["b"] - min(x["panel"]["b"], x["card"]["b"])) > 1.5][:4]))
+        check("layout: every visible button >= 44 px, no horizontal page overflow",
+              not lbad(lambda x: not x["small"] and x["pageOverflow"] <= 0), json.dumps([(x["width"], x["small"]) for x in layout if x["small"]][:4]))
+        # Left-handed: panel left of the map, tool bar on the left.
+        page.set_viewport_size({"width": 1296, "height": 900})
+        build("docked", config={"left_handed": True}, panel=True)
+        page.wait_for_timeout(150)
+        lh = page.evaluate("""() => { const sr = window.card().shadowRoot, p = sr.querySelector('.panel').getBoundingClientRect(),
+            m = sr.querySelector('.map-stage').getBoundingClientRect(), t = sr.querySelector('.map-tools').getBoundingClientRect();
+            return { panelLeft: p.right <= m.left + 1, toolsLeft: t.left - m.left <= 12 }; }""")
+        page.screenshot(path=str(out_dir / "layout-panel-links-1280-light.png"))
+        report["screenshots"].append("layout-panel-links-1280-light.png")
+        page.set_viewport_size({"width": 406, "height": 900})
+        build("docked", config={"left_handed": True})
+        page.wait_for_timeout(150)
+        page.evaluate("() => window.card()._map._toggleTools(true)")
+        lh_narrow = page.evaluate("""() => { const sr = window.card().shadowRoot, m = sr.querySelector('.map-stage').getBoundingClientRect(),
+            t = sr.querySelector('.map-tools').getBoundingClientRect(); return { toolsLeft: t.left - m.left <= 12, inside: t.bottom <= m.bottom, small: window.smallTargets(sr) }; }""")
+        page.screenshot(path=str(out_dir / "layout-karte-links-werkzeuge-390-light.png"), full_page=True)
+        report["screenshots"].append("layout-karte-links-werkzeuge-390-light.png")
+        check("layout: left-handed mirrors panel and tool bar (wide and phone, tools folded out inside the map)",
+              lh["panelLeft"] and lh["toolsLeft"] and lh_narrow["toolsLeft"] and lh_narrow["inside"] and not lh_narrow["small"],
+              json.dumps({"wide": lh, "narrow": lh_narrow}))
 
         # ------------------------------------------------------------------
         # 2. Dialog geometry (#877 rules, as Lightcards 0.11.0 sections 8e/8f)
@@ -1968,6 +2049,14 @@ def main():
             r["regel1_karte_panel"] = lauf_breiten(
                 page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
                 vor_messung=lambda pg: build("cleaning", panel=True))
+            # #1002: the new layout at its card widths, normal and panel, Gesamt and Raum.
+            room_pick = """() => { const sr = window.card().shadowRoot; sr.querySelector('.task[data-task=room]').click();
+                ['3', '5'].forEach((id) => sr.querySelector('.room-chip[data-room="' + id + '"]').click()); }"""
+            for label, panel, room in (("karte", False, False), ("panel", True, False), ("karte_raum", False, True), ("panel_raum", True, True)):
+                r["regel1_layout_" + label] = lauf_breiten(
+                    page, breiten=tuple(w + 16 for w in LAYOUT_WIDTHS), messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
+                    vor_messung=lambda pg, p=panel, rm=room: (build("docked", panel=p), page.wait_for_timeout(150),
+                                                              page.evaluate(room_pick) if rm else None, page.wait_for_timeout(100)))
             for label, opener in (("menue", open_menu), ("platzhalter", open_placeholder), ("bestaetigung", open_confirm)):
                 r["regel1_dialog_" + label] = lauf_breiten(
                     page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, ".sheet"),
