@@ -2616,6 +2616,9 @@ function viewMatrix({ width, height, stageWidth, stageHeight, rotation = 0, scal
 
 /** How long a tapped target state is shown before the device has to confirm it. */
 const OPTIMISTIC_HOLD_MS = 5000;
+/** #1002: two columns from this card width (px); back to narrow only below WIDE_MIN - WIDE_SLACK. */
+const WIDE_MIN = 900;
+const WIDE_SLACK = 20;
 
 /** Control buttons: the can() name each needs, its vacuum service and the state it leads to. */
 const CONTROLS = {
@@ -8220,6 +8223,7 @@ ha-card {
     color: var(--bvc-error-color, var(--error-color, #db4437));
     font-size: var(--ha-font-size-s, 14px);
     overflow-wrap: anywhere;
+    padding: var(--ha-space-4, 16px);
 }
 :host([data-layout=panel]) {
     height: 100%;
@@ -8632,6 +8636,155 @@ ha-card {
 }
 .task-error ha-icon {
     color: var(--bvc-error-color, var(--error-color, #db4437));
+}
+/* ── Layout 0.2 (#1002): lead, map and a sheet below 900 px card width; two columns from there ── */
+ha-card {
+    padding: 0;
+    gap: 0;
+}
+.progress {
+    flex: none;
+    margin: 0;
+    width: 100%;
+}
+.layout {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+}
+.lead {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ha-space-2, 8px);
+    min-width: 0;
+    padding: var(--ha-space-4, 16px) var(--ha-space-4, 16px) var(--ha-space-3, 12px);
+}
+:host .layout > .map-slot {
+    position: relative;
+    z-index: 0;
+}
+:host .layout > .map-slot,
+:host .layout .map-view,
+:host .layout .map {
+    flex: none;
+    gap: 0;
+}
+:host .layout .map,
+:host .layout .map-stage {
+    border-radius: 0;
+}
+:host .layout .map-stage {
+    flex: none;
+    aspect-ratio: auto;
+    height: 320px;
+    max-height: none;
+    min-height: 0;
+}
+.panel {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto;
+    gap: var(--ha-space-3, 12px);
+    min-width: 0;
+    padding: 0 var(--ha-space-4, 16px);
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+}
+:host([data-map]) .panel {
+    margin-top: calc(-1 * var(--ha-space-4, 16px));
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+}
+.handle {
+    flex: none;
+    width: 36px;
+    height: 4px;
+    margin: var(--ha-space-2, 8px) auto 0;
+    border-radius: 2px;
+    background: var(--divider-color, #e0e0e0);
+}
+:host(:not([data-map])) .handle {
+    display: none;
+}
+.controls {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    flex-wrap: nowrap;
+    margin: auto calc(-1 * var(--ha-space-4, 16px)) 0;
+    padding: var(--ha-space-3, 12px) var(--ha-space-4, 16px) var(--ha-space-4, 16px);
+    border-top: 1px solid var(--divider-color, #e0e0e0);
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+}
+:host([data-width=wide]) .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "map lead" "map panel";
+}
+:host([data-width=wide][data-hand=left]) .layout {
+    grid-template-columns: 380px minmax(0, 1fr);
+    grid-template-areas: "lead map" "panel map";
+}
+:host([data-width=wide]:not([data-map])) .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "lead" "panel";
+}
+:host([data-width=wide]) .lead {
+    grid-area: lead;
+    padding: 20px 20px var(--ha-space-3, 12px);
+}
+:host([data-width=wide]) .layout > .map-slot {
+    grid-area: map;
+    min-height: 0;
+}
+:host([data-width=wide]) .panel {
+    grid-area: panel;
+    min-height: 0;
+    margin: 0;
+    padding: 0 20px;
+    border-radius: 0;
+    box-shadow: none;
+}
+:host([data-width=wide][data-map]) .lead,
+:host([data-width=wide][data-map]) .panel {
+    border-inline-start: 1px solid var(--divider-color, #e0e0e0);
+}
+:host([data-width=wide][data-map][data-hand=left]) .lead,
+:host([data-width=wide][data-map][data-hand=left]) .panel {
+    border-inline-start: 0;
+    border-inline-end: 1px solid var(--divider-color, #e0e0e0);
+}
+:host([data-width=wide]) .handle {
+    display: none;
+}
+:host([data-width=wide]) .layout > .map-slot,
+:host([data-width=wide]) .layout .map-view,
+:host([data-width=wide]) .layout .map {
+    flex: 1 1 0;
+    min-height: 0;
+}
+:host([data-width=wide]) .layout .map-stage {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 440px;
+}
+:host([data-width=wide]) .task-area {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+:host([data-width=wide]) .controls {
+    position: static;
+    margin: auto -20px 0;
+    padding: var(--ha-space-4, 16px) 20px 20px;
+}
+/* A normal wide card gets a working height of its own (the map has no aspect ratio there). */
+:host([data-width=wide][data-map][data-layout=card]:not([data-aspect])) ha-card {
+    height: min(780px, max(520px, calc(100dvh - var(--bvc-header-height, 56px) - var(--bvc-height-offset, 0px))));
 }
 `;
 
@@ -9852,6 +10005,7 @@ class BuschVacuumCard extends HTMLElement {
         const opts = this._opts;
         this.setAttribute('data-layout', this._panel ? 'panel' : opts.full_height ? 'full' : 'card');
         this.setAttribute('data-hand', opts.left_handed ? 'left' : 'right');
+        if (!this.hasAttribute('data-width')) this.setAttribute('data-width', 'narrow');
         // HA's own header height; set here because ui-regeln-pruefen.py does not list --header-height yet.
         this.style.setProperty('--bvc-header-height', 'var(--header-height, 56px)');
         this.style.setProperty('--bvc-height-offset', opts.max_height_offset + 'px');
@@ -10015,9 +10169,40 @@ class BuschVacuumCard extends HTMLElement {
             this._mapSlot.className = 'map-slot';
             this._mapSlot.hidden = true;
             this._map = null;
-            card.append(this._progress, top, this._mapSlot, this._messages, this._stats, this._taskArea, this._controls);
+            // #1002: lead (head + status), map, panel (sheet on a phone, right column from 900 px).
+            const lead = document.createElement('div');
+            lead.className = 'lead';
+            lead.append(top, this._stats);
+            const handle = document.createElement('div');
+            handle.className = 'handle';
+            handle.setAttribute('aria-hidden', 'true');
+            this._panelNode = document.createElement('div');
+            this._panelNode.className = 'panel';
+            this._panelNode.append(handle, this._messages, this._taskArea, this._controls);
+            const layout = document.createElement('div');
+            layout.className = 'layout';
+            layout.append(lead, this._mapSlot, this._panelNode);
+            card.append(this._progress, layout);
+            this._observeWidth();
         }
         this._update();
+    }
+
+    /** #1002: the card's own width decides the layout (panel mode included), never the window's. */
+    _observeWidth() {
+        if (this._widthObserver || typeof ResizeObserver !== 'function') return;
+        this._widthObserver = new ResizeObserver((entries) => {
+            const last = entries && entries[entries.length - 1];
+            this._setWidth(last && last.contentRect ? last.contentRect.width : 0);
+        });
+        this._widthObserver.observe(this);
+    }
+
+    _setWidth(width) {
+        if (!(width > 0)) return;
+        const was = this.getAttribute('data-width') === 'wide';
+        const value = width >= (was ? WIDE_MIN - WIDE_SLACK : WIDE_MIN) ? 'wide' : 'narrow';
+        if (this.getAttribute('data-width') !== value) this.setAttribute('data-width', value);
     }
 
     _model() {
@@ -10059,6 +10244,8 @@ class BuschVacuumCard extends HTMLElement {
         this._renderLock();
         this._stateLine.textContent = real ? formatState(hass, real, shown) : shown;
         this._mapSlot.hidden = !mapCamera;
+        if (mapCamera) this.setAttribute('data-map', '');
+        else this.removeAttribute('data-map');
         if (mapCamera) {
             if (!this._map) {
                 this._map = new MapView(this);

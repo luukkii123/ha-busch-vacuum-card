@@ -218,12 +218,13 @@ async function kartenKarte(fixture = 'voll', config = {}, opts = {}) {
   return { u, haus, karte };
 }
 
-test('CORE-02 Kartenbereich nur bei can(map), zwischen Kopf und Meldungen', async () => {
+test('CORE-02 Kartenbereich nur bei can(map), zwischen Kopf und Panel mit den Meldungen (#1002)', async () => {
   const { karte } = await kartenKarte();
   const slot = karte.shadowRoot.querySelector('.map-slot');
   assert.ok(slot && !slot.hidden, 'Platz da');
-  const kinder = karte.shadowRoot.querySelector('ha-card').childNodes.map((n) => n.className);
-  assert.ok(kinder.indexOf('map-slot') === kinder.indexOf('top') + 1 && kinder.indexOf('messages') === kinder.indexOf('map-slot') + 1, kinder.join(','));
+  const kinder = karte.shadowRoot.querySelector('.layout').childNodes.map((n) => n.className);
+  assert.deepEqual(kinder, ['lead', 'map-slot', 'panel']);
+  assert.ok(karte.shadowRoot.querySelector('.panel').childNodes.some((n) => n.className === 'messages'), 'Meldungen im Panel');
   assert.ok(ansicht(karte));
   for (const f of ['minimal', 'ohne-karte']) {
     const { u, karte: k } = await kartenKarte(f);

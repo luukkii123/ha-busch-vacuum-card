@@ -163,3 +163,89 @@ test('CORE-15 disable_haptic schaltet ab; ohne vibrate kein Fehler', () => {
   knopf(ohne.karte, 'start').click();
   assert.deepEqual(ohne.u.fehler, []);
 });
+
+// ── Layout nach Designkonzept (#1002) ─────────────────────────────────────
+/** Karte mit steuerbarem ResizeObserver: `setze(px)` meldet eine neue Kartenbreite. */
+function mitBreite(config = {}, breite = null, fixture = 'voll', panel = false) {
+  const u = umgebung();
+  const beobachter = [];
+  u.kontext.ResizeObserver = class { constructor(fn) { this.fn = fn; this.ziele = []; beobachter.push(this); } observe(el) { this.ziele.push(el); } disconnect() { this.ziele = []; } };
+  const k = neueKarte(u, hausAus(fixture), config);
+  if (panel) k.isPanel = true;
+  const setze = (w) => { for (const b of beobachter) if (b.ziele.includes(k)) b.fn([{ target: k, contentRect: { width: w, height: 800 } }]); };
+  if (breite !== null) setze(breite);
+  return { u, karte: k, setze, beobachter };
+}
+const klassen = (node) => node.childNodes.map((c) => c.className);
+
+test('CORE-13 Layout nach Kartenbreite: ab 900 px zweispaltig, schmal darunter, Hysterese', () => {
+  const { karte: k, setze, beobachter } = mitBreite();
+  assert.equal(k.getAttribute('data-width'), 'narrow', 'vor der ersten Messung schmal');
+  assert.ok(beobachter.some((b) => b.ziele.includes(k)), 'beobachtet wird die Karte selbst, nicht das Fenster');
+  setze(1280);
+  assert.equal(k.getAttribute('data-width'), 'wide');
+  setze(890);
+  assert.equal(k.getAttribute('data-width'), 'wide', 'kleines Wackeln an der Grenze schaltet nicht');
+  setze(870);
+  assert.equal(k.getAttribute('data-width'), 'narrow');
+  setze(899);
+  assert.equal(k.getAttribute('data-width'), 'narrow');
+  setze(900);
+  assert.equal(k.getAttribute('data-width'), 'wide');
+});
+
+test('CORE-13 ohne ResizeObserver bleibt die Karte schmal und fehlerfrei', () => {
+  const { u, karte: k } = karte();
+  assert.equal(k.getAttribute('data-width'), 'narrow');
+  assert.deepEqual(u.fehler, []);
+});
+
+test('CORE-13 Aufbau: Kopf mit Status, Karte, Panel mit Meldungen, Aufgaben und Aktionsleiste', () => {
+  const { karte: k } = mitBreite({}, 1280);
+  const sr = k.shadowRoot;
+  const layout = sr.querySelector('.layout');
+  assert.ok(layout, 'ein Layout-Raster');
+  assert.deepEqual(klassen(layout), ['lead', 'map-slot', 'panel']);
+  assert.deepEqual(klassen(sr.querySelector('.lead')), ['top', 'stats']);
+  const panel = sr.querySelector('.panel');
+  assert.equal(klassen(panel)[0], 'handle');
+  assert.equal(panel.querySelector('.handle').getAttribute('aria-hidden'), 'true', 'Griff nur Schmuck');
+  for (const c of ['messages', 'task-area', 'controls']) assert.ok(klassen(panel).includes(c), c);
+  assert.ok(klassen(panel).indexOf('controls') === klassen(panel).length - 1, 'Aktionsleiste unten');
+  assert.equal(k.hasAttribute('data-map'), true, 'Karte vorhanden');
+});
+
+test('CORE-13 ohne Kartenkamera: kein data-map, Panel ohne Kartenspalte', () => {
+  const { karte: k } = mitBreite({}, 1280, 'ohne-karte');
+  assert.equal(k.hasAttribute('data-map'), false);
+  assert.equal(k.shadowRoot.querySelector('.map-slot').hidden, true);
+});
+
+test('CORE-13 Panel Mode misst die Kartenbreite (zweispaltig ab 900 px)', () => {
+  const { karte: k, setze } = mitBreite({}, null, 'voll', true);
+  setze(1600);
+  assert.equal(k.getAttribute('data-layout'), 'panel');
+  assert.equal(k.getAttribute('data-width'), 'wide');
+  setze(390);
+  assert.equal(k.getAttribute('data-width'), 'narrow');
+});
+
+test('CORE-13/CORE-08 CSS: Raster breit 380-px-Panel rechts, Linkshänder links, schmal Blatt mit Griff', () => {
+  const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  assert.match(CARD_STYLES, /:host\(\[data-width=wide\]\) \.layout \{[^}]*grid-template-columns: minmax\(0, 1fr\) 380px;[^}]*grid-template-areas: "map lead" "map panel";/);
+  assert.match(CARD_STYLES, /:host\(\[data-width=wide\]\[data-hand=left\]\) \.layout \{[^}]*grid-template-columns: 380px minmax\(0, 1fr\);[^}]*"lead map" "panel map"/);
+  assert.match(CARD_STYLES, /\.handle \{[^}]*width: 36px;/);
+  assert.match(CARD_STYLES, /:host\(\[data-width=wide\]\) \.handle \{[^}]*display: none;/);
+  assert.match(CARD_STYLES, /\.controls \{[^}]*position: sticky;[^}]*bottom: 0;/, 'Aktionsleiste klebt unten');
+});
+
+test('CORE-18 hidden_card_objects gelten im neuen Aufbau in beiden Breiten', () => {
+  for (const breite of [390, 1280]) {
+    const { karte: k } = mitBreite({ hidden_card_objects: ['title', 'status', 'controls', 'task_type'] }, breite);
+    const sr = k.shadowRoot;
+    assert.equal(sr.querySelector('.title').hidden, true, breite + ' Titel');
+    assert.equal(sr.querySelector('.stats').hidden, true, breite + ' Status');
+    assert.equal(sr.querySelector('.controls').hidden, true, breite + ' Aktionsleiste');
+    assert.equal(sr.querySelectorAll('.task').length, 0, breite + ' Aufgabenwahl');
+  }
+});
