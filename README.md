@@ -11,8 +11,12 @@ Version 0.1.0 is the first release. It was checked live on one robot (Dreame
 X40 Ultra); see [Known limits](#known-limits) for what is not confirmed on a
 real robot yet.
 
-![The card while cleaning](docs/render/baseline/core-0.1.0/karte-cleaning-karte-480-dark.png)
-![The main menu on a phone](docs/render/baseline/core-0.1.0/dialog-menu-360x640-light.png)
+![The card while cleaning, on a phone](docs/render/baseline/release-0.1.0/karte-cleaning-karte-390-light.png)
+![The card in a panel view, dark theme](docs/render/baseline/release-0.1.0/karte-docked-panel-1280-dark.png)
+![Device settings on a phone](docs/render/baseline/release-0.1.0/einstellungen-uebersicht-360x640-light.png)
+![Map editing](docs/render/baseline/release-0.1.0/editor-modus-390x844-light.png)
+
+The pictures use synthetic test data.
 
 ## Requirements
 

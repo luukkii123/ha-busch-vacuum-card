@@ -576,6 +576,25 @@ python3 "$HACS/scripts/vacuum-inventar-pruefen.py" --lauf "$HACS/artifacts/e2e/<
 
 ## Geprüft
 
+**12.11.2026 · 0.1.0, Release (#882, alle elf Module, Tag `v0.1.0`)**
+
+1. `node --check` grün; `node --test` 590/590 (Testnamen mit Inventar-IDs).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. Ein Abnahmelauf `KARTEN_TODO=882 KARTEN_ZWECK=abnahme karten-alle.sh --repo
+   ha-busch-vacuum-card`, Lauf `karten-20261112-142341-133312` grün: Node 590/590,
+   `render.py` 73/73 (2166 s, 335 Bilder), UI-Regeln 0 Verstöße (11 328 Textelemente
+   geprüft), 0 Konsolen-/Seitenfehler, 0 Fremdanfragen, 0 Dienstaufrufe ohne
+   bestätigten Klick; alle 42 Ansichten (`VIEW_IDS`) geöffnet und im Bild.
+   `vacuum-inventar-pruefen.py` auf dem Lauf: 88 IDs grün, 0 Befunde. Der Lauf davor
+   (`karten-20261112-140952-45302e`) brach im Testskript ab (fehlendes Szenario
+   `temporary`), kein Befund an der Karte — zählt nicht.
+   Bilder gesichtet (Karte Handy/Panel hell/dunkel, Einstellungen, Station,
+   Kartenbearbeitung, Sicherungen, Raumeinstellungen zurückschreiben, temporäre
+   Karte ersetzen, Sprachpaket bestätigen): kein Befund; Titel langer Dialoge
+   werden bei 360/390 px in der core-Titelzeile gekürzt (bekannt). Auswahl in
+   `docs/render/baseline/release-0.1.0/`. Nur synthetische Daten.
+4. Dieser Eintrag und der Block in `hacs/docs/stand.md`.
+
 **12.11.2026 · 0.1.0, Modul map-backup (#882, Tasks 1–6 ohne Live-Läufe (a)/(b), nicht getaggt)**
 
 1. `node --check` grün; `node --test` 579/579 (15 Tests `tests/kartensicherung.test.js`).
