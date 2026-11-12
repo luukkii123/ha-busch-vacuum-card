@@ -37,6 +37,28 @@
   anonymisiert (Namen, Seriennummer, Netzwerk, Grundriss ersetzt);
   `tests/datenschutz.test.js` prüft das bei jedem Lauf.
 
+## Layout 0.2 (#1002)
+
+- Konzept: freigegebene Artboards Desktop 1280×800 und Handy 390×844 (12.11.2026).
+- `data-width` am Host aus einem ResizeObserver auf der **Karte** (nie das Fenster):
+  `wide` ab `WIDE_MIN` 900 px, zurück erst unter 880 px (`WIDE_SLACK`); vor der
+  ersten Messung `narrow`. `data-map` am Host, wenn eine Kartenkamera da ist.
+- DOM: `.layout` = `.lead` (`.top` + `.stats`), `.map-slot`, `.panel` (`.handle`,
+  `.messages`, `.station-slot`, `.task-area`, `.controls`). Breit: Raster
+  `"map lead" "map panel"`, Panel 380 px (Linkshänder gespiegelt), normale Karte
+  mit eigener Höhe 520–780 px. Schmal: Karte 320 px randlos, Panel als Blatt mit
+  Griff (16 px über der Karte), Aktionsleiste `position: sticky` unten.
+- Raum-Chips: `MapView.chipHost` = `.chip-slot` im Panel (im Bearbeitungsmodus
+  wieder unter der Karte im Dialog); `chipLimit` klappt sie in der Ansicht auf
+  drei (Reihenfolge = Reinigungsfolge), „+ N weitere“ öffnet; Tastatur nur über
+  sichtbare Chips.
+- Werkzeugleiste: eine Gruppe oben rechts (Zoom +/−, Einpassen | Bearbeiten,
+  Karten, Info), schmal Einpassen + `map-more` (klappt eine zweite Spalte auf,
+  Escape schließt); Stockwerk-Chip `.map-floor` oben links; Hinweis-Chip
+  `.map-hint` (`setHint`, ohne Zeiger-Ereignisse) unten links.
+- Kontrast: Reihenfolge als Ring (Zahl in Textfarbe auf Kartenfarbe), Links in
+  Textfarbe unterstrichen; Hex nur als Fallback hinter HA-Variablen.
+
 ## Karte (Modul map-view)
 
 - **Datenmodus ist Standard** (Spike 10.11.2026, Spec map-view „Entscheidung
@@ -575,6 +597,22 @@ python3 "$HACS/scripts/vacuum-inventar-pruefen.py" --lauf "$HACS/artifacts/e2e/<
 ```
 
 ## Geprüft
+
+**12.11.2026 · 0.2.0, Layout nach Designkonzept (#1002, Tag `v0.2.0`)**
+
+1. `node --check` grün; `node --test` 615/615 (24 neue Tests, jeweils zuerst rot).
+2. `python3 scripts/ui-regeln-pruefen.py --repo ha-busch-vacuum-card`: 0 Verstöße.
+3. Ein Abnahmelauf `KARTEN_TODO=1002 KARTEN_ZWECK=abnahme timeout 3000 karten-alle.sh
+   --repo ha-busch-vacuum-card`, Lauf `karten-20261112-171344-95f557` grün: Node
+   615/615, `render.py` 81/81 (2279 s, 385 Bilder, neu Abschnitt Layout 360–1600 px
+   Karte/Panel hell/dunkel Gesamt/Raum, Linkshänder), UI-Regeln 0 Verstöße, 0 Seiten-/
+   Konsolenfehler, 0 Fremdanfragen, 0 Dienstaufrufe; `vacuum-inventar-pruefen.py`:
+   88 IDs grün, 42/42 Ansichten im Bild, 0 Befunde. Bilder mit den Artboards
+   verglichen (Abweichungen: Reihenfolge als Ring statt gefülltem Badge und Links in
+   Textfarbe wegen 4.5:1; Gesamt als Chips statt Textzeile; Einstellungszeile
+   zweizeilig mit Titel; Touchziele 44 statt 36–40 px). Auswahl in
+   `docs/render/baseline/release-0.2.0/`. Nur synthetische Daten.
+4. Dieser Eintrag und der Block in `hacs/docs/stand.md`.
 
 **12.11.2026 · 0.1.1, Patch: Titel = Gerätename (#882, Tag `v0.1.1`)**
 

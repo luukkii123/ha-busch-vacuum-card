@@ -7,13 +7,16 @@ device and cleaning settings, shortcuts, history, remote control, map editing
 and map backups — built only on the integration's public entities, attributes
 and services and styled like the other Busch cards.
 
-Version 0.1.1 shows the robot's device name as the title (0.1.0 showed the
-combined entity name twice). It was checked live on one robot (Dreame
-X40 Ultra); see [Known limits](#known-limits) for what is not confirmed on a
-real robot yet.
+Version 0.2.0 brings a new layout: from a card width of about 900 px (also in
+a panel view) the map fills the left side and a 380 px control panel sits on
+the right; narrower cards show the head, the map and a sheet with the task
+controls below it. Nothing was removed. The card was checked live on one robot
+(Dreame X40 Ultra); see [Known limits](#known-limits) for what is not
+confirmed on a real robot yet.
 
-![The card while cleaning, on a phone](docs/render/baseline/release-0.1.0/karte-cleaning-karte-390-light.png)
-![The card in a panel view, dark theme](docs/render/baseline/release-0.1.0/karte-docked-panel-1280-dark.png)
+![Two columns in a panel view: map left, control panel right](docs/render/baseline/release-0.2.0/layout-panel-all-1280-light.png)
+![On a phone: head, map and the task sheet](docs/render/baseline/release-0.2.0/layout-karte-all-390-light.png)
+![Two rooms chosen on a phone, dark theme](docs/render/baseline/release-0.2.0/layout-karte-room-390-dark.png)
 ![Device settings on a phone](docs/render/baseline/release-0.1.0/einstellungen-uebersicht-360x640-light.png)
 ![Map editing](docs/render/baseline/release-0.1.0/editor-modus-390x844-light.png)
 
@@ -53,16 +56,24 @@ On the card:
   robot, station, room names with cleaning order, carpets, no-go and no-mop
   zones, virtual walls, thresholds, obstacles and more. Zoom and move with
   fingers, mouse wheel, keys (`+`, `-`, `0`, arrows) or the buttons on the
-  map; a room chip below the map brings its room into view. Tap an obstacle
+  map (one tool bar at the top: zoom, fit, edit, maps, info; on a phone *Fit*
+  and *Map tools*, which folds out the rest). A hint at the bottom of the map
+  says what a tap or drag does. A room chip in the panel brings its room into
+  view. Tap an obstacle
   for its details, photo and *Ignore*. *Map info* shows size, scale and
-  calibration and picks robot coordinates. With several floors, *Choose
-  floor* changes the map after a confirmation.
-- **Task type:** All, Room, Zone, Spot, Go to (see *Tasks* below). Locked
+  calibration and picks robot coordinates. With several floors, the floor chip
+  at the top of the map (*Choose floor*) changes the map after a confirmation.
+- **Task type:** one segmented control All, Room, Zone, Spot, Go to (German
+  *Gesamt, Raum, Zone, Spot, Ziel*; see *Tasks* below). Locked
   while a task runs; the map then shows the running targets, and the card
   says whether the task is scheduled or a shortcut.
-- **Controls:** Clean, Pause, Resume, Stop, Return — depending on the state.
-  The station status sits next to them and turns orange or red with a
-  written reason.
+- **Controls:** one action bar at the bottom: the main button names the task
+  (*Clean everything*, *Clean 2 rooms*, *Clean zone* …), then Pause, Resume,
+  Stop, Return — depending on the state. The station button sits next to them
+  and turns orange or red with a written reason; a station warning or error
+  also shows as a bar in the panel that opens the station view.
+- **Settings row:** cleaning mode · suction · wetness in one line; it opens the
+  cleaning settings.
 - **Messages:** errors, warnings, info and low water; dismiss a message until
   it changes; clear a warning when the device allows it.
 - **Menu:** Locate, plus the views your device supports (history, cruising
@@ -88,7 +99,7 @@ entity: vacuum.my_robot
 | `full_height` | `false` | Fill the visible height below the Home Assistant header. |
 | `aspect_ratio` | none | Fixed shape, e.g. `16:9`, `4/3` or `1.5` (not with `full_height` or in a panel). |
 | `max_height_offset` | `0` | Pixels taken off the largest card height. |
-| `left_handed` | `false` | Action buttons on the left, station status on the right. |
+| `left_handed` | `false` | Mirrors the card: panel on the left of the map, map tools on the left, action buttons on the left, station status on the right. |
 | `locked` | `auto` | When the map starts locked: `auto` (touch devices outside a panel), `only_touch`, `never`, `always`. |
 | `touch_lock` | `200` | Hold time in ms (100–400) to toggle the lock. |
 | `disable_haptic` | `false` | No vibration on taps. |
@@ -176,10 +187,12 @@ mop washing chooses it). Every action goes through
 
 ## Tasks
 
-Choose the task type above the buttons; the map follows it.
+Choose the task type in the panel; the map follows it.
 
 - **All** cleans every room with the saved settings and order (`vacuum.start`).
-- **Room:** tap rooms on the map or their chips below it (Ctrl/Cmd+click
+  The panel lists the rooms in cleaning order (three, then *+ N more*) and
+  offers *Change order*.
+- **Room:** tap rooms on the map or their chips in the panel (Ctrl/Cmd+click
   toggles, Shift+click picks a range), *Select all* or *Clear selection*
   (with *Undo* for 5 s). The badges show the order. Robots with Customized
   Cleaning (e.g. X40) clean in their saved cleaning sequence, not in the
