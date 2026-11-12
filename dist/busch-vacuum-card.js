@@ -11872,6 +11872,14 @@ const BACKUP_TIMEOUT_MS = 60000;
 /** Services that refuse while a task runs (device.py: carpets, points, walls, router, visibility, floor, deleting a map). */
 const EDIT_TASK_LOCKED = new Set(['vacuum_set_carpet_area', 'vacuum_set_carpet_type', 'vacuum_set_custom_carpet_cleaning', 'vacuum_set_predefined_points', 'vacuum_set_walls', 'vacuum_set_router_position', 'vacuum_set_hidden_segments', 'vacuum_set_floor_material', 'vacuum_delete_map', 'vacuum_split_segments', 'vacuum_merge_segments',
     'vacuum_restore_map', 'vacuum_restore_map_from_file']);
+const RESTORE_SERVICES = new Set(['vacuum_restore_map', 'vacuum_restore_map_from_file']);
+/**
+ * A restore refuses while the device has a task, paused ones included — even
+ * paused in the dock (device.py#L7017 `started`; live 12.11.2026). The card
+ * reads that from started/paused and the HA state.
+ */
+const robotBusy = (model) => model.attr('started') === true || model.attr('paused') === true
+    || ['cleaning', 'paused', 'returning'].includes(model.state ? model.state.state : '');
 /** What a temporary map still allows: its own management and new mapping. */
 const EDIT_TEMPORARY_OK = new Set(['vacuum_save_temporary_map', 'vacuum_discard_temporary_map', 'vacuum_replace_temporary_map', 'vacuum_backup_map', 'vacuum_request_map']);
 
@@ -11917,6 +11925,7 @@ class MapEditSession {
     lock(service, model = this.model()) {
         if (this.busy) return 'kartenSperreLaeuft';
         if (['map_backup_status', 'map_recovery_status'].some((k) => /running/i.test(String(model.attr(k))))) return 'kartenSperreSicherung';
+        if (RESTORE_SERVICES.has(service) && robotBusy(model)) return 'wiederherstellenSperreLaeuft';
         if (EDIT_TASK_LOCKED.has(service) && taskActive(model, model.state ? model.state.state : 'unavailable')) return 'kartenSperreAufgabe';
         if (model.attr('has_temporary_map') === true && !EDIT_TEMPORARY_OK.has(service)) return 'kartenSperreTemporaer';
         return '';
@@ -12045,14 +12054,17 @@ function mapConfirm(card, session, opts) {
             }
             if (opts.irreversible) body.appendChild(noteLine(translate(hass, 'kartenRueckweg'), 'warning'));
             if (session.busy) body.appendChild(noteLine(translate(hass, { backup: 'kartenSicherungLaeuft', restore: 'wiederherstellungLaeuft' }[session.busy] || 'kartenSpeichernLaeuft'), 'busy'));
+            // A lock that comes up while the confirmation is open (e.g. the robot is paused): say why, send nothing.
+            const blocked = !session.busy && opts.blocked ? opts.blocked() : '';
+            if (blocked) body.appendChild(noteLine(translate(hass, blocked), 'locked'));
             if (session.error) body.appendChild(noteLine(session.error.text, 'error'));
             const actions = document.createElement('div');
             actions.className = 'actions';
             const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), disabled: !!session.busy, onClick: () => { session.error = null; dialog._goBack(); } });
             cancel.setAttribute('data-action', 'cancel');
             const label = session.error && session.error.kind !== 'lock' ? translate(hass, 'kartenErneut') : opts.action;
-            const go = BuschUI.action({ label, text: label, variant: opts.destructive ? 'destructive' : 'primary', disabled: !!session.busy, onClick: () => {
-                if (session.busy) return; // R11: a double tap sends once
+            const go = BuschUI.action({ label, text: label, variant: opts.destructive ? 'destructive' : 'primary', disabled: !!session.busy || !!blocked, onClick: () => {
+                if (session.busy || blocked) return; // R11: a double tap sends once
                 session.commit(confirmGrant(card), opts.calls, { undo: opts.undo, backup: wantBackup(), text: opts.title }).then((ok) => {
                     if (!ok) return dialog._render();
                     if (opts.done) opts.done(dialog);
@@ -15895,7 +15907,8 @@ const RESTORE_TEXTS = {
         wiederherstellenZeit: 'Zeitlimit 120 s überschritten',
         wiederhergestellt: 'Wiederhergestellt: {stand} um {zeit}.',
         wiederherstellenNeuLaden: 'Die Karte wird neu geladen …',
-        aufgabeSperreWiederherstellung: 'Gesperrt, solange die Karte wiederhergestellt wird.'
+        aufgabeSperreWiederherstellung: 'Gesperrt, solange die Karte wiederhergestellt wird.',
+        wiederherstellenSperreLaeuft: 'Wiederherstellen geht nicht, solange der Roboter läuft oder pausiert ist — auch pausiert in der Station. Erst die Aufgabe beenden (Stopp).'
     },
     en: {
         wiederherstellenTitel: 'Restore state',
@@ -15913,7 +15926,8 @@ const RESTORE_TEXTS = {
         wiederherstellenZeit: 'time limit of 120 s exceeded',
         wiederhergestellt: 'Restored: {stand} at {zeit}.',
         wiederherstellenNeuLaden: 'The map is reloading …',
-        aufgabeSperreWiederherstellung: 'Locked while the map is being restored.'
+        aufgabeSperreWiederherstellung: 'Locked while the map is being restored.',
+        wiederherstellenSperreLaeuft: 'Restoring is not possible while the robot is running or paused — also paused in the dock. End the task first (Stop).'
     }
 };
 for (const language of Object.keys(RESTORE_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, RESTORE_TEXTS[language]);
@@ -15954,6 +15968,7 @@ function restoreConfirm(card, session, home, map, source) {
             : translate(hass, 'wiederherstellenDatei', { url: source.url }), translate(hass, 'wiederherstellenFolge')],
         action: translate(hass, 'wiederherstellenKnopf'),
         destructive: true,
+        blocked: () => restoreLock(card, card._model()),
         backup: () => choice.backup,
         backupNote: false,
         calls: [Object.assign(call, { wait: 'map_recovery_status', busy: 'restore', timeout: RESTORE_TIMEOUT_MS, timeoutKey: 'wiederherstellenZeit' })],

@@ -111,7 +111,7 @@ test('ALL-13 map_backup_status/map_recovery_status als Zustand mit Sperrlogik; c
   assert.equal(lock(k), '');
   assert.equal(lock(aufbau({ vac: { map_recovery_status: 'Running' } })), 'kartenSperreSicherung');
   assert.equal(lock(aufbau({ vac: { map_backup_status: 'Running' } })), 'kartenSperreSicherung');
-  assert.equal(lock(aufbau({ zustand: 'cleaning', vac: { status: 'Cleaning', started: true } })), 'kartenSperreAufgabe');
+  assert.equal(lock(aufbau({ zustand: 'cleaning', vac: { status: 'Cleaning', started: true } })), 'wiederherstellenSperreLaeuft', 'eigener Grund: läuft oder pausiert');
   assert.equal(lock(aufbau({ vac: { has_temporary_map: true } })), 'kartenSperreTemporaer');
   assert.equal(lock(aufbau({ ohneDienste: ['vacuum_restore_map'] })), 'sicherungNurAnsehen');
 });
@@ -457,6 +457,32 @@ test('BAK-02 Sperren und Fehler: nicht aktive Karte erst wechseln (CORE-20), Auf
   k = await fehler(() => Promise.resolve(), async (kk) => { kk.sauger({ map_recovery_status: 'Running' }); kk.u.uhr.vor(119000); await mikro(); assert.doesNotMatch(text(kk), /unbekannt/); kk.u.uhr.vor(1000); await mikro(); await mikro(); });
   assert.match(text(k), /Ergebnis nach 120 s unbekannt — prüfe die Karte/);
   assert.deepEqual(dienste(k.haus), ['vacuum_restore_map']);
+});
+
+test('BAK-02 Wiederherstellen gesperrt mit Grund, solange der Roboter läuft oder pausiert ist — auch pausiert in der Station (live 12.11.2026: Integration lehnt ab)', () => {
+  // started (device.py#L7017) lehnt ab; Zustände/Attribute, in denen die Karte das sehen muss.
+  for (const [vac, zustand] of [[{}, 'cleaning'], [{}, 'paused'], [{}, 'returning'], [{ paused: true }, 'docked'], [{ started: true }, 'docked']]) {
+    const k = aufbau({ vac, zustand });
+    sicherungen(k);
+    const was = zustand + ' ' + JSON.stringify(vac);
+    assert.equal(wiederherstellen(k, 'original').disabled, true, was);
+    assert.match(text(k), /Wiederherstellen geht nicht, solange der Roboter läuft oder pausiert ist/, was);
+    assert.match(text(k), /Aufgabe beenden \(Stopp\)/, was);
+  }
+  // Angedockt ohne Aufgabe: frei.
+  const frei = aufbau();
+  sicherungen(frei);
+  assert.equal(wiederherstellen(frei, 'original').disabled, false);
+  assert.doesNotMatch(text(frei), /solange der Roboter läuft/);
+  // Wird der Roboter während der offenen Bestätigung pausiert, sendet der Klick nichts.
+  const spaet = aufbau();
+  sicherungen(spaet);
+  wiederherstellen(spaet, 'original').click();
+  spaet.sauger({ paused: true });
+  assert.equal(knopf(spaet, 'confirm').disabled, true, 'Bestätigen gesperrt');
+  assert.match(text(spaet), /solange der Roboter läuft oder pausiert ist/);
+  knopf(spaet, 'confirm').click();
+  assert.deepEqual(spaet.haus.rufe, []);
 });
 
 // ── Task 5: Herunterladen und Wiederherstellen aus Datei-URL (BAK-02) ───────
