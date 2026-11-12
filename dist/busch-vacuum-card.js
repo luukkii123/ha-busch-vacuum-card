@@ -8406,7 +8406,9 @@ ha-card {
     padding: var(--ha-space-4, 16px);
 }
 :host([data-layout=panel]) {
-    height: 100%;
+    /* 0.2.2: HA's panel view gives no fixed height (a percentage height grew with the content and the
+       PAGE scrolled); the card takes exactly the room below HA's header and the safe areas. */
+    height: calc(100dvh - var(--bvc-header-height, 56px) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - var(--bvc-height-offset, 0px));
 }
 :host([data-layout=panel]) ha-card {
     height: 100%;
@@ -8875,6 +8877,12 @@ ha-card {
     min-width: 0;
     padding: 0 var(--ha-space-4, 16px);
     background: var(--ha-card-background, var(--card-background-color, #ffffff));
+}
+:host([data-layout=panel]:not([data-width=wide])) .panel {
+    /* 0.2.2: in panel mode the phone sheet scrolls itself; the sticky action bar stays at its bottom. */
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: auto;
 }
 :host([data-map]) .panel {
     margin-top: calc(-1 * var(--ha-space-4, 16px));

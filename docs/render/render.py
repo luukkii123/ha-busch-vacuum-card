@@ -113,12 +113,15 @@ RENDER_IDS = [
     ("tasks matrix", ["TASK-02", "TASK-03", "TASK-04", "TASK-05"]), ("history", ["HIS-01", "HIS-02"]),
     ("remote keyboard", ["REM-02"]), ("remote", ["REM-01", "REM-03"]), ("clean settings", ["SET-02", "SET-04", "SET-05"]),
     ("map editor", ["EDI-01", "EDI-02"]), ("map backup", ["BAK-01", "BAK-02"]), ("views:", ["CORE-12"]),
-    ("layout:", ["CORE-13", "CORE-08"]),
+    ("layout:", ["CORE-13", "CORE-08"]), ("ha panel:", ["CORE-13"]), ("station warning:", ["CORE-08", "DOCK-05"]),
+    ("selection tools:", ["TASK-02"]),
 ]
 
 WIDTHS = (320, 390, 480, 960, 1280)
 # #1002: card widths of the new layout (two columns from 900 px card width).
 LAYOUT_WIDTHS = (360, 390, 480, 800, 1280, 1600)
+# The harness's HA header (--header-height); a panel card fills the viewport below it.
+HA_HEADER = 56
 THEMES = ("light", "dark")
 STATES = ("docked", "cleaning", "error")
 DIALOG_SIZES = ((360, 640), (360, 480), (640, 360), (800, 600), (1280, 800))
@@ -266,6 +269,79 @@ def serve(directory, port_holder):
     return httpd
 
 
+HA_PANEL_JS = """() => {
+    const c = window.card(), sr = c.shadowRoot;
+    const box = (n) => { if (!n) return null; const r = n.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height }; };
+    const panel = sr.querySelector('.panel'), start = sr.querySelector('[data-action=start] .ctl-text');
+    const dock = sr.querySelector('.dock'), dockWords = dock && dock.querySelector('span');
+    const hint = sr.querySelector('.station-hint'), count = sr.querySelector('.task-count'), all = sr.querySelector('[data-action=rooms-all]');
+    const out = { width: c.getAttribute('data-width'), H: innerHeight,
+        pageScroll: document.scrollingElement.scrollHeight - innerHeight, card: box(sr.querySelector('ha-card')),
+        controls: box(sr.querySelector('.controls')), panelOverflow: getComputedStyle(panel).overflowY,
+        panelScrollable: panel.scrollHeight - panel.clientHeight,
+        start: start && start.textContent, startCut: start ? start.scrollWidth - start.clientWidth : null,
+        dockText: dockWords && dockWords.getBoundingClientRect().width > 0 ? dockWords.textContent : '',
+        dockLabel: dock && dock.getAttribute('aria-label'), dockW: dock ? dock.getBoundingClientRect().width : null,
+        hint: hint && hint.getBoundingClientRect().height > 0 ? hint.textContent : null,
+        countFont: count && getComputedStyle(count).fontSize, countWeight: count && getComputedStyle(count).fontWeight,
+        toolFont: all && getComputedStyle(all).fontSize, small: window.smallTargets(sr) };
+    panel.scrollTop = 100000;
+    out.panelScrolled = panel.scrollTop;
+    out.controlsAfter = box(sr.querySelector('.controls'));
+    return out;
+}"""
+
+
+def ha_panel_checks(page, data, room_pick, check, report, out_dir):
+    """0.2.2 (#1002 live findings of 0.2.1): HA's panel structure and the station warning.
+
+    Panel at 390x844, 390x640, 1280x900, 1600x900 and a normal card 900/1280 px wide, all with
+    the station reporting "fresh water low"; phone sizes with two rooms chosen (long sheet)."""
+    rows = []
+    cases = [(True, 390, 844), (True, 390, 640), (True, 1280, 900), (True, 1600, 900), (False, 916, 900), (False, 1296, 900)]
+    for panel, w, h in cases:
+        page.set_viewport_size({"width": w, "height": h})
+        page.evaluate("() => { document.documentElement.dataset.theme = 'light'; document.documentElement.style.colorScheme = 'light'; }")
+        page.evaluate("(a) => window.buildCard(a)", {"data": data["station_low"], "lang": "de", "config": {}, "panel": panel})
+        page.wait_for_timeout(200)
+        room = w < 900
+        if room:
+            page.evaluate(room_pick)
+            page.wait_for_timeout(150)
+        m = page.evaluate(HA_PANEL_JS)
+        name = f"ha-{'panel' if panel else 'karte'}-station-{w}x{h}.png"
+        page.evaluate("() => window.scrollTo(0, 0)")
+        page.screenshot(path=str(out_dir / name), full_page=False)
+        report["screenshots"].append(name)
+        rows.append({"panel": panel, "w": w, "h": h, "room": room, **m})
+    report["haPanel"] = rows
+    pan = [r for r in rows if r["panel"]]
+    fails = lambda pred, rs: [(r["w"], r["h"]) for r in rs if not pred(r)]
+    ok = lambda r: (r["pageScroll"] <= 0.5 and abs(r["card"]["h"] - (r["H"] - HA_HEADER)) <= 1
+                    and r["controls"]["t"] >= HA_HEADER and r["controls"]["b"] <= r["H"] + 0.5)
+    check("ha panel: card exactly fills the view below HA's header, no page scroll, action bar fully visible",
+          not fails(ok, pan), json.dumps([(r["w"], r["h"], r["pageScroll"], r["card"], r["controls"]) for r in pan if not ok(r)][:4]))
+    sheet = lambda r: (r["width"] == "wide" or (r["panelOverflow"] == "auto" and (r["panelScrollable"] <= 0 or r["panelScrolled"] > 0)
+                       and r["controlsAfter"]["b"] <= r["H"] + 0.5 and r["controlsAfter"]["t"] >= HA_HEADER))
+    long = [r for r in pan if r["width"] != "wide" and r["h"] == 640]
+    check("ha panel: phone sheet scrolls inside the card (long room list at 390x640), action bar stays",
+          not fails(sheet, pan) and long and all(r["panelScrollable"] > 0 for r in long),
+          json.dumps([(r["w"], r["h"], r["panelOverflow"], r["panelScrollable"], r["panelScrolled"], r["controlsAfter"]) for r in pan][:4]))
+    want = lambda r: "2 Räume reinigen" if r["room"] else "Alles reinigen"
+    label = lambda r: r["start"] == want(r) and r["startCut"] <= 0
+    check("station warning: primary label complete (panel 390/1280/1600, card 900/1280)",
+          not fails(label, rows), json.dumps([(r["w"], r["h"], r["start"], r["startCut"]) for r in rows if not label(r)][:6]))
+    dock = lambda r: (r["hint"] and "Frischwasser niedrig" in r["hint"] and r["dockLabel"] == "Station · Frischwasser niedrig"
+                      and (r["dockText"] == "Dock" if r["width"] == "wide" else r["dockText"] == "" and r["dockW"] <= 52.5))
+    check("station warning: text in the panel's hint bar; action bar shows 'Dock' (wide) or the symbol (phone)",
+          not fails(dock, rows), json.dumps([(r["w"], r["width"], r["hint"], r["dockText"], r["dockLabel"], r["dockW"]) for r in rows if not dock(r)][:6]))
+    font = lambda r: not r["room"] or (r["toolFont"] == "13px" and r["countFont"] == "14px" and r["countWeight"] == "500")
+    check("selection tools: 'Alle wählen'/'Auswahl leeren' 13 px below the 14 px count line",
+          not fails(font, rows), json.dumps([(r["w"], r["toolFont"], r["countFont"], r["countWeight"]) for r in rows if r["room"]]))
+    check("ha panel: every visible button >= 44 px with the station warning", not fails(lambda r: not r["small"], rows),
+          json.dumps([(r["w"], r["small"]) for r in rows if r["small"]][:4]))
+
+
 PAGE = """<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -276,9 +352,17 @@ PAGE = """<!doctype html>
   body { margin: 0; padding: 8px; background: var(--primary-background-color, #fafafa);
          color: var(--primary-text-color); font-family: Roboto, "Helvetica Neue", Arial, sans-serif; }
   #stage { display: block; }
-  #stage.panel { height: calc(100vh - 16px); }
+  /* 0.2.2: panel mode like HA's real panel view -- a fixed app header of --header-height, the view
+     padded below it, NO fixed-height parent, so a card taller than the rest makes the PAGE scroll
+     (the old #stage height hid exactly that). */
+  :root { --header-height: 56px; }
+  #ha-header { display: none; }
+  body.ha-panel { padding: var(--header-height) 8px 0; }
+  body.ha-panel #ha-header { display: block; position: fixed; top: 0; left: 0; right: 0; z-index: 9;
+                             height: var(--header-height); background: var(--app-header-background-color, #03a9f4); }
 </style>
 </head><body>
+<div id="ha-header"></div>
 <div id="stage"></div>
 <script>
   // Stubs for the Home Assistant elements the card uses. ha-card carries the
@@ -331,6 +415,8 @@ PAGE = """<!doctype html>
     window.closeDialogs();
     const stage = document.getElementById('stage');
     stage.className = panel ? 'panel' : '';
+    document.body.classList.toggle('ha-panel', !!panel);
+    window.scrollTo(0, 0);
     stage.replaceChildren();
     const card = document.createElement('busch-vacuum-card');
     card.setConfig(Object.assign({ type: 'custom:busch-vacuum-card', entity: 'vacuum.robo' }, config));
@@ -415,6 +501,9 @@ def scenario(fixture, name):
     elif name == "temporary":
         # map-editor: a temporary map (synthetic) — save, discard and replace one of the stored maps.
         vac["attributes"]["has_temporary_map"] = True
+    elif name == "station_low":
+        # 0.2.2: the station's live warning (fresh water low), as the real station reported it 12.11.2026.
+        vac["attributes"]["clean_water_tank_status"] = "Low water"
     elif name == "customized":
         vac["attributes"]["customized_cleaning"] = True
     elif name == "nonstrict":
@@ -443,7 +532,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     repo_root = card_file.parent.parent
     fixture = json.loads((repo_root / "tests" / "fixtures" / "voll.json").read_text(encoding="utf-8"))
-    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty", "editor", "backup", "backup_running", "temporary")}
+    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty", "editor", "backup", "backup_running", "temporary", "station_low")}
     cam = fixture["states"]["camera.robo_map"]["attributes"]
     grid = synthetic_map_data(cam["rooms"], frame_id=cam["frame_id"])
     svg, svg_size = synthetic_map_svg(cam, grid)
@@ -602,7 +691,7 @@ def main():
               json.dumps([(x["state"], x["width"], x["small"]) for x in matrix if x["small"]][:6]))
         check("panel mode: no radius, no border, no shadow, full height",
               not bad(lambda x: not x["panel"] or (x["radius"] == "0px" and x["border"] == "0px"
-                                                   and x["shadow"] == "none" and abs(x["height"] - (x["H"] - 16)) <= 1)),
+                                                   and x["shadow"] == "none" and abs(x["height"] - (x["H"] - HA_HEADER)) <= 1)),
               json.dumps([(x["width"], x["radius"], x["border"], x["shadow"], x["height"], x["H"])
                           for x in matrix if x["panel"]][:3]))
         check("map: data mode with canvas, 7 room chips, no state notes, stage inside the card (60 cases)",
@@ -682,6 +771,8 @@ def main():
                           if abs(x["controls"]["b"] - min(x["panel"]["b"], x["card"]["b"])) > 1.5][:4]))
         check("layout: every visible button >= 44 px, no horizontal page overflow",
               not lbad(lambda x: not x["small"] and x["pageOverflow"] <= 0), json.dumps([(x["width"], x["small"]) for x in layout if x["small"]][:4]))
+        # 0.2.2: HA's real panel structure and the station warning (live findings of 0.2.1).
+        ha_panel_checks(page, data, room_pick, check, report, out_dir)
         # Left-handed: panel left of the map, tool bar on the left.
         page.set_viewport_size({"width": 1296, "height": 900})
         build("docked", config={"left_handed": True}, panel=True)

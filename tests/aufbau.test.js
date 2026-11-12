@@ -265,3 +265,17 @@ test('TASK-02 „Alle wählen“/„Auswahl leeren“ kleiner als die Zählzeile
   assert.match(zahl, /font-size: 14px;/);
   assert.match(zahl, /font-weight: var\(--ha-font-weight-medium, 500\);/);
 });
+
+test('CORE-13 Panel Mode: Karte genau so hoch wie der Platz unter HAs Kopf (Höhe, nicht min-height, mit Safe Areas); Blatt scrollt selbst', () => {
+  const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  const host = stilRegel(CARD_STYLES, ':host([data-layout=panel])');
+  assert.ok(host, 'Regel für den Host im Panel');
+  assert.doesNotMatch(host, /height: 100%/, 'kein height: 100% – der HA-Panel-Elter hat keine feste Höhe');
+  assert.match(host, /\bheight: calc\(100dvh - var\(--bvc-header-height, 56px\) - env\(safe-area-inset-top, 0px\) - env\(safe-area-inset-bottom, 0px\) - var\(--bvc-height-offset, 0px\)\);/);
+  assert.doesNotMatch(host, /min-height/);
+  const blatt = stilRegel(CARD_STYLES, ':host([data-layout=panel]:not([data-width=wide])) .panel');
+  assert.ok(blatt, 'schmales Panel: eigenes Scrollen');
+  assert.match(blatt, /flex: 1 1 0;/);
+  assert.match(blatt, /min-height: 0;/);
+  assert.match(blatt, /overflow-y: auto;/);
+});
