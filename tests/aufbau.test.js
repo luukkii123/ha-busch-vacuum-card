@@ -79,3 +79,64 @@ test('SET-01 Einstellungszeile fasst Modus · Saugstufe · Feuchte zusammen und 
   zeile.click();
   assert.equal(ansichtId(k.u), 'clean-settings');
 });
+
+// ── Task 3: Kontextbereich ───────────────────────────────────────────────
+const sichtbareChips = (k) => $$(k, '.room-chip').filter((c) => !c.hidden);
+
+test('MAP-08/TASK-02 Raum-Chips liegen im Panel, nicht mehr als eigene Reihe unter der Karte', () => {
+  const k = aufbau();
+  const liste = $(k, '.room-chips');
+  assert.ok(liste, 'Chips da');
+  assert.equal(liste.parentNode.className, 'chip-slot');
+  assert.equal(liste.parentNode.parentNode, $(k, '.task-area'), 'im Kontextbereich');
+  assert.equal(k.karte._map.el.childNodes.some((n) => n.className === 'room-chips'), false, 'keine Reihe unter der Karte');
+});
+
+test('TASK-01 Gesamt: „Alle 7 Räume“, Räume in Reinigungsfolge, drei sichtbar und „+ 4 weitere“ klappt auf', () => {
+  const k = aufbau();
+  assert.equal($(k, '.rooms-title').textContent, 'Alle 7 Räume');
+  assert.deepEqual($$(k, '.room-chip').map((c) => c.getAttribute('data-room')), ['3', '5', '7', '1', '6', '9', '4'], 'Folge wie cleaning_sequence/order');
+  assert.deepEqual(sichtbareChips(k).map((c) => c.getAttribute('data-room')), ['3', '5', '7']);
+  const mehr = $(k, '[data-action="rooms-more"]');
+  assert.equal(mehr.textContent, '+ 4 weitere');
+  assert.equal(mehr.getAttribute('aria-expanded'), 'false');
+  mehr.click();
+  assert.equal(sichtbareChips(k).length, 7, 'alle sichtbar');
+  assert.equal($(k, '[data-action="rooms-more"]').getAttribute('aria-expanded'), 'true');
+  assert.equal($(k, '[data-action="rooms-more"]').textContent, 'Weniger');
+});
+
+test('CORE-06 Gesamt: Tastatur wandert nur über sichtbare Chips (R15/R22)', () => {
+  const k = aufbau();
+  const chips = sichtbareChips(k);
+  chips[2].dispatchEvent(k.u.neuesEreignis('keydown', { key: 'ArrowRight' }));
+  assert.equal(sichtbareChips(k)[0].tabIndex, 0, 'vom dritten zurück zum ersten, kein verborgener Chip');
+  chips[0].dispatchEvent(k.u.neuesEreignis('keydown', { key: 'End' }));
+  assert.equal(sichtbareChips(k)[2].tabIndex, 0);
+});
+
+test('TASK-01 Gesamt: „Reihenfolge ändern“ öffnet die Reihenfolge der Reinigungseinstellungen', () => {
+  const k = aufbau();
+  const knopf = $(k, '[data-action="sequence-open"]');
+  assert.ok(knopf);
+  assert.equal(knopf.textContent, 'Reihenfolge ändern');
+  knopf.click();
+  assert.equal(ansichtId(k.u), 'sequence');
+});
+
+test('TASK-02 Raum: Auswahl im Panel mit Reihenfolge-Badges, alle Chips sichtbar, Wiederholungen als Stepper', () => {
+  const k = aufbau();
+  aufgabe(k, 'room').click();
+  assert.equal(sichtbareChips(k).length, 7, 'im Raummodus nie eingeklappt');
+  assert.equal($(k, '[data-action="rooms-more"]'), null);
+  const chip = (id) => $$(k, '.room-chip').find((c) => c.getAttribute('data-room') === String(id));
+  chip(5).click();
+  chip(3).click();
+  assert.equal(chip(5).getAttribute('aria-pressed'), 'true');
+  // customized_cleaning-fähig: das Gerät reinigt in der gespeicherten Folge (3 vor 5), die Badges zeigen sie.
+  assert.equal(chip(3).querySelector('.room-order').textContent, '1');
+  assert.equal(chip(5).querySelector('.room-order').textContent, '2');
+  assert.equal($(k, '.task-count').textContent, '2 Räume gewählt');
+  assert.ok($(k, '.task-repeats'), 'Wiederholungen da');
+  assert.ok($(k, '[data-action="repeats-plus"]'));
+});

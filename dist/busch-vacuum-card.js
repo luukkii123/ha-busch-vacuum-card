@@ -3437,6 +3437,8 @@ class MapView {
         this._obstacleActions = new Map(); // id → { label, icon, run(obstacle) } of other modules
         this._objectActions = new Map(); // id → { layers, label, icon, run(found) }: the bubble of carpets/furniture (map-editor EDI-06)
         this._ignorePending = null; // { id, wanted, timer }: one ignore call at a time (R11)
+        this.chipHost = null; // #1002: the card's panel holds the room chips (null: below the map, as in 0.1)
+        this.chipLimit = null; // #1002: view mode shows this many chips until the card expands the list
         this._build();
         this._bindGestures();
         for (const [name, z, kind] of MAP_LAYERS) this._addBuiltIn(name, z, kind);
@@ -3708,13 +3710,15 @@ class MapView {
      * with name, icon and order badge; arrows move, Space/Enter acts. A chip
      * tap is the same event as a tap on the room's area.
      */
-    roomChips({ rooms, selected = [], order = [], onToggle } = {}) {
+    roomChips({ rooms, selected = [], order = [], onToggle, ids = null } = {}) {
         const hass = this.hass;
         const list = document.createElement('div');
         list.className = 'room-chips';
         list.setAttribute('role', 'group');
         list.setAttribute('aria-label', translate(hass, 'raeume'));
-        const entries = Object.entries(rooms || {}).filter(([, r]) => r && r.visibility !== 'Hidden');
+        // `ids`: the order to list them in (view mode: the cleaning sequence); else as the map has them.
+        const all = rooms || {};
+        const entries = (ids ? ids.map(String).filter((id) => all[id]).map((id) => [id, all[id]]) : Object.entries(all)).filter(([, r]) => r && r.visibility !== 'Hidden');
         const chosen = new Set(selected.map(String));
         const buttons = entries.map(([id, room], index) => {
             const name = room.custom_name || room.name || id;
@@ -3747,14 +3751,22 @@ class MapView {
                 const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1, Home: -Infinity, End: Infinity }[event.key];
                 if (!step) return;
                 event.preventDefault();
-                const next = Number.isFinite(step) ? (index + step + buttons.length) % buttons.length : step < 0 ? 0 : buttons.length - 1;
-                buttons.forEach((b, i) => { b.tabIndex = i === next ? 0 : -1; });
-                buttons[next].focus();
+                // Only the chips shown (a collapsed list hides the rest, #1002).
+                const shown = buttons.filter((b) => !b.hidden);
+                const at = Math.max(0, shown.indexOf(button));
+                const next = Number.isFinite(step) ? (at + step + shown.length) % shown.length : step < 0 ? 0 : shown.length - 1;
+                buttons.forEach((b) => { b.tabIndex = b === shown[next] ? 0 : -1; });
+                shown[next].focus();
             });
             return button;
         });
         list.append(...buttons);
         return list;
+    }
+
+    /** #1002: the card's panel holds the chips, except in the edit mode (the map then lives in its dialog). */
+    _chipHost() {
+        return this.card && this.card._mapEdit ? null : this.chipHost;
     }
 
     _renderChips() {
@@ -3764,7 +3776,7 @@ class MapView {
         const rooms = this._showsMap() ? this.current().rooms : o.fallbackRooms ? o.fallbackRooms() : {};
         const picked = o.selected ? o.selected() : null;
         const ownOrder = o.order ? o.order() : null;
-        const key = JSON.stringify([rooms, this._highlight, BuschUI.language(this.hass, { legacy: true }), this._mode, picked, ownOrder]);
+        const key = JSON.stringify([rooms, this._highlight, BuschUI.language(this.hass, { legacy: true }), this._mode, picked, ownOrder, this.chipLimit, !!this._chipHost()]);
         if (key === this._chipsKey) return;
         this._chipsKey = key;
         const root = this.card.shadowRoot;
@@ -3773,12 +3785,18 @@ class MapView {
         // The cleaning sequence as on the map's badges (R01).
         const order = Object.entries(rooms).filter(([, r]) => Number(r && r.order) > 0).sort((x, y) => x[1].order - y[1].order).map(([id]) => id);
         const highlight = this._highlight !== null && this._highlight !== undefined ? [this._highlight] : [];
-        const chips = this.roomChips({ rooms, selected: picked || highlight, order: ownOrder || order });
+        // #1002: in view mode the chips follow the cleaning sequence, the rest after it.
+        const ids = this._mode === 'view' && order.length ? order.concat(Object.keys(rooms).filter((id) => !order.includes(id))) : null;
+        const chips = this.roomChips({ rooms, selected: picked || highlight, order: ownOrder || order, ids });
         if (this.chips) this.chips.remove();
-        this.el.insertBefore(chips, this.notes);
+        const host = this._chipHost();
+        if (host) host.replaceChildren(chips);
+        else this.el.insertBefore(chips, this.notes);
         this.chips = chips;
         // Zone, spot and go-to place points and areas: room chips would only be in the way there.
         chips.hidden = !chips.childNodes.length || !['view', 'pick-room'].includes(this._mode);
+        const limit = this._mode === 'view' && host ? this.chipLimit : null;
+        if (limit) chips.querySelectorAll('.room-chip').forEach((b, i) => { b.hidden = i >= limit; });
         const again = focusedRoom && chips.querySelector('[data-room="' + focusedRoom + '"]');
         if (again) {
             chips.querySelectorAll('.room-chip').forEach((b) => { b.tabIndex = b === again ? 0 : -1; });
@@ -9023,6 +9041,94 @@ ha-card {
     font-size: var(--ha-font-size-s, 13px);
     overflow-wrap: anywhere;
 }
+/* Context part: room list (Gesamt) and room choice (Raum) with the chips of the map (R08/R15). */
+.rooms-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0 var(--ha-space-2, 8px);
+    min-width: 0;
+}
+.rooms-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    font-size: var(--ha-font-size-m, 14px);
+    font-weight: var(--ha-font-weight-medium, 500);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+:host .link-action {
+    flex: none;
+    padding: 0 var(--ha-space-2, 8px);
+    background: transparent;
+    color: var(--primary-text-color, #212121);
+    font-size: var(--ha-font-size-s, 13px);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+.rooms-more {
+    align-self: flex-start;
+}
+.chip-slot .room-chips {
+    gap: 6px;
+}
+.chip-slot .room-chip {
+    min-height: 44px;
+    padding: 0 var(--ha-space-3, 12px);
+    border-radius: 22px;
+    border: 1px solid var(--divider-color, #e0e0e0);
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    color: var(--primary-text-color, #212121);
+    font-size: var(--ha-font-size-s, 13px);
+}
+.chip-slot .room-chip ha-icon {
+    display: none;
+}
+.chip-slot .room-chip[aria-pressed=true] {
+    border: 2px solid var(--bvc-accent-color, var(--primary-color, #03a9f4));
+    background: color-mix(in srgb, var(--bvc-accent-color, var(--primary-color, #03a9f4)) 14%, var(--ha-card-background, var(--card-background-color, #ffffff)));
+    color: var(--primary-text-color, #212121);
+}
+/* The order badge as a ring: its number reads on the card colour in every theme (4.5:1). */
+.chip-slot .room-order,
+.chip-slot .room-chip[aria-pressed=true] .room-order {
+    order: -1;
+    min-width: 22px;
+    height: 22px;
+    line-height: 18px;
+    border: 2px solid var(--bvc-accent-color, var(--primary-color, #03a9f4));
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    color: var(--primary-text-color, #212121);
+    font-size: var(--ha-font-size-xs, 11px);
+    font-weight: var(--ha-font-weight-medium, 500);
+}
+.task-tools .task-count {
+    flex: 1 1 auto;
+    color: var(--primary-text-color, #212121);
+    font-weight: var(--ha-font-weight-medium, 500);
+}
+.task-tools .busch-ui-action {
+    background: transparent;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+.task-tools .busch-ui-action ha-icon {
+    display: none;
+}
+.task-repeats .task-count {
+    font-weight: var(--ha-font-weight-normal, 400);
+}
+.task-repeats .busch-ui-action {
+    width: 44px;
+    border: 1px solid var(--divider-color, #e0e0e0);
+    text-decoration: none;
+}
+.task-repeats .busch-ui-action ha-icon {
+    display: inline-block;
+}
 `;
 
 const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
@@ -10417,6 +10523,9 @@ class BuschVacuumCard extends HTMLElement {
             this._panelNode.className = 'panel';
             this._stationSlot = document.createElement('div');
             this._stationSlot.className = 'station-slot';
+            this._chipSlot = document.createElement('div');
+            this._chipSlot.className = 'chip-slot';
+            this._roomsOpen = false; // R21 on purpose: the collapsed room list is a view, not a preference
             this._panelNode.append(handle, this._messages, this._stationSlot, this._taskArea, this._controls);
             const layout = document.createElement('div');
             layout.className = 'layout';
@@ -10490,6 +10599,7 @@ class BuschVacuumCard extends HTMLElement {
         if (mapCamera) {
             if (!this._map) {
                 this._map = new MapView(this);
+                this._map.chipHost = this._chipSlot; // #1002: room chips in the panel, not below the map
                 this._mapSlot.appendChild(this._map.el);
                 for (const type of ['map-room-tap', 'map-tap', 'map-drag', 'map-changed']) this._map.el.addEventListener(type, (e) => this._onMapEvent(e));
             }
@@ -10664,7 +10774,9 @@ class BuschVacuumCard extends HTMLElement {
         const restoring = recoveryStatus(model.attr('map_recovery_status')) === 'running';
         const ready = active ? { ok: true, reason: null } : restoring ? { ok: false, reason: 'aufgabeSperreWiederherstellung' } : taskReady(model, task, this._selection, this._taskMap());
         if (this._hidden('task_type')) {
-            this._taskArea.replaceChildren();
+            // The chips stay: they are the keyboard and touch way to the rooms (R15/R22).
+            this._setChipLimit(null);
+            this._taskArea.replaceChildren(...(this._map ? [this._chipSlot] : []));
             return ready;
         }
         const types = tasksFor(model);
@@ -10733,8 +10845,11 @@ class BuschVacuumCard extends HTMLElement {
                 : model.attr('shortcut_task') ? ['aufgabeShortcut', 'mdi:star-four-points-outline']
                 : ['aufgabeLaeuft', 'mdi:progress-clock'];
             nodes.push(this._note('task-badge', icon, translate(hass, key)));
+            nodes.push(...this._allPanel(hass, model, false));
         } else {
-            if (task === 'room') nodes.push(...this._roomPanel(hass, model));
+            if (task === 'all') nodes.push(...this._allPanel(hass, model, true));
+            if (task === 'room') nodes.push(...this._roomPanel(hass, model), ...this._chipNodes(null));
+            if (['zone', 'spot', 'goto'].includes(task)) nodes.push(...this._chipNodes(null));
             if (task === 'zone') nodes.push(...this._zonePanel(hass, model));
             if (task === 'spot') nodes.push(...this._spotPanel(hass, model));
             if (task === 'goto') nodes.push(...this._gotoPanel(hass, model));
@@ -10766,7 +10881,11 @@ class BuschVacuumCard extends HTMLElement {
         if (settingsRow) nodes.push(settingsRow);
         const root = this.shadowRoot;
         const focused = root.activeElement && root.activeElement.getAttribute ? root.activeElement.getAttribute('data-action') : null;
+        const focusedRoom = root.activeElement && root.activeElement.getAttribute ? root.activeElement.getAttribute('data-room') : null;
         this._taskArea.replaceChildren(...nodes);
+        // The chip slot moved with the redraw: a focused chip gets its focus back (R03).
+        const chipAgain = focusedRoom && this._chipSlot.querySelector('[data-room="' + focusedRoom + '"]');
+        if (chipAgain) chipAgain.focus();
         this._renderGotoBubble(hass, model, !active && task === 'goto', ready);
         // Rebuilt on every own update: keyboard focus stays on the same control.
         const again = focused && (this._taskArea.querySelector('[data-action="' + focused + '"]') || (this._gotoBubble && this._gotoBubble.querySelector('[data-action="' + focused + '"]')));
@@ -10921,6 +11040,57 @@ class BuschVacuumCard extends HTMLElement {
         else picked.push(id);
         this._lastRoom = id;
         this._selectionChanged();
+    }
+
+    /** #1002: the chip slot, view mode collapsed to `limit` chips (null: all). */
+    _chipNodes(limit) {
+        if (!this._map) return [];
+        this._setChipLimit(limit);
+        return [this._chipSlot];
+    }
+
+    _setChipLimit(limit) {
+        if (!this._map || this._map.chipLimit === limit) return;
+        this._map.chipLimit = limit;
+        this._map._renderChips();
+    }
+
+    /**
+     * #1002 Gesamt (TASK-01): "Alle N Räume", the rooms in cleaning order (three, then
+     * "+ N weitere"), "Reihenfolge ändern" to the sequence view; while a task runs only the list.
+     */
+    _allPanel(hass, model, idle) {
+        if (!this._map || !this._map._showsMap()) return [];
+        const rooms = this._taskRooms(model);
+        const n = Object.keys(rooms).length;
+        if (!n) return [];
+        const nodes = [];
+        const head = document.createElement('div');
+        head.className = 'rooms-head';
+        const title = document.createElement('h3');
+        title.className = 'rooms-title';
+        title.textContent = translate(hass, 'alleRaeume', { n });
+        head.appendChild(title);
+        if (idle && model.can('customized_cleaning') && roomsInOrder(model).length) {
+            const label = translate(hass, 'reihenfolgeAendern');
+            const order = BuschUI.action({ label, text: label, variant: 'quiet', onClick: () => this._openDialog(sequenceView(this)) });
+            order.classList.add('link-action');
+            order.setAttribute('data-action', 'sequence-open');
+            order.setAttribute('aria-haspopup', 'dialog');
+            head.appendChild(order);
+        }
+        nodes.push(head);
+        const collapse = n > 4;
+        nodes.push(...this._chipNodes(collapse && !this._roomsOpen ? 3 : null));
+        if (collapse) {
+            const label = this._roomsOpen ? translate(hass, 'wenigerRaeume') : translate(hass, 'weitereRaeume', { n: n - 3 });
+            const more = BuschUI.action({ label, text: label, variant: 'quiet', onClick: () => { this._roomsOpen = !this._roomsOpen; this._update(); } });
+            more.classList.add('link-action', 'rooms-more');
+            more.setAttribute('data-action', 'rooms-more');
+            more.setAttribute('aria-expanded', String(this._roomsOpen));
+            nodes.push(more);
+        }
+        return nodes;
     }
 
     /** Room panel (TASK-02): count, select all, clear with undo, order note. */
