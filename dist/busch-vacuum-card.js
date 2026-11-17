@@ -11444,7 +11444,7 @@ class BuschVacuumCard extends HTMLElement {
         const names = this._hidden('action_buttons') || (!active && task === 'goto') ? [] : controlsFor(model, shown);
         const outside = names[0] === 'return'; // idle outside the dock (controlsFor)
         // M4: buttons are kept by data-action and updated in place; a tap never lands on a replaced node.
-        const kept = new Map(this._controls.childNodes.map((node) => [node.getAttribute('data-action'), node]));
+        const kept = new Map(Array.from(this._controls.childNodes, (node) => [node.getAttribute('data-action'), node]));
         const buttons = names.map((name) => {
             // #1002: the primary start says what it cleans (CORE-07).
             const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
