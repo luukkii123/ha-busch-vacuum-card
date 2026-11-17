@@ -1262,6 +1262,11 @@ test('M33 Zielwert: Raumflächen im dunklen Schema höchstens 0,13 Leuchtdichte,
       const raum = farbe(karte, 'room-' + i);
       if (grenze !== null) assert.ok(leuchte(raum) <= grenze, schema + ' Raum ' + i + ' ' + raum + ': ' + leuchte(raum).toFixed(3));
       assert.ok(kontrast(text, raum) >= 4.5, schema + ' Etikett auf Raum ' + i + ' ' + raum + ': ' + kontrast(text, raum).toFixed(2));
+      // Teppich liegt als Mischung über der Fläche (Render-Lauf 17.11.: Raum mit Teppich 0,168).
+      const [tr, tg, tb, ta] = farbe(karte, 'carpet').match(/[\d.]+/g).map(Number);
+      const gemischt = '#' + raum.replace('#', '').match(/../g).map((x, j) => Math.round(parseInt(x, 16) * (1 - ta) + [tr, tg, tb][j] * ta).toString(16).padStart(2, '0')).join('');
+      if (grenze !== null) assert.ok(leuchte(gemischt) <= grenze, schema + ' Raum ' + i + ' mit Teppich ' + gemischt + ': ' + leuchte(gemischt).toFixed(3));
+      assert.ok(kontrast(text, gemischt) >= 4.5, schema + ' Etikett auf Teppich in Raum ' + i + ' ' + gemischt + ': ' + kontrast(text, gemischt).toFixed(2));
     }
   }
 });

@@ -3428,9 +3428,10 @@ const MAP_MODES = ['view', 'pick-room', 'pick-point', 'draw-rect', 'drag'];
 const LOUPE = { size: 120, magnify: 2 };
 
 /** Map colours per scheme (MAP-05): canvas colours of data mode; layers read the --bvc-map-* set from them. */
+// M33: the dark carpet darkens its room, a light veil lifted it above 0.13 luminance and labels below 4.5:1.
 const MAP_SCHEMES = {
     light: { floor: '#dde3ea', wall: '#5c6670', room: ['#a9c7ec', '#b5dcb0', '#f3d79e', '#e2b8d6'], carpet: 'rgba(0, 0, 0, 0.16)', path: '#5c6670' },
-    dark: { floor: '#2a3038', wall: '#9aa4ae', room: ['#2d5680', '#3a6537', '#75602f', '#663b5e'], carpet: 'rgba(255, 255, 255, 0.14)', path: '#b0bac4' },
+    dark: { floor: '#2a3038', wall: '#9aa4ae', room: ['#2d5680', '#3a6537', '#75602f', '#663b5e'], carpet: 'rgba(0, 0, 0, 0.24)', path: '#b0bac4' },
     grey: { floor: '#e3e3e3', wall: '#5e5e5e', room: ['#c2c2c2', '#d0d0d0', '#b0b0b0', '#dadada'], carpet: 'rgba(0, 0, 0, 0.14)', path: '#5e5e5e' }
 };
 
