@@ -1186,7 +1186,7 @@ test('EDI-02 Checkpoint B: alle Aufrufer von mapWrite/confirmGrant gegen die Bes
     const dienst = a.dienst.slice(1, -1);
     assert.ok(EIGENE_WEGE[dienst], dienst + ' direkt über callDevice statt mapWrite');
     const zeile = quelle.slice(quelle.lastIndexOf('\n', a.i), a.i);
-    if (dienst === 'vacuum_select_map') assert.match(zeile, /_confirmMapChange\(/, 'Kartenwahl nur hinter CORE-20');
+    if (dienst === 'vacuum_select_map') assert.match(zeile, /\bcard\.confirmMapChange\(/, 'Kartenwahl nur hinter CORE-20');
     if (dienst === 'vacuum_request_map') assert.ok(drin(a.i, request), 'request_map nur in requestMap');
   }
   // 4. Die eigenen Wege bestätigen selbst: multi_floor_map mit confirm, Kartierung im done einer mapConfirm.

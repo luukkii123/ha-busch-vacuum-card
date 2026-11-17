@@ -2427,15 +2427,15 @@ function settingState(card, model, key) {
     const current = settingValue(model, key);
     const entityId = model.entity(def.platform + '.' + key);
     const entity = entityId ? hass.states[entityId] : null;
-    const pending = card._settingWrites.get(key);
+    const pending = card.settingWrites.get(key);
     if (pending && pending.check(model)) settleWrite(card, key);
     // M3: a confirmation after the note (cloud latency) clears it; the device has the wanted value.
-    const late = card._settingLate.get(key);
+    const late = card.settingLate.get(key);
     if (!pending && late && late(model)) {
-        card._settingLate.delete(key);
-        card._settingNotes.delete(key);
+        card.settingLate.delete(key);
+        card.settingNotes.delete(key);
     }
-    const busy = card._settingWrites.get(key);
+    const busy = card.settingWrites.get(key);
     const list = model.attr(key + '_list');
     let options = def.options || (Array.isArray(list) ? list : entity && Array.isArray(entity.attributes.options) ? entity.attributes.options : null);
     if (key === 'selected_map') options = (model.attr('maps') || []).map((m) => m.custom_name || m.name || String(m.id));
@@ -2457,7 +2457,7 @@ function settingState(card, model, key) {
         locked: !!reason,
         reason,
         busy: !!busy,
-        note: card._settingNotes.get(key) || ''
+        note: card.settingNotes.get(key) || ''
     };
 }
 
@@ -2501,14 +2501,14 @@ function optionWord(hass, raw) {
 }
 
 function rerender(card) {
-    if (card._dialog) card._dialog.render();
+    if (card.dialog) card.dialog.render();
 }
 
 function settleWrite(card, key) {
-    const pending = card._settingWrites.get(key);
+    const pending = card.settingWrites.get(key);
     if (!pending) return;
     clearTimeout(pending.timer);
-    card._settingWrites.delete(key);
+    card.settingWrites.delete(key);
 }
 
 /**
@@ -2541,7 +2541,7 @@ const CARD_WRITES = ['card:locate', 'card:clear_warning', 'card:select_map'];
 
 /** M5: the one map change behind CORE-20; busy until the map camera shows the target, one call per tap. */
 function changeMap(card, entry, call) {
-    return trackWrite(card, 'card:select_map', { want: entry.id, label: translate(card._hass, 'kartenWechselTitel'), failKey: 'befehlFehler', call,
+    return trackWrite(card, 'card:select_map', { want: entry.id, label: translate(card.hass, 'kartenWechselTitel'), failKey: 'befehlFehler', call,
         check: (model) => {
             const camera = model.related.maps.map[0];
             const state = camera && model.hass.states[camera];
@@ -2561,32 +2561,32 @@ const errorText = (error) => String((error && (error.message || error.code)) || 
  * the confirmation; `done` runs then. A second tap while one runs is ignored (R11).
  */
 function trackWrite(card, key, { want, check, call, label, done, failKey = 'schreibFehler' }) {
-    if (card._settingWrites.has(key)) return false;
-    if (card._hass && card._hass.connected === false) return false; // M18: offline nothing is written
-    card._settingNotes.delete(key);
-    card._settingLate.delete(key);
+    if (card.settingWrites.has(key)) return false;
+    if (card.hass && card.hass.connected === false) return false; // M18: offline nothing is written
+    card.settingNotes.delete(key);
+    card.settingLate.delete(key);
     const pending = { want, check: check || (() => false), timer: null, phase: 'sending' };
-    const name = label || (SETTINGS[key] ? settingLabel(card._hass, key) : translate(card._hass, 'aenderung'));
+    const name = label || (SETTINGS[key] ? settingLabel(card.hass, key) : translate(card.hass, 'aenderung'));
     const redraw = () => {
         rerender(card);
-        if (CARD_WRITES.includes(key)) card._update();
+        if (CARD_WRITES.includes(key)) card.update();
     };
     const fail = (text) => {
-        if (card._settingWrites.get(key) !== pending) return;
+        if (card.settingWrites.get(key) !== pending) return;
         settleWrite(card, key);
-        if (text) card._settingNotes.set(key, text);
+        if (text) card.settingNotes.set(key, text);
         redraw();
     };
     const unconfirmed = () => {
-        if (card._settingWrites.get(key) !== pending) return;
-        if (check(card._model())) return fail('');
-        card._settingLate.set(key, check);
-        fail(translate(card._hass, 'nichtUebernommen', { name }));
+        if (card.settingWrites.get(key) !== pending) return;
+        if (check(card.model())) return fail('');
+        card.settingLate.set(key, check);
+        fail(translate(card.hass, 'nichtUebernommen', { name }));
     };
     if (check) pending.timer = setTimeout(unconfirmed, SENDING_CAP_MS);
-    card._settingWrites.set(key, pending);
+    card.settingWrites.set(key, pending);
     Promise.resolve(call()).then(() => {
-        if (card._settingWrites.get(key) !== pending) return;
+        if (card.settingWrites.get(key) !== pending) return;
         if (check) {
             pending.phase = 'confirming';
             clearTimeout(pending.timer);
@@ -2595,7 +2595,7 @@ function trackWrite(card, key, { want, check, call, label, done, failKey = 'schr
         }
         if (done) done();
         fail('');
-    }, (error) => fail(translate(card._hass, failKey, { name, grund: errorText(error) })));
+    }, (error) => fail(translate(card.hass, failKey, { name, grund: errorText(error) })));
     redraw();
     return true;
 }
@@ -2605,33 +2605,33 @@ function writeSetting(card, key, value, params) {
     const def = SETTINGS[key];
     const want = normalizeSetting(def.control, value);
     const wire = def.wire ? def.wire(want) : { key, value: def.control === 'switch' ? (want ? 1 : 0) : value, params };
-    const data = { entity_id: card._opts.entity, key: wire.key, value: wire.value };
+    const data = { entity_id: card.opts.entity, key: wire.key, value: wire.value };
     if (wire.params) data.params = wire.params;
     return trackWrite(card, key, {
         want,
         check: (model) => sameSetting(def.control, settingValue(model, key).value, want),
-        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_property', data)
+        call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_property', data)
     });
 }
 
 /** `vacuum_call_action { entity_id, key[, value] }`, busy until the service answers. */
 function callAction(card, key, value, { track = key, label, done, failKey } = {}) {
-    const data = { entity_id: card._opts.entity, key };
+    const data = { entity_id: card.opts.entity, key };
     if (value !== undefined) data.value = String(value);
-    return trackWrite(card, track, { label, done, failKey, call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_call_action', data) });
+    return trackWrite(card, track, { label, done, failKey, call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_call_action', data) });
 }
 
 function pickMap(card, model, name) {
     const entry = (model.attr('maps') || []).find((m) => (m.custom_name || m.name || String(m.id)) === name);
     if (!entry) return false;
-    if (card._map) return card._map.selectMap(entry.id);
-    card._confirmMapChange(name, () => changeMap(card, entry, () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_select_map', { entity_id: card._opts.entity, map_id: entry.id })));
+    if (card.map) return card.map.selectMap(entry.id);
+    card.confirmMapChange(name, () => changeMap(card, entry, () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_select_map', { entity_id: card.opts.entity, map_id: entry.id })));
     return true;
 }
 
 /** A setting that changes something lasting asks first, naming the new value (R13). */
 function confirmSetting(card, key, value) {
-    const hass = card._hass;
+    const hass = card.hass;
     const view = {
         title: translate(hass, 'bestaetigenTitel', { name: settingLabel(hass, key) }),
         id: 'setting-confirm',
@@ -2651,8 +2651,8 @@ function confirmSetting(card, key, value) {
             body.appendChild(actions);
         }
     };
-    if (card._dialog && card._dialog.isConnected) card._dialog.show(view);
-    else card._openDialog(view);
+    if (card.dialog && card.dialog.isConnected) card.dialog.show(view);
+    else card.openDialog(view);
     return true;
 }
 
@@ -2670,7 +2670,7 @@ function settingStatus(hass, s) {
  * device lacks the key. Used by device-settings, dock and clean-settings.
  */
 function settingRow(card, model, key) {
-    const hass = card._hass;
+    const hass = card.hass;
     const s = settingState(card, model, key);
     if (!s.present) return null;
     const row = document.createElement('div');
@@ -2757,7 +2757,7 @@ function settingRow(card, model, key) {
             }
             const number = Number(input.value);
             if (input.value === '' || !Number.isFinite(number) || (s.min !== undefined && number < s.min) || (s.max !== undefined && number > s.max)) {
-                card._settingNotes.set(key, translate(hass, 'bereich', { min: s.min, max: s.max }));
+                card.settingNotes.set(key, translate(hass, 'bereich', { min: s.min, max: s.max }));
                 rerender(card);
                 return;
             }
@@ -3297,12 +3297,12 @@ function drawTasks(card, group, ctx) {
         for (const p of Object.values(a.active_cruise_points || {})) if (p) group.appendChild(screenMark(ctx, p, { 'data-active': 'cruise' })).appendChild(ctx.svgNode('path', { d: 'M0 -12 L8 0 L0 12 L-8 0 Z' }));
         return;
     }
-    if (card._drawSelection) card._drawSelection(group, ctx);
+    if (card.drawSelection) card.drawSelection(group, ctx);
 }
 
 /** Taps on the layer: the task types' own targets (handles, ×), else nothing. */
 function hitTasks(card, point, ctx) {
-    return card._hitSelection ? card._hitSelection(point, ctx) : null;
+    return card.hitSelection ? card.hitSelection(point, ctx) : null;
 }
 
 const MESSAGE_LOOK = {
@@ -3843,7 +3843,7 @@ class MapView {
             ['zoom-in', 'mdi:plus', 'zoomIn', () => this._zoomAt(this._zoom * MAP_ZOOM.step)],
             ['zoom-out', 'mdi:minus', 'zoomOut', () => this._zoomAt(this._zoom / MAP_ZOOM.step)],
             ['fit', 'mdi:fit-to-screen-outline', 'zoomFit', () => this._setView(1, 0, 0, true)],
-            ['info', 'mdi:information-outline', 'karteninfo', () => this.card._openDialog(this._infoView())]
+            ['info', 'mdi:information-outline', 'karteninfo', () => this.card.openDialog(this._infoView())]
         ]) {
             const button = BuschUI.action({ label: translate(null, key), icon, variant: 'secondary', onClick: act });
             button.setAttribute('data-action', 'map-' + name);
@@ -3884,7 +3884,7 @@ class MapView {
 
     _locked() {
         // The edit mode lifts the gesture lock for its duration (map-editor, spec: Sperre).
-        return !this.card._mapEdit && this.card.getAttribute('data-locked') === 'true';
+        return !this.card.mapEdit && this.card.getAttribute('data-locked') === 'true';
     }
 
     _bindGestures() {
@@ -4004,7 +4004,7 @@ class MapView {
         this._closeBubble();
         if (this._picking) {
             this._endPick();
-            this.card._openDialog(this._infoView(hit));
+            this.card.openDialog(this._infoView(hit));
         }
         this._emit('map-tap', { client, robot: hit.robot, hit, passable: this.passable(hit.robot), mode: this._mode });
         if (hit.kind === 'object' && this._mode === 'view') {
@@ -4014,7 +4014,7 @@ class MapView {
         else if (hit.kind === 'room' && ['view', 'pick-room'].includes(this._mode)) this._roomTap(hit.id, 'map');
         // Carpets and furniture have no layer hit (a tap on them stays a room tap); with an action of
         // another module they get a bubble too (MAP-04 slot, map-editor EDI-06).
-        if (this._mode === 'view' && hit.kind !== 'object' && this._objectActions.size && !this.card._mapEdit) {
+        if (this._mode === 'view' && hit.kind !== 'object' && this._objectActions.size && !this.card.mapEdit) {
             const found = this.objectAt(hit.robot);
             if (found) this._openObjectBubble(found);
         }
@@ -4157,7 +4157,7 @@ class MapView {
      * toolbar (`MapEditor.chipHost`, shown only with the tool Räume); without one below the map.
      */
     _chipHost() {
-        return this.card && this.card._mapEdit ? this.card._mapEdit.chipHost || null : this.chipHost;
+        return this.card && this.card.mapEdit ? this.card.mapEdit.chipHost || null : this.chipHost;
     }
 
     _renderChips() {
@@ -4167,7 +4167,7 @@ class MapView {
         const rooms = this._showsMap() ? this.current().rooms : o.fallbackRooms ? o.fallbackRooms() : {};
         const picked = o.selected ? o.selected() : null;
         const ownOrder = o.order ? o.order() : null;
-        const key = JSON.stringify([rooms, this._highlight, BuschUI.language(this.hass, { legacy: true }), this._mode, picked, ownOrder, this.chipLimit, !!this._chipHost(), !!(this.card && this.card._mapEdit)]);
+        const key = JSON.stringify([rooms, this._highlight, BuschUI.language(this.hass, { legacy: true }), this._mode, picked, ownOrder, this.chipLimit, !!this._chipHost(), !!(this.card && this.card.mapEdit)]);
         if (key === this._chipsKey) return;
         this._chipsKey = key;
         const root = this.card.shadowRoot;
@@ -4186,7 +4186,7 @@ class MapView {
         this.chips = chips;
         // Zone, spot and go-to place points and areas: room chips would only be in the way there.
         chips.hidden = !chips.childNodes.length || !['view', 'pick-room'].includes(this._mode);
-        const limit = this._mode === 'view' && host && !(this.card && this.card._mapEdit) ? this.chipLimit : null;
+        const limit = this._mode === 'view' && host && !(this.card && this.card.mapEdit) ? this.chipLimit : null;
         if (limit) chips.querySelectorAll('.room-chip').forEach((b, i) => { b.hidden = i >= limit; });
         const again = focusedRoom && chips.querySelector('[data-room="' + focusedRoom + '"]');
         if (again) {
@@ -4282,7 +4282,7 @@ class MapView {
             this._floorReason = document.createElement('span');
             this._floorReason.id = 'map-floor-reason';
             this._floorReason.hidden = true;
-            this._floorButton = BuschUI.action({ label: translate(this.hass, 'stockwerkWaehlen'), variant: 'secondary', onClick: () => this.card._openDialog(this._floorsView()) });
+            this._floorButton = BuschUI.action({ label: translate(this.hass, 'stockwerkWaehlen'), variant: 'secondary', onClick: () => this.card.openDialog(this._floorsView()) });
             this._floorButton.setAttribute('data-action', 'map-floors');
             this._floorButton.setAttribute('aria-haspopup', 'dialog');
             // #1002: a chip with the floor's name at the top of the map, outside the tool bar.
@@ -4298,7 +4298,7 @@ class MapView {
             const busy = this._busy();
             this._floorReason.textContent = translate(this.hass, 'stockwerkGesperrt');
             const floor = this._mapName();
-            BuschUI.action({ node: this._floorButton, label: floor ? translate(this.hass, 'stockwerkAktuell', { name: floor }) : translate(this.hass, 'stockwerkWaehlen'), text: '', variant: 'secondary', disabled: busy, onClick: () => this.card._openDialog(this._floorsView()) });
+            BuschUI.action({ node: this._floorButton, label: floor ? translate(this.hass, 'stockwerkAktuell', { name: floor }) : translate(this.hass, 'stockwerkWaehlen'), text: '', variant: 'secondary', disabled: busy, onClick: () => this.card.openDialog(this._floorsView()) });
             const words = document.createElement('span');
             words.className = 'map-floor-text';
             words.textContent = floor || translate(this.hass, 'stockwerkWaehlen');
@@ -4333,10 +4333,10 @@ class MapView {
      */
     _renderEditTools() {
         const card = this.card;
-        const open = !!(this.model && card._opts && !card._hidden('map_editor'));
-        const edit = open && !card._mapEdit && this.model.can('map_edit');
+        const open = !!(this.model && card.opts && !card.isHidden('map_editor'));
+        const edit = open && !card.mapEdit && this.model.can('map_edit');
         if (edit && !this._editButton) {
-            this._editButton = BuschUI.action({ label: translate(this.hass, 'kartenBearbeiten'), icon: 'mdi:pencil-outline', variant: 'secondary', onClick: () => card._openDialog(mapEditView(card)) });
+            this._editButton = BuschUI.action({ label: translate(this.hass, 'kartenBearbeiten'), icon: 'mdi:pencil-outline', variant: 'secondary', onClick: () => card.openDialog(mapEditView(card)) });
             this._editButton.setAttribute('data-action', 'map-edit');
             this._editButton.setAttribute('aria-haspopup', 'dialog');
             this._editButton.classList.add('map-tool');
@@ -4345,15 +4345,15 @@ class MapView {
             this._editButton.remove();
             this._editButton = null;
         }
-        if (this._editButton) BuschUI.action({ node: this._editButton, label: translate(this.hass, 'kartenBearbeiten'), icon: 'mdi:pencil-outline', variant: 'secondary', onClick: () => card._openDialog(mapEditView(card)) });
+        if (this._editButton) BuschUI.action({ node: this._editButton, label: translate(this.hass, 'kartenBearbeiten'), icon: 'mdi:pencil-outline', variant: 'secondary', onClick: () => card.openDialog(mapEditView(card)) });
         // EDI-06: "Bearbeiten" in the bubble of carpets/furniture — the same edit mode, started with that object.
         const quick = !edit ? [] : (this.model.can('dreame_vacuum.vacuum_set_carpet_area') ? ['carpets', 'detected_carpets'] : [])
             .concat(this.model.can('dreame_vacuum.vacuum_set_furniture') ? ['furnitures'] : []);
-        if (quick.length) this.addObjectAction('map-edit', { layers: quick, label: translate(this.hass, 'blaseBearbeiten'), icon: 'mdi:pencil-outline', run: (found) => card._openDialog(mapEditView(card, undefined, found)) });
+        if (quick.length) this.addObjectAction('map-edit', { layers: quick, label: translate(this.hass, 'blaseBearbeiten'), icon: 'mdi:pencil-outline', run: (found) => card.openDialog(mapEditView(card, undefined, found)) });
         else this.removeObjectAction('map-edit');
         const manage = open && this.model.can('multi_floor_map');
         if (manage && !this._mapsButton) {
-            this._mapsButton = BuschUI.action({ label: translate(this.hass, 'kartenVerwalten'), icon: 'mdi:layers-edit', variant: 'secondary', onClick: () => card._openDialog(mapsView(card)) });
+            this._mapsButton = BuschUI.action({ label: translate(this.hass, 'kartenVerwalten'), icon: 'mdi:layers-edit', variant: 'secondary', onClick: () => card.openDialog(mapsView(card)) });
             this._mapsButton.setAttribute('data-action', 'map-maps');
             this._mapsButton.setAttribute('aria-haspopup', 'dialog');
             this._mapsButton.classList.add('map-tool');
@@ -4362,7 +4362,7 @@ class MapView {
             this._mapsButton.remove();
             this._mapsButton = null;
         }
-        if (this._mapsButton) BuschUI.action({ node: this._mapsButton, label: translate(this.hass, 'kartenVerwalten'), icon: 'mdi:layers-edit', variant: 'secondary', onClick: () => card._openDialog(mapsView(card)) });
+        if (this._mapsButton) BuschUI.action({ node: this._mapsButton, label: translate(this.hass, 'kartenVerwalten'), icon: 'mdi:layers-edit', variant: 'secondary', onClick: () => card.openDialog(mapsView(card)) });
     }
 
     toScreen(p) {
@@ -4738,7 +4738,7 @@ class MapView {
 
     /** MAP-05/09: scheme colours (auto follows HA's dark mode) with override_colors, as --bvc-map-* on the view. */
     _applyScheme() {
-        const opts = this.card._opts || {};
+        const opts = this.card.opts || {};
         const scheme = opts.color_scheme === 'auto' || !opts.color_scheme ? (darkMode(this.hass) || darkBackground(this.el) ? 'dark' : 'light') : opts.color_scheme;
         const own = Object.assign({}, opts.override_colors || {});
         const dark = own.dark || {};
@@ -4764,7 +4764,7 @@ class MapView {
     /** Data mode: the map from its pixel layers, only for a new frame, scheme or display (R20). */
     _paint() {
         if (!this._data) return;
-        const opts = this.card._opts || {};
+        const opts = this.card.opts || {};
         const floorPlan = opts.map_display === 'floor_plan';
         const key = JSON.stringify([this._dataFrame, this._colors, floorPlan]);
         if (key === this._paintKey) return;
@@ -4825,7 +4825,7 @@ class MapView {
     /** Places the map in the stage: fitted, then zoom and pan; one transform on one element (R20). */
     _layout() {
         const { width, height } = this._size;
-        this.el.toggleAttribute('data-still', !!(this.card._opts && this.card._hidden('animations')));
+        this.el.toggleAttribute('data-still', !!(this.card.opts && this.card.isHidden('animations')));
         if (!width || !height) {
             this._view = null;
             this._renderTools();
@@ -5058,7 +5058,7 @@ class MapView {
         });
         const details = BuschUI.action({ label: translate(hass, 'details'), text: translate(hass, 'details'), variant: 'quiet', onClick: () => {
             this._closeBubble();
-            this.card._openDialog(this._obstacleView(id));
+            this.card.openDialog(this._obstacleView(id));
         } });
         details.setAttribute('data-action', 'obstacle-details');
         const close = BuschUI.action({ label: translate(hass, 'schliessen'), icon: 'mdi:close', variant: 'icon-only', onClick: () => this._closeBubble() });
@@ -5092,7 +5092,7 @@ class MapView {
         let shown = null;
         let owner = null;
         const what = () => {
-            const model = this.card._model();
+            const model = this.card.model();
             const cam = this.hass.states[this._cameraId];
             const item = cam && cam.attributes.obstacles && cam.attributes.obstacles[id];
             return JSON.stringify([item || null, taskActive(model, model.state ? model.state.state : 'unavailable'), model.can('dreame_vacuum.vacuum_set_obstacle_ignore')]);
@@ -5106,7 +5106,7 @@ class MapView {
             render: (body, hass, dialog) => {
                 owner = dialog;
                 shown = what();
-                const model = this.card._model();
+                const model = this.card.model();
                 const cam = hass.states[this._cameraId];
                 const item = cam && cam.attributes.obstacles && cam.attributes.obstacles[id];
                 const notes = document.createElement('div');
@@ -5192,7 +5192,7 @@ class MapView {
             clearTimeout(pending.timer);
             this._ignorePending = null;
             if (text) this._ignoreNote = { id, text };
-            if (this.card._dialog) this.card._dialog.render();
+            if (this.card.dialog) this.card.dialog.render();
         };
         pending.timer = setTimeout(() => {
             const cam = this.hass.states[this._cameraId];
@@ -5200,9 +5200,9 @@ class MapView {
             done(now && obstacleIgnored(now) === wanted ? '' : translate(this.hass, 'nichtUebernommen', { name }));
         }, OPTIMISTIC_HOLD_MS * 2);
         this._ignorePending = pending;
-        callDevice(this.hass, 'dreame_vacuum', 'vacuum_set_obstacle_ignore', { entity_id: this.card._opts.entity, x: item.x, y: item.y, obstacle_ignored: wanted })
+        callDevice(this.hass, 'dreame_vacuum', 'vacuum_set_obstacle_ignore', { entity_id: this.card.opts.entity, x: item.x, y: item.y, obstacle_ignored: wanted })
             .catch((error) => done(translate(this.hass, 'befehlFehler', { name, grund: errorText(error) })));
-        if (this.card._dialog) this.card._dialog.render();
+        if (this.card.dialog) this.card.dialog.render();
     }
 
     // ── Floors (MAP-07) ───────────────────────────────────────────────────
@@ -5225,9 +5225,9 @@ class MapView {
     selectMap(mapId) {
         const entry = this._maps().find((m) => String(m.id) === String(mapId));
         // M5: one change at a time, until the camera shows the target (changeMap).
-        if (!entry || this._busy() || entry.id === this._activeMapId() || this.card._settingWrites.has('card:select_map')) return false;
+        if (!entry || this._busy() || entry.id === this._activeMapId() || this.card.settingWrites.has('card:select_map')) return false;
         const name = entry.custom_name || entry.name || String(entry.id);
-        this.card._confirmMapChange(name, () => changeMap(this.card, entry, () => callDevice(this.hass, 'dreame_vacuum', 'vacuum_select_map', { entity_id: this.card._opts.entity, map_id: entry.id })));
+        this.card.confirmMapChange(name, () => changeMap(this.card, entry, () => callDevice(this.hass, 'dreame_vacuum', 'vacuum_select_map', { entity_id: this.card.opts.entity, map_id: entry.id })));
         return true;
     }
 
@@ -5242,12 +5242,12 @@ class MapView {
             id: 'floors',
             kind: 'menu',
             // Other cameras are watched only while this dialog is open.
-            watch: () => [this.card._opts.entity, ...this._maps().map((m) => this._floorCamera(m.index)).filter(Boolean)],
+            watch: () => [this.card.opts.entity, ...this._maps().map((m) => this._floorCamera(m.index)).filter(Boolean)],
             render: (body, hass, dialog) => {
                 const list = document.createElement('div');
                 list.className = 'menu floors';
                 const active = this._activeMapId();
-                const changing = this.card._settingWrites.get('card:select_map'); // M5
+                const changing = this.card.settingWrites.get('card:select_map'); // M5
                 for (const entry of this._maps()) {
                     const name = entry.custom_name || entry.name || String(entry.id);
                     const current = entry.id === active;
@@ -5296,7 +5296,7 @@ class MapView {
         if (!p) return null;
         const g = this.svgNode('g', { 'data-object': id, 'data-symbol': kind });
         g.style.transform = 'translate(' + p.x + 'px, ' + p.y + 'px) scale(var(--bvc-map-symbol))' + (upright ? ' rotate(var(--bvc-map-turn))' : ' rotate(' + angle + 'deg)');
-        const icon = this.card._opts && this.card._opts.icon_set === 'material' && MATERIAL_ICONS[kind];
+        const icon = this.card.opts && this.card.opts.icon_set === 'material' && MATERIAL_ICONS[kind];
         if (icon) {
             // mdi icons need HTML: a foreignObject of 24 screen px around the point.
             const box = this.svgNode('foreignObject', { x: -12, y: -12, width: 24, height: 24, class: 'material' });
@@ -5388,7 +5388,7 @@ class MapView {
 
     /** Card options merged with `map_config.map_<index>`; hidden objects add up. */
     config(index) {
-        const opts = this.card._opts || {};
+        const opts = this.card.opts || {};
         const own = (opts.map_config && opts.map_config['map_' + index]) || {};
         return Object.assign({}, MAP_CONFIG_DEFAULTS, own, {
             hidden_objects: [...new Set([...(opts.hidden_objects || []), ...(own.hidden_objects || [])])]
@@ -5397,7 +5397,7 @@ class MapView {
 
     /** Whether an object kind shows on the current map (`hidden_objects`, card and per map). */
     visible(name) {
-        if (this.card._mapEdit && EDIT_SHOWN_OBJECTS.has(name)) return true;
+        if (this.card.mapEdit && EDIT_SHOWN_OBJECTS.has(name)) return true;
         return !this.config(this._attrs().map_index).hidden_objects.includes(name);
     }
 
@@ -5456,14 +5456,14 @@ function groupShown(model, name) {
 
 /** The integration's entity names (R26) arrive once per card; the dialog redraws when they are there. */
 function loadSettingTexts(card) {
-    const hass = card._hass;
-    if (card._settingTexts || !hass || typeof hass.loadBackendTranslation !== 'function') return;
+    const hass = card.hass;
+    if (card.settingTexts || !hass || typeof hass.loadBackendTranslation !== 'function') return;
     // M6: a failed load is not kept; the next view tries again.
     const loading = Promise.resolve(hass.loadBackendTranslation('entity', 'dreame_vacuum')).then(() => rerender(card), () => {
-        if (card._settingTexts === loading) card._settingTexts = null;
+        if (card.settingTexts === loading) card.settingTexts = null;
         return false;
     });
-    card._settingTexts = loading;
+    card.settingTexts = loading;
 }
 
 /**
@@ -5472,9 +5472,9 @@ function loadSettingTexts(card) {
  * consumables, device info), the map camera only for views about rooms.
  */
 const settingsWatch = (card, { sensors = false, camera = false } = {}) => {
-    const model = card._model();
+    const model = card.model();
     const device = Object.values(model.related.device).filter((id) => sensors || !/^(sensor|binary_sensor|camera)\./.test(id));
-    return [card._opts.entity, ...device, ...(camera ? model.related.maps.map.slice(0, 1) : [])];
+    return [card.opts.entity, ...device, ...(camera ? model.related.maps.map.slice(0, 1) : [])];
 };
 
 /** Menu entries filled by a module; the others keep core's placeholder until theirs arrives. */
@@ -5507,12 +5507,12 @@ function settingsView(card) {
     loadSettingTexts(card);
     let query = ''; // survives redraws while the view is open; a new visit starts empty (R21)
     return {
-        title: translate(card._hass, 'entrySettings'),
+        title: translate(card.hass, 'entrySettings'),
         id: 'settings',
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const search = document.createElement('input');
             search.className = 'settings-search setting-input';
             search.setAttribute('type', 'search');
@@ -5629,12 +5629,12 @@ function groupView(card, name) {
     loadSettingTexts(card);
     const group = SETTING_GROUPS.find((g) => g.name === name);
     return {
-        title: translate(card._hass, 'gruppe_' + name),
+        title: translate(card.hass, 'gruppe_' + name),
         id: 'settings-group',
         kind: 'editor',
         watch: () => settingsWatch(card, { sensors: ['consumables', 'info'].includes(name) }),
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             if (group.module) {
                 const note = document.createElement('p');
                 note.className = 'placeholder';
@@ -5732,9 +5732,9 @@ const dndJson = (list) => JSON.stringify(list.map(dndWire).sort((a, b) => a.id -
 function writeDnd(card, model, list) {
     const value = dndJson(list);
     return trackWrite(card, 'dnd_task', {
-        label: translate(card._hass, 'gruppe_dnd'),
+        label: translate(card.hass, 'gruppe_dnd'),
         check: (m) => dndJson(dndTasks(m)) === value,
-        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_property', { entity_id: card._opts.entity, key: 'dnd_task', value })
+        call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_property', { entity_id: card.opts.entity, key: 'dnd_task', value })
     });
 }
 
@@ -5755,11 +5755,11 @@ function writeStatus(card, hass, key, className) {
     const line = document.createElement('p');
     line.className = 'form-note ' + className;
     line.setAttribute('role', 'status');
-    const note = card._settingNotes.get(key);
-    if (card._settingWrites.has(key)) line.textContent = translate(hass, 'speichert');
+    const note = card.settingNotes.get(key);
+    if (card.settingWrites.has(key)) line.textContent = translate(hass, 'speichert');
     else if (note) {
         line.setAttribute('data-kind', 'error');
-        line.textContent = note + (card._drafts.has(key + ':failed') ? ' ' + translate(hass, 'eingabenBleiben') : '');
+        line.textContent = note + (card.drafts.has(key + ':failed') ? ' ' + translate(hass, 'eingabenBleiben') : '');
     }
     return line;
 }
@@ -5768,14 +5768,14 @@ function writeStatus(card, hass, key, className) {
 function dndPeriods(card, model, body, hass, dialog) {
     if (!model.can('dnd_task')) return;
     const tasks = dndTasks(model).slice().sort((a, b) => String(a.start).localeCompare(String(b.start)));
-    const busy = card._settingWrites.has('dnd_task');
-    const sent = card._drafts.get('dnd_task:failed');
+    const busy = card.settingWrites.has('dnd_task');
+    const sent = card.drafts.get('dnd_task:failed');
     if (sent && !busy) {
         // Confirmed: the input is done. Failed: it goes back into its form for the retry (R12).
-        if (!card._settingNotes.has('dnd_task')) card._drafts.delete('dnd_task:failed');
+        if (!card.settingNotes.has('dnd_task')) card.drafts.delete('dnd_task:failed');
         else if (!sent.restored) {
             sent.restored = true;
-            card._drafts.set(sent.key, sent.draft);
+            card.drafts.set(sent.key, sent.draft);
         }
     }
     body.appendChild(writeStatus(card, hass, 'dnd_task', 'dnd-status'));
@@ -5857,13 +5857,13 @@ function fieldGroup(id, label, control, error) {
  * the form is left (R04/R10) and is marked unsaved; „Verwerfen“ restores it.
  */
 function dndForm(card, id) {
-    const hass0 = card._hass;
+    const hass0 = card.hass;
     const draftKey = 'dnd:' + (id === null ? 'new' : id);
-    const model0 = card._model();
+    const model0 = card.model();
     const original = id === null ? null : dndTasks(model0).find((t) => t.id === id);
     const initial = () => (original ? { start: original.start, end: original.end, enabled: !!original.enabled }
         : { start: '22:00', end: '08:00', enabled: true });
-    if (!card._drafts.has(draftKey)) card._drafts.set(draftKey, initial());
+    if (!card.drafts.has(draftKey)) card.drafts.set(draftKey, initial());
     let checked = false;
     return {
         title: translate(hass0, id === null ? 'zeitraumNeu' : 'zeitraumBearbeiten'),
@@ -5871,8 +5871,8 @@ function dndForm(card, id) {
         kind: 'editor',
         watch: () => [],
         render: (body, hass, dialog) => {
-            const draft = card._drafts.get(draftKey) || initial();
-            card._drafts.set(draftKey, draft);
+            const draft = card.drafts.get(draftKey) || initial();
+            card.drafts.set(draftKey, draft);
             const dirty = JSON.stringify(draft) !== JSON.stringify(initial());
             if (dirty) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
             const errors = checked ? dndErrors(draft) : {};
@@ -5893,20 +5893,20 @@ function dndForm(card, id) {
             }
             const actions = document.createElement('div');
             actions.className = 'actions';
-            if (original && dndMany(card._model())) {
+            if (original && dndMany(card.model())) {
                 const remove = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'destructive', onClick: () => dialog.show(dndDelete(card, original)) });
                 remove.setAttribute('data-action', 'delete');
                 actions.appendChild(remove);
             }
             if (dirty) {
-                const discard = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), onClick: () => { card._drafts.set(draftKey, initial()); checked = false; redraw(); } });
+                const discard = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), onClick: () => { card.drafts.set(draftKey, initial()); checked = false; redraw(); } });
                 discard.setAttribute('data-action', 'discard');
                 actions.appendChild(discard);
             }
-            const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', disabled: card._settingWrites.has('dnd_task'), onClick: () => {
+            const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', disabled: card.settingWrites.has('dnd_task'), onClick: () => {
                 checked = true;
                 if (Object.keys(dndErrors(draft)).length) return redraw();
-                const model = card._model();
+                const model = card.model();
                 const tasks = dndTasks(model);
                 const nextId = tasks.reduce((max, t) => Math.max(max, Number(t.id)), 0) + 1;
                 // New periods (only where the device has several) repeat every day: wk 127 as set_dnd_tasks.
@@ -5914,8 +5914,8 @@ function dndForm(card, id) {
                 const list = original ? tasks.map((t) => (t.id === original.id ? Object.assign({}, t, entry) : t)) : tasks.concat(entry);
                 if (!writeDnd(card, model, list)) return undefined;
                 // Kept until the device confirms: a failed write leaves the input to retry (R12).
-                card._drafts.delete(draftKey);
-                card._drafts.set('dnd_task:failed', { key: draftKey, draft });
+                card.drafts.delete(draftKey);
+                card.drafts.set('dnd_task:failed', { key: draftKey, draft });
                 dialog.back(1);
                 return undefined;
             } });
@@ -5929,7 +5929,7 @@ function dndForm(card, id) {
 /** R13: deleting a period names it; the integration deletes it by id (device.py#L4433). */
 function dndDelete(card, task) {
     return {
-        title: translate(card._hass, 'zeitraumLoeschenTitel'),
+        title: translate(card.hass, 'zeitraumLoeschenTitel'),
         id: 'dnd-delete',
         kind: 'confirm',
         watch: () => [],
@@ -5941,7 +5941,7 @@ function dndDelete(card, task) {
             cancel.setAttribute('data-action', 'cancel');
             const go = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'destructive', onClick: () => {
                 callAction(card, 'delete_dnd_task', String(task.id), { track: 'dnd_task', label: translate(hass, 'gruppe_dnd') });
-                card._drafts.delete('dnd:' + task.id);
+                card.drafts.delete('dnd:' + task.id);
                 dialog.back(2);
             } });
             go.setAttribute('data-action', 'confirm');
@@ -5970,13 +5970,13 @@ function consumableParts(card, model, body, hass, dialog) {
         const time = statText(hass, model, 'sensor.' + name + '_time_left', name + '_time_left', 'h');
         const status = document.createElement('span');
         status.className = 'setting-status';
-        const note = card._settingNotes.get('reset:' + name);
-        status.textContent = card._settingWrites.has('reset:' + name) ? translate(hass, 'speichert') : note || translate(hass, 'rest', { prozent: percent, zeit: time || '–' });
+        const note = card.settingNotes.get('reset:' + name);
+        status.textContent = card.settingWrites.has('reset:' + name) ? translate(hass, 'speichert') : note || translate(hass, 'rest', { prozent: percent, zeit: time || '–' });
         row.setAttribute('data-state', note ? 'error' : left < CONSUMABLE_LOW ? 'low' : 'ok');
         text.append(caption, status);
         const full = left >= 100;
         // At 100 % the integration refuses the reset (ACTION_AVAILABILITY, types.py#L2308).
-        const reset = BuschUI.action({ label: translate(hass, 'zuruecksetzenVon', { name: label }), text: translate(hass, 'zuruecksetzen'), disabled: full || card._settingWrites.has('reset:' + name), onClick: () => dialog.show(resetConfirm(card, name, label, percent)) });
+        const reset = BuschUI.action({ label: translate(hass, 'zuruecksetzenVon', { name: label }), text: translate(hass, 'zuruecksetzen'), disabled: full || card.settingWrites.has('reset:' + name), onClick: () => dialog.show(resetConfirm(card, name, label, percent)) });
         reset.setAttribute('data-action', 'reset');
         if (full) reset.title = translate(hass, 'schonVoll');
         row.appendChild(text);
@@ -6003,7 +6003,7 @@ const SUM_UNITS = { total_cleaned_area: 'm²', total_cleaning_time: 'min' };
 
 function resetConfirm(card, name, label, percent) {
     return {
-        title: translate(card._hass, 'zuruecksetzenTitel', { name: label }),
+        title: translate(card.hass, 'zuruecksetzenTitel', { name: label }),
         id: 'consumable-reset',
         kind: 'confirm',
         watch: () => [],
@@ -6016,7 +6016,7 @@ function resetConfirm(card, name, label, percent) {
             const go = BuschUI.action({ label: translate(hass, 'zuruecksetzen'), text: translate(hass, 'zuruecksetzen'), variant: 'destructive', onClick: () => {
                 const consumable = CONSUMABLES[name];
                 if (consumable === null) callAction(card, 'reset_track_cleaning', undefined, { track: 'reset:' + name, label });
-                else trackWrite(card, 'reset:' + name, { label, call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_reset_consumable', { entity_id: card._opts.entity, consumable }) });
+                else trackWrite(card, 'reset:' + name, { label, call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_reset_consumable', { entity_id: card.opts.entity, consumable }) });
                 dialog.goBack();
             } });
             go.setAttribute('data-action', 'confirm');
@@ -6043,7 +6043,7 @@ function deviceName(hass, entityId) {
  * SSID and signal, never an address.
  */
 function deviceInfo(card, model, body, hass) {
-    const own = hass.entities && hass.entities[card._opts.entity];
+    const own = hass.entities && hass.entities[card.opts.entity];
     const device = (own && own.device_id && hass.devices && hass.devices[own.device_id]) || {};
     const rows = [];
     const add = (name, label, value) => {
@@ -6100,9 +6100,9 @@ const scheduleValue = (list) => list.slice().sort((a, b) => Number(a.id) - Numbe
 function writeSchedule(card, list) {
     const value = scheduleValue(list);
     return trackWrite(card, 'schedule', {
-        label: translate(card._hass, 'gruppe_schedule'),
+        label: translate(card.hass, 'gruppe_schedule'),
         check: (m) => scheduleValue(scheduleList(m)) === value,
-        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_property', { entity_id: card._opts.entity, key: 'schedule', value })
+        call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_property', { entity_id: card.opts.entity, key: 'schedule', value })
     });
 }
 
@@ -6118,7 +6118,7 @@ const scheduleCleaning = (model, hass, t) => translate(hass, 'planReinigung', { 
 
 function scheduleEntries(card, model, body, hass, dialog) {
     const list = scheduleList(model).slice().sort((a, b) => String(a.time).localeCompare(String(b.time)) || b.id - a.id);
-    const busy = card._settingWrites.has('schedule');
+    const busy = card.settingWrites.has('schedule');
     body.appendChild(noteLine(translate(hass, 'planHinweis'), 'hint')).classList.add('schedule-hint');
     body.appendChild(writeStatus(card, hass, 'schedule', 'schedule-status'));
     const rows = document.createElement('div');
@@ -6154,20 +6154,20 @@ function scheduleEntries(card, model, body, hass, dialog) {
 
 function scheduleForm(card, id) {
     const draftKey = 'schedule:' + (id === null ? 'new' : id);
-    const original = id === null ? null : scheduleList(card._model()).find((t) => t.id === id);
-    const template = original || scheduleList(card._model())[0];
+    const original = id === null ? null : scheduleList(card.model()).find((t) => t.id === id);
+    const template = original || scheduleList(card.model())[0];
     const initial = () => ({ time: original ? original.time : '09:00', mask: original && !original.once ? maskOfRepeats(original.repeats) : 0, enabled: original ? !!original.enabled : true });
-    if (!card._drafts.has(draftKey)) card._drafts.set(draftKey, initial());
+    if (!card.drafts.has(draftKey)) card.drafts.set(draftKey, initial());
     let checked = false;
     return {
-        title: translate(card._hass, id === null ? 'planNeu' : 'planBearbeiten'),
+        title: translate(card.hass, id === null ? 'planNeu' : 'planBearbeiten'),
         id: 'schedule-form',
         kind: 'editor',
         watch: () => [],
         render: (body, hass, dialog) => {
-            const model = card._model();
-            const draft = card._drafts.get(draftKey) || initial();
-            card._drafts.set(draftKey, draft);
+            const model = card.model();
+            const draft = card.drafts.get(draftKey) || initial();
+            card.drafts.set(draftKey, draft);
             const dirty = JSON.stringify(draft) !== JSON.stringify(initial());
             if (dirty) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
             const redraw = () => dialog.render();
@@ -6194,21 +6194,21 @@ function scheduleForm(card, id) {
                 actions.appendChild(remove);
             }
             if (dirty) {
-                const discard = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), onClick: () => { card._drafts.set(draftKey, initial()); checked = false; redraw(); } });
+                const discard = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), onClick: () => { card.drafts.set(draftKey, initial()); checked = false; redraw(); } });
                 discard.setAttribute('data-action', 'discard');
                 actions.appendChild(discard);
             }
-            const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', disabled: !template || card._settingWrites.has('schedule'), onClick: () => {
+            const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, 'speichern'), variant: 'primary', disabled: !template || card.settingWrites.has('schedule'), onClick: () => {
                 checked = true;
                 if (!TIME_PATTERN.test(draft.time)) return redraw();
-                const list = scheduleList(card._model());
+                const list = scheduleList(card.model());
                 const nextId = list.reduce((max, t) => Math.max(max, Number(t.id)), 0) + 1;
                 const timing = { time: draft.time, repeats: repeatsOfMask(draft.mask), once: !draft.mask };
                 const entry = original ? Object.assign({}, original, timing)
                     : Object.assign({ id: nextId, enabled: true, invalid: false, map_id: template.map_id, suction_level: template.suction_level, water_volume: template.water_volume, options: template.options }, timing);
                 const next = original ? list.map((t) => (t.id === original.id ? entry : t)) : list.concat(entry);
                 if (!writeSchedule(card, next)) return undefined;
-                card._drafts.delete(draftKey);
+                card.drafts.delete(draftKey);
                 dialog.back(1);
                 return undefined;
             } });
@@ -6222,7 +6222,7 @@ function scheduleForm(card, id) {
 /** R13. The integration deletes one entry by id — the last one too (delete_scheduled_task, device.py#L4394). */
 function scheduleDelete(card, task) {
     return {
-        title: translate(card._hass, 'planLoeschenTitel'),
+        title: translate(card.hass, 'planLoeschenTitel'),
         id: 'schedule-delete',
         kind: 'confirm',
         watch: () => [],
@@ -6234,7 +6234,7 @@ function scheduleDelete(card, task) {
             cancel.setAttribute('data-action', 'cancel');
             const go = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'destructive', onClick: () => {
                 callAction(card, 'delete_scheduled_task', String(task.id), { track: 'schedule', label: translate(hass, 'gruppe_schedule') });
-                card._drafts.delete('schedule:' + task.id);
+                card.drafts.delete('schedule:' + task.id);
                 dialog.back(2);
             } });
             go.setAttribute('data-action', 'confirm');
@@ -6266,7 +6266,7 @@ const GROUP_EXTRAS = {
         // Letter IDs like "DE" become None in set_property_value (device.py#L2916): shown, changed only by installing.
         if (model.attr('voice_packet_id') !== undefined) body.appendChild(infoRow(translate(hass, 'sprachpaket'), String(model.attr('voice_packet_id')), 'voice_packet_id'));
         if (model.can('dreame_vacuum.vacuum_install_voice_pack')) {
-            const done = card._settingDone.get('voice_pack');
+            const done = card.settingDone.get('voice_pack');
             if (done) body.appendChild(noteLine(done));
             body.appendChild(viewLink(translate(hass, 'sprachpaketTitel'), 'voice-pack', 'mdi:download-outline', () => dialog.show(voicePackView(card))));
         }
@@ -6359,17 +6359,17 @@ function voicePackErrors(draft, hass) {
  * The draft lives on the card: leaving and coming back keeps it (R10).
  */
 function voicePackView(card) {
-    const draft = card._drafts.get('voice') || { lang_id: '', url: '', md5: '', size: '' };
-    card._drafts.set('voice', draft);
+    const draft = card.drafts.get('voice') || { lang_id: '', url: '', md5: '', size: '' };
+    card.drafts.set('voice', draft);
     let checked = false;
     return {
-        title: translate(card._hass, 'sprachpaketTitel'),
+        title: translate(card.hass, 'sprachpaketTitel'),
         id: 'voice-pack',
         kind: 'editor',
         watch: () => [],
         render: (body, hass, dialog) => {
             body.appendChild(noteLine(translate(hass, 'sprachpaketHinweis')));
-            const errors = checked ? voicePackErrors(draft, card._hass) : {};
+            const errors = checked ? voicePackErrors(draft, card.hass) : {};
             const fields = {};
             for (const name of ['lang_id', 'url', 'md5', 'size']) {
                 const input = document.createElement('input');
@@ -6381,7 +6381,7 @@ function voicePackView(card) {
                 const field = formField(name, translate(hass, 'feld_' + name), input, errors[name] ? translate(hass, errors[name]) : '');
                 input.addEventListener('input', () => {
                     draft[name] = input.value;
-                    if (checked) field.update(voicePackErrors(draft, card._hass)[name] ? translate(hass, voicePackErrors(draft, card._hass)[name]) : '');
+                    if (checked) field.update(voicePackErrors(draft, card.hass)[name] ? translate(hass, voicePackErrors(draft, card.hass)[name]) : '');
                 });
                 fields[name] = field;
                 body.appendChild(field.wrap);
@@ -6390,7 +6390,7 @@ function voicePackView(card) {
             actions.className = 'actions';
             const next = BuschUI.action({ label: translate(hass, 'weiter'), text: translate(hass, 'weiter'), variant: 'primary', onClick: () => {
                 checked = true;
-                if (Object.keys(voicePackErrors(draft, card._hass)).length) dialog.render();
+                if (Object.keys(voicePackErrors(draft, card.hass)).length) dialog.render();
                 else dialog.show(voicePackConfirm(card, draft));
             } });
             next.setAttribute('data-action', 'submit');
@@ -6401,15 +6401,15 @@ function voicePackView(card) {
 }
 
 function voicePackConfirm(card, draft) {
-    const data = { entity_id: card._opts.entity, lang_id: draft.lang_id.trim(), url: ownAddress(card._hass, draft.url) || draft.url.trim(), md5: draft.md5.trim().toLowerCase(), size: Number(draft.size.trim()) };
+    const data = { entity_id: card.opts.entity, lang_id: draft.lang_id.trim(), url: ownAddress(card.hass, draft.url) || draft.url.trim(), md5: draft.md5.trim().toLowerCase(), size: Number(draft.size.trim()) };
     return {
-        title: translate(card._hass, 'sprachpaketFrageTitel'),
+        title: translate(card.hass, 'sprachpaketFrageTitel'),
         id: 'voice-pack-confirm',
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
-            const busy = card._settingWrites.has('voice_pack');
-            const failed = card._settingNotes.get('voice_pack');
+            const busy = card.settingWrites.has('voice_pack');
+            const failed = card.settingNotes.get('voice_pack');
             body.appendChild(noteLine(translate(hass, 'sprachpaketFrage', { id: data.lang_id, url: data.url, groesse: data.size })));
             body.appendChild(hostLine(hass, data.url));
             if (failed) body.appendChild(noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error'));
@@ -6420,10 +6420,10 @@ function voicePackConfirm(card, draft) {
             const go = BuschUI.action({ label: translate(hass, 'installieren'), text: translate(hass, busy ? 'speichert' : 'installieren'), variant: 'primary', disabled: busy, onClick: () => {
                 trackWrite(card, 'voice_pack', {
                     label: translate(hass, 'sprachpaket'),
-                    call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_install_voice_pack', data),
+                    call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_install_voice_pack', data),
                     done: () => {
-                        card._drafts.delete('voice');
-                        card._settingDone.set('voice_pack', translate(hass, 'sprachpaketGesendet', { id: data.lang_id }));
+                        card.drafts.delete('voice');
+                        card.settingDone.set('voice_pack', translate(hass, 'sprachpaketGesendet', { id: data.lang_id }));
                         dialog.close();
                     }
                 });
@@ -6458,7 +6458,7 @@ const CLEAN_BASIC = ['cleaning_mode', 'suction_level', 'mop_pad_humidity', 'wetn
  * panel and the settings (R08).
  */
 function repeatsRow(card, { hint = false } = {}) {
-    const hass = card._hass;
+    const hass = card.hass;
     const row = document.createElement('div');
     row.className = 'task-tools task-repeats';
     row.setAttribute('role', 'group');
@@ -6467,15 +6467,15 @@ function repeatsRow(card, { hint = false } = {}) {
     value.className = 'task-count';
     value.setAttribute('role', 'status');
     value.setAttribute('data-note', 'repeats');
-    value.textContent = translate(hass, 'wiederholungenWert', { n: card._repeats });
+    value.textContent = translate(hass, 'wiederholungenWert', { n: card.repeats });
     const step = (d) => {
-        card._repeats = Math.min(3, Math.max(1, card._repeats + d));
-        card._update();
+        card.repeats = Math.min(3, Math.max(1, card.repeats + d));
+        card.update();
         rerender(card);
     };
-    const minus = BuschUI.action({ label: translate(hass, 'wenigerWiederholungen'), icon: 'mdi:minus', variant: 'secondary', disabled: card._repeats <= 1, onClick: () => step(-1) });
+    const minus = BuschUI.action({ label: translate(hass, 'wenigerWiederholungen'), icon: 'mdi:minus', variant: 'secondary', disabled: card.repeats <= 1, onClick: () => step(-1) });
     minus.setAttribute('data-action', 'repeats-minus');
-    const plus = BuschUI.action({ label: translate(hass, 'mehrWiederholungen'), icon: 'mdi:plus', variant: 'secondary', disabled: card._repeats >= 3, onClick: () => step(1) });
+    const plus = BuschUI.action({ label: translate(hass, 'mehrWiederholungen'), icon: 'mdi:plus', variant: 'secondary', disabled: card.repeats >= 3, onClick: () => step(1) });
     plus.setAttribute('data-action', 'repeats-plus');
     row.append(value, minus, plus);
     if (hint) {
@@ -6506,12 +6506,12 @@ function viewSection(hass, name, nodes) {
 function cleanSettingsView(card) {
     loadSettingTexts(card);
     return {
-        title: translate(card._hass, 'reinigungseinstellungen'),
+        title: translate(card.hass, 'reinigungseinstellungen'),
         id: 'clean-settings',
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const rows = (keys) => keys.map((key) => settingRow(card, model, key)).filter(Boolean);
             const sections = [
                 ['cleangenius', model.can('cleangenius') ? rows(['cleangenius', 'cleangenius_mode']) : []],
@@ -6648,10 +6648,10 @@ function roomLine(hass, model, room) {
 
 /** One room write until the camera shows it (R17), else back with a note (pattern writeSetting). */
 function writeRoom(card, id, change) {
-    const model = card._model();
+    const model = card.model();
     const data = roomPayload(model, roomsOf(model)[id], change);
     if (!data) {
-        card._settingNotes.set('room:' + id, translate(card._hass, 'raumUnvollstaendig'));
+        card.settingNotes.set('room:' + id, translate(card.hass, 'raumUnvollstaendig'));
         rerender(card);
         return false;
     }
@@ -6659,7 +6659,7 @@ function writeRoom(card, id, change) {
         want: change,
         label: roomName(roomsOf(model)[id], id),
         check: (m) => Object.keys(change).every((key) => roomCode(key, (roomsOf(m)[id] || {})[key]) === roomCode(key, change[key])),
-        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, data))
+        call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card.opts.entity }, data))
     });
 }
 
@@ -6667,9 +6667,9 @@ function writeRoom(card, id, change) {
 function writeMopType(card, id, type) {
     return trackWrite(card, 'mop:' + id, {
         want: type,
-        label: roomName(roomsOf(card._model())[id], id),
+        label: roomName(roomsOf(card.model())[id], id),
         check: (m) => String((roomsOf(m)[id] || {}).mop_type || '').toUpperCase() === type,
-        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_mop_type', { entity_id: card._opts.entity, mop_type: { [id]: type } })
+        call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_mop_type', { entity_id: card.opts.entity, mop_type: { [id]: type } })
     });
 }
 
@@ -6725,12 +6725,12 @@ function roomFieldRow(hass, { key, label, value, options, number, state, words, 
 /** Room list (SET-04): rooms in cleaning order with their short values; a tap opens the room. */
 function roomsView(card) {
     return {
-        title: translate(card._hass, 'raeumeEinstellen'),
+        title: translate(card.hass, 'raeumeEinstellen'),
         id: 'rooms',
         kind: 'editor',
         watch: () => settingsWatch(card, { camera: true }),
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const rooms = roomsOf(model);
             const ids = roomsInOrder(model);
             if (!ids.length) {
@@ -6767,7 +6767,7 @@ function roomsView(card) {
 
 /** One room's values, each field with capability (third level, R25). */
 function roomView(card, id) {
-    const model0 = card._model();
+    const model0 = card.model();
     let field = null; // the field of the last change: its row shows the outcome (R17)
     return {
         title: roomName(roomsOf(model0)[id], id),
@@ -6775,19 +6775,19 @@ function roomView(card, id) {
         kind: 'editor',
         watch: () => settingsWatch(card, { camera: true }),
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const room = roomsOf(model)[id];
             if (!room) {
                 body.appendChild(noteLine(translate(hass, 'keineRaeume')));
                 return;
             }
             const track = 'room:' + id;
-            const pending = card._settingWrites.get(track);
+            const pending = card.settingWrites.get(track);
             if (pending && pending.check(model)) settleWrite(card, track);
-            const busy = card._settingWrites.get(track);
+            const busy = card.settingWrites.get(track);
             const lock = roomLock(model);
             if (lock) body.appendChild(noteLine(translate(hass, lock)));
-            const note = card._settingNotes.get(track);
+            const note = card.settingNotes.get(track);
             const list = document.createElement('div');
             list.className = 'settings-list';
             for (const key of roomFields(model)) {
@@ -6808,7 +6808,7 @@ function roomView(card, id) {
                         const n = Number(value);
                         field = key;
                         if (!roomValid(model, key, n)) {
-                            card._settingNotes.set(track, translate(hass, 'bereich', { min: 1, max: 32 }));
+                            card.settingNotes.set(track, translate(hass, 'bereich', { min: 1, max: 32 }));
                             return rerender(card);
                         }
                         return writeRoom(card, id, { [key]: n });
@@ -6818,10 +6818,10 @@ function roomView(card, id) {
             // SET-06: mop type A/B/C, its own service (device.py#L7655).
             if (model.can('auto_change_mop')) {
                 const mopTrack = 'mop:' + id;
-                const mopPending = card._settingWrites.get(mopTrack);
+                const mopPending = card.settingWrites.get(mopTrack);
                 if (mopPending && mopPending.check(model)) settleWrite(card, mopTrack);
-                const mopBusy = card._settingWrites.get(mopTrack);
-                const mopNote = card._settingNotes.get(mopTrack);
+                const mopBusy = card.settingWrites.get(mopTrack);
+                const mopNote = card.settingNotes.get(mopTrack);
                 const value = mopBusy ? mopBusy.want : room.mop_type ? String(room.mop_type).toUpperCase() : undefined;
                 list.appendChild(roomFieldRow(hass, {
                     key: 'mop_type', label: entityLabel(hass, 'select', 'mop_type'), value,
@@ -6853,12 +6853,12 @@ function roomView(card, id) {
 function applyAllView(card, sourceId) {
     let run = null;
     return {
-        title: translate(card._hass, 'aufAlleTitel') + '?',
+        title: translate(card.hass, 'aufAlleTitel') + '?',
         id: 'rooms-apply-all',
         kind: 'confirm',
         watch: () => [],
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const rooms = roomsOf(model);
             const targets = roomsInOrder(model).filter((id) => id !== String(sourceId));
             const names = (ids) => ids.map((id) => roomName(rooms[id], id)).join(', ') || '–';
@@ -6881,7 +6881,7 @@ function applyAllView(card, sourceId) {
                         if (!data) { run.error = translate(hass, 'raumUnvollstaendig'); break; }
                         dialog.render();
                         try {
-                            await callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, data));
+                            await callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card.opts.entity }, data));
                             run.done.push(id);
                         } catch (error) {
                             run.error = errorText(error);
@@ -6935,20 +6935,20 @@ function sequenceView(card) {
     let undo = null; // „Reihenfolge aus“: the draft before
     let spoken = '';
     return {
-        title: translate(card._hass, 'entrySequence'),
+        title: translate(card.hass, 'entrySequence'),
         id: 'sequence',
         kind: 'editor',
         watch: () => settingsWatch(card, { camera: true }),
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const rooms = roomsOf(model);
             const base = sequenceModel(model, rooms);
-            const pending = card._settingWrites.get('sequence');
+            const pending = card.settingWrites.get('sequence');
             if (pending && pending.check(model)) settleWrite(card, 'sequence');
-            const busy = card._settingWrites.has('sequence');
-            let draft = card._drafts.get('sequence');
+            const busy = card.settingWrites.has('sequence');
+            let draft = card.drafts.get('sequence');
             if (draft && JSON.stringify(draft.ordered) === JSON.stringify(base.ordered) && !undo) {
-                card._drafts.delete('sequence');
+                card.drafts.delete('sequence');
                 draft = null;
             }
             const current = draft || base;
@@ -6961,19 +6961,19 @@ function sequenceView(card) {
                 if (node) node.focus();
             };
             const change = (ordered, unordered = current.unordered, focusId) => {
-                card._drafts.set('sequence', { strict: current.strict, ordered: ordered.filter((id) => rooms[id]), unordered });
+                card.drafts.set('sequence', { strict: current.strict, ordered: ordered.filter((id) => rooms[id]), unordered });
                 redraw(focusId);
             };
             const say = (key, id, to) => { spoken = translate(hass, key, { name: name(id), n: to + 1, gesamt: current.ordered.length }); };
 
             if (lock) body.appendChild(noteLine(translate(hass, lock)));
             if (dirty) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
-            const note = card._settingNotes.get('sequence');
+            const note = card.settingNotes.get('sequence');
             if (note) body.appendChild(noteLine(note, 'error'));
             if (undo) {
                 const line = noteLine(translate(hass, 'reihenfolgeAusFolge', { raeume: undo.ordered.map(name).join(', ') }));
                 const back = BuschUI.action({ label: translate(hass, 'rueckgaengig'), text: translate(hass, 'rueckgaengig'), icon: 'mdi:undo', onClick: () => {
-                    card._drafts.set('sequence', undo);
+                    card.drafts.set('sequence', undo);
                     undo = null;
                     redraw();
                 } });
@@ -7152,7 +7152,7 @@ function sequenceView(card) {
                 actions.appendChild(off);
             }
             if (dirty) {
-                const discard = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), onClick: () => { card._drafts.delete('sequence'); undo = null; redraw(); } });
+                const discard = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), onClick: () => { card.drafts.delete('sequence'); undo = null; redraw(); } });
                 discard.setAttribute('data-action', 'discard');
                 actions.appendChild(discard);
             }
@@ -7162,7 +7162,7 @@ function sequenceView(card) {
                     const same = (m) => JSON.stringify((m.attr('cleaning_sequence') || []).map(Number)) === JSON.stringify(ids);
                     undo = null;
                     trackWrite(card, 'sequence', { want: ids, label: translate(hass, 'entrySequence'), check: same,
-                        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_cleaning_sequence', { entity_id: card._opts.entity, cleaning_sequence: ids }) });
+                        call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_cleaning_sequence', { entity_id: card.opts.entity, cleaning_sequence: ids }) });
                 } });
             save.setAttribute('data-action', 'save');
             if (busy) save.setAttribute('aria-busy', 'true');
@@ -7210,14 +7210,14 @@ const stationActions = (model, filter) => STATION_ACTIONS.filter((a) => filter(a
 
 /** Runs an action once (R11: busy until the service answers, a second tap is ignored). */
 function runStationAction(card, action, done) {
-    const hass = card._hass;
-    return callAction(card, action.key, action.value, { track: 'station:' + action.name, label: translate(hass, action.text(card._model())), failKey: 'aktionFehler', done });
+    const hass = card.hass;
+    return callAction(card, action.key, action.value, { track: 'station:' + action.name, label: translate(hass, action.text(card.model())), failKey: 'aktionFehler', done });
 }
 
 /** The one button of a station action, for menu and station view (R01/R08), with its error note (R12). */
 function stationActionItem(card, model, hass, action, done) {
     const track = 'station:' + action.name;
-    const busy = card._settingWrites.has(track);
+    const busy = card.settingWrites.has(track);
     const label = translate(hass, action.text(model));
     const shown = busy ? translate(hass, 'wirdGestartet') : label;
     const button = BuschUI.action({ label: busy ? label + ' · ' + shown : label, text: shown, icon: action.icon, variant: 'quiet', disabled: busy,
@@ -7225,7 +7225,7 @@ function stationActionItem(card, model, hass, action, done) {
     button.classList.add('menu-item');
     button.setAttribute('data-station-action', action.name);
     if (busy) button.setAttribute('aria-busy', 'true');
-    const note = card._settingNotes.get(track);
+    const note = card.settingNotes.get(track);
     if (!note) return [button];
     const line = noteLine(note, 'error');
     line.setAttribute('data-note', action.name);
@@ -7234,9 +7234,9 @@ function stationActionItem(card, model, hass, action, done) {
 
 /** Every maintenance action asks first and says what follows (R13), incl. leaving the dock. */
 function stationConfirm(card, action) {
-    const hass = card._hass;
+    const hass = card.hass;
     const view = {
-        title: translate(hass, action.text(card._model())) + '?',
+        title: translate(hass, action.text(card.model())) + '?',
         id: 'station-confirm',
         kind: 'confirm',
         render: (body, h, dialog) => {
@@ -7254,20 +7254,20 @@ function stationConfirm(card, action) {
             body.appendChild(actions);
         }
     };
-    if (card._dialog && card._dialog.isConnected) card._dialog.show(view);
-    else card._openDialog(view);
+    if (card.dialog && card.dialog.isConnected) card.dialog.show(view);
+    else card.openDialog(view);
     return true;
 }
 
 /** The dock button's menu (DOCK-05): only what is possible now (R18); fleeting (R04). */
 function stationMenu(card) {
     return {
-        title: translate(card._hass, 'station'),
+        title: translate(card.hass, 'station'),
         id: 'station-menu',
         kind: 'menu',
-        watch: () => [card._opts.entity],
+        watch: () => [card.opts.entity],
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const list = document.createElement('div');
             list.className = 'menu';
             const close = () => { if (dialog.isConnected) dialog.close(); };
@@ -7278,7 +7278,7 @@ function stationMenu(card) {
                 const back = BuschUI.action({ label: translate(hass, 'return'), text: translate(hass, 'return'), icon: CONTROLS.return.icon, variant: 'quiet', onClick: () => {
                     if (sent) return;
                     sent = true;
-                    card._call('return', model.state);
+                    card.call('return', model.state);
                     close();
                 } });
                 back.classList.add('menu-item');
@@ -7316,15 +7316,15 @@ function storedTab(key, value) {
  */
 function stationView(card) {
     loadSettingTexts(card);
-    const storeKey = 'busch-vacuum-card:dock-tab:' + card._opts.entity;
+    const storeKey = 'busch-vacuum-card:dock-tab:' + card.opts.entity;
     let tab = storedTab(storeKey);
     return {
-        title: translate(card._hass, 'gruppe_station'),
+        title: translate(card.hass, 'gruppe_station'),
         id: 'station',
         kind: 'editor',
         watch: () => settingsWatch(card),
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             // Problems and running work open on top; the values that are fine fold away (R25).
             const items = stationStatus(model);
             const list = (part) => {
@@ -7471,8 +7471,8 @@ function shortcutText(hass, model, entry) {
  */
 function startShortcut(card, entry, done) {
     const call = entry.kind === 'device'
-        ? () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_start_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id })
-        : () => callDevice(card._hass, 'script', 'turn_on', { entity_id: entry.id });
+        ? () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_start_shortcut', { entity_id: card.opts.entity, shortcut_id: entry.id })
+        : () => callDevice(card.hass, 'script', 'turn_on', { entity_id: entry.id });
     return trackWrite(card, 'shortcut:' + entry.kind + ':' + entry.id, { label: entry.name, failKey: 'shortcutFehler', call, done });
 }
 
@@ -7482,14 +7482,14 @@ const shortcutLock = (hass, model) => (model.attr('draining') === true ? transla
 /** One start item, for menu and management (R01): text, symbol, busy state, error note. */
 function shortcutItem(card, model, hass, entry, done) {
     const track = 'shortcut:' + entry.kind + ':' + entry.id;
-    const busy = card._settingWrites.has(track);
+    const busy = card.settingWrites.has(track);
     const text = busy ? entry.name + ' · ' + translate(hass, 'wirdGestartet') : shortcutText(hass, model, entry);
     const locked = entry.kind === 'device' && !!shortcutLock(hass, model);
     const item = BuschUI.action({ label: text, text, icon: entry.icon, variant: 'quiet', disabled: busy || locked, onClick: () => startShortcut(card, entry, done) });
     item.classList.add('menu-item');
     item.setAttribute('data-shortcut', entry.kind + ':' + entry.id);
     if (busy) item.setAttribute('aria-busy', 'true');
-    const note = card._settingNotes.get(track);
+    const note = card.settingNotes.get(track);
     if (!note) return [item];
     const line = noteLine(note, 'error');
     line.setAttribute('data-note', entry.kind + ':' + entry.id);
@@ -7499,13 +7499,13 @@ function shortcutItem(card, model, hass, entry, done) {
 /** The shortcut button's menu (SHO-01): scripts, then shortcuts; fleeting (R04). */
 function shortcutMenu(card) {
     return {
-        title: translate(card._hass, 'shortcuts'),
+        title: translate(card.hass, 'shortcuts'),
         id: 'shortcut-menu',
         kind: 'menu',
-        watch: () => [card._opts.entity, ...card._opts.scripts],
+        watch: () => [card.opts.entity, ...card.opts.scripts],
         render: (body, hass, dialog) => {
-            const model = card._model();
-            const entries = shortcutEntries(hass, model, card._opts.scripts);
+            const model = card.model();
+            const entries = shortcutEntries(hass, model, card.opts.scripts);
             const close = () => { if (dialog.isConnected) dialog.close(); };
             if (taskActive(model, model.state ? model.state.state : 'unavailable')) {
                 const note = noteLine(translate(hass, 'shortcutZusaetzlich'));
@@ -7537,12 +7537,12 @@ function shortcutMenu(card) {
 /** Management (SHO-02): start, rename, delete per device shortcut; reload from the device (ALL-13). */
 function shortcutManageView(card) {
     return {
-        title: translate(card._hass, 'shortcutsVerwalten'),
+        title: translate(card.hass, 'shortcutsVerwalten'),
         id: 'shortcut-manage',
         kind: 'editor',
-        watch: () => [card._opts.entity],
+        watch: () => [card.opts.entity],
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const entries = shortcutEntries(hass, model, []);
             if (!entries.length) body.appendChild(noteLine(translate(hass, 'keineShortcuts')));
             const list = document.createElement('div');
@@ -7557,19 +7557,19 @@ function shortcutManageView(card) {
                 const rename = BuschUI.action({ label: translate(hass, 'umbenennen') + ': ' + entry.name, icon: 'mdi:pencil-outline', variant: 'icon-only',
                     onClick: () => dialog.show(shortcutRenameView(card, entry)) });
                 rename.setAttribute('data-action', 'rename');
-                const busy = card._settingWrites.has('delete:' + entry.id);
+                const busy = card.settingWrites.has('delete:' + entry.id);
                 const remove = BuschUI.action({ label: translate(hass, 'loeschen') + ': ' + entry.name, icon: 'mdi:delete-outline', variant: 'icon-only',
                     disabled: entry.running || busy, onClick: () => dialog.show(shortcutDeleteView(card, entry)) });
                 remove.setAttribute('data-action', 'delete');
                 if (busy) remove.setAttribute('aria-busy', 'true');
                 row.append(rename, remove);
                 if (entry.running) row.appendChild(noteLine(translate(hass, 'loeschenLaeuft')));
-                const note = card._settingNotes.get('delete:' + entry.id);
+                const note = card.settingNotes.get('delete:' + entry.id);
                 if (note) row.appendChild(noteLine(note, 'error'));
                 list.appendChild(row);
             }
             body.appendChild(list);
-            const busy = card._settingWrites.has('reload_shortcuts');
+            const busy = card.settingWrites.has('reload_shortcuts');
             const label = translate(hass, 'neuLaden');
             const reload = BuschUI.action({ label, text: busy ? translate(hass, 'wirdGestartet') : label, icon: 'mdi:refresh', disabled: busy,
                 onClick: () => callAction(card, 'reload_shortcuts', undefined, { label, failKey: 'shortcutFehler' }) });
@@ -7579,7 +7579,7 @@ function shortcutManageView(card) {
             actions.className = 'actions';
             actions.appendChild(reload);
             body.appendChild(actions);
-            const note = card._settingNotes.get('reload_shortcuts');
+            const note = card.settingNotes.get('reload_shortcuts');
             if (note) body.appendChild(noteLine(note, 'error'));
         }
     };
@@ -7592,15 +7592,15 @@ function shortcutManageView(card) {
 function shortcutRenameView(card, entry) {
     const key = 'shortcut-name:' + entry.id;
     const track = 'rename:' + entry.id;
-    if (!card._drafts.has(key)) card._drafts.set(key, entry.name);
+    if (!card.drafts.has(key)) card.drafts.set(key, entry.name);
     let checked = false;
     let refresh = null;
     const isLocked = () => {
-        const model = card._model();
+        const model = card.model();
         return taskActive(model, model.state ? model.state.state : 'unavailable');
     };
     return {
-        title: translate(card._hass, 'umbenennen') + ': ' + entry.name,
+        title: translate(card.hass, 'umbenennen') + ': ' + entry.name,
         id: 'shortcut-rename',
         kind: 'editor',
         // M4: the vacuum's lock updates in place (update); the field is never rebuilt under the keyboard.
@@ -7608,35 +7608,35 @@ function shortcutRenameView(card, entry) {
         update: () => { if (refresh) refresh(); },
         render: (body, hass, dialog) => {
             let locked = isLocked();
-            const busy = card._settingWrites.has(track);
-            const error = () => (checked && !card._drafts.get(key).trim() ? translate(hass, 'nameFehlt') : '');
-            if (card._drafts.get(key) !== entry.name) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
+            const busy = card.settingWrites.has(track);
+            const error = () => (checked && !card.drafts.get(key).trim() ? translate(hass, 'nameFehlt') : '');
+            if (card.drafts.get(key) !== entry.name) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
             const lockNote = noteLine(translate(hass, 'sperre_idle'));
             if (locked) body.appendChild(lockNote);
-            const failed = card._settingNotes.get(track);
+            const failed = card.settingNotes.get(track);
             const failNote = failed ? noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error') : null;
             if (failNote) body.appendChild(failNote);
             const input = document.createElement('input');
             input.setAttribute('type', 'text');
             input.setAttribute('aria-required', 'true');
             input.setAttribute('autocomplete', 'off');
-            input.value = card._drafts.get(key);
+            input.value = card.drafts.get(key);
             const field = formField('shortcut_name', translate(hass, 'feld_shortcut_name'), input, error());
             body.append(field.wrap, noteLine(translate(hass, 'nameNummer')));
             const actions = document.createElement('div');
             actions.className = 'actions';
             const save = BuschUI.action({ label: translate(hass, 'speichern'), text: translate(hass, busy ? 'speichert' : 'speichern'), variant: 'primary', onClick: () => {
                 checked = true;
-                const name = card._drafts.get(key).trim();
+                const name = card.drafts.get(key).trim();
                 if (!name) { field.update(error()); return; }
                 trackWrite(card, track, {
                     label: entry.name,
-                    call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_rename_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id, shortcut_name: name }),
-                    done: () => { card._drafts.delete(key); dialog.goBack(); }
+                    call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_rename_shortcut', { entity_id: card.opts.entity, shortcut_id: entry.id, shortcut_name: name }),
+                    done: () => { card.drafts.delete(key); dialog.goBack(); }
                 });
             } });
             save.setAttribute('data-action', 'save');
-            const able = () => { save.disabled = locked || busy || card._drafts.get(key) === entry.name; };
+            const able = () => { save.disabled = locked || busy || card.drafts.get(key) === entry.name; };
             able();
             refresh = () => {
                 locked = isLocked();
@@ -7646,7 +7646,7 @@ function shortcutRenameView(card, entry) {
             };
             if (busy) save.setAttribute('aria-busy', 'true');
             input.addEventListener('input', () => {
-                card._drafts.set(key, input.value);
+                card.drafts.set(key, input.value);
                 field.update(error());
                 able();
             });
@@ -7659,7 +7659,7 @@ function shortcutRenameView(card, entry) {
 /** Delete asks first and names the shortcut (R13). */
 function shortcutDeleteView(card, entry) {
     return {
-        title: translate(card._hass, 'loeschen') + '?',
+        title: translate(card.hass, 'loeschen') + '?',
         id: 'shortcut-delete',
         kind: 'confirm',
         render: (body, hass, dialog) => {
@@ -7671,7 +7671,7 @@ function shortcutDeleteView(card, entry) {
             const go = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'primary', onClick: () => {
                 trackWrite(card, 'delete:' + entry.id, {
                     label: entry.name,
-                    call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_delete_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id })
+                    call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_delete_shortcut', { entity_id: card.opts.entity, shortcut_id: entry.id })
                 });
                 dialog.goBack();
             } });
@@ -7834,7 +7834,7 @@ function runFacts(hass, run) {
 
 /** The runs of a view, recomputed only for a new sensor object (R20). */
 function historyRunsOf(card, kind, state, hass) {
-    const id = card._model().entity(kind.sensor);
+    const id = card.model().entity(kind.sensor);
     const obj = id ? hass.states[id] : null;
     if (!state.cache || state.cache.obj !== obj) state.cache = { obj, runs: obj && !UNUSABLE.includes(obj.state) ? historyRuns(obj) : [] };
     return state.cache.runs;
@@ -7851,10 +7851,10 @@ function historyView(card, name) {
     // Open groups, the run to return to, the detail's loads: only while the view lives (R21).
     const state = { cache: null, open: new Set(), back: null, scroll: 0, detail: null };
     return {
-        title: translate(card._hass, kind.title),
+        title: translate(card.hass, kind.title),
         id: 'history',
         kind: 'editor',
-        watch: () => [card._model().entity(kind.sensor)].filter(Boolean),
+        watch: () => [card.model().entity(kind.sensor)].filter(Boolean),
         render: (body, hass, dialog) => {
             const runs = historyRunsOf(card, kind, state, hass);
             if (!runs.length) {
@@ -7958,7 +7958,7 @@ function historyView(card, name) {
 }
 
 /** The main map camera (map_index 0): only it serves the history endpoints (camera.py#L253). */
-const historyCamera = (card) => card._model().related.maps.map[0] || null;
+const historyCamera = (card) => card.model().related.maps.map[0] || null;
 
 const hassUrl = (hass, path) => (hass && typeof hass.hassUrl === 'function' ? hass.hassUrl(path) : path);
 
@@ -8001,14 +8001,14 @@ function loadRun(card, kind, run, detail, redraw) {
     const ts = run.timestamp;
     if (detail.loads.has(ts)) return detail.loads.get(ts);
     abortRun(detail);
-    const url = historyUrl(card._hass.states[historyCamera(card)], run, { kind: kind.name, data: true });
+    const url = historyUrl(card.hass.states[historyCamera(card)], run, { kind: kind.name, data: true });
     const load = { status: url ? 'loading' : 'missing', data: null, error: '' };
     detail.loads.set(ts, load);
     if (!url) return load;
     if (typeof fetch !== 'function') return Object.assign(load, { status: 'error', error: 'fetch' });
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     detail.controller = controller;
-    Promise.resolve().then(() => fetch(hassUrl(card._hass, url), controller ? { signal: controller.signal } : {})).then((res) => {
+    Promise.resolve().then(() => fetch(hassUrl(card.hass, url), controller ? { signal: controller.signal } : {})).then((res) => {
         if (res.status === 404) return { status: 'missing' };
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.json().then((data) => ({ status: 'ready', data }));
@@ -8118,7 +8118,7 @@ const HISTORY_ZOOMS = [1, 1.5, 2, 3, 4];
 
 /** The run's picture in data mode: painted once per run, map and colours into a canvas kept by the view (R20). */
 function runCanvas(card, hass, detail, key, grid, segments) {
-    const c = (card._map && card._map._colors) || MAP_SCHEMES[darkMode(hass) ? 'dark' : 'light'];
+    const c = (card.map && card.map._colors) || MAP_SCHEMES[darkMode(hass) ? 'dark' : 'light'];
     const id = key + ':' + JSON.stringify(c);
     const kept = detail.canvases.get(key);
     if (kept && kept.id === id) return kept.canvas;
@@ -8189,7 +8189,7 @@ function runMapSection(card, hass, kind, run, load, detail, dialog) {
     const zoom = detail.zoom || 1;
     stage.setAttribute('data-zoom', String(zoom));
     stage.style.width = zoom * 100 + '%';
-    const rooms = cameraAttrs(card._model()).rooms || {};
+    const rooms = cameraAttrs(card.model()).rooms || {};
     const obstacles = tab === 'cleaning' ? runObstacles(data, rooms) : [];
     if (grid) {
         const canvas = runCanvas(card, hass, detail, key, grid, source.segments);
@@ -8277,7 +8277,7 @@ function runObstacleUrl(hass, card, kind, run, key, file) {
 /** An obstacle of an old run: facts and photo with download, no ignoring (works only on the current map, MAP-04). */
 function runObstacleView(card, kind, run, o) {
     return {
-        title: translate(card._hass, 'hindernis'),
+        title: translate(card.hass, 'hindernis'),
         id: 'history-obstacle',
         kind: 'editor',
         render: (body, hass) => {
@@ -8341,16 +8341,16 @@ function recleanState(model, run, { newest, load, mapId }) {
  */
 function runReclean(card, rooms, all) {
     if (all) return runStationAction(card, STATION_ACTIONS.find((a) => a.key === 'start_recleaning'));
-    const payload = taskPayload(card._model(), 'room', { rooms: rooms.map(Number), zones: [], spots: [], goto: null }, 1);
+    const payload = taskPayload(card.model(), 'room', { rooms: rooms.map(Number), zones: [], spots: [], goto: null }, 1);
     return trackWrite(card, 'reclean:rooms', {
-        label: translate(card._hass, 'aktNachreinigen'), failKey: 'aktionFehler',
-        call: () => callDevice(card._hass, payload.domain, payload.service, Object.assign({ entity_id: card._opts.entity }, payload.data))
+        label: translate(card.hass, 'aktNachreinigen'), failKey: 'aktionFehler',
+        call: () => callDevice(card.hass, payload.domain, payload.service, Object.assign({ entity_id: card.opts.entity }, payload.data))
     });
 }
 
 function recleanConfirm(card, names, all, rooms) {
     return {
-        title: translate(card._hass, 'aktNachreinigen') + '?',
+        title: translate(card.hass, 'aktNachreinigen') + '?',
         id: 'reclean-confirm',
         kind: 'confirm',
         render: (body, hass, dialog) => {
@@ -8372,8 +8372,8 @@ function recleanConfirm(card, names, all, rooms) {
 
 /** The "Nochmal reinigen" block of the newest run: room chips (≥ 1, none chosen at first), reason when locked. */
 function recleanSection(card, hass, run, runs, load, detail, dialog) {
-    const model = card._model();
-    const mapId = card._map ? card._map.current().mapId : cameraAttrs(model).map_id;
+    const model = card.model();
+    const mapId = card.map ? card.map.current().mapId : cameraAttrs(model).map_id;
     const state = recleanState(model, run, { newest: runs[0], load, mapId });
     if (!state.show) return null;
     if (!detail.reclean || detail.reclean.ts !== run.timestamp) detail.reclean = { ts: run.timestamp, chosen: new Set() };
@@ -8405,7 +8405,7 @@ function recleanSection(card, hass, run, runs, load, detail, dialog) {
     section.append(heading, list);
     const picked = state.rooms.filter((id) => chosen.has(id));
     const all = picked.length === state.rooms.length;
-    const busy = card._settingWrites.has('station:recleaning') || card._settingWrites.has('reclean:rooms');
+    const busy = card.settingWrites.has('station:recleaning') || card.settingWrites.has('reclean:rooms');
     const label = translate(hass, 'aktNachreinigen');
     const button = BuschUI.action({ label: busy ? label + ' · ' + translate(hass, 'wirdGestartet') : label, text: busy ? translate(hass, 'wirdGestartet') : label,
         icon: 'mdi:refresh-circle', variant: 'primary', disabled: busy || !state.ok || !picked.length,
@@ -8418,7 +8418,7 @@ function recleanSection(card, hass, run, runs, load, detail, dialog) {
         line.setAttribute('data-note', 'reclean');
         section.appendChild(line);
     }
-    const fail = card._settingNotes.get('station:recleaning') || card._settingNotes.get('reclean:rooms');
+    const fail = card.settingNotes.get('station:recleaning') || card.settingNotes.get('reclean:rooms');
     if (fail) section.appendChild(noteLine(fail, 'error'));
     const actions = document.createElement('div');
     actions.className = 'actions';
@@ -8440,11 +8440,11 @@ function historyDetail(card, name, list, ts) {
     const runAt = (hass) => historyRunsOf(card, kind, list, hass).find((r) => r.timestamp === current);
     const view = {
         get title() {
-            return runDateText(card._hass, current);
+            return runDateText(card.hass, current);
         },
         id: 'history-detail',
         kind: 'editor',
-        watch: () => [card._model().entity(kind.sensor), historyCamera(card)].filter(Boolean),
+        watch: () => [card.model().entity(kind.sensor), historyCamera(card)].filter(Boolean),
         render: (body, hass, dialog) => {
             if (!closing) {
                 closing = true;
@@ -8519,7 +8519,7 @@ function historyDetail(card, name, list, ts) {
 
             const blocked = blockedRooms(run, load);
             if (blocked.size) {
-                const rooms = cameraAttrs(card._model()).rooms || {};
+                const rooms = cameraAttrs(card.model()).rooms || {};
                 const heading = document.createElement('h2');
                 heading.className = 'settings-heading';
                 heading.textContent = translate(hass, 'blockierteRaeume');
@@ -11907,6 +11907,179 @@ class BuschVacuumCard extends HTMLElement {
         return this._hass;
     }
 
+    // ── M9: view context ─────────────────────────────────────────────────────
+    // The only way free functions and the other classes reach the card: what
+    // they read (live, never a copy) and what they may set or call. Private
+    // fields stay private; a rename touches this block, not the modules.
+
+    /** M9: normalised config (normalizeConfig). */
+    get opts() {
+        return this._opts;
+    }
+
+    /** M9: the MapView, or null. */
+    get map() {
+        return this._map;
+    }
+
+    /** M9: form → unsaved input (R10). */
+    get drafts() {
+        return this._drafts;
+    }
+
+    /** M9: setting key → write waiting for the device. */
+    get settingWrites() {
+        return this._settingWrites;
+    }
+
+    /** M9: setting key → why the last write failed (R12). */
+    get settingNotes() {
+        return this._settingNotes;
+    }
+
+    /** M9: setting key → check of a timed-out write (M3). */
+    get settingLate() {
+        return this._settingLate;
+    }
+
+    /** M9: action → what it achieved (R11). */
+    get settingDone() {
+        return this._settingDone;
+    }
+
+    /** M9: loading or loaded setting texts. */
+    get settingTexts() {
+        return this._settingTexts;
+    }
+
+    set settingTexts(value) {
+        this._settingTexts = value;
+    }
+
+    /** M9: sessions of the maps view. */
+    get mapSessions() {
+        return this._mapSessions;
+    }
+
+    /** M9: the open MapEditor, or null. */
+    get mapEdit() {
+        return this._mapEdit;
+    }
+
+    set mapEdit(value) {
+        this._mapEdit = value;
+    }
+
+    /** M9: session of the open edit mode. */
+    get editSession() {
+        return this._editSession;
+    }
+
+    set editSession(value) {
+        this._editSession = value;
+    }
+
+    /** M9: edit lists being fetched. */
+    get editData() {
+        return this._editData;
+    }
+
+    set editData(value) {
+        this._editData = value;
+    }
+
+    /** M9: cleaning repeats 1–3. */
+    get repeats() {
+        return this._repeats;
+    }
+
+    set repeats(value) {
+        this._repeats = value;
+    }
+
+    /** M9: note after a map restore. */
+    get restoreNote() {
+        return this._restoreNote;
+    }
+
+    set restoreNote(value) {
+        this._restoreNote = value;
+    }
+
+    /** M9: map the task chips were built for. */
+    get taskMapKey() {
+        return this._taskMapKey;
+    }
+
+    set taskMapKey(value) {
+        this._taskMapKey = value;
+    }
+
+    /** M9: map lock chosen by the user (null: not decided). */
+    get locked() {
+        return this._locked;
+    }
+
+    /** M9: node that holds the map. */
+    get mapSlot() {
+        return this._mapSlot;
+    }
+
+    /** M9: the open dialog, or null. */
+    get dialog() {
+        return this._dialog;
+    }
+
+    /** M9: the device model (VacuumModel), built once per update. */
+    model() {
+        return this._model();
+    }
+
+    /** M9: opens a view in the card dialog. */
+    openDialog(view) {
+        return this._openDialog(view);
+    }
+
+    /** M9: redraws the card from the current hass. */
+    update() {
+        return this._update();
+    }
+
+    /** M9: is a card part hidden by the config. */
+    isHidden(name) {
+        return this._hidden(name);
+    }
+
+    /** M9: short haptic feedback. */
+    haptic() {
+        return this._haptic();
+    }
+
+    /** M9: a core vacuum service with optimistic state. */
+    call(...args) {
+        return this._call(...args);
+    }
+
+    /** M9: asks before the map changes (CORE-20). */
+    confirmMapChange(...args) {
+        return this._confirmMapChange(...args);
+    }
+
+    /** M9: robot point at the map centre, or null. */
+    mapCentre() {
+        return this._mapCentre();
+    }
+
+    /** M9: the task selection hit at a map point. */
+    hitSelection(point, ctx) {
+        return this._hitSelection(point, ctx);
+    }
+
+    /** M9: draws the task selection on the map. */
+    drawSelection(group, ctx) {
+        return this._drawSelection(group, ctx);
+    }
+
     /** M20: a waiting backup/restore also sees cameras the card does not watch (its list of stored states). */
     _feedWaits() {
         const sessions = new Set([this._editSession, ...(this._mapSessions || [])].filter((s) => s && s._wait));
@@ -14301,7 +14474,7 @@ const EDIT_TEMPORARY_OK = new Set(['vacuum_save_temporary_map', 'vacuum_discard_
  */
 function mapWrite(card, grant, service, data) {
     if (!grant || grant.card !== card || !grant.confirmed) throw new Error('map write without confirmation: ' + service);
-    return Promise.resolve(callDevice(card._hass, 'dreame_vacuum', service, Object.assign({ entity_id: card._opts.entity }, data)));
+    return Promise.resolve(callDevice(card.hass, 'dreame_vacuum', service, Object.assign({ entity_id: card.opts.entity }, data)));
 }
 
 /** A confirmation click: the only source of a grant for mapWrite. */
@@ -14310,7 +14483,7 @@ const confirmGrant = (card) => ({ card, confirmed: true });
 class MapEditSession {
     constructor(card) {
         this.card = card;
-        const cur = card._map ? card._map.current() : {};
+        const cur = card.map ? card.map.current() : {};
         this.mapId = cur.mapId !== undefined ? cur.mapId : null;
         this.frameId = cur.frameId !== undefined ? cur.frameId : null;
         this.mapName = cur.name || '';
@@ -14323,7 +14496,7 @@ class MapEditSession {
     }
 
     model() {
-        return this.card._model();
+        return this.card.model();
     }
 
     /** Backup possible: capability, status attribute, service, a stored map (device.py#L7049 refuses otherwise). */
@@ -14367,7 +14540,7 @@ class MapEditSession {
             };
             wait.end = end;
             this._wait = wait;
-            wait.timer = setTimeout(() => end(Object.assign(new Error(translate(this.card._hass, timeoutKey)), { timeout: true })), timeoutMs);
+            wait.timer = setTimeout(() => end(Object.assign(new Error(translate(this.card.hass, timeoutKey)), { timeout: true })), timeoutMs);
             mapWrite(this.card, grant, service, data).then(() => {
                 wait.answered = true;
                 this.onHass(this.model());
@@ -14377,7 +14550,7 @@ class MapEditSession {
 
     /** M20: the stored states of a map as one comparable text (number, type, date, picture with its v=). */
     _statesSig(mapId, model = this.model()) {
-        return JSON.stringify(recoveryEntries(this.card._hass, model, mapId).map((e) => [e.k, e.typeText, e.date, e.picture]));
+        return JSON.stringify(recoveryEntries(this.card.hass, model, mapId).map((e) => [e.k, e.typeText, e.date, e.picture]));
     }
 
     /** Fed by the card on every own update: the awaited status decides. */
@@ -14403,7 +14576,7 @@ class MapEditSession {
         const model = this.model();
         const blocked = calls.map((c) => this.lock(c.service, model)).find(Boolean);
         if (blocked) {
-            this.error = { kind: 'lock', text: translate(this.card._hass, blocked) };
+            this.error = { kind: 'lock', text: translate(this.card.hass, blocked) };
             rerender(this.card);
             return false;
         }
@@ -14434,7 +14607,7 @@ class MapEditSession {
             const key = this.busy === 'backup' ? 'kartenSicherungFehler'
                 : this.busy === 'restore' ? (error && error.timeout ? 'wiederherstellenUnbekannt' : cloudRequired(error) ? 'wiederherstellenCloud' : 'wiederherstellenFehler')
                     : 'kartenSchreibFehler';
-            this.error = { kind: this.busy, text: translate(this.card._hass, key, { grund: errorText(error) }) };
+            this.error = { kind: this.busy, text: translate(this.card.hass, key, { grund: errorText(error) }) };
             if (this.busy === 'save' && written > 0) this._partial(written, calls, undo, error);
             return false;
         } finally {
@@ -14464,7 +14637,7 @@ MapEditSession.prototype._partial = function (written, calls, undo, error) {
         m = groups.length;
         if (done.length) this.undo.push(Object.assign({}, undo, { calls: done.flatMap((g) => g.calls), groups: done }));
     }
-    this.error = { kind: 'save', text: translate(this.card._hass, 'kartenTeilFehler', { n, m, grund: errorText(error) }) };
+    this.error = { kind: 'save', text: translate(this.card.hass, 'kartenTeilFehler', { n, m, grund: errorText(error) }) };
 };
 
 /** "No-Go-Zonen: 1 neu, 1 geändert, 0 gelöscht" (R13: the objects, not only a question). */
@@ -14486,7 +14659,7 @@ function mapConfirm(card, session, opts) {
         title: opts.title,
         id: 'map-confirm',
         kind: 'confirm',
-        watch: () => [card._opts.entity],
+        watch: () => [card.opts.entity],
         render: (body, hass, dialog) => {
             const list = document.createElement('ul');
             list.className = 'edit-objects';
@@ -14534,7 +14707,7 @@ function mapConfirm(card, session, opts) {
 function mapUndoConfirm(card, session, done) {
     const last = session.undo[session.undo.length - 1];
     if (!last) return null;
-    const hass = card._hass;
+    const hass = card.hass;
     return mapConfirm(card, session, {
         title: translate(hass, 'kartenRueckgaengigTitel'),
         lines: [translate(hass, 'kartenRueckgaengigText', { was: last.text })],
@@ -14552,7 +14725,7 @@ function mapUndoConfirm(card, session, done) {
 /** R10/Regel 2: open changes on leave → the choice save / discard / keep editing. */
 function dirtyChoice(card, { count, save, discard, blocked = null }) {
     return {
-        title: translate(card._hass, 'kartenWackeln'),
+        title: translate(card.hass, 'kartenWackeln'),
         id: 'map-dirty',
         kind: 'confirm',
         watch: () => [],
@@ -14931,21 +15104,21 @@ function editCaps(model, data, attrs) {
  * until the next call fetches again, M6).
  */
 function loadEditData(card) {
-    const m = card._map;
+    const m = card.map;
     if (!m) return Promise.resolve(null);
     const cur = m.current();
-    const have = card._editData;
+    const have = card.editData;
     if (have && have.frame === cur.frameId && have.mapId === cur.mapId) return have.promise;
-    const model = card._model();
+    const model = card.model();
     const saved = model.attr('has_saved_map') !== false && model.attr('has_temporary_map') !== true && cur.index !== null;
     const entry = { frame: cur.frameId, mapId: cur.mapId, data: null, failed: false, promise: null };
-    card._editData = entry;
+    card.editData = entry;
     const own = m._data && m._data.raw && m._data.raw.frame_id === cur.frameId ? m._data.raw : null;
     const settle = (raw) => {
         entry.data = editData(raw);
         entry.failed = !entry.data;
         // M6: a failure is not kept; the next call of the same frame fetches again.
-        if (entry.failed && card._editData === entry) card._editData = null;
+        if (entry.failed && card.editData === entry) card.editData = null;
         return entry.data;
     };
     if (own && (!saved || (own.walls !== undefined && own.walls !== null) || !model.can('walls'))) {
@@ -14986,7 +15159,7 @@ function mapSessionFor(card, sessions, entry) {
             session.mapName = mapEntryName(entry);
         }
         sessions.set(key, session);
-        card._mapSessions.add(session);
+        card.mapSessions.add(session);
     }
     return sessions.get(key);
 }
@@ -14998,8 +15171,8 @@ function mapSessionFor(card, sessions, entry) {
  * Kartenverwaltung, "nicht zerstörend").
  */
 function requestMap(card) {
-    const label = translate(card._hass, 'karteAnfordern');
-    return trackWrite(card, 'request_map', { label, call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_request_map', { entity_id: card._opts.entity }) });
+    const label = translate(card.hass, 'karteAnfordern');
+    return trackWrite(card, 'request_map', { label, call: () => callDevice(card.hass, 'dreame_vacuum', 'vacuum_request_map', { entity_id: card.opts.entity }) });
 }
 
 /** The way to the maps view shared by the menu entry and the map tool (R08). */
@@ -15007,18 +15180,18 @@ function mapsView(card) {
     loadSettingTexts(card);
     const sessions = new Map();
     const view = {
-        title: translate(card._hass, 'entryMaps'),
+        title: translate(card.hass, 'entryMaps'),
         id: 'maps',
         kind: 'editor',
         watch: () => {
-            const model = card._model();
-            return [card._opts.entity, ...model.related.maps.map.slice(0, 1), ...model.related.maps.saved_map, ...Object.values(model.related.device)];
+            const model = card.model();
+            return [card.opts.entity, ...model.related.maps.map.slice(0, 1), ...model.related.maps.saved_map, ...Object.values(model.related.device)];
         },
         leave: () => {
-            for (const session of sessions.values()) card._mapSessions.delete(session);
+            for (const session of sessions.values()) card.mapSessions.delete(session);
         },
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const temporary = model.attr('has_temporary_map') === true;
             const row = settingRow(card, model, 'multi_floor_map');
             if (row) body.appendChild(row);
@@ -15059,7 +15232,7 @@ function mapRow(card, model, hass, dialog, home, sessions, entry, name, current)
     if (picture) {
         const img = document.createElement('img');
         img.className = 'floor-preview';
-        img.setAttribute('src', card._map ? card._map._url(picture) : picture);
+        img.setAttribute('src', card.map ? card.map._url(picture) : picture);
         img.setAttribute('alt', '');
         img.setAttribute('loading', 'lazy');
         row.appendChild(img);
@@ -15076,11 +15249,11 @@ function mapRow(card, model, hass, dialog, home, sessions, entry, name, current)
     group.className = 'map-actions';
     if (!current) {
         const select = BuschUI.action({ label: translate(hass, 'kartenWaehlen') + ': ' + name, text: translate(hass, 'kartenWaehlen'), disabled: busy,
-            onClick: () => (card._map ? card._map.selectMap(entry.id) : pickMap(card, model, name)) });
+            onClick: () => (card.map ? card.map.selectMap(entry.id) : pickMap(card, model, name)) });
         select.setAttribute('data-action', 'select');
         group.appendChild(select);
     }
-    if (model.can('map_edit') && !card._hidden('map_editor')) {
+    if (model.can('map_edit') && !card.isHidden('map_editor')) {
         const edit = BuschUI.action({ label: translate(hass, 'kartenBearbeiten') + ': ' + name, icon: 'mdi:draw', variant: 'icon-only', onClick: () => dialog.show(mapEditView(card, entry.id)) });
         edit.setAttribute('data-action', 'edit');
         group.appendChild(edit);
@@ -15110,7 +15283,7 @@ function mapRow(card, model, hass, dialog, home, sessions, entry, name, current)
 
 /** Delete (D#L6896): names the map; without multi-floor the device deletes every map (comment D#L6915). */
 function deleteMapConfirm(card, home, session, entry, model) {
-    const hass = card._hass;
+    const hass = card.hass;
     const lines = [translate(hass, 'kartenLoeschenZeile', { karte: mapEntryName(entry) })];
     if (model.attr('multi_floor_map') !== true) lines.push(translate(hass, 'kartenLoeschtAlle'));
     return mapConfirm(card, session, {
@@ -15127,10 +15300,10 @@ function deleteMapConfirm(card, home, session, entry, model) {
 function renameMapView(card, home, session, entry) {
     const key = 'map-name:' + entry.id;
     const original = entry.custom_name || '';
-    if (!card._drafts.has(key)) card._drafts.set(key, original);
-    const hass = card._hass;
+    if (!card.drafts.has(key)) card.drafts.set(key, original);
+    const hass = card.hass;
     const confirm = (dialog) => {
-        const name = card._drafts.get(key).trim();
+        const name = card.drafts.get(key).trim();
         dialog.show(mapConfirm(card, session, {
             title: translate(hass, 'kartenUmbenennenTitel'),
             lines: [translate(hass, 'kartenUmbenanntZeile', { alt: mapEntryName(entry), neu: name || entry.name || String(entry.id) })],
@@ -15138,12 +15311,12 @@ function renameMapView(card, home, session, entry) {
             calls: [{ service: 'vacuum_rename_map', data: { map_id: entry.id, map_name: name } }],
             undo: { text: translate(hass, 'kartenUmbenennenTitel'), calls: [{ service: 'vacuum_rename_map', data: { map_id: entry.id, map_name: original } }] },
             done: (d) => {
-                card._drafts.delete(key);
+                card.drafts.delete(key);
                 d.backTo(home);
             }
         }));
     };
-    const dirty = () => card._drafts.has(key) && card._drafts.get(key) !== original;
+    const dirty = () => card.drafts.has(key) && card.drafts.get(key) !== original;
     let refresh = null;
     const view = {
         title: translate(hass, 'kartenUmbenennenTitel'),
@@ -15157,14 +15330,14 @@ function renameMapView(card, home, session, entry) {
                 count: () => 1,
                 save: (d) => confirm(d),
                 discard: (d) => {
-                    card._drafts.delete(key);
+                    card.drafts.delete(key);
                     d.backTo(home);
                 }
             }));
             return true;
         },
         render: (body, h, dialog) => {
-            let lock = session.lock('vacuum_rename_map', card._model());
+            let lock = session.lock('vacuum_rename_map', card.model());
             if (dirty()) body.appendChild(noteLine(translate(h, 'ungespeichert'), 'dirty'));
             let lockNote = lock ? noteLine(translate(h, lock), 'locked') : null;
             if (lockNote) body.appendChild(lockNote);
@@ -15172,7 +15345,7 @@ function renameMapView(card, home, session, entry) {
             input.setAttribute('type', 'text');
             input.setAttribute('autocomplete', 'off');
             input.setAttribute('placeholder', entry.name || '');
-            input.value = card._drafts.get(key);
+            input.value = card.drafts.get(key);
             const field = formField('map_name', translate(h, 'feld_map_name'), input, '');
             body.append(field.wrap, noteLine(translate(h, 'kartenNameLeer', { name: entry.name || String(entry.id) })));
             const actions = document.createElement('div');
@@ -15183,7 +15356,7 @@ function renameMapView(card, home, session, entry) {
             able();
             // M4: the lock follows the vacuum in place; the field stays under the keyboard.
             refresh = () => {
-                const now = session.lock('vacuum_rename_map', card._model());
+                const now = session.lock('vacuum_rename_map', card.model());
                 if (now === lock) return;
                 lock = now;
                 if (lockNote) lockNote.remove();
@@ -15192,7 +15365,7 @@ function renameMapView(card, home, session, entry) {
                 able();
             };
             input.addEventListener('input', () => {
-                card._drafts.set(key, input.value);
+                card.drafts.set(key, input.value);
                 able();
             });
             actions.appendChild(save);
@@ -15212,7 +15385,7 @@ function newMapActions(card, model, hass, dialog, home, sessions, active) {
     if (model.can('dreame_vacuum.vacuum_call_action')) {
         for (const key of ['start_mapping', 'start_fast_mapping']) {
             const free = key !== 'start_mapping' || model.attr('mapping_available') === true;
-            const busy = card._settingWrites.has(key);
+            const busy = card.settingWrites.has(key);
             const label = translate(hass, key === 'start_mapping' ? 'kartierung' : 'kartierungSchnell');
             const button = BuschUI.action({ label, text: busy ? translate(hass, 'wirdGestartet') : label, icon: key === 'start_mapping' ? 'mdi:map-plus' : 'mdi:map-marker-path', disabled: !free || busy,
                 onClick: () => dialog.show(mapConfirm(card, mapSessionFor(card, sessions, active ? active.entry : null), {
@@ -15230,19 +15403,19 @@ function newMapActions(card, model, hass, dialog, home, sessions, active) {
             if (busy) button.setAttribute('aria-busy', 'true');
             nodes.push(button);
             if (!free) nodes.push(noteLine(translate(hass, 'kartierungNichtFrei'), 'locked'));
-            const note = card._settingNotes.get(key);
+            const note = card.settingNotes.get(key);
             if (note) nodes.push(noteLine(note, 'error'));
         }
         nodes.push(noteLine(translate(hass, 'kartierungFaehrt')));
     }
     if (model.can('dreame_vacuum.vacuum_request_map')) {
         const label = translate(hass, 'karteAnfordern');
-        const busy = card._settingWrites.has('request_map');
+        const busy = card.settingWrites.has('request_map');
         const button = BuschUI.action({ label, text: label, icon: 'mdi:refresh', disabled: busy, onClick: () => requestMap(card) });
         button.setAttribute('data-action', 'request_map');
         if (busy) button.setAttribute('aria-busy', 'true');
         nodes.push(button, noteLine(translate(hass, 'karteAnfordernHinweis')));
-        const note = card._settingNotes.get('request_map');
+        const note = card.settingNotes.get('request_map');
         if (note) nodes.push(noteLine(note, 'error'));
     }
     return nodes;
@@ -15311,7 +15484,7 @@ const EDIT_SHOWN_OBJECTS = new Set(['rooms', 'router', 'carpets', 'detected_carp
  */
 const EDIT_TOOLS = {
     rooms: { icon: 'mdi:floor-plan', lists: ['room_names', 'room_types', 'hidden_segments', 'floor_materials'], panel: (...a) => roomsPanel(...a),
-        enter: (card, editor) => card._map.setMode(editor.split ? 'drag' : 'pick-room', { selected: () => roomsPicked(editor) }), onMap: (...a) => roomsOnMap(...a),
+        enter: (card, editor) => card.map.setMode(editor.split ? 'drag' : 'pick-room', { selected: () => roomsPicked(editor) }), onMap: (...a) => roomsOnMap(...a),
         draw: (...a) => drawSplit(...a), hit: (...a) => hitSplit(...a) },
     walls: Object.assign({ icon: 'mdi:wall', lists: ['walls', 'doors'] }, objectTool('walls')),
     zones: Object.assign({ icon: 'mdi:vector-rectangle', lists: ['no_go_areas', 'no_mopping_areas', 'ramps'] }, objectTool('zones')),
@@ -15353,14 +15526,14 @@ function editListLabel(hass, list) {
  * created by `edit(group)`. Saving sends every group of `draft` complete;
  * undo sends `base` with the same services. `toolCaps` = editCaps(…), `data` =
  * editData(…) or null, `tool` = the chosen EDIT_TOOLS name, `session` = its
- * MapEditSession (also card._editSession while the mode is open).
+ * MapEditSession (also card.editSession while the mode is open).
  */
 class MapEditor {
     constructor(card, view) {
         this.card = card;
         this.view = view;
         this.session = new MapEditSession(card);
-        const cur = card._map.current();
+        const cur = card.map.current();
         this.mapId = cur.mapId;
         this.frame = cur.frameId;
         this.data = null;
@@ -15371,7 +15544,7 @@ class MapEditor {
         this.ownSave = false; // the next new frame_id is our own save: no "changed" note
         this.expect = null; // M20: after a save, the lists that must leave their old state in our own frame
         this.foreign = false;
-        this.toolCaps = editCaps(card._model(), null, cur.objects);
+        this.toolCaps = editCaps(card.model(), null, cur.objects);
         this.left = false;
         this.pick = null; // object tools: { list, i } of the chosen object
         this.origins = {}; // object tools: per list, the base index of each draft entry (null = new)
@@ -15400,7 +15573,7 @@ class MapEditor {
     /** After an edit: drop unchanged groups, redraw the layer and the view. */
     changed() {
         this._prune();
-        if (this.card._map) this.card._map.refresh('editor');
+        if (this.card.map) this.card.map.refresh('editor');
         rerender(this.card);
     }
 
@@ -15444,7 +15617,7 @@ class MapEditor {
     }
 
     selectTool(name) {
-        const m = this.card._map;
+        const m = this.card.map;
         this.tool = name;
         m.setMode('view');
         const tool = EDIT_TOOLS[name];
@@ -15459,7 +15632,7 @@ class MapEditor {
         const frame = this.frame;
         return loadEditData(card).then((data) => {
             if (this.left || frame !== this.frame) return;
-            const cur = card._map.current();
+            const cur = card.map.current();
             const fresh = editLists(cur.objects, data);
             if (judge && this.expect === judge) {
                 const own = Object.keys(judge.before).some((list) => JSON.stringify(fresh[list]) !== JSON.stringify(judge.before[list]));
@@ -15471,7 +15644,7 @@ class MapEditor {
             }
             this.base = fresh;
             this.data = data;
-            this.toolCaps = editCaps(card._model(), data, cur.objects);
+            this.toolCaps = editCaps(card.model(), data, cur.objects);
             this.loading = false;
             if (this.quick) quickPick(card, this, this.quick);
             this.quick = null;
@@ -15481,8 +15654,8 @@ class MapEditor {
 
     /** On every hass: a new frame_id reloads; not after our own save → note "changed" (no silent overwrite). */
     sync() {
-        if (this.left || !this.card._map) return;
-        const cur = this.card._map.current();
+        if (this.left || !this.card.map) return;
+        const cur = this.card.map.current();
         if (cur.frameId === this.frame) return;
         this.frame = cur.frameId;
         const judge = this.expect; // M20: with an expectation the edit lists decide (in reload)
@@ -15496,9 +15669,9 @@ class MapEditor {
 
     /** One confirmation, one line per object list, one call per group with complete lists (payloadFor). */
     saveConfirm() {
-        const card = this.card, hass = card._hass;
+        const card = this.card, hass = card.hass;
         const merged = this.lists();
-        const mapId = card._map.current().mapId;
+        const mapId = card.map.current().mapId;
         const order = Object.keys(EDIT_GROUPS);
         const groups = Object.keys(this.draft).sort((x, y) => order.indexOf(x) - order.indexOf(y));
         const lines = this.counts().flatMap((c) => (EDIT_LINES[c.list] ? EDIT_LINES[c.list](hass, this, this.base[c.list], merged[c.list]) : [editCountLine(hass, editListLabel(hass, c.list), c)]));
@@ -15544,27 +15717,27 @@ class MapEditor {
     leave() {
         if (this.left) return;
         this.left = true;
-        const card = this.card, m = card._map;
+        const card = this.card, m = card.map;
         if (m) {
             for (const type of ['map-tap', 'map-room-tap', 'map-drag', 'map-object-tap']) m.el.removeEventListener(type, this._onMap);
             m.removeLayer('editor');
             m.setMode('view');
-            card._mapSlot.appendChild(m.el);
+            card.mapSlot.appendChild(m.el);
         }
-        if (card._editSession === this.session) card._editSession = null;
-        if (card._mapEdit === this) card._mapEdit = null;
-        card._taskMapKey = null;
+        if (card.editSession === this.session) card.editSession = null;
+        if (card.mapEdit === this) card.mapEdit = null;
+        card.taskMapKey = null;
         if (m) {
             m.lockChanged();
             m.refresh();
         }
-        card._update();
+        card.update();
     }
 
     enter() {
-        const card = this.card, m = card._map;
-        card._mapEdit = this;
-        card._editSession = this.session;
+        const card = this.card, m = card.map;
+        card.mapEdit = this;
+        card.editSession = this.session;
         this._onMap = (e) => {
             const tool = EDIT_TOOLS[this.tool];
             if (tool && tool.onMap) tool.onMap(card, this, e);
@@ -15597,12 +15770,12 @@ class MapEditor {
 function mapEditView(card, mapId, quick = null) {
     let editor = null;
     const view = {
-        title: translate(card._hass, 'kartenBearbeiten'),
+        title: translate(card.hass, 'kartenBearbeiten'),
         id: 'map-edit',
         kind: 'editor',
         watch: () => {
-            const model = card._model();
-            return [card._opts.entity, ...model.related.maps.map.slice(0, 1)];
+            const model = card.model();
+            return [card.opts.entity, ...model.related.maps.map.slice(0, 1)];
         },
         guard: (dialog) => {
             if (!editor || !editor.dirty()) return false;
@@ -15620,7 +15793,7 @@ function mapEditView(card, mapId, quick = null) {
             if (editor) editor.sync();
         },
         render: (body, hass, dialog) => {
-            const m = card._map;
+            const m = card.map;
             if (!m) {
                 body.appendChild(noteLine(translate(hass, 'keineKarte')));
                 return;
@@ -15685,9 +15858,9 @@ function quickPick(card, editor, found) {
 }
 
 function editRender(card, editor, body, hass, dialog) {
-    const m = card._map;
+    const m = card.map;
     if (editor.quickNote) body.appendChild(noteLine(translate(hass, editor.quickNote), 'locked'));
-    if (card._locked) body.appendChild(noteLine(translate(hass, 'kartenSperreAufgehoben')));
+    if (card.locked) body.appendChild(noteLine(translate(hass, 'kartenSperreAufgehoben')));
     const hidden = m.config(m.current().index).hidden_objects.filter((name) => EDIT_SHOWN_OBJECTS.has(name));
     if (hidden.length) body.appendChild(noteLine(translate(hass, 'kartenAusgeblendetSichtbar', { liste: hidden.map((n) => translate(hass, 'mapobj_' + n)).join(', ') })));
     if (editor.foreign) body.appendChild(noteLine(translate(hass, 'kartenGeaendert'), 'warning'));
@@ -15760,7 +15933,7 @@ function editRender(card, editor, body, hass, dialog) {
     }
     // map-backup: the active map's states — the way back of what Undo cannot reverse (spec: Einstieg).
     const activeMap = m._activeMapId();
-    if (activeMap !== null && backupsShown(card, card._model(), activeMap)) {
+    if (activeMap !== null && backupsShown(card, card.model(), activeMap)) {
         const row = document.createElement('div');
         row.className = 'edit-row';
         const label = translate(hass, 'sicherungen');
@@ -15803,7 +15976,7 @@ const EDIT_LINES = {
 
 /** The device's name of a room (as on the map), for lines and the form. */
 function roomLabel(editor, id) {
-    const room = editRooms(editor.card._map.current().objects, editor.data).find((r) => r.id === Number(id));
+    const room = editRooms(editor.card.map.current().objects, editor.data).find((r) => r.id === Number(id));
     return room ? room.label : String(id);
 }
 
@@ -15817,8 +15990,8 @@ const roomsPicked = (editor) => (editor.merge ? editor.merge.slice() : editor.ro
 function dockRoom(card, editor) {
     const station = editor.data ? editor.data.stationSegment : null;
     if (station) return Number(station);
-    const charger = card._map.current().objects.charger_position;
-    return charger ? card._map.roomAt(charger) : null;
+    const charger = card.map.current().objects.charger_position;
+    return charger ? card.map.roomAt(charger) : null;
 }
 
 /** One room's entry in a draft list (replaced by id, kept sorted). */
@@ -15850,7 +16023,7 @@ function roomsOnMap(card, editor, e) {
 /** The room form (EDI-03): ROOM_KEYS['map-editor'] in order, each with its capability; rows as in clean-settings (roomFieldRow, R08). */
 function roomsPanel(card, editor, body, hass) {
     const lists = editor.lists();
-    const rooms = editRooms(card._map.current().objects, editor.data);
+    const rooms = editRooms(card.map.current().objects, editor.data);
     const features = editor.toolCaps.rooms.features;
     const hidden = rooms.filter((r) => lists.hidden_segments.includes(r.id));
     if (hidden.length) {
@@ -15958,7 +16131,7 @@ const splitLimit = (model) => (model.can('map_v2') ? 29 : 49);
 
 /** Split and merge under the form; both wait for a clean draft (they change the rooms at once, the draft's ids would be stale). */
 function roomActions(card, editor, body, hass, id) {
-    const model = card._model();
+    const model = card.model();
     const dirty = editor.dirty();
     const actions = document.createElement('div');
     actions.className = 'actions';
@@ -16000,12 +16173,12 @@ const lineComplete = (l) => [l.x0, l.y0, l.x1, l.y1].every((v) => v !== null && 
  * starts and ends outside it and runs through it (map.roomAt, exact with data).
  */
 function splitCheck(card, editor) {
-    const m = card._map, l = editor.split.line;
+    const m = card.map, l = editor.split.line;
     if (!lineComplete(l)) return { key: 'teilenLinieFehlt' };
     const grid = (m._data && m._data.grid.grid) || GRID_MM;
     const length = Math.hypot(l.x1 - l.x0, l.y1 - l.y0);
     if (length < 2 * grid) return { key: 'teilenLinieKurz' };
-    const max = splitLimit(card._model());
+    const max = splitLimit(card.model());
     if (editRooms(m.current().objects, editor.data).length >= max) return { key: 'teilenRaumgrenze', vars: { max } };
     const steps = Math.max(8, Math.ceil(length / (grid / 2)));
     const inRoom = [];
@@ -16068,7 +16241,7 @@ function splitPanel(card, editor, body, hass, rooms) {
         const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[event.key];
         if (!dir || !lineComplete(editor.split.line)) return;
         event.preventDefault();
-        setSplitLine(card, editor, shapeMove(editor.split.line, shapeStep(card._map, dir, splitKeyStep(event))));
+        setSplitLine(card, editor, shapeMove(editor.split.line, shapeStep(card.map, dir, splitKeyStep(event))));
     });
     tools.appendChild(move);
     body.appendChild(tools);
@@ -16083,13 +16256,13 @@ function splitPanel(card, editor, body, hass, rooms) {
     const go = BuschUI.action({ label: goLabel, text: goLabel, icon: 'mdi:call-split', variant: 'destructive', disabled: !!problem, onClick: () => {
         const l = editor.split.line;
         const coords = [l.x0, l.y0, l.x1, l.y1].map(Math.round);
-        card._dialog.show(mapConfirm(card, editor.session, {
+        card.dialog.show(mapConfirm(card, editor.session, {
             title: translate(hass, 'teilenTitel'),
             lines: [translate(hass, 'teilenZeile', { raum: label, x0: coords[0], y0: coords[1], x1: coords[2], y1: coords[3] })],
             action: translate(hass, 'raumTeilen'),
             destructive: true,
             irreversible: true,
-            calls: [{ service: 'vacuum_split_segments', data: { segment: editor.split.room, line: coords, map_id: card._map.current().mapId } }],
+            calls: [{ service: 'vacuum_split_segments', data: { segment: editor.split.room, line: coords, map_id: card.map.current().mapId } }],
             done: (d) => roomActionDone(card, editor, d)
         }));
     } });
@@ -16114,13 +16287,13 @@ function mergePanel(card, editor, body, hass, rooms) {
     const goLabel = translate(hass, 'zusammenWeiter');
     const go = BuschUI.action({ label: goLabel, text: goLabel, icon: 'mdi:call-merge', variant: 'destructive', disabled: !!problem, onClick: () => {
         const [a, b] = editor.merge;
-        card._dialog.show(mapConfirm(card, editor.session, {
+        card.dialog.show(mapConfirm(card, editor.session, {
             title: translate(hass, 'zusammenTitel'),
             lines: [translate(hass, 'zusammenZeile', { a: name(a), b: name(b) })],
             action: translate(hass, 'raumZusammen'),
             destructive: true,
             irreversible: true,
-            calls: [{ service: 'vacuum_merge_segments', data: { segments: [a, b], map_id: card._map.current().mapId } }],
+            calls: [{ service: 'vacuum_merge_segments', data: { segments: [a, b], map_id: card.map.current().mapId } }],
             done: (d) => roomActionDone(card, editor, d)
         }));
     } });
@@ -16150,7 +16323,7 @@ function segmentDistance(c, a, b) {
 /** Taps on the split line: its ends (44 px), then the line. */
 function hitSplit(card, editor, point) {
     if (!editor.split) return null;
-    const m = card._map, l = editor.split.line;
+    const m = card.map, l = editor.split.line;
     const c = clientOf(m, point);
     if (!c) return null;
     const ends = [l.x0 === null ? null : { x: l.x0, y: l.y0 }, l.x1 === null ? null : { x: l.x1, y: l.y1 }].map((p) => clientOf(m, p));
@@ -16186,7 +16359,7 @@ function splitOnMap(card, editor, e) {
         editor.splitDrag = null;
         return setSplitLine(card, editor, editor.split.line);
     }
-    card._map.refresh('editor'); // R20: only the own layer while dragging
+    card.map.refresh('editor'); // R20: only the own layer while dragging
     return undefined;
 }
 
@@ -16210,7 +16383,7 @@ function drawSplit(card, editor, group, ctx) {
 
 /** Smallest side of a rectangle or length of a line: two map cells (device grid, R: Mindestgröße). */
 function editMin(card) {
-    const m = card._map;
+    const m = card.map;
     return 2 * ((m && m._data && m._data.grid && m._data.grid.grid) || GRID_MM);
 }
 
@@ -16262,7 +16435,7 @@ const EDIT_KINDS = {
         entry: (s, old, card) => {
             const e = (old || [-1, 1, null, 0, 0, 0, 0, 0, 1, 0, 1]).slice();
             const x = Math.round((s.x0 + s.x1) / 2), y = Math.round((s.y0 + s.y1) / 2);
-            const room = card && card._map ? card._map.roomAt({ x, y }) : null;
+            const room = card && card.map ? card.map.roomAt({ x, y }) : null;
             e[2] = room === null ? e[2] : room;
             e[3] = Math.round(Math.abs(s.x1 - s.x0));
             e[4] = Math.round(Math.abs(s.y1 - s.y0));
@@ -16286,7 +16459,7 @@ const EDIT_KINDS = {
             const x = key === 'x' ? v : e[0], y = key === 'y' ? v : e[1];
             return { x0: x, y0: y, x1: x, y1: y };
         },
-        check: (card, s) => (card._map && card._map.passable({ x: s.x0, y: s.y0 }) === false ? 'punktAusserhalb' : ''),
+        check: (card, s) => (card.map && card.map.passable({ x: s.x0, y: s.y0 }) === false ? 'punktAusserhalb' : ''),
         entry: (s) => [s.x0, s.y0] }
 };
 
@@ -16304,7 +16477,7 @@ function objectTool(tool) {
             editor.pick = null;
             editor.objDrag = null;
             editor.objError = '';
-            card._map.setMode('draw-rect');
+            card.map.setMode('draw-rect');
         },
         onMap: (card, editor, e) => objectsOnMap(card, editor, e, tool),
         draw: (card, editor, group, ctx) => objectsDraw(card, editor, group, ctx, tool),
@@ -16406,12 +16579,12 @@ function restoreObject(editor, list, j) {
 
 /** The default new object at the centre of the visible map: 1 × 1 m, a line of 1 m along the screen's x axis. */
 function centreShape(card, list) {
-    const c = card._mapCentre();
+    const c = card.mapCentre();
     if (!c) return null;
     if (EDIT_KINDS[list].shape === 'point') return { x0: c.x, y0: c.y, x1: c.x, y1: c.y };
     if (EDIT_KINDS[list].shape === 'furniture') return { x0: c.x - 400, y0: c.y - 400, x1: c.x + 400, y1: c.y + 400 };
     if (EDIT_KINDS[list].shape === 'line') {
-        const d = shapeStep(card._map, 'right', 500);
+        const d = shapeStep(card.map, 'right', 500);
         return { x0: c.x - d.x, y0: c.y - d.y, x1: c.x + d.x, y1: c.y + d.y };
     }
     return { x0: c.x - 500, y0: c.y - 500, x1: c.x + 500, y1: c.y + 500 };
@@ -16475,7 +16648,7 @@ function objectsAdd(card, editor, body, hass, tool, kinds, lock, hooks, add) {
     const addKind = EDIT_KINDS[editor.addKinds[tool]];
     const full = !!addKind.max && (editor.lists()[editor.addKinds[tool]] || []).length >= addKind.max;
     const label = translate(hass, 'kartenHinzufuegen', { art: translate(hass, 'kartenEins_' + editor.addKinds[tool]) });
-    const plus = BuschUI.action({ label, text: label, icon: 'mdi:plus-box-outline', variant: 'secondary', disabled: !!lock || full || !card._mapCentre(), onClick: () => {
+    const plus = BuschUI.action({ label, text: label, icon: 'mdi:plus-box-outline', variant: 'secondary', disabled: !!lock || full || !card.mapCentre(), onClick: () => {
         const shape = centreShape(card, editor.addKinds[tool]);
         if (shape) addObject(card, editor, editor.addKinds[tool], shape, hooks.template ? hooks.template(card, editor) : null);
     } });
@@ -16544,7 +16717,7 @@ function objectKey(card, editor, event, list, i, lock) {
     if (dir) {
         event.preventDefault();
         editor.pick = { list, i };
-        setObject(card, editor, list, i, shapeMove(EDIT_KINDS[list].toShape(entry), shapeStep(card._map, dir, objectKeyStep(event))));
+        setObject(card, editor, list, i, shapeMove(EDIT_KINDS[list].toShape(entry), shapeStep(card.map, dir, objectKeyStep(event))));
     } else if ((event.key === 'Delete' || event.key === 'Backspace') && !EDIT_KINDS[list].fixed) {
         event.preventDefault();
         removeObject(editor, list, i);
@@ -16611,7 +16784,7 @@ function objectForm(card, editor, body, hass, tool, pick, entry, lock) {
  * then the objects, the topmost first. { list, i, part?, j? } or null.
  */
 function objectsHit(card, editor, p, tool) {
-    const m = card._map;
+    const m = card.map;
     const c = clientOf(m, p);
     const lists = editor.lists();
     const dist = (q) => (q && c ? Math.hypot(q.x - c.x, q.y - c.y) : Infinity);
@@ -16682,7 +16855,7 @@ function objectsOnMap(card, editor, e, tool) {
         const hooks = OBJECT_HOOKS[tool];
         return g.i === null ? addObject(card, editor, g.list, g.shape, hooks && hooks.template ? hooks.template(card, editor) : null) : setObject(card, editor, g.list, g.i, g.shape);
     }
-    card._map.refresh('editor'); // R20: only the own layer while dragging
+    card.map.refresh('editor'); // R20: only the own layer while dragging
     return undefined;
 }
 
@@ -16752,9 +16925,9 @@ const carpetPrefNames = (bits) => CARPET_PREFS.filter(([bit]) => Number.isIntege
 
 /** Cleaning choices: −1 (as in the settings) and the device's options of select carpet_cleaning (it filters by capability). */
 function carpetCleaningCodes(card) {
-    const model = card._model();
+    const model = card.model();
     const id = model.entity('select.carpet_cleaning');
-    const state = id && card._hass && card._hass.states[id];
+    const state = id && card.hass && card.hass.states[id];
     const names = state && Array.isArray(state.attributes.options) ? state.attributes.options : null;
     const codes = names ? names.map((n) => CARPET_CLEANING[enumName(n)]).filter((c) => c !== undefined) : [1, 2, 3, 5];
     return [-1].concat(codes);
@@ -16797,7 +16970,7 @@ function carpetCleaningFields(card, editor, box, hass, key, lock) {
     const options = carpetCleaningCodes(card).map((c) => [c, carpetCleaningLabel(hass, c)]);
     box.appendChild(editSelect('carpet-cleaning', translate(hass, 'teppichReinigung'), cleaning, options, !!lock, (v) => set([key, id, type, Number(v), bits])));
     if (!features.preferences || cleaning === -1) return;
-    const model = card._model();
+    const model = card.model();
     for (const [bit, name, cap] of CARPET_PREFS) {
         if (cap && !model.can(cap)) continue;
         const on = Number.isInteger(bits) && bits > 0 && !!(bits & bit);
@@ -16999,7 +17172,7 @@ const furnitureTypeOptions = (hass, types) => types.map((t) => [t, translate(has
 
 /** Furniture form: type (allowed ones), turn in 15° steps, size ±10 % around the centre, the room by roomAt. */
 function furnitureForm(card, editor, form, hass, pick, entry, lock) {
-    const types = furnitureTypes(card._model());
+    const types = furnitureTypes(card.model());
     const change = (fn) => changeObjects(editor, 'furnitures', (entries) => {
         const e = entries[pick.i].slice();
         fn(e);
@@ -17030,7 +17203,7 @@ function furnitureForm(card, editor, form, hass, pick, entry, lock) {
 
 /** Before "Hinzufügen": the type of the next piece of furniture (only allowed types). */
 function furnitureAddRow(card, editor, row, hass, lock) {
-    const types = furnitureTypes(card._model());
+    const types = furnitureTypes(card.model());
     if (!types.includes(editor.furnitureType)) editor.furnitureType = types[0];
     row.appendChild(editSelect('furniture-new-type', translate(hass, 'moebelNeuTyp'), editor.furnitureType, furnitureTypeOptions(hass, types), !!lock, (v) => {
         editor.furnitureType = Number(v);
@@ -17039,7 +17212,7 @@ function furnitureAddRow(card, editor, row, hass, lock) {
 }
 
 Object.assign(OBJECT_HOOKS, {
-    furniture: { form: furnitureForm, addRow: furnitureAddRow, template: (card, editor) => [-1, editor.furnitureType || furnitureTypes(card._model())[0], null, 0, 0, 0, 0, 0, 1, 0, 1] },
+    furniture: { form: furnitureForm, addRow: furnitureAddRow, template: (card, editor) => [-1, editor.furnitureType || furnitureTypes(card.model())[0], null, 0, 0, 0, 0, 0, 1, 0, 1] },
     // A tap on free floor sets a point there (addObject checks floor and limit).
     points: { tapEmpty: (card, editor, d) => addObject(card, editor, 'predefined_points', { x0: d.robot.x, y0: d.robot.y, x1: d.robot.x, y1: d.robot.y }) }
 });
@@ -17146,10 +17319,10 @@ function wifiLegend(raw) {
  * calibration. null without a picture.
  */
 function wifiSource(card) {
-    const m = card._map, hass = card._hass;
+    const m = card.map, hass = card.hass;
     if (!m || !hass) return null;
     const cur = m.current();
-    const cams = card._model().related.maps.wifi_map.map((id) => hass.states[id]).filter(Boolean);
+    const cams = card.model().related.maps.wifi_map.map((id) => hass.states[id]).filter(Boolean);
     const cam = cams.find((c) => String(c.attributes.map_id) === String(cur.mapId)) || null;
     const url = ownPath((cam && cam.attributes.entity_picture) || cur.objects.wifi_map_picture, hass);
     if (!url) return null;
@@ -17162,11 +17335,11 @@ function loadWifiImage(card, editor, url) {
     const entry = { url, width: 0, height: 0, ready: false, failed: false };
     editor.wifiImage = entry;
     const img = document.createElement('img');
-    img.setAttribute('src', card._map._url(url));
+    img.setAttribute('src', card.map._url(url));
     Promise.resolve(typeof img.decode === 'function' ? img.decode() : undefined).then(() => {
         if (editor.wifiImage !== entry || editor.left) return;
         Object.assign(entry, { width: img.naturalWidth || 0, height: img.naturalHeight || 0, ready: true });
-        card._map.refresh('editor');
+        card.map.refresh('editor');
     }, () => {
         if (editor.wifiImage !== entry || editor.left) return;
         entry.failed = true;
@@ -17244,7 +17417,7 @@ function wifiDraw(card, editor, group, ctx) {
     const t = affineFrom(pairs);
     if (!t) return;
     const matrix = 'matrix(' + [t.a, t.b, t.c, t.d, t.e, t.f].map((v) => Number(v.toFixed(6))).join(' ') + ')';
-    group.appendChild(ctx.svgNode('image', { 'data-wifi-image': '', href: card._map._url(src.url), width: image.width, height: image.height, transform: matrix, preserveAspectRatio: 'none', 'aria-hidden': 'true' }));
+    group.appendChild(ctx.svgNode('image', { 'data-wifi-image': '', href: card.map._url(src.url), width: image.width, height: image.height, transform: matrix, preserveAspectRatio: 'none', 'aria-hidden': 'true' }));
 }
 
 Object.assign(OBJECT_HOOKS, {
@@ -17433,12 +17606,12 @@ function remoteBlock(model, hass) {
  * blur, hidden tab, leaving the view, an error, a lost connection.
  */
 function remoteView(card) {
-    const view = { id: 'remote', title: translate(card._hass, 'entryRemote'), kind: 'editor', watch: () => [] };
+    const view = { id: 'remote', title: translate(card.hass, 'entryRemote'), kind: 'editor', watch: () => [] };
     // R21 on purpose: arming lives only while the view is open; a remembered arming would let a stray touch move the robot.
     const ctl = view.remote = { armed: false, note: null, block: null, moving: false, sources: new Map(), mods: {}, precision: false, root: null, parts: {}, listening: false, sticks: [], holds: [], keys: new Set(), dialog: null };
-    const hass = () => card._hass;
+    const hass = () => card.hass;
     const text = (key, vars) => translate(hass(), key, vars);
-    ctl.sender = new RemoteSender(hass, card._opts.entity, () => {
+    ctl.sender = new RemoteSender(hass, card.opts.entity, () => {
         if (ctl.sender.state === 'error' && ctl.armed) {
             const reason = ctl.sender.error === 'timeout' ? text('remoteZeit') : ctl.sender.error;
             disarm(text('remoteFehler', { grund: reason }));
@@ -17460,7 +17633,7 @@ function remoteView(card) {
         // shortcut: positive rotation = left (counter-clockwise) is assumed from the docs; live run 2 confirms the sign.
         const r = remoteValue('rotation', sum('t'), mods);
         const moving = !!(v || r);
-        if (moving !== ctl.moving) card._haptic(); // leaving the dead zone and stopping
+        if (moving !== ctl.moving) card.haptic(); // leaving the dead zone and stopping
         ctl.moving = moving;
         if (moving) ctl.sender.set({ v, r });
         else ctl.sender.stop();
@@ -17472,7 +17645,7 @@ function remoteView(card) {
         ctl.keys.clear();
         for (const one of ctl.sticks) one.reset();
         for (const reset of ctl.holds) reset();
-        if (ctl.moving) card._haptic();
+        if (ctl.moving) card.haptic();
         ctl.moving = false;
         ctl.sender.stop();
         paint();
@@ -17539,7 +17712,7 @@ function remoteView(card) {
         document[method]('visibilitychange', onVisibility);
         document[method]('keydown', onKey, true);
         document[method]('keyup', onKey, true);
-        if (on) ctl.mapEl = card._map ? card._map.el : null;
+        if (on) ctl.mapEl = card.map ? card.map.el : null;
         if (ctl.mapEl) ctl.mapEl[method]('map-frame', onFrame);
     };
     view.leave = () => {
@@ -17681,7 +17854,7 @@ function remoteView(card) {
      * MapView.toImage(vacuum_position) in % of that picture, moved by transform only (R20).
      */
     const paintMap = (frameChanged) => {
-        const p = ctl.parts, m = card._map;
+        const p = ctl.parts, m = card.map;
         const ready = !!(m && m._showsMap() && m._image && m._imageState === 'ready' && m._size.width && m._size.height);
         const pos = ready ? m._attrs().vacuum_position : null;
         const at = pos ? m.toImage(pos) : null;
@@ -17719,14 +17892,14 @@ function remoteView(card) {
     const control = (name) => {
         const button = BuschUI.action({ label: text(name), text: text(name), icon: CONTROLS[name].icon, variant: name === 'resume' ? 'primary' : 'secondary', onClick: () => {
             halt();
-            const model = card._model();
-            card._call(name, model.state);
+            const model = card.model();
+            card.call(name, model.state);
         } });
         button.setAttribute('data-control', name);
         return button;
     };
     const paintControls = () => {
-        const p = ctl.parts, model = card._model(), real = model.state;
+        const p = ctl.parts, model = card.model(), real = model.state;
         const state = real ? real.state : null;
         p.state.textContent = real ? formatState(hass(), real) : '';
         const docked = model.attr('docked') !== undefined ? model.attr('docked') === true : state === 'docked';
@@ -17737,7 +17910,7 @@ function remoteView(card) {
     const build = () => {
         const root = document.createElement('div');
         root.className = 'remote';
-        root.setAttribute('data-hand', card._opts.left_handed ? 'left' : 'right');
+        root.setAttribute('data-hand', card.opts.left_handed ? 'left' : 'right');
         const p = ctl.parts;
         p.warning = line('remote-warning form-note');
         p.warning.setAttribute('data-kind', 'warning');
@@ -17800,7 +17973,7 @@ function remoteView(card) {
     };
 
     view.update = (h) => {
-        const block = remoteBlock(card._model(), h);
+        const block = remoteBlock(card.model(), h);
         if (block && !ctl.block && (ctl.armed || ctl.moving)) disarm(block === 'connection' ? text('remoteVerbindung') : null);
         ctl.block = block;
         paint();
@@ -17913,8 +18086,8 @@ function restoreLock(card, model) {
 
 /** What an open backup list reads: the vacuum and the cameras of that map — watched only while it is open (R20). */
 function backupWatch(card, mapId) {
-    const model = card._model();
-    return [card._opts.entity, ...recoveryCameras(card._hass, model, mapId), ...model.related.maps.map.slice(0, 1)];
+    const model = card.model();
+    return [card.opts.entity, ...recoveryCameras(card.hass, model, mapId), ...model.related.maps.map.slice(0, 1)];
 }
 
 const BACKUP_VIEW_TEXTS = {
@@ -17998,7 +18171,7 @@ const recoveryText = (hass, entry) => recoveryLabel(hass, entry) + ' · ' + reco
 
 /** "Sicherungen" exists for a map with states, a restore service or a possible backup (R18: no dead entry). */
 function backupsShown(card, model, mapId) {
-    return recoveryEntries(card._hass, model, mapId).length > 0 || model.can('map_recovery') || new MapEditSession(card).canBackup(model);
+    return recoveryEntries(card.hass, model, mapId).length > 0 || model.can('map_recovery') || new MapEditSession(card).canBackup(model);
 }
 
 /** ALL-13: map_backup_status and map_recovery_status as text with state (R17: words, not colour alone). */
@@ -18018,16 +18191,16 @@ function backupStatusLines(hass, model) {
 /** BAK-01: the list of one map's states (module entry "Sicherungen" from the maps view and the edit mode). */
 function backupsView(card, mapId) {
     const view = {
-        title: translate(card._hass, 'sicherungenTitel'),
+        title: translate(card.hass, 'sicherungenTitel'),
         id: 'backups',
         kind: 'editor',
         session: null, // backupSession: the list's MapEditSession, made on first use
         watch: () => backupWatch(card, mapId),
         leave: () => {
-            if (view.session) card._mapSessions.delete(view.session);
+            if (view.session) card.mapSessions.delete(view.session);
         },
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const map = backupMap(model, mapId);
             if (!map) {
                 body.appendChild(noteLine(translate(hass, 'keineKarte')));
@@ -18212,14 +18385,14 @@ function backupImageView(card, mapId, start = 1, home = null) {
     const zoom = { zoom: 1, panX: 0, panY: 0 };
     let index = start;
     const view = {
-        title: translate(card._hass, 'sicherungAnsicht'),
+        title: translate(card.hass, 'sicherungAnsicht'),
         id: 'backup-image',
         kind: 'menu',
         size: 'full',
         watch: () => backupWatch(card, mapId),
         leave: () => cache.clear(),
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const map = backupMap(model, mapId);
             const items = [{ current: true, picture: currentPicture(hass, model, mapId) }, ...recoveryEntries(hass, model, mapId)];
             index = Math.min(Math.max(0, index), items.length - 1);
@@ -18250,7 +18423,7 @@ function backupImageView(card, mapId, start = 1, home = null) {
                 cache.set(key, shown);
                 img.setAttribute('alt', translate(hass, 'sicherungAlt', { stand: caption }));
                 img.setAttribute('draggable', 'false');
-                img.setAttribute('src', card._map ? card._map._url(item.picture) : item.picture);
+                img.setAttribute('src', card.map ? card.map._url(item.picture) : item.picture);
                 const done = (state) => {
                     if (cache.get(key) !== shown) return;
                     shown.state = state;
@@ -18351,7 +18524,7 @@ function backupSession(card, view, map) {
         view.session = new MapEditSession(card);
         view.session.mapId = map.entry.id;
         view.session.mapName = map.name;
-        card._mapSessions.add(view.session);
+        card.mapSessions.add(view.session);
     }
     return view.session;
 }
@@ -18384,7 +18557,7 @@ function backupNowPart(card, model, hass, dialog, view, map) {
     const reason = backupNowLock(card, session, model, map);
     const label = translate(hass, 'sicherungJetzt');
     const now = BuschUI.action({ label, text: label, icon: 'mdi:cloud-upload-outline', variant: 'primary', disabled: !!reason, onClick: () => {
-        const replaced = lastBackup(hass, card._model(), map.entry.id);
+        const replaced = lastBackup(hass, card.model(), map.entry.id);
         session.backedUpAt = null; // every manual backup is a new one
         session.error = null;
         dialog.show(mapConfirm(card, session, {
@@ -18507,8 +18680,8 @@ const recoveryFrom = (hass, entry) => recoveryLabel(hass, entry) + ' ' + (locale
  * `source`: { entry } of the list or { url, done } of the file form.
  */
 function restoreConfirm(card, session, home, map, source) {
-    const hass = card._hass;
-    const model = card._model();
+    const hass = card.hass;
+    const model = card.model();
     const entry = source.entry || null;
     const replaced = lastBackup(hass, model, map.entry.id);
     const isBackup = !!entry && entry.type === 'backup';
@@ -18519,7 +18692,7 @@ function restoreConfirm(card, session, home, map, source) {
     const stand = entry ? recoveryFrom(hass, entry) : source.url;
     session.backedUpAt = null; // the backup belongs to this restore, not to an earlier one
     session.error = null;
-    const frame = card._map ? card._map.current().frameId : null;
+    const frame = card.map ? card.map.current().frameId : null;
     const rooms = roomSnapshot(model);
     const call = entry
         ? { service: 'vacuum_restore_map', data: { recovery_map_index: entry.k, map_id: map.entry.id } }
@@ -18531,7 +18704,7 @@ function restoreConfirm(card, session, home, map, source) {
             .concat(rooms ? [translate(hass, 'wiederherstellenRaeumeMerken', { raeume: roomCount(hass, rooms.length) })] : []),
         action: translate(hass, 'wiederherstellenKnopf'),
         destructive: true,
-        blocked: () => restoreLock(card, card._model()) || (foreign && !choice.foreign ? 'dateiFremdBestaetigen' : ''),
+        blocked: () => restoreLock(card, card.model()) || (foreign && !choice.foreign ? 'dateiFremdBestaetigen' : ''),
         backup: () => choice.backup,
         backupNote: false,
         calls: [Object.assign(call, { wait: 'map_recovery_status', busy: 'restore', timeout: RESTORE_TIMEOUT_MS, timeoutKey: 'wiederherstellenZeit' })],
@@ -18557,7 +18730,7 @@ function restoreConfirm(card, session, home, map, source) {
             if (entry && entry.picture) {
                 const img = document.createElement('img');
                 img.className = 'backup-preview';
-                img.setAttribute('src', card._map ? card._map._url(entry.picture) : entry.picture);
+                img.setAttribute('src', card.map ? card.map._url(entry.picture) : entry.picture);
                 img.setAttribute('alt', translate(h, 'sicherungAlt', { stand }));
                 body.appendChild(img);
             }
@@ -18583,7 +18756,7 @@ function restoreConfirm(card, session, home, map, source) {
         },
         done: (d) => {
             const now = new Date();
-            card._restoreNote = { mapId: map.entry.id, text: translate(hass, 'wiederhergestellt', { stand, zeit: clockText(hass, now.getHours(), now.getMinutes()) }), frame,
+            card.restoreNote = { mapId: map.entry.id, text: translate(hass, 'wiederhergestellt', { stand, zeit: clockText(hass, now.getHours(), now.getMinutes()) }), frame,
                 rooms, roomRun: { done: [], error: '', running: false } };
             if (source.done) source.done();
             d.backTo(home);
@@ -18612,9 +18785,9 @@ function backupLockPart(card, model, hass, dialog, view, map) {
     if (!reasons.size) return null;
     const wrap = document.createElement('div');
     for (const reason of reasons) wrap.appendChild(noteLine(translate(hass, reason), 'locked'));
-    if (!map.active && card._map) {
+    if (!map.active && card.map) {
         const name = translate(hass, 'kartenWechselZu', { karte: map.name });
-        const go = BuschUI.action({ label: name, text: name, disabled: card._map._busy(), onClick: () => card._map.selectMap(map.entry.id) });
+        const go = BuschUI.action({ label: name, text: name, disabled: card.map._busy(), onClick: () => card.map.selectMap(map.entry.id) });
         go.setAttribute('data-action', 'switch-map');
         const actions = document.createElement('div');
         actions.className = 'actions';
@@ -18627,11 +18800,11 @@ BACKUP_PARTS.push(backupLockPart);
 
 /** After a restore: state and time, and "wird neu geladen" until the map camera brings a new frame_id. */
 function restoreNotePart(card, model, hass, dialog, view, map) {
-    const note = card._restoreNote;
+    const note = card.restoreNote;
     if (!note || String(note.mapId) !== String(map.entry.id)) return null;
     const wrap = document.createElement('div');
     wrap.appendChild(noteLine(note.text, 'success'));
-    const frame = card._map ? card._map.current().frameId : null;
+    const frame = card.map ? card.map.current().frameId : null;
     if (note.frame !== null && frame === note.frame) wrap.appendChild(noteLine(translate(hass, 'wiederherstellenNeuLaden'), 'busy'));
     if (note.rooms && note.roomRun.done.length < note.rooms.length) {
         wrap.appendChild(noteLine(translate(hass, 'raeumeZurueckHinweis'), 'warning'));
@@ -18658,12 +18831,12 @@ BACKUP_PARTS.push(restoreNotePart);
 function roomRestoreView(card, note) {
     const run = note.roomRun;
     return {
-        title: translate(card._hass, 'raeumeZurueck'),
+        title: translate(card.hass, 'raeumeZurueck'),
         id: 'room-restore',
         kind: 'confirm',
-        watch: () => [card._opts.entity],
+        watch: () => [card.opts.entity],
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             const rest = note.rooms.filter((r) => !run.done.includes(r.id));
             const names = () => note.rooms.filter((r) => run.done.includes(r.id)).map((r) => r.name).join(', ') || '–';
             const lock = run.running ? '' : roomLock(model);
@@ -18697,7 +18870,7 @@ function roomRestoreView(card, note) {
                     dialog.render();
                     for (const r of rest) {
                         try {
-                            await callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, r.data));
+                            await callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card.opts.entity }, r.data));
                             run.done.push(r.id);
                         } catch (error) {
                             run.error = errorText(error);
@@ -18754,9 +18927,9 @@ for (const language of Object.keys(BACKUP_FILE_TEXTS)) Object.assign(TEXTE_BUSCH
 function downloadAction(card, model, hass, dialog, home, map, entry) {
     if (!entry.file || !model.can('map_download')) return null;
     const fresh = () => {
-        const now = recoveryEntries(card._hass, card._model(), map.entry.id).find((e) => e.k === entry.k);
+        const now = recoveryEntries(card.hass, card.model(), map.entry.id).find((e) => e.k === entry.k);
         const url = (now && now.file) || entry.file;
-        return card._map ? card._map._url(url) : url;
+        return card.map ? card.map._url(url) : url;
     };
     const link = document.createElement('a');
     link.className = 'backup-download';
@@ -18807,9 +18980,9 @@ function restoreFilePart(card, model, hass, dialog, view, map) {
 function restoreFileView(card, home, start) {
     const key = 'restore-url';
     // M29: prefilled with /local/ of this Home Assistant (the usual place for the file).
-    const prefill = ownOrigin(card._hass) ? ownOrigin(card._hass) + '/local/' : '';
-    if (!card._drafts.has(key)) card._drafts.set(key, { url: prefill, mapId: start.entry.id });
-    const draft = card._drafts.get(key);
+    const prefill = ownOrigin(card.hass) ? ownOrigin(card.hass) + '/local/' : '';
+    if (!card.drafts.has(key)) card.drafts.set(key, { url: prefill, mapId: start.entry.id });
+    const draft = card.drafts.get(key);
     let checked = false;
     const sessions = new Map();
     const sessionFor = (map) => {
@@ -18818,26 +18991,26 @@ function restoreFileView(card, home, start) {
             s.mapId = map.entry.id;
             s.mapName = map.name;
             sessions.set(String(map.entry.id), s);
-            card._mapSessions.add(s);
+            card.mapSessions.add(s);
         }
         return sessions.get(String(map.entry.id));
     };
     const dirty = () => draft.url.trim() !== prefill;
     const submit = (dialog) => {
         checked = true;
-        const map = backupMap(card._model(), draft.mapId);
-        if (fileUrlError(draft.url, card._hass) || !map || !map.active) return dialog.render();
+        const map = backupMap(card.model(), draft.mapId);
+        if (fileUrlError(draft.url, card.hass) || !map || !map.active) return dialog.render();
         // A finished restore ends the draft; a cancelled one keeps it (R10).
-        dialog.show(restoreConfirm(card, sessionFor(map), home, map, { url: fileUrl(card._hass, draft.url), done: () => card._drafts.delete(key) }));
+        dialog.show(restoreConfirm(card, sessionFor(map), home, map, { url: fileUrl(card.hass, draft.url), done: () => card.drafts.delete(key) }));
         return undefined;
     };
     const view = {
-        title: translate(card._hass, 'dateiTitel'),
+        title: translate(card.hass, 'dateiTitel'),
         id: 'backup-file',
         kind: 'editor',
-        watch: () => [card._opts.entity, ...card._model().related.maps.map.slice(0, 1)],
+        watch: () => [card.opts.entity, ...card.model().related.maps.map.slice(0, 1)],
         leave: () => {
-            for (const s of sessions.values()) card._mapSessions.delete(s);
+            for (const s of sessions.values()) card.mapSessions.delete(s);
         },
         guard: (dialog) => {
             if (!dirty()) return false;
@@ -18845,14 +19018,14 @@ function restoreFileView(card, home, start) {
                 count: () => 1,
                 save: (d) => submit(d),
                 discard: (d) => {
-                    card._drafts.delete(key);
+                    card.drafts.delete(key);
                     d.backTo(home);
                 }
             }));
             return true;
         },
         render: (body, hass, dialog) => {
-            const model = card._model();
+            const model = card.model();
             body.appendChild(noteLine(translate(hass, 'dateiHinweis')));
             const input = document.createElement('input');
             input.setAttribute('type', 'url');
@@ -18861,11 +19034,11 @@ function restoreFileView(card, home, start) {
             input.setAttribute('aria-required', 'true');
             input.setAttribute('placeholder', 'https://…/karte.mb.tbz2');
             input.value = draft.url;
-            const error = checked ? fileUrlError(draft.url, card._hass) : '';
+            const error = checked ? fileUrlError(draft.url, card.hass) : '';
             const field = formField('file_url', translate(hass, 'feld_file_url'), input, error ? translate(hass, error) : '');
             input.addEventListener('input', () => {
                 draft.url = input.value;
-                if (checked) field.update(fileUrlError(draft.url, card._hass) ? translate(hass, fileUrlError(draft.url, card._hass)) : '');
+                if (checked) field.update(fileUrlError(draft.url, card.hass) ? translate(hass, fileUrlError(draft.url, card.hass)) : '');
             });
             body.appendChild(field.wrap);
             const select = document.createElement('select');
@@ -18888,9 +19061,9 @@ function restoreFileView(card, home, start) {
             if (lock) body.appendChild(noteLine(translate(hass, lock), 'locked'));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            if (map && !map.active && card._map) {
+            if (map && !map.active && card.map) {
                 const name = translate(hass, 'kartenWechselZu', { karte: map.name });
-                const go = BuschUI.action({ label: name, text: name, disabled: card._map._busy(), onClick: () => card._map.selectMap(map.entry.id) });
+                const go = BuschUI.action({ label: name, text: name, disabled: card.map._busy(), onClick: () => card.map.selectMap(map.entry.id) });
                 go.setAttribute('data-action', 'switch-map');
                 actions.appendChild(go);
             }
