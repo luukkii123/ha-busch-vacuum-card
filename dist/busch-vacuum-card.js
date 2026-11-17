@@ -765,7 +765,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             feld_md5: 'MD5-Prüfsumme',
             feld_size: 'Größe in Bytes',
             fehlerSprachId: 'Pflichtfeld: Buchstaben, Ziffern, - oder _ (z. B. DE).',
-            fehlerUrl: 'Pflichtfeld: vollständige Adresse mit http:// oder https://, ohne Leer- und Anführungszeichen.',
+            fehlerUrl: 'Pflichtfeld: vollständige Adresse mit https:// oder eine Adresse dieses Home Assistant (/local/…), ohne Leer- und Anführungszeichen.',
+            adresseServer: 'Server: ',
+            adresseEigen: ' – dieses Home Assistant',
+            adresseFremd: ' – fremder Server',
             fehlerMd5: 'Pflichtfeld: genau 32 Zeichen aus 0–9 und a–f.',
             fehlerGroesse: 'Pflichtfeld: ganze Zahl über 0.',
             weiter: 'Weiter',
@@ -1407,7 +1410,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             feld_md5: 'MD5 checksum',
             feld_size: 'Size in bytes',
             fehlerSprachId: 'Required: letters, digits, - or _ (e.g. DE).',
-            fehlerUrl: 'Required: full address with http:// or https://, without blanks or quotes.',
+            fehlerUrl: 'Required: full address with https:// or an address of this Home Assistant (/local/…), without blanks or quotes.',
+            adresseServer: 'Server: ',
+            adresseEigen: ' – this Home Assistant',
+            adresseFremd: ' – external server',
             fehlerMd5: 'Required: exactly 32 characters of 0–9 and a–f.',
             fehlerGroesse: 'Required: a whole number above 0.',
             weiter: 'Next',
@@ -5685,11 +5691,44 @@ function formField(name, label, input, error) {
 }
 
 /** Inline checks of the voice pack form; keys of the error texts. */
-function voicePackErrors(draft) {
+/** M29: `scheme://host[:port]` of an absolute http(s) address in lower case, else ''. */
+const originOf = (url) => { const m = /^(https?:\/\/[^/?#\s]+)/i.exec(String(url || '').trim()); return m ? m[1].toLowerCase() : ''; };
+/** M29: the origin of this Home Assistant (hass.hassUrl), '' when unknown. */
+const ownOrigin = (hass) => originOf(hass && typeof hass.hassUrl === 'function' ? hass.hassUrl('/') : '');
+
+/** M29: an address of this Home Assistant — absolute with its origin, or a path like /local/… made absolute — else ''. */
+function ownAddress(hass, url) {
+    const own = ownOrigin(hass);
+    const value = String(url || '').trim();
+    if (!own) return '';
+    if (value.startsWith('/') && !value.startsWith('//')) return own + value;
+    return originOf(value) === own ? value : '';
+}
+
+/** M29: the host of an address, highlighted, and whether it is this Home Assistant (confirmations). */
+function hostLine(hass, url) {
+    const own = !!ownAddress(hass, url);
+    const line = document.createElement('p');
+    line.className = 'form-note';
+    line.setAttribute('data-part', 'host');
+    if (!own) line.setAttribute('data-kind', 'warning');
+    const label = document.createElement('span');
+    label.textContent = translate(hass, 'adresseServer');
+    const host = document.createElement('strong');
+    host.textContent = originOf(url).replace(/^https?:\/\//, '');
+    const note = document.createElement('span');
+    note.textContent = translate(hass, own ? 'adresseEigen' : 'adresseFremd');
+    line.append(label, host, note);
+    return line;
+}
+
+function voicePackErrors(draft, hass) {
     const errors = {};
     if (!/^[A-Za-z0-9_-]{1,16}$/.test(draft.lang_id.trim())) errors.lang_id = 'fehlerSprachId';
     // The integration pastes url into a JSON string by hand (device.py#L5972): no quotes or blanks.
-    if (!/^https?:\/\/[^\s"'\\<>]+$/i.test(draft.url.trim())) errors.url = 'fehlerUrl';
+    // M29: https, or this Home Assistant (also http and /local/…); the robot downloads it, MD5 is the user's own.
+    const url = ownAddress(hass, draft.url) || draft.url.trim();
+    if (!/^https?:\/\/[^\s"'\\<>]+$/i.test(url) || !(/^https:/i.test(url) || ownAddress(hass, url))) errors.url = 'fehlerUrl';
     if (!/^[0-9a-f]{32}$/i.test(draft.md5.trim())) errors.md5 = 'fehlerMd5';
     if (!/^[1-9]\d{0,11}$/.test(draft.size.trim())) errors.size = 'fehlerGroesse';
     return errors;
@@ -5711,7 +5750,7 @@ function voicePackView(card) {
         watch: () => [],
         render: (body, hass, dialog) => {
             body.appendChild(noteLine(translate(hass, 'sprachpaketHinweis')));
-            const errors = checked ? voicePackErrors(draft) : {};
+            const errors = checked ? voicePackErrors(draft, card._hass) : {};
             const fields = {};
             for (const name of ['lang_id', 'url', 'md5', 'size']) {
                 const input = document.createElement('input');
@@ -5723,7 +5762,7 @@ function voicePackView(card) {
                 const field = formField(name, translate(hass, 'feld_' + name), input, errors[name] ? translate(hass, errors[name]) : '');
                 input.addEventListener('input', () => {
                     draft[name] = input.value;
-                    if (checked) field.update(voicePackErrors(draft)[name] ? translate(hass, voicePackErrors(draft)[name]) : '');
+                    if (checked) field.update(voicePackErrors(draft, card._hass)[name] ? translate(hass, voicePackErrors(draft, card._hass)[name]) : '');
                 });
                 fields[name] = field;
                 body.appendChild(field.wrap);
@@ -5732,7 +5771,7 @@ function voicePackView(card) {
             actions.className = 'actions';
             const next = BuschUI.action({ label: translate(hass, 'weiter'), text: translate(hass, 'weiter'), variant: 'primary', onClick: () => {
                 checked = true;
-                if (Object.keys(voicePackErrors(draft)).length) dialog._render();
+                if (Object.keys(voicePackErrors(draft, card._hass)).length) dialog._render();
                 else dialog.show(voicePackConfirm(card, draft));
             } });
             next.setAttribute('data-action', 'submit');
@@ -5743,7 +5782,7 @@ function voicePackView(card) {
 }
 
 function voicePackConfirm(card, draft) {
-    const data = { entity_id: card._opts.entity, lang_id: draft.lang_id.trim(), url: draft.url.trim(), md5: draft.md5.trim().toLowerCase(), size: Number(draft.size.trim()) };
+    const data = { entity_id: card._opts.entity, lang_id: draft.lang_id.trim(), url: ownAddress(card._hass, draft.url) || draft.url.trim(), md5: draft.md5.trim().toLowerCase(), size: Number(draft.size.trim()) };
     return {
         title: translate(card._hass, 'sprachpaketFrageTitel'),
         id: 'voice-pack-confirm',
@@ -5753,6 +5792,7 @@ function voicePackConfirm(card, draft) {
             const busy = card._settingWrites.has('voice_pack');
             const failed = card._settingNotes.get('voice_pack');
             body.appendChild(noteLine(translate(hass, 'sprachpaketFrage', { id: data.lang_id, url: data.url, groesse: data.size })));
+            body.appendChild(hostLine(hass, data.url));
             if (failed) body.appendChild(noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error'));
             const actions = document.createElement('div');
             actions.className = 'actions';
@@ -17033,7 +17073,9 @@ function restoreConfirm(card, session, home, map, source) {
     const replaced = lastBackup(hass, model, map.entry.id);
     const isBackup = !!entry && entry.type === 'backup';
     const can = session.canBackup(model);
-    const choice = { backup: can && !isBackup && !replaced };
+    const choice = { backup: can && !isBackup && !replaced, foreign: false };
+    // M29: Home Assistant itself fetches a file URL; another host needs a second confirmation.
+    const foreign = !entry && !ownAddress(hass, source.url);
     const stand = entry ? recoveryFrom(hass, entry) : source.url;
     session.backedUpAt = null; // the backup belongs to this restore, not to an earlier one
     session.error = null;
@@ -17049,11 +17091,29 @@ function restoreConfirm(card, session, home, map, source) {
             .concat(rooms ? [translate(hass, 'wiederherstellenRaeumeMerken', { raeume: roomCount(hass, rooms.length) })] : []),
         action: translate(hass, 'wiederherstellenKnopf'),
         destructive: true,
-        blocked: () => restoreLock(card, card._model()),
+        blocked: () => restoreLock(card, card._model()) || (foreign && !choice.foreign ? 'dateiFremdBestaetigen' : ''),
         backup: () => choice.backup,
         backupNote: false,
         calls: [Object.assign(call, { wait: 'map_recovery_status', busy: 'restore', timeout: RESTORE_TIMEOUT_MS, timeoutKey: 'wiederherstellenZeit' })],
         extra: (body, h, dialog) => {
+            if (!entry) body.appendChild(hostLine(h, source.url));
+            if (foreign) {
+                const wrap = document.createElement('label');
+                wrap.className = 'backup-option';
+                const input = document.createElement('input');
+                input.setAttribute('type', 'checkbox');
+                input.setAttribute('data-field', 'foreign_ok');
+                input.checked = choice.foreign;
+                input.disabled = !!session.busy;
+                input.addEventListener('change', () => {
+                    choice.foreign = !!input.checked;
+                    dialog._render();
+                });
+                const label = document.createElement('span');
+                label.textContent = translate(h, 'dateiFremdHaken');
+                wrap.append(input, label);
+                body.appendChild(wrap);
+            }
             if (entry && entry.picture) {
                 const img = document.createElement('img');
                 img.className = 'backup-preview';
@@ -17226,7 +17286,9 @@ const BACKUP_FILE_TEXTS = {
         dateiHinweis: 'Die Kartendatei (.mb.tbz2) muss unter einer für Home Assistant erreichbaren URL liegen, z. B. /local/… mit voller Adresse. Hochladen aus dem Browser bietet die Integration nicht an.',
         feld_file_url: 'Datei-URL',
         feld_target_map: 'Zielkarte',
-        fehlerDateiUrl: 'Eine vollständige Adresse mit http:// oder https:// eingeben.'
+        fehlerDateiUrl: 'Eine vollständige Adresse mit http:// oder https:// eingeben, bis zur Datei.',
+        dateiFremdHaken: 'Home Assistant ruft diese fremde Adresse ab; ich vertraue ihr.',
+        dateiFremdBestaetigen: 'Erst bestätigen, dass Home Assistant die fremde Adresse abrufen darf.'
     },
     en: {
         sicherungHerunterladen: 'Download',
@@ -17237,7 +17299,9 @@ const BACKUP_FILE_TEXTS = {
         dateiHinweis: 'The map file (.mb.tbz2) must be at a URL Home Assistant can reach, e.g. /local/… with the full address. The integration offers no upload from the browser.',
         feld_file_url: 'File URL',
         feld_target_map: 'Target map',
-        fehlerDateiUrl: 'Enter a full address with http:// or https://.'
+        fehlerDateiUrl: 'Enter a full address with http:// or https://, up to the file.',
+        dateiFremdHaken: 'Home Assistant fetches this external address; I trust it.',
+        dateiFremdBestaetigen: 'First confirm that Home Assistant may fetch the external address.'
     }
 };
 for (const language of Object.keys(BACKUP_FILE_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, BACKUP_FILE_TEXTS[language]);
@@ -17279,7 +17343,9 @@ function downloadNotePart(card, model, hass, dialog, view, map) {
 BACKUP_PARTS.push(downloadNotePart);
 
 /** Inline check of the file URL (R10): http(s), no blanks — cv.url of the service (vacuum.py#L616). */
-const fileUrlError = (url) => (/^https?:\/\/[^\s"'<>]+$/i.test(String(url || '').trim()) ? '' : 'fehlerDateiUrl');
+// M29: also /local/… of this Home Assistant (made absolute); a bare folder such as the prefilled …/local/ is no file.
+const fileUrl = (hass, url) => ownAddress(hass, url) || String(url || '').trim();
+const fileUrlError = (url, hass) => { const v = fileUrl(hass, url); return /^https?:\/\/[^\s"'<>]+$/i.test(v) && !v.endsWith('/') ? '' : 'fehlerDateiUrl'; };
 
 /** "Aus Datei-URL wiederherstellen" under "Erweitert" (only with the service). */
 function restoreFilePart(card, model, hass, dialog, view, map) {
@@ -17300,7 +17366,9 @@ function restoreFilePart(card, model, hass, dialog, view, map) {
  */
 function restoreFileView(card, home, start) {
     const key = 'restore-url';
-    if (!card._drafts.has(key)) card._drafts.set(key, { url: '', mapId: start.entry.id });
+    // M29: prefilled with /local/ of this Home Assistant (the usual place for the file).
+    const prefill = ownOrigin(card._hass) ? ownOrigin(card._hass) + '/local/' : '';
+    if (!card._drafts.has(key)) card._drafts.set(key, { url: prefill, mapId: start.entry.id });
     const draft = card._drafts.get(key);
     let checked = false;
     const sessions = new Map();
@@ -17314,13 +17382,13 @@ function restoreFileView(card, home, start) {
         }
         return sessions.get(String(map.entry.id));
     };
-    const dirty = () => draft.url.trim() !== '';
+    const dirty = () => draft.url.trim() !== prefill;
     const submit = (dialog) => {
         checked = true;
         const map = backupMap(card._model(), draft.mapId);
-        if (fileUrlError(draft.url) || !map || !map.active) return dialog._render();
+        if (fileUrlError(draft.url, card._hass) || !map || !map.active) return dialog._render();
         // A finished restore ends the draft; a cancelled one keeps it (R10).
-        dialog.show(restoreConfirm(card, sessionFor(map), home, map, { url: draft.url.trim(), done: () => card._drafts.delete(key) }));
+        dialog.show(restoreConfirm(card, sessionFor(map), home, map, { url: fileUrl(card._hass, draft.url), done: () => card._drafts.delete(key) }));
         return undefined;
     };
     const view = {
@@ -17353,11 +17421,11 @@ function restoreFileView(card, home, start) {
             input.setAttribute('aria-required', 'true');
             input.setAttribute('placeholder', 'https://…/karte.mb.tbz2');
             input.value = draft.url;
-            const error = checked ? fileUrlError(draft.url) : '';
+            const error = checked ? fileUrlError(draft.url, card._hass) : '';
             const field = formField('file_url', translate(hass, 'feld_file_url'), input, error ? translate(hass, error) : '');
             input.addEventListener('input', () => {
                 draft.url = input.value;
-                if (checked) field.update(fileUrlError(draft.url) ? translate(hass, fileUrlError(draft.url)) : '');
+                if (checked) field.update(fileUrlError(draft.url, card._hass) ? translate(hass, fileUrlError(draft.url, card._hass)) : '');
             });
             body.appendChild(field.wrap);
             const select = document.createElement('select');
