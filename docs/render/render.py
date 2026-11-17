@@ -3615,6 +3615,63 @@ def bereich_abrufe(k):
 # this order). k carries the shared state, see main(); values one area needs from
 # another belong in the shared constants above, not in the other area.
 # ---------------------------------------------------------------------------
+# ── M16 · Kontrast ─────────────────────────────────────────────────────────
+KONTRAST_BREITEN = (320, 360, 390, 480, 800, 1024, 1280, 1600)
+# M16: every visible text of the card (map area excluded, M33 measures it) against its composited
+# background: 4.5:1, large text (>= 24 px, or >= 18.66 px bold) 3:1; exempt: disabled text and the filled
+# primary button of the action bar (HA theme colour, decided 17.11.2026).
+KONTRAST_JS = """() => {
+    const rgba = (s) => { const m = s.match(/rgba?\\(([^)]+)\\)/); if (!m) return null;
+        const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; };
+    const over = (f, b) => { const a = f[3]; return [f[0] * a + b[0] * (1 - a), f[1] * a + b[1] * (1 - a), f[2] * a + b[2] * (1 - a), 1]; };
+    const lum = (c) => { const l = c.slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+        return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]; };
+    const up = (n) => n.parentElement || (n.getRootNode() && n.getRootNode().host) || null;
+    const back = (el) => { const layers = [];
+        for (let n = el; n; n = up(n)) { const cs = getComputedStyle(n);
+            if (cs.backgroundImage && cs.backgroundImage !== 'none') return null;
+            const c = rgba(cs.backgroundColor); if (c && c[3] > 0) { layers.push(c); if (c[3] >= 1) break; } }
+        let b = rgba(getComputedStyle(document.body).backgroundColor) || [255, 255, 255, 1]; if (b[3] < 1) b = over(b, [255, 255, 255, 1]);
+        for (let i = layers.length - 1; i >= 0; i--) b = over(layers[i], b);
+        return b; };
+    const out = [], skipped = [], exempt = [];
+    const walk = (root) => { const all = root.querySelectorAll('*');
+        for (let i = 0; i < all.length; i++) { const el = all[i]; if (el.shadowRoot) walk(el.shadowRoot);
+            let own = ''; for (const t of el.childNodes) if (t.nodeType === 3) own += t.textContent; own = own.trim(); if (!own) continue;
+            const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+            if (r.width < 1 || r.height < 1 || cs.visibility !== 'visible' || Number(cs.opacity) === 0) continue;
+            if (el.closest('.map-stage')) continue;
+            if (el.closest('[disabled], [aria-disabled=true]') || el.matches(':disabled')) continue;
+            // User decision 17.11.: the filled primary button keeps HA's theme colour (white on --primary-color, as HA's own buttons).
+            if (el.closest('.controls .ctl[data-variant=primary]')) { exempt.push(own.slice(0, 30)); continue; }
+            const b = back(el); if (!b) { skipped.push(own.slice(0, 30)); continue; }
+            const f = over(rgba(cs.color) || [0, 0, 0, 1], b), L1 = lum(f), L2 = lum(b);
+            const ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05), px = parseFloat(cs.fontSize), w = Number(cs.fontWeight) || 400;
+            const need = px >= 24 || (px >= 18.66 && w >= 700) ? 3 : 4.5;
+            if (ratio < need) out.push({ text: own.slice(0, 40), ratio: Math.round(ratio * 100) / 100, need, color: cs.color, px }); } };
+    walk(window.card().shadowRoot);
+    return { bad: out, skipped, exempt };
+}"""
+
+
+def bereich_kontrast(k):
+    """M16: Kontrast aller Kartentexte (8 Breiten x hell/dunkel, ruhend und reinigend)."""
+    page, report, check, theme, build, shot = k.page, k.report, k.check, k.theme, k.build, k.shot
+    rows = []
+    for width in KONTRAST_BREITEN:
+        for th in THEMES:
+            page.set_viewport_size({"width": width + 16, "height": 900})
+            theme(th)
+            for state in ("docked", "cleaning"):
+                build(state)
+                rows.append({"w": width, "theme": th, "state": state, **page.evaluate(KONTRAST_JS)})
+            shot(f"kontrast-cleaning-{width}-{th}.png")
+    report["kontrast"] = rows
+    bad = [{"w": r["w"], "theme": r["theme"], "state": r["state"], "bad": r["bad"]} for r in rows if r["bad"]]
+    check("M16 contrast: every visible card text outside the map >= 4.5:1 on its background (large text 3:1), disabled exempt, "
+          "8 widths x light/dark, docked and cleaning (exempt: disabled, filled primary button in theme colour)", not bad, json.dumps(bad)[:1500])
+
+
 BEREICHE = [
     ("karte", bereich_karte),
     ("layout", bereich_layout),
@@ -3645,6 +3702,7 @@ BEREICHE = [
     ("oberflaeche", bereich_oberflaeche),
     ("feinschliff", bereich_feinschliff),
     ("anzeige", bereich_anzeige),
+    ("kontrast", bereich_kontrast),
     # M19 counts the picture fetches of everything before it: keep it last.
     ("abrufe", bereich_abrufe),
 ]
