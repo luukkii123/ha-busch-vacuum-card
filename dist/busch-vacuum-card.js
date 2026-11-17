@@ -10184,6 +10184,8 @@ ha-card {
     min-height: 48px;
     margin-inline-end: 0;
     justify-content: center;
+    /* M2: the bar never shortens, not even the station button. */
+    text-overflow: clip;
     color: var(--primary-text-color, #212121);
     background: var(--ha-card-background, var(--card-background-color, #ffffff));
 }
