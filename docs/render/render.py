@@ -49,6 +49,8 @@ The page is served over HTTP so that any sub-resource would show up as a
 real 404. The harness HTML is written into the output directory, which must
 therefore lie inside the served repository (a copy of it is fine).
 
+Symbols (M14): ha-icon draws glyphs from docs/render/mdi-pfade.json (docs/render/mdi-pfade.py, @mdi/js).
+
 Usage:
     render.py <path/dist/busch-vacuum-card.js> <output-dir> [--nur <bereich>[,<bereich>...]]
 
@@ -78,6 +80,20 @@ from playwright.sync_api import sync_playwright, Page, TimeoutError as Playwrigh
 # Release Task 2: every picture records which dialog views (data-view = the
 # view's id) are open, so each id of the card's VIEW_IDS needs a picture.
 VIEWS_SEEN = {}
+# M14: at every picture, visible buttons without visible text (icon only) and their accessible name.
+ICON_BUTTONS = {"pictures": 0, "checked": 0, "unnamed": {}}
+UNNAMED_JS = """() => {
+    const roots = [document], out = { checked: 0, unnamed: [] };
+    for (let i = 0; i < roots.length; i++) roots[i].querySelectorAll('*').forEach((n) => { if (n.shadowRoot) roots.push(n.shadowRoot); });
+    for (const r of roots) r.querySelectorAll('button, [role=button]').forEach((b) => {
+        const box = b.getBoundingClientRect();
+        if (!box.width || !box.height || getComputedStyle(b).visibility === 'hidden' || (b.innerText || '').trim()) return;
+        out.checked++;
+        const named = (b.getAttribute('aria-label') || '').trim() || b.getAttribute('aria-labelledby') || (b.title || '').trim();
+        if (!named) out.unnamed.push((b.getAttribute('data-action') || b.getAttribute('data-entry') || b.className || b.tagName) + '');
+    });
+    return out;
+}"""
 _SCREENSHOT = Page.screenshot
 
 
@@ -88,6 +104,15 @@ def _screenshot_with_views(self, *args, **kwargs):
     except Exception:  # a page without the harness (e.g. closed) records nothing
         ids = []
     name = Path(str(kwargs.get("path") or "")).name
+    try:
+        unnamed = self.evaluate(UNNAMED_JS)
+    except Exception:
+        unnamed = None
+    if unnamed is not None:
+        ICON_BUTTONS["pictures"] += 1
+        ICON_BUTTONS["checked"] += unnamed["checked"]
+        for b in unnamed["unnamed"]:
+            ICON_BUTTONS["unnamed"].setdefault(b, []).append(name)
     for view_id in ids:
         VIEWS_SEEN.setdefault(view_id, []).append(name)
     return _SCREENSHOT(self, *args, **kwargs)
@@ -126,7 +151,7 @@ RENDER_IDS = [
     ("remote keyboard", ["REM-02"]), ("remote", ["REM-01", "REM-03"]), ("clean settings", ["SET-02", "SET-04", "SET-05"]),
     ("map editor", ["EDI-01", "EDI-02"]), ("map backup", ["BAK-01", "BAK-02"]), ("views:", ["CORE-12"]),
     ("layout:", ["CORE-13", "CORE-08"]), ("ha panel:", ["CORE-13"]), ("station warning:", ["CORE-08", "DOCK-05"]),
-    ("selection tools:", ["TASK-02"]),
+    ("selection tools:", ["TASK-02"]), ("symbols:", ["CORE-08", "CORE-12"]),
 ]
 
 WIDTHS = (320, 390, 480, 960, 1280)
@@ -392,12 +417,28 @@ PAGE = """<!doctype html>
   }
   customElements.define('ha-card', HaCardStub);
 
+  // M14: ha-icon draws the real MDI glyph from docs/render/mdi-pfade.json (made by mdi-pfade.py, no network).
+  // An unknown name shows a hollow box and lands in window.__iconsMissing (check "symbols:").
+  const MDI = __MDI__;
+  window.__iconsMissing = new Set();
   class HaIconStub extends HTMLElement {
+    static get observedAttributes() { return ['icon']; }
     constructor() {
       super();
       this.attachShadow({ mode: 'open' }).innerHTML = '<style>:host{display:inline-block;flex:none;' +
         'width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px);vertical-align:middle;}' +
-        'i{display:block;width:100%;height:100%;border-radius:22%;background:currentColor;opacity:.8;}</style><i></i>';
+        'svg{display:block;width:100%;height:100%;fill:currentColor;}</style>' +
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd"></path></svg>';
+      this._draw();
+    }
+    attributeChangedCallback() { this._draw(); }
+    get icon() { return this.getAttribute('icon'); }
+    set icon(v) { this.setAttribute('icon', v); }
+    _draw() {
+      const name = this.getAttribute('icon'), d = name ? MDI[name] : '';
+      if (name && !d) window.__iconsMissing.add(name);
+      this.toggleAttribute('data-missing', !!name && !d);
+      this.shadowRoot.querySelector('path').setAttribute('d', d || (name ? 'M3 3H21V21H3ZM5 5V19H19V5Z' : ''));
     }
   }
   customElements.define('ha-icon', HaIconStub);
@@ -2513,7 +2554,8 @@ def main():
             return route.fulfill(status=200, content_type="image/svg+xml", body=svg)
         page.route("**/api/camera_*proxy/**", camera_route)
 
-        html = PAGE.replace("__SRC__", f"/dist/{card_file.name}").replace("__THEMA__", THEMA_CSS)
+        mdi = json.loads((HERE / "mdi-pfade.json").read_text(encoding="utf-8"))["pfade"]
+        html = PAGE.replace("__SRC__", f"/dist/{card_file.name}").replace("__THEMA__", THEMA_CSS).replace("__MDI__", json.dumps(mdi))
         harness = out_dir / "harness.html"
         harness.write_text(html, encoding="utf-8")
         page.goto(f"http://127.0.0.1:{port}/{harness.relative_to(repo_root).as_posix()}")
@@ -2572,6 +2614,13 @@ def main():
         build("docked")
         report["viewIds"] = page.evaluate("() => customElements.get('busch-vacuum-card').__internals.VIEW_IDS")
         report["views"] = {k: v for k, v in sorted(VIEWS_SEEN.items())}
+        # M14: real glyphs and named icon-only buttons over every picture of this run.
+        missing = page.evaluate("() => Array.from(window.__iconsMissing || []).sort()")
+        report["symbole"] = {"fehlend": missing, "bilder": ICON_BUTTONS["pictures"], "symbolknoepfe": ICON_BUTTONS["checked"],
+                             "ohneNamen": {b: v[:5] for b, v in sorted(ICON_BUTTONS["unnamed"].items())}}
+        check("symbols: every ha-icon name has a glyph (docs/render/mdi-pfade.json)", not missing, json.dumps(missing))
+        check("symbols: icon-only button without name: 0 (every picture)", ICON_BUTTONS["pictures"] > 0 and not ICON_BUTTONS["unnamed"],
+              "%d icon-only buttons in %d pictures; %s" % (ICON_BUTTONS["checked"], ICON_BUTTONS["pictures"], json.dumps(report["symbole"]["ohneNamen"])[:1400]))
         unseen = [v for v in report["viewIds"] if not VIEWS_SEEN.get(v)]
         unknown = [v for v in VIEWS_SEEN if v not in report["viewIds"]]
         if alle:
