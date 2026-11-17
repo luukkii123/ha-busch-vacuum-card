@@ -516,6 +516,21 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
   wiederherstellen“ (`roomRestoreView`): ein `vacuum_set_custom_cleaning` je
   Raum nacheinander, Halt beim ersten Fehler, „Erneut versuchen“ nur für den
   Rest, gesperrt über `roomLock`. Die Werte leben nur im Speicher der Seite.
+- **Netz und Rennen (M20, Buschcheck 17.11.2026):** `_awaitStatus` nimmt als
+  zweites Signal eine geänderte Liste der Stände (`recoveryEntries`: Nummer,
+  Typ, Datum, Bild-URL mit `v=`): ist der Dienst beantwortet, der Status
+  unverändert „Success“ und die Liste anders als beim Start, ist der Lauf
+  fertig (sonst wie bisher bis zum Zeitlimit). Die Karte füttert wartende
+  Sitzungen auch bei Updates nur gespeicherter Kameras (`_feedWaits`).
+  Teilfehler: `commit` zählt geschriebene Aufrufe; mit `undo.groups`
+  (`saveConfirm` je Gruppe `{ count, calls }`) meldet `kartenTeilFehler`
+  „{n} von {m} Gruppen gespeichert …“ und das Undo nimmt die geschriebenen
+  Gruppen zurück. Eigener Frame: statt „der nächste Frame ist unserer“ merkt
+  `saveConfirm` die geänderten Listen mit ihrem alten Stand (`expect`); ein
+  neuer Frame, in dem alle noch alt sind, gilt als fremd (`foreign`), der
+  erste, in dem eine davon den alten Stand verlassen hat, als eigener
+  (tolerant gegen Normalisierung durch das Gerät). Rückgängig sowie Teilen und
+  Zusammenlegen von Räumen behalten `ownSave`. Tests: `tests/netz.test.js`.
 - **Grenzen:** kein Hochladen aus dem Browser (kein Dienst; daher Datei-URL);
   wie viele Backup-Stände das Gerät hält, ist offen.
 

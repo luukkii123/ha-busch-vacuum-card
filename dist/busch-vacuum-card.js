@@ -10873,11 +10873,20 @@ class BuschVacuumCard extends HTMLElement {
         if (back) this._reconnected();
         // The card first: the map's state (e.g. a finished ignore) is current when the dialog draws.
         if (!unchanged) this._update();
+        else this._feedWaits();
         if (this._dialog) this._dialog.hass = hass;
     }
 
     get hass() {
         return this._hass;
+    }
+
+    /** M20: a waiting backup/restore also sees cameras the card does not watch (its list of stored states). */
+    _feedWaits() {
+        const sessions = new Set([this._editSession, ...(this._mapSessions || [])].filter((s) => s && s._wait));
+        if (!sessions.size) return;
+        const model = this._model();
+        for (const session of sessions) session.onHass(model);
     }
 
     /** M18: back online – writes the device reports meanwhile count as confirmed, a failed map request runs at once. */
@@ -12501,6 +12510,7 @@ const EDIT_TEXTS = {
         kartenSicherungFehler: 'Sicherung fehlgeschlagen ({grund}). Die Karte ist unverändert; deine Änderungen bleiben erhalten. Erneut versuchen oder abbrechen.',
         kartenSicherungZeit: 'Zeitlimit 60 s überschritten',
         kartenSchreibFehler: 'Speichern fehlgeschlagen ({grund}). Deine Änderungen bleiben erhalten. Erneut versuchen oder abbrechen.',
+        kartenTeilFehler: '{n} von {m} Gruppen gespeichert, die übrigen nicht ({grund}). Erneut speichern schreibt die vollständigen Listen und ist unschädlich; Rückgängig nimmt die gespeicherten Gruppen zurück.',
         kartenErneut: 'Erneut versuchen',
         kartenGespeichert: 'Gespeichert',
         rueckgaengig: 'Rückgängig',
@@ -12785,6 +12795,7 @@ const EDIT_TEXTS = {
         kartenSicherungFehler: 'Backup failed ({grund}). The map is unchanged; your changes are kept. Try again or cancel.',
         kartenSicherungZeit: 'time limit of 60 s exceeded',
         kartenSchreibFehler: 'Saving failed ({grund}). Your changes are kept. Try again or cancel.',
+        kartenTeilFehler: '{n} of {m} groups saved, the others not ({grund}). Saving again writes the complete lists and does no harm; Undo takes the saved groups back.',
         kartenErneut: 'Try again',
         kartenGespeichert: 'Saved',
         rueckgaengig: 'Undo',
@@ -13136,7 +13147,9 @@ class MapEditSession {
     _awaitStatus(grant, attr, service, data, timeoutMs, timeoutKey) {
         return new Promise((resolve, reject) => {
             // A stale "Success"/"Failed" of an earlier run counts only once the status moved.
-            const wait = { attr, running: false, start: String(this.model().attr(attr) || ''), resolve, reject, timer: null };
+            // M20: a changed list of stored states is a second signal once the service answered (Running may fall between two polls).
+            const mapId = data && data.map_id !== undefined ? data.map_id : this.mapId;
+            const wait = { attr, running: false, start: String(this.model().attr(attr) || ''), mapId, list: this._statesSig(mapId), answered: false, resolve, reject, timer: null };
             const end = (error) => {
                 if (this._wait !== wait) return;
                 clearTimeout(wait.timer);
@@ -13147,8 +13160,16 @@ class MapEditSession {
             wait.end = end;
             this._wait = wait;
             wait.timer = setTimeout(() => end(Object.assign(new Error(translate(this.card._hass, timeoutKey)), { timeout: true })), timeoutMs);
-            mapWrite(this.card, grant, service, data).then(() => this.onHass(this.model()), (error) => end(error));
+            mapWrite(this.card, grant, service, data).then(() => {
+                wait.answered = true;
+                this.onHass(this.model());
+            }, (error) => end(error));
         });
+    }
+
+    /** M20: the stored states of a map as one comparable text (number, type, date, picture with its v=). */
+    _statesSig(mapId, model = this.model()) {
+        return JSON.stringify(recoveryEntries(this.card._hass, model, mapId).map((e) => [e.k, e.typeText, e.date, e.picture]));
     }
 
     /** Fed by the card on every own update: the awaited status decides. */
@@ -13157,7 +13178,10 @@ class MapEditSession {
         if (!wait) return;
         const status = String(model.attr(wait.attr) || '');
         if (/running/i.test(status)) wait.running = true;
-        else if (!wait.running && status === wait.start) return;
+        else if (!wait.running && status === wait.start) {
+            if (wait.answered && /success/i.test(status) && this._statesSig(wait.mapId, model) !== wait.list) wait.end();
+            return;
+        }
         else if (/success|idle/i.test(status)) wait.end();
         else if (/fail|error/i.test(status)) wait.end(new Error(status));
     }
@@ -13176,6 +13200,7 @@ class MapEditSession {
             return false;
         }
         this.error = null;
+        let written = 0; // M20: calls on the device before a failure
         try {
             if (backup && this.backedUpAt === null && this.canBackup(model)) {
                 this.busy = 'backup';
@@ -13192,6 +13217,7 @@ class MapEditSession {
                     rerender(this.card);
                     await this._awaitStatus(grant, call.wait, call.service, call.data, call.timeout || BACKUP_TIMEOUT_MS, call.timeoutKey || 'kartenSicherungZeit');
                 } else await mapWrite(this.card, grant, call.service, call.data);
+                written++;
             }
             if (undo) this.undo.push(undo);
             this.saved = text;
@@ -13201,6 +13227,7 @@ class MapEditSession {
                 : this.busy === 'restore' ? (error && error.timeout ? 'wiederherstellenUnbekannt' : cloudRequired(error) ? 'wiederherstellenCloud' : 'wiederherstellenFehler')
                     : 'kartenSchreibFehler';
             this.error = { kind: this.busy, text: translate(this.card._hass, key, { grund: errorText(error) }) };
+            if (this.busy === 'save' && written > 0) this._partial(written, calls, undo, error);
             return false;
         } finally {
             this.busy = null;
@@ -13208,6 +13235,29 @@ class MapEditSession {
         }
     }
 }
+
+/**
+ * M20: some calls reached the device before one failed. With `undo.groups`
+ * ([{ count, calls }], one per group in call order) the text counts groups and
+ * the undo takes back the fully written ones; without, it counts calls.
+ */
+MapEditSession.prototype._partial = function (written, calls, undo, error) {
+    const groups = undo && Array.isArray(undo.groups) ? undo.groups : null;
+    let n = written, m = calls.length;
+    if (groups) {
+        let left = written;
+        const done = [];
+        for (const g of groups) {
+            if (left < g.count) break;
+            left -= g.count;
+            done.push(g);
+        }
+        n = done.length;
+        m = groups.length;
+        if (done.length) this.undo.push(Object.assign({}, undo, { calls: done.flatMap((g) => g.calls), groups: done }));
+    }
+    this.error = { kind: 'save', text: translate(this.card._hass, 'kartenTeilFehler', { n, m, grund: errorText(error) }) };
+};
 
 /** "No-Go-Zonen: 1 neu, 1 geändert, 0 gelöscht" (R13: the objects, not only a question). */
 function editCountLine(hass, art, c) {
@@ -14113,6 +14163,7 @@ class MapEditor {
         this.draft = {};
         this.tool = null;
         this.ownSave = false; // the next new frame_id is our own save: no "changed" note
+        this.expect = null; // M20: after a save, the lists that must leave their old state in our own frame
         this.foreign = false;
         this.toolCaps = editCaps(card._model(), null, cur.objects);
         this.left = false;
@@ -14196,7 +14247,7 @@ class MapEditor {
     }
 
     /** Edit data again (enter, new frame_id): untouched draft lists follow the device, edited ones stay (Abgleich). */
-    reload() {
+    reload(judge = null) {
         const card = this.card;
         this.loading = true;
         const frame = this.frame;
@@ -14204,6 +14255,11 @@ class MapEditor {
             if (this.left || frame !== this.frame) return;
             const cur = card._map.current();
             const fresh = editLists(cur.objects, data);
+            if (judge && this.expect === judge) {
+                const own = Object.keys(judge.before).some((list) => JSON.stringify(fresh[list]) !== JSON.stringify(judge.before[list]));
+                if (own) this.expect = null;
+                else this.foreign = true;
+            }
             for (const lists of Object.values(this.draft)) {
                 for (const list of Object.keys(lists)) if (JSON.stringify(lists[list]) === JSON.stringify(this.base[list])) lists[list] = cloneList(fresh[list]);
             }
@@ -14223,9 +14279,12 @@ class MapEditor {
         const cur = this.card._map.current();
         if (cur.frameId === this.frame) return;
         this.frame = cur.frameId;
-        if (!this.ownSave) this.foreign = true;
-        this.ownSave = false;
-        this.reload();
+        const judge = this.expect; // M20: with an expectation the edit lists decide (in reload)
+        if (!judge) {
+            if (!this.ownSave) this.foreign = true;
+            this.ownSave = false;
+        }
+        this.reload(judge);
         rerender(this.card); // "loading": saving waits for the reconciliation
     }
 
@@ -14240,16 +14299,21 @@ class MapEditor {
         const undoText = lines.join('; ');
         if (this.foreign) lines.push(translate(hass, 'kartenAbgeglichen'));
         const before = cloneList(this.base);
+        // M20: per group its calls and their undo, so a partial failure can name and take back the written ones.
+        const parts = groups.map((g) => ({ calls: groupCalls(g, merged, mapId, before), undo: groupCalls(g, before, mapId, merged) }));
+        const changedLists = Object.keys(merged).filter((list) => JSON.stringify(merged[list]) !== JSON.stringify(before[list]));
         return mapConfirm(card, this.session, {
             title: translate(hass, 'kartenSicherungTitel'),
             lines,
             action: translate(hass, 'speichern'),
-            calls: groups.flatMap((g) => groupCalls(g, merged, mapId, before)),
-            undo: { text: undoText, calls: groups.flatMap((g) => groupCalls(g, before, mapId, merged)), base: before },
+            calls: parts.flatMap((p) => p.calls),
+            undo: { text: undoText, calls: parts.flatMap((p) => p.undo), base: before, groups: parts.map((p) => ({ count: p.calls.length, calls: p.undo })) },
             done: (dialog) => {
                 this.base = cloneList(merged);
                 this.draft = {};
-                this.ownSave = true;
+                // M20: our frame is the first one whose saved lists left the old state; one before it is foreign.
+                this.expect = changedLists.length ? { before: Object.fromEntries(changedLists.map((list) => [list, before[list]])) } : null;
+                this.ownSave = !this.expect;
                 this.foreign = false;
                 this.changed();
                 backTo(dialog, this.view);
@@ -14473,6 +14537,7 @@ function editRender(card, editor, body, hass, dialog) {
             editor.base = cloneList(last.base);
             editor.draft = {};
             editor.ownSave = true;
+            editor.expect = null;
             editor.changed();
             backTo(d, editor.view);
         })) });

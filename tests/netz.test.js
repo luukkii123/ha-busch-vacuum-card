@@ -379,3 +379,152 @@ test('M18 zurück online: eine offene Einstellung, die das Gerät inzwischen mel
   assert.equal(k.karte._settingWrites.has(schalter), false, 'bei Rückkehr bestätigt');
   assert.equal(k.karte._settingNotes.has(schalter), false, 'kein Fehlerhinweis');
 });
+
+// ── M20 · Kartensicherung: Status-Rennen, Teilfehler, eigener Frame ────────
+
+const ZONE = { service: 'vacuum_set_restricted_zone', data: { walls: [], zones: [[0, 0, 500, 500]], no_mops: [] } };
+const GRANT = (karte) => ({ card: karte, confirmed: true });
+const kartenDienste = (haus) => haus.rufe.filter((r) => r.domain === 'dreame_vacuum').map((r) => r.service);
+
+/** Karte wie in karteneditor.test.js: Dienste antworten sofort, ohne Kartendaten-Abruf. */
+function sicherungsKarte({ vac = {} } = {}) {
+  const u = neueUmgebung(), haus = hausAus('voll');
+  const v = haus.states['vacuum.robo'];
+  haus.states['vacuum.robo'] = Object.assign({}, v, { attributes: Object.assign({}, v.attributes, vac) });
+  haus.antwort = () => Promise.resolve();
+  const karte = neueKarte(u, haus);
+  const I = u.registry.get('busch-vacuum-card').__internals;
+  const k = { u, haus, karte, I };
+  k.setze = (id, attribute = {}) => { const alt = haus.states[id] || { entity_id: id, state: 'idle', attributes: {} }; karte.hass = haus.setze({ [id]: Object.assign({}, alt, { attributes: Object.assign({}, alt.attributes, attribute) }) }); };
+  return k;
+}
+/** Die Kameras, deren recovery_map_list die Karte für die aktive Karte liest. */
+/** maps[].id der Fixture (Karte 1); die Kartenverwaltung übergibt sie so an backup(). */
+const sicherungsKameras = (k) => Object.keys(k.haus.states).filter((id) => id.startsWith('camera.robo_map') && k.haus.states[id].attributes.recovery_map_list !== undefined);
+
+test('BAK-01 M20 Status-Rennen: Start „Success“, Dienst beantwortet, Status bleibt „Success“, Sicherungsliste ändert sich → backup() in < 1 s ohne Zeitlimit', async () => {
+  const k = sicherungsKarte({ vac: { map_backup_status: 'Success' } });
+  const kameras = sicherungsKameras(k);
+  assert.ok(kameras.length, 'Fixture hat eine Sicherungsliste');
+  const s = new k.I.MapEditSession(k.karte);
+  k.karte._editSession = s;
+  let fertig = null;
+  s.backup(GRANT(k.karte), 3).then(() => { fertig = 'ok'; }, (e) => { fertig = e; });
+  await mikro();
+  assert.deepEqual(kartenDienste(k.haus), ['vacuum_backup_map']);
+  k.karte.hass = k.haus.fremd();
+  await mikro();
+  assert.equal(fertig, null, 'ohne Listenänderung wartet sie weiter (bisheriges Verhalten)');
+  for (const id of kameras) {
+    const alt = k.haus.states[id].attributes.recovery_map_list || [];
+    k.setze(id, { recovery_map_list: [{ date: '2026-11-17 10:00', map_type: 'Backup Map', object_name: 'neu' }].concat(alt) });
+  }
+  k.u.uhr.vor(1000);
+  await mikro();
+  assert.equal(fertig, 'ok', 'erledigt ohne Zeitlimit: ' + (fertig && fertig.message));
+  assert.equal(s._wait, null);
+});
+
+test('BAK-01 M20 Status-Rennen: eine Listenänderung zählt erst, wenn der Dienst beantwortet ist; ohne sie bleibt das Zeitlimit', async () => {
+  const k = sicherungsKarte({ vac: { map_backup_status: 'Success' } });
+  let antworten;
+  k.haus.antwort = () => new Promise((ok) => { antworten = ok; });
+  const s = new k.I.MapEditSession(k.karte);
+  k.karte._editSession = s;
+  let fertig = null;
+  s.backup(GRANT(k.karte), 3).then(() => { fertig = 'ok'; }, (e) => { fertig = e; });
+  await mikro();
+  for (const id of sicherungsKameras(k)) k.setze(id, { recovery_map_list: [{ date: '2026-11-17 10:00', map_type: 'Backup Map', object_name: 'x' }] });
+  await mikro();
+  assert.equal(fertig, null, 'Dienst noch offen: nicht fertig');
+  antworten();
+  await mikro(); await mikro();
+  assert.equal(fertig, 'ok', 'mit der Antwort erledigt');
+  // Ohne Listenänderung: wie bisher bis zum Zeitlimit.
+  const z = sicherungsKarte({ vac: { map_backup_status: 'Success' } });
+  const s2 = new z.I.MapEditSession(z.karte);
+  z.karte._editSession = s2;
+  let ende = null;
+  s2.backup(GRANT(z.karte), 3).then(() => { ende = 'ok'; }, (e) => { ende = e; });
+  await mikro(); await mikro();
+  z.karte.hass = z.haus.fremd();
+  z.u.uhr.vor(59999); await mikro();
+  assert.equal(ende, null);
+  z.u.uhr.vor(1); await mikro();
+  assert.ok(ende && ende.timeout, 'Zeitlimit wie bisher');
+});
+
+test('EDI-02 M20 Teilfehler: drei Aufrufe, der dritte scheitert → „2 von 3“, Undo enthält die zwei geschriebenen Gruppen', async () => {
+  const k = sicherungsKarte({ vac: { capabilities: [] } });
+  const s = new k.I.MapEditSession(k.karte);
+  let nr = 0;
+  k.haus.antwort = () => (++nr === 3 ? Promise.reject(new Error('Gerät lehnt ab')) : Promise.resolve());
+  const ruf = (i) => ({ service: 'vacuum_set_restricted_zone', data: { nr: i } });
+  const zurueck = (i) => ({ service: 'vacuum_set_restricted_zone', data: { zurueck: i } });
+  const undo = { text: 'drei Gruppen', calls: [zurueck(1), zurueck(2), zurueck(3)], groups: [{ count: 1, calls: [zurueck(1)] }, { count: 1, calls: [zurueck(2)] }, { count: 1, calls: [zurueck(3)] }] };
+  assert.equal(await s.commit(GRANT(k.karte), [ruf(1), ruf(2), ruf(3)], { undo, backup: false }), false);
+  assert.match(s.error.text, /2 von 3 Gruppen gespeichert/);
+  assert.match(s.error.text, /Gerät lehnt ab/);
+  assert.match(s.error.text, /vollständigen Listen/, 'nächster Schritt: erneut speichern ist unschädlich');
+  assert.equal(s.undo.length, 1);
+  assert.deepEqual(roh(s.undo[0].calls), roh([zurueck(1), zurueck(2)]), 'Undo der geschriebenen Gruppen');
+  nr = 10;
+  k.haus.antwort = () => Promise.reject(new Error('weg'));
+  assert.equal(await s.commit(GRANT(k.karte), [ruf(1)], { undo: { text: 'x', calls: [zurueck(1)], groups: [{ count: 1, calls: [zurueck(1)] }] }, backup: false }), false);
+  assert.doesNotMatch(s.error.text, /von/, 'nichts geschrieben: der bisherige Text');
+  assert.equal(s.undo.length, 1, 'kein leeres Undo');
+});
+
+/** Bearbeitungsmodus wie karteneditor.test.js: Testwerkzeug legt eine No-Go-Zone an. */
+async function bearbeitung(k) {
+  const knopf = (body, action, fn) => { const b = k.u.document.createElement('button'); b.setAttribute('data-action', action); b.addEventListener('click', fn); body.appendChild(b); };
+  k.I.EDIT_TOOLS.zones.panel = (card, editor, body) => knopf(body, 'add-zone', () => { editor.edit('restricted').no_go_areas.push([100, 100, 600, 600]); editor.changed(); });
+  k.karte._map.tools.querySelector('[data-action="map-edit"]').click();
+  const $ = (sel) => dialogVon(k.u).shadowRoot.querySelector(sel);
+  await mikro(); await mikro();
+  $('[data-tool="zones"]').click();
+  $('[data-action="add-zone"]').click();
+  k.karte._mapEdit.edit('curtain').curtains.push([0, 0, 500, 0]);
+  k.karte._mapEdit.changed();
+  $('[data-action="save"]').click();
+  return $;
+}
+const { dialogVon } = require('./hilfen.js');
+/** Die Sicherung vor dem ersten Speichern läuft an und endet erfolgreich. */
+const sicherungFertig = async (k) => { await mikro(); k.setze('vacuum.robo', { map_backup_status: 'Running' }); k.setze('vacuum.robo', { map_backup_status: 'Success' }); await mikro(); await mikro(); await mikro(); };
+
+test('EDI-02 M20 Teilfehler im Editor: zwei Gruppen, die zweite scheitert → „1 von 2“, Undo nur für die erste', async () => {
+  const k = sicherungsKarte();
+  const $ = await bearbeitung(k);
+  k.haus.antwort = (d, service) => (service === 'vacuum_set_curtain' ? Promise.reject(new Error('Gerät lehnt ab')) : Promise.resolve());
+  $('[data-action="confirm"]').click();
+  await sicherungFertig(k);
+  assert.deepEqual(kartenDienste(k.haus).filter((x) => x !== 'vacuum_backup_map'), ['vacuum_set_restricted_zone', 'vacuum_set_curtain']);
+  const s = k.karte._editSession;
+  assert.match(s.error.text, /1 von 2 Gruppen gespeichert/);
+  assert.equal(s.undo.length, 1);
+  assert.deepEqual(s.undo[0].calls.map((c) => c.service), ['vacuum_set_restricted_zone'], 'Undo der geschriebenen Gruppe');
+});
+
+test('EDI-02 M20 eigener Frame: ein fremder Frame zwischen Speichern und eigenem ergibt foreign = true, der eigene wird erkannt', async () => {
+  for (const fremdZuerst of [false, true]) {
+    const k = sicherungsKarte();
+    const $ = await bearbeitung(k);
+    $('[data-action="confirm"]').click();
+    await sicherungFertig(k);
+    k.u.zurueck(); // zurück in die Bearbeitungsansicht (Verlauf der Attrappe)
+    const ed = k.karte._mapEdit;
+    assert.equal(ed.dirty(), false, 'gespeichert');
+    assert.ok(ed.expect, 'Erwartung des eigenen Frames');
+    if (fremdZuerst) {
+      k.setze(CAM, { frame_id: 1181 }); // Gerät meldet die alte Liste (fremder Frame)
+      await mikro(); await mikro();
+      assert.equal(ed.foreign, true, 'fremder Frame erkannt');
+      assert.ok(ed.expect, 'eigener Frame steht noch aus');
+    }
+    k.setze(CAM, { frame_id: 1182, no_go_areas: [{ x0: 100, y0: 100, x1: 600, y1: 100, x2: 600, y2: 600, x3: 100, y3: 600, angle: null }] }); // das Gerät meldet die gespeicherte Zone
+    await mikro(); await mikro();
+    assert.equal(ed.expect, null, fremdZuerst + ': eigener Frame erkannt');
+    assert.equal(ed.foreign, fremdZuerst, fremdZuerst ? 'Hinweis bleibt vom fremden Frame' : 'eigener Frame allein: kein Hinweis');
+  }
+});
