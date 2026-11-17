@@ -49,7 +49,7 @@ class ClassList {
   toggle(c, an) { const soll = an === undefined ? !this.contains(c) : !!an; if (soll) this.add(c); else this.remove(c); return soll; }
 }
 
-function neueUmgebung({ uhr, sprache = 'de' } = {}) {
+function neueUmgebung({ uhr, sprache = 'de', quelle } = {}) {
   uhr = uhr || neueUhr();
   const registry = new Map();
   const fehler = [];
@@ -153,7 +153,8 @@ function neueUmgebung({ uhr, sprache = 'de' } = {}) {
   };
   kontext.globalThis = kontext;
   vm.createContext(kontext);
-  vm.runInContext(fs.readFileSync(KARTE, 'utf8'), kontext, { filename: 'busch-vacuum-card.js' });
+  // quelle: abgewandelter Kartenquelltext (M40), Vorgabe die ausgelieferte Datei.
+  vm.runInContext(quelle !== undefined ? quelle : fs.readFileSync(KARTE, 'utf8'), kontext, { filename: 'busch-vacuum-card.js' });
   /**
    * Tastenereignis wie im Browser an einem fokussierten Element: erst die
    * Capture-Listener des Dokuments, dann Ziel und Vorfahren (Bubble), dann die

@@ -86,3 +86,20 @@ test('M37 Kartengröße nach Layout: mit Karte 9, ohne Karte 4, Panel 1; Raster 
   assert.equal(panel.getCardSize(), 1);
   assert.equal(panel.getGridOptions().min_rows, 1, 'Panel: kleinste Kachel, HA zeigt die Karte ohnehin ganzseitig');
 });
+
+test('M40 Texttabellen ohne Kollision: addTexts mischt alle sechs, ein doppelter Schlüssel wirft', () => {
+  const fs = require('node:fs');
+  const quelle = fs.readFileSync(require('node:path').join(__dirname, '..', 'dist', 'busch-vacuum-card.js'), 'utf8');
+  assert.equal((quelle.match(/Object\.assign\(TEXTE_BUSCH_VACUUM_CARD/g) || []).length, 0, 'kein stilles Object.assign ins Wörterbuch');
+  const tabellen = ['EDIT_TEXTS', 'BACKUP_TEXTS', 'BACKUP_VIEW_TEXTS', 'BACKUP_NOW_TEXTS', 'RESTORE_TEXTS', 'BACKUP_FILE_TEXTS'];
+  for (const name of tabellen) assert.ok(quelle.includes(`addTexts('${name}', ${name});`), name + ' über addTexts');
+  const T = neueUmgebung().registry.get('busch-vacuum-card').__internals.TEXTE;
+  assert.equal(T.de.texte.rueckgaengig, 'Rückgängig');
+  assert.equal(T.en.texte.rueckgaengig, 'Undo');
+  assert.equal(T.de.texte.kartenGespeichert, 'Gespeichert', 'Modultext angekommen');
+  // Absichtlich doppelter Schlüssel: rueckgaengig steht schon in der Grundtabelle.
+  const anker = "        kartenGespeichert: 'Gespeichert',\n";
+  assert.equal(quelle.split(anker).length, 2, 'Anker eindeutig');
+  const doppelt = quelle.replace(anker, anker + "        rueckgaengig: 'Rückgängig',\n");
+  assert.throws(() => neueUmgebung({ quelle: doppelt }), /rueckgaengig.*EDIT_TEXTS|EDIT_TEXTS.*rueckgaengig/);
+});

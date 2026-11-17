@@ -1702,6 +1702,18 @@ function translate(hass, key, vars) {
 const fieldLabel = (hass, name) => BuschUI.fieldText(TEXTE_BUSCH_VACUUM_CARD, hass, name, { legacy: true }).label;
 const fieldHelper = (hass, name) => BuschUI.fieldText(TEXTE_BUSCH_VACUUM_CARD, hass, name, { legacy: true }).helper;
 
+/** Merges a module's text table into the one dictionary; a key that already exists throws instead of being overwritten silently. */
+function addTexts(name, table) {
+    for (const language of Object.keys(table)) {
+        const target = TEXTE_BUSCH_VACUUM_CARD[language] && TEXTE_BUSCH_VACUUM_CARD[language].texte;
+        if (!target) throw new Error(`busch-vacuum-card: ${name} has unknown language "${language}"`);
+        for (const key of Object.keys(table[language])) {
+            if (Object.prototype.hasOwnProperty.call(target, key)) throw new Error(`busch-vacuum-card: text "${key}" from ${name} already exists (${language})`);
+            target[key] = table[language][key];
+        }
+    }
+}
+
 /**
  * Carries a dictionary key, not a sentence: `setConfig` runs before `hass`
  * exists, so the language is only known when the error box is drawn.
@@ -13688,7 +13700,6 @@ const EDIT_TEXTS = {
         kartenTeilFehler: '{n} von {m} Gruppen gespeichert, die übrigen nicht ({grund}). Erneut speichern schreibt die vollständigen Listen und ist unschädlich; Rückgängig nimmt die gespeicherten Gruppen zurück.',
         kartenErneut: 'Erneut versuchen',
         kartenGespeichert: 'Gespeichert',
-        rueckgaengig: 'Rückgängig',
         kartenRueckgaengigTitel: 'Änderung zurücknehmen',
         kartenRueckgaengigText: 'Sendet den Stand vor der letzten Speicherung: {was}.',
         kartenSperreAufgabe: 'Gesperrt, solange eine Aufgabe läuft.',
@@ -13973,7 +13984,6 @@ const EDIT_TEXTS = {
         kartenTeilFehler: '{n} of {m} groups saved, the others not ({grund}). Saving again writes the complete lists and does no harm; Undo takes the saved groups back.',
         kartenErneut: 'Try again',
         kartenGespeichert: 'Saved',
-        rueckgaengig: 'Undo',
         kartenRueckgaengigTitel: 'Take back change',
         kartenRueckgaengigText: 'Sends the state before the last save: {was}.',
         kartenSperreAufgabe: 'Locked while a task is running.',
@@ -14244,7 +14254,7 @@ const EDIT_TEXTS = {
         kartenOffenFrageEins: 'There is 1 unsaved change. Save, discard or keep editing?'
     }
 };
-for (const language of Object.keys(EDIT_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, EDIT_TEXTS[language]);
+addTexts('EDIT_TEXTS', EDIT_TEXTS);
 
 const BACKUP_TIMEOUT_MS = 60000;
 /** Services that refuse while a task runs (device.py: carpets, points, walls, router, visibility, floor, deleting a map). */
@@ -17811,7 +17821,7 @@ const BACKUP_TEXTS = {
         sicherungNurAnsehen: 'This device cannot restore; the states can only be viewed and downloaded.'
     }
 };
-for (const language of Object.keys(BACKUP_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, BACKUP_TEXTS[language]);
+addTexts('BACKUP_TEXTS', BACKUP_TEXTS);
 
 /** "04/26/26 13:23:13: Map2 (Bearbeitete Karte)" (camera.py#L1353): when, number k, type text. */
 const RECOVERY_KEY = /^(.*?): Map(\d+) \((.*)\)$/;
@@ -17954,7 +17964,7 @@ const BACKUP_VIEW_TEXTS = {
         sicherungStatus_unknown: 'unknown'
     }
 };
-for (const language of Object.keys(BACKUP_VIEW_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, BACKUP_VIEW_TEXTS[language]);
+addTexts('BACKUP_VIEW_TEXTS', BACKUP_VIEW_TEXTS);
 
 const RECOVERY_ICONS = { original: 'mdi:map-outline', edited: 'mdi:map-check-outline', backup: 'mdi:cloud-check-outline', unknown: 'mdi:map-clock-outline' };
 
@@ -18320,7 +18330,7 @@ const BACKUP_NOW_TEXTS = {
         sicherungKeineGespeichert: 'No stored map to back up.'
     }
 };
-for (const language of Object.keys(BACKUP_NOW_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, BACKUP_NOW_TEXTS[language]);
+addTexts('BACKUP_NOW_TEXTS', BACKUP_NOW_TEXTS);
 
 /**
  * The list's session (Sicherheitsrahmen: one helper with the editor, R08):
@@ -18450,7 +18460,7 @@ const RESTORE_TEXTS = {
         raeumeZurueckFertig: 'Room settings of {raeume} restored.'
     }
 };
-for (const language of Object.keys(RESTORE_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, RESTORE_TEXTS[language]);
+addTexts('RESTORE_TEXTS', RESTORE_TEXTS);
 
 /** `cloud_required` of the integration (device.py#L7012): the restore needs its cloud login (R12: own text). */
 const cloudRequired = (error) => !!error && (error.translation_key === 'cloud_required' || /cloud/i.test(errorText(error)));
@@ -18725,7 +18735,7 @@ const BACKUP_FILE_TEXTS = {
         dateiFremdBestaetigen: 'First confirm that Home Assistant may fetch the external address.'
     }
 };
-for (const language of Object.keys(BACKUP_FILE_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, BACKUP_FILE_TEXTS[language]);
+addTexts('BACKUP_FILE_TEXTS', BACKUP_FILE_TEXTS);
 
 /**
  * BAK-02 raw file: a link to the state's recovery_map_file URL (camera.py#L285:
