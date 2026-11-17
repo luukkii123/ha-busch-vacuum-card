@@ -896,9 +896,11 @@ def bereich_karte(k):
     theme("light")
     build("cleaning", lang="en")
     en = page.evaluate("() => Array.from(window.card().shadowRoot.querySelectorAll('.ctl')).map((b) => b.textContent)")
+    en_return = page.evaluate("() => { const b = window.card().shadowRoot.querySelector('.ctl[data-action=return]'); return b && b.getAttribute('aria-label'); }")
     page.screenshot(path=str(out_dir / "karte-cleaning-en-390.png"), full_page=True)
     report["screenshots"].append("karte-cleaning-en-390.png")
-    check("English UI with English HA", en == ["Pause", "Stop", "Return"], json.dumps(en))
+    # M2: the bar says the short word "Dock", the full command is the button's name.
+    check("English UI with English HA", en == ["Pause", "Stop", "Dock"] and en_return == "Return to dock", json.dumps([en, en_return]))
 
 
 def bereich_layout(k):
@@ -1058,7 +1060,7 @@ def bereich_dialog(k):
     check("after turning the phone the dialog fits again",
           abs(turned["top"]) <= 1 and abs(turned["bottom"] - turned["H"]) <= 1, json.dumps(turned))
 
-    # Confirmation (CORE-20): 320 px on a desktop, full screen on a phone.
+    # Confirmation (CORE-20): 320 px on a desktop; on a phone the M11 bottom sheet (full width, >= 90 % high, at the bottom edge).
     confirm = []
     for w, h in ((1280, 800), (360, 640)):
         for th in THEMES:
@@ -1067,15 +1069,15 @@ def bereich_dialog(k):
             build("docked")
             open_confirm()
             ruhe()
-            r = page.evaluate("() => { const r = window.dialog().shadowRoot.querySelector('.sheet').getBoundingClientRect(); return { width: r.width, height: r.height, W: innerWidth, H: innerHeight, small: window.smallTargets(window.dialog().shadowRoot) }; }")
+            r = page.evaluate("() => { const r = window.dialog().shadowRoot.querySelector('.sheet').getBoundingClientRect(); return { width: r.width, height: r.height, bottom: r.bottom, W: innerWidth, H: innerHeight, small: window.smallTargets(window.dialog().shadowRoot) }; }")
             shot = f"dialog-bestaetigung-{w}x{h}-{th}.png"
             page.screenshot(path=str(out_dir / shot))
             report["screenshots"].append(shot)
             page.evaluate("() => window.closeDialogs()")
             confirm.append({"w": w, "theme": th, **r})
     page.evaluate("() => { document.documentElement.style.overflow = ''; }")
-    check("confirmation dialog 320 px wide on a desktop, full screen on a phone, 44 px buttons",
-          all((abs(x["width"] - 320) <= 0.5 if x["w"] > 450 else abs(x["width"] - x["W"]) <= 1 and abs(x["height"] - x["H"]) <= 1)
+    check("confirmation dialog 320 px wide on a desktop, on a phone a full-width bottom sheet >= 90 % high (M11), 44 px buttons",
+          all((abs(x["width"] - 320) <= 0.5 if x["w"] > 450 else abs(x["width"] - x["W"]) <= 1 and x["height"] >= 0.9 * x["H"] - 1 and abs(x["bottom"] - x["H"]) <= 1)
               and not x["small"] for x in confirm), json.dumps(confirm))
 
     # Placeholder view, once per size class, for the eye.
@@ -3224,7 +3226,7 @@ M11_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog(
     const acts = sr.querySelector('.actions'), a = acts ? acts.getBoundingClientRect() : null;
     const btns = acts ? Array.from(acts.querySelectorAll('button')).filter((b) => b.getBoundingClientRect().width > 0).map((b) => { const x = b.getBoundingClientRect(); return { w: x.width, h: x.height, t: x.top, b: x.bottom }; }) : [];
     return { kind: sheet.getAttribute('data-kind'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height, W: innerWidth, H: innerHeight,
-             actions: a ? { t: a.top, b: a.bottom, w: a.width } : null, btns, scrollTop: sheet.scrollTop, small: window.smallTargets(sr) }; }"""
+             actions: a ? { t: a.top, b: a.bottom, w: a.width, cw: a.width - parseFloat(getComputedStyle(acts).paddingLeft) - parseFloat(getComputedStyle(acts).paddingRight) } : null, btns, scrollTop: sheet.scrollTop, small: window.smallTargets(sr) }; }"""
 M12_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet');
     const titles = Array.from(sr.querySelectorAll('.run-title')).filter((t) => t.getBoundingClientRect().width > 0);
     const lines = (t) => { const r = document.createRange(); r.selectNodeContents(t); const tops = [];
@@ -3257,12 +3259,12 @@ def bereich_oberflaeche(k):
             m11.append({"w": w, "h": h, "theme": th, **(g or {"actions": None, "btns": [], "small": ["kein Dialog"]})})
     out["m11"] = m11
 
-    def m11_ok(x):
+    def m11_ok(x):  # full-width buttons = the content box of .actions, inside its padding
         if not x.get("actions") or not x.get("btns"):
             return False
         if x["w"] < 450 or x["h"] < 500:
             return (abs(x["bottom"] - x["H"]) <= 1 and x["height"] >= 0.9 * x["H"] - 1 and x["actions"]["b"] <= x["H"] + 0.5
-                    and x["bottom"] - x["actions"]["b"] <= 24 and all(b["h"] >= 48 and b["w"] >= x["actions"]["w"] - 1 for b in x["btns"]))
+                    and x["bottom"] - x["actions"]["b"] <= 24 and all(b["h"] >= 48 and b["w"] >= x["actions"]["cw"] - 1 for b in x["btns"]))
         return abs(x["width"] - 320) <= 0.5 and x["top"] >= 12 and all(b["b"] <= x["bottom"] + 0.5 for b in x["btns"])
     check("M11 confirmation: below 450 x 500 a bottom sheet (>= 90 % high) with the full-width 48 px buttons at its bottom, on screen without scrolling; "
           "above 320 px centred (360x640/390x844 light/dark, 800x600, 1280x800)",
