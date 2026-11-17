@@ -7621,8 +7621,16 @@ function runStatus(hass, level) {
     return chip;
 }
 
-/** One line of a run (or of a group head): title, facts, status. */
-function runLine(button, title, facts, status) {
+/**
+ * One line of a run (or of a group head): symbol column, title, facts, status.
+ * M12: the symbol column is always there (empty or the group's chevron), so every title starts at the same x;
+ * members of a group show a line in it instead of an indent.
+ */
+function runLine(button, title, facts, status, icon) {
+    const lead = document.createElement('span');
+    lead.className = 'run-lead';
+    lead.setAttribute('aria-hidden', 'true');
+    if (icon) lead.appendChild(BuschUI.ha.icon(icon));
     const text = document.createElement('span');
     text.className = 'run-text';
     const head = document.createElement('span');
@@ -7632,7 +7640,7 @@ function runLine(button, title, facts, status) {
     meta.className = 'run-meta';
     meta.textContent = facts.filter(Boolean).join(' · ');
     text.append(head, meta);
-    button.append(text, status);
+    button.append(lead, text, status);
     return button;
 }
 
@@ -7701,8 +7709,9 @@ function historyView(card, name) {
                     state.scroll = dialog._sheet ? dialog._sheet.scrollTop : 0;
                     dialog.show(historyDetail(card, name, state, run.timestamp));
                 });
+                // M12: the date leads, the kind of run comes second with area and time.
                 const status = integrationState(hass, 'status', run.entry.status);
-                return runLine(button, [runDateText(hass, run.timestamp), status].filter(Boolean).join(' · '), runFacts(hass, run), runStatus(hass, run.level));
+                return runLine(button, runDateText(hass, run.timestamp), [status, ...runFacts(hass, run)], runStatus(hass, run.level));
             };
             const done = new Set();
             for (const run of runs) {
@@ -7724,11 +7733,9 @@ function historyView(card, name) {
                 head.setAttribute('aria-expanded', String(open));
                 const s = historySums(members, hass);
                 const worst = members.reduce((w, r) => (RUN_LEVEL_ORDER.indexOf(r.level) > RUN_LEVEL_ORDER.indexOf(w) ? r.level : w), 'done');
-                runLine(head, runDateText(hass, members.at(-1).timestamp) + ' · ' + translate(hass, 'gruppeTitel'),
-                    [runsText(hass, s.count), kind.cruising ? '' : s.areaText, s.timeText], runStatus(hass, worst));
-                const chevron = BuschUI.ha.icon(open ? 'mdi:chevron-up' : 'mdi:chevron-down');
-                chevron.setAttribute('aria-hidden', 'true');
-                head.insertBefore(chevron, head.firstChild);
+                runLine(head, runDateText(hass, members.at(-1).timestamp),
+                    [translate(hass, 'gruppeTitel'), runsText(hass, s.count), kind.cruising ? '' : s.areaText, s.timeText], runStatus(hass, worst),
+                    open ? 'mdi:chevron-up' : 'mdi:chevron-down');
                 head.addEventListener('click', () => toggle(run.group, !open));
                 head.addEventListener('keydown', (event) => {
                     const want = event.key === '+' ? true : event.key === '-' ? false : null;
@@ -10487,12 +10494,14 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
     flex-direction: column;
 }
 .history-members {
-    padding-inline-start: var(--ha-space-6, 24px);
+    padding-inline-start: 0;
 }
+/* M12 (Buschcheck): a fixed 40 px symbol column, the text, the status chip; every title starts at the same x. */
 .history-run {
-    display: flex;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--ha-space-3, 12px);
+    column-gap: var(--ha-space-3, 12px);
     width: 100%;
     min-height: 48px;
     padding: var(--ha-space-2, 8px) var(--ha-space-1, 4px);
@@ -10511,11 +10520,24 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
     outline: 2px solid var(--primary-color, #03a9f4);
     outline-offset: -2px;
 }
-.history-run > ha-icon {
-    flex: none;
+.run-lead {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    color: var(--secondary-text-color, #727272);
+}
+.history-members .run-lead::before {
+    content: '';
+    align-self: stretch;
+    width: 2px;
+    background: var(--divider-color, rgba(0, 0, 0, 0.12));
 }
 .run-text {
-    flex: 1 1 auto;
+    grid-column: 2;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -10529,7 +10551,8 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
     font-size: var(--ha-font-size-s, 14px);
 }
 .run-status {
-    flex: none;
+    grid-column: 3;
+    white-space: nowrap;
     display: inline-flex;
     align-items: center;
     gap: var(--ha-space-1, 4px);
@@ -10544,6 +10567,17 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 }
 .run-status span {
     color: var(--primary-text-color, #212121);
+}
+/* M12: on a phone the chip goes under the text, so it never pushes the title into two lines. */
+@media (max-width: 449.98px) {
+    .history-run {
+        grid-template-columns: 40px minmax(0, 1fr);
+        row-gap: var(--ha-space-1, 4px);
+    }
+    .run-status {
+        grid-column: 2;
+        justify-self: start;
+    }
 }
 .history-head {
     display: flex;
