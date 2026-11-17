@@ -9875,6 +9875,13 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 @media (max-width: 449.98px), (max-height: 499.98px) {
     .sheet[data-kind=confirm] { width: 100%; }
 }
+/* M35: the dock menu holds a few short rows; as wide as its content, full screen on phones like any dialog. */
+.sheet[data-view=station-menu] {
+    width: min(320px, 100%);
+}
+@media (max-width: 449.98px), (max-height: 499.98px) {
+    .sheet[data-view=station-menu] { width: 100%; }
+}
 .actions {
     display: flex;
     flex-wrap: wrap;

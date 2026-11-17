@@ -47,6 +47,9 @@
   erste Bedienelement; per Tastatur (oder ohne bekannte Eingabe) wie bisher das
   erste Bedienelement mit Ring nur bei `:focus-visible` (2 px Versatz). Die
   Fokusrückgabe an den Auslöser bleibt (`tests/dialog.test.js`, M32).
+- Stationsmenü (M35): `.sheet[data-view=station-menu]` ist ab 450 × 500 px
+  höchstens 320 px breit (statt 560 px), darunter Vollbild wie jeder Dialog;
+  als flüchtiges Menü (`kind: 'menu'`) schließt es per Escape und Außenklick.
 - Theme-Haken `--bvc-accent-color`, `--bvc-warning-color`, `--bvc-error-color`,
   `--bvc-success-color`, `--bvc-info-color`: nur gelesen, nie auf `:host`
   gesetzt (sonst würde ein Theme sie nicht erreichen); im HACS-Prüfer als
