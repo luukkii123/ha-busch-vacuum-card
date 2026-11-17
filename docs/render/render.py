@@ -1152,6 +1152,7 @@ def bereich_kartenansicht(k):
           and abs(img["image"]["x"] - cal["x"]) < 0.01 and abs(img["image"]["y"] - cal["y"]) < 0.01 and img["off"] <= 1.5,
           json.dumps(img))
     routing["data"] = True
+    page.evaluate("() => customElements.get('busch-vacuum-card').__internals.FRAME_CACHE.clear()")  # drop the cached empty_map answer
 
     # Zoom: buttons, keyboard, wheel; lock; motion.
     page.set_viewport_size({"width": 1280, "height": 900})
