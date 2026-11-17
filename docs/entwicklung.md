@@ -92,6 +92,21 @@
   Kartenbild nur als Absicherung: sofort ohne Datenweg, nach einem
   fehlgeschlagenen Abruf oder wenn schon ein Bild gezeigt wird, sonst erst nach
   600 ms ohne Daten (`MAP_HEDGE_MS`).
+- **Verbindung (M18):** bei `hass.connected === false` trägt der Host
+  `data-offline`, die Meldungen zeigen `offlineHinweis` (`id="offline-hint"`),
+  die Aktionsknöpfe sind mit `aria-describedby="offline-hint"` gesperrt, und
+  `trackWrite`, `_call` und `_startTask` schreiben nichts (kein optimistischer
+  Zustand). Zurück online: offene Einstellungen, die das Gerät inzwischen
+  meldet, gelten als bestätigt; ein wartender Kartenabruf läuft sofort
+  (`MapView.retryNow`). Grund: HAs WebSocket-Bibliothek lehnt
+  `sendMessagePromise` bei getrennter Verbindung sofort ab (`sendMessage`
+  wirft `ERR_CONNECTION_LOST`) und bricht laufende Befehle beim Trennen ab —
+  **außer** nach einem `suspend()` (Tab im Hintergrund): beim ersten
+  Wiederverbinden danach stellt sie Nachrichten in `_queuedMessages` und sendet
+  sie verspätet. Quelle: home-assistant-js-websocket `lib/connection.ts`
+  (`sendMessage`, `sendMessagePromise`, `_handleClose`, `_setSocket`), gelesen
+  am 17.11.2026. Ohne Sperre käme ein Start also im ungünstigsten Fall erst
+  nach der Rückkehr an.
 - Testdaten nur synthetisch (`tests/kartendaten.js` aus den verfremdeten
   Raumrechtecken); echte Kartendaten schließt `tests/datenschutz.test.js` aus.
 

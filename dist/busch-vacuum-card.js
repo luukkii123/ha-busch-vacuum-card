@@ -456,6 +456,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             stufeError: 'Fehler',
             stufeWarning: 'Warnung',
             stufeInfo: 'Hinweis',
+            stufeOffline: 'Keine Verbindung',
+            offlineHinweis: 'Keine Verbindung zu Home Assistant — Werte können veraltet sein. Befehle sind gesperrt, bis die Verbindung zurück ist.',
             stufeLowWater: 'Wassermangel',
             infoPausiert: 'Reinigung unterbrochen: lädt und setzt danach fort.',
             warnungLoeschen: 'Warnung löschen',
@@ -1095,6 +1097,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             stufeError: 'Error',
             stufeWarning: 'Warning',
             stufeInfo: 'Info',
+            stufeOffline: 'No connection',
+            offlineHinweis: 'No connection to Home Assistant — values may be out of date. Commands are locked until the connection is back.',
             stufeLowWater: 'Low water',
             infoPausiert: 'Cleaning interrupted: charging, then it resumes.',
             warnungLoeschen: 'Clear warning',
@@ -2304,6 +2308,7 @@ const errorText = (error) => String((error && (error.message || error.code)) || 
  */
 function trackWrite(card, key, { want, check, call, label, done, failKey = 'schreibFehler' }) {
     if (card._settingWrites.has(key)) return false;
+    if (card._hass && card._hass.connected === false) return false; // M18: offline nothing is written
     card._settingNotes.delete(key);
     const pending = { want, check: check || (() => false), timer: null };
     const name = label || (SETTINGS[key] ? settingLabel(card._hass, key) : translate(card._hass, 'aenderung'));
@@ -3025,12 +3030,15 @@ const MESSAGE_LOOK = {
     error: { word: 'stufeError', icon: 'mdi:alert-circle-outline' },
     warning: { word: 'stufeWarning', icon: 'mdi:alert-outline' },
     low_water: { word: 'stufeLowWater', icon: 'mdi:water-alert-outline' },
-    info: { word: 'stufeInfo', icon: 'mdi:information-outline' }
+    info: { word: 'stufeInfo', icon: 'mdi:information-outline' },
+    offline: { word: 'stufeOffline', icon: 'mdi:lan-disconnect' }
 };
 
 /** Current messages [{ kind, text }]: error or warning (one code), low water, info. */
 function messagesFor(hass, model) {
     const list = [];
+    // M18: without the connection every value may be old and nothing is written.
+    if (hass.connected === false) list.push({ kind: 'offline', text: translate(hass, 'offlineHinweis') });
     const id = model.entity('sensor.error');
     const sensor = id && hass.states[id];
     // The sensor carries HA's translated description; the attribute only English.
@@ -4254,6 +4262,16 @@ class MapView {
     _setStale(on) {
         this._fetch.stale = on;
         this.el.toggleAttribute('data-stale', on);
+    }
+
+    /** M18: after the connection returns a waiting retry runs at once (no backoff). */
+    retryNow() {
+        const f = this._fetch;
+        if (!f.timer) return;
+        clearTimeout(f.timer);
+        f.timer = null;
+        f.tries = 0;
+        this._pumpData();
     }
 
     _emit(type, detail) {
@@ -10846,8 +10864,13 @@ class BuschVacuumCard extends HTMLElement {
     set hass(hass) {
         // Home Assistant hands every card a new hass on every state change in
         // the house. Only the vacuum and the few sensors shown redraw.
-        const unchanged = snapshotUnchanged(this._seen, hass) && (!hass || hass.entities === this._relatedFrom);
+        // M18: the connection state redraws too; on its return open writes and the map are checked again.
+        const online = !hass || hass.connected !== false;
+        const back = online && this._online === false;
+        const unchanged = snapshotUnchanged(this._seen, hass) && (!hass || hass.entities === this._relatedFrom) && online === this._online;
+        this._online = online;
         this._hass = hass;
+        if (back) this._reconnected();
         // The card first: the map's state (e.g. a finished ignore) is current when the dialog draws.
         if (!unchanged) this._update();
         if (this._dialog) this._dialog.hass = hass;
@@ -10855,6 +10878,19 @@ class BuschVacuumCard extends HTMLElement {
 
     get hass() {
         return this._hass;
+    }
+
+    /** M18: back online – writes the device reports meanwhile count as confirmed, a failed map request runs at once. */
+    _reconnected() {
+        if (this._errorKey || !this._settingWrites) return;
+        const model = this._model();
+        for (const [key, pending] of [...this._settingWrites]) {
+            if (!pending.check(model)) continue;
+            settleWrite(this, key);
+            this._settingNotes.delete(key);
+        }
+        if (this._map) this._map.retryNow();
+        rerender(this);
     }
 
     getCardSize() {
@@ -10992,6 +11028,7 @@ class BuschVacuumCard extends HTMLElement {
         BuschUI.action({ node: this._menuButton, label: menuLabel, icon: 'mdi:dots-vertical', variant: 'icon-only', onClick: () => this._openDialog(this._menuView()) });
         this._menuButton.hidden = this._hidden('menu') || this._menuEntries(model).length === 0;
         this._renderLock();
+        this.toggleAttribute('data-offline', hass.connected === false);
         this._stateLine.textContent = real ? formatState(hass, real, shown) : shown;
         // #1002: the status dot's level (R17: the state text stays the message).
         this._stateLine.setAttribute('data-level', shown === 'error' ? 'error' : ['cleaning', 'returning', 'paused'].includes(shown) ? 'active' : UNUSABLE.includes(shown) ? 'off' : 'ok');
@@ -11040,7 +11077,8 @@ class BuschVacuumCard extends HTMLElement {
         const buttons = names.map((name) => {
             // #1002: the primary start says what it cleans (CORE-07).
             const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
-            const blocked = name === 'start' && !ready.ok;
+            const offline = hass.connected === false;
+            const blocked = offline || (name === 'start' && !ready.ok);
             const variant = outside ? (name === 'return' ? 'primary' : 'secondary') : CONTROLS[name].variant || 'secondary';
             const button = BuschUI.action({ label, icon: CONTROLS[name].icon, variant, disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
             // #1002: the words in their own box, so a narrow bar shortens them instead of cutting the symbol.
@@ -11048,7 +11086,7 @@ class BuschVacuumCard extends HTMLElement {
             words.className = 'ctl-text';
             words.textContent = label;
             button.appendChild(words);
-            if (blocked) button.setAttribute('aria-describedby', 'task-hint');
+            if (blocked) button.setAttribute('aria-describedby', offline ? 'offline-hint' : 'task-hint');
             button.classList.add('ctl');
             button.setAttribute('data-action', name);
             return button;
@@ -12126,7 +12164,7 @@ class BuschVacuumCard extends HTMLElement {
 
     /** Start of the chosen task: exactly one service (spec table), optimistic, one call per tap (R11). */
     _startTask(real) {
-        if (this._pending) return;
+        if (this._pending || (this._hass && this._hass.connected === false)) return;
         const model = this._model();
         const task = this._chosenTask(model);
         if (!taskReady(model, task, this._selection, this._taskMap()).ok) return;
@@ -12190,6 +12228,7 @@ class BuschVacuumCard extends HTMLElement {
             node.className = 'message';
             node.setAttribute('data-kind', m.kind);
             node.setAttribute('role', m.kind === 'error' ? 'alert' : 'status');
+            if (m.kind === 'offline') node.id = 'offline-hint'; // M18: the reason of the locked buttons
             const symbol = BuschUI.ha.icon(look.icon);
             symbol.setAttribute('aria-hidden', 'true');
             const body = document.createElement('div');
@@ -12293,6 +12332,7 @@ class BuschVacuumCard extends HTMLElement {
 
     /** One control or task start; `call` ({ task, domain, service, data }) replaces the vacuum service. */
     _call(name, real, call) {
+        if (this._hass && this._hass.connected === false) return; // M18: no optimistic state, no service offline
         const control = CONTROLS[name];
         this._haptic();
         this._endPending();

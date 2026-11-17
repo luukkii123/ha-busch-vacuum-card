@@ -314,3 +314,68 @@ test('M19 loadEditData teilt den laufenden Abruf der MapView (ungespeicherte Kar
   assert.ok(await daten, 'Bearbeitungsdaten aus demselben Abruf');
   assert.equal(n.abrufe.length, 1, 'kein zweiter Abruf');
 });
+
+// ── M18 · Verbindungszustand in der ganzen Karte ──────────────────────────
+
+const getrennt = (haus, an = false) => Object.assign(haus.hass(), { connected: an });
+const knopf = (karte, name) => karte.shadowRoot.querySelectorAll('[data-action="' + name + '"]')[0] || null;
+const meldungen = (karte) => karte.shadowRoot.querySelectorAll('.message').map((n) => n.getAttribute('data-kind'));
+
+test('M18 offline: Hinweis sichtbar (R12), Start/Pause/Einstellung erzeugen 0 callService, Knöpfe mit Grund gesperrt', async () => {
+  const k = await datenKarte();
+  const I = k.u.registry.get('busch-vacuum-card').__internals;
+  k.karte.hass = getrennt(k.haus);
+  assert.equal(k.karte.hasAttribute('data-offline'), true);
+  assert.ok(meldungen(k.karte).includes('offline'), 'Hinweis: ' + meldungen(k.karte));
+  const hinweis = k.karte.shadowRoot.querySelectorAll('.message').find((n) => n.getAttribute('data-kind') === 'offline');
+  assert.match(hinweis.textContent, /Keine Verbindung zu Home Assistant/);
+  assert.match(hinweis.textContent, /veraltet/);
+  const start = knopf(k.karte, 'start');
+  assert.equal(start.disabled, true, 'Start gesperrt');
+  assert.equal(start.getAttribute('aria-describedby'), hinweis.id, 'Grund am Knopf');
+  start.click();
+  k.karte._startTask(k.haus.states['vacuum.robo']);
+  k.karte._call('pause', k.haus.states['vacuum.robo']);
+  const schalter = Object.keys(I.SETTINGS).find((key) => I.SETTINGS[key].control === 'switch');
+  assert.equal(I.writeSetting(k.karte, schalter, true), false, 'Einstellung verweigert');
+  await mikro();
+  assert.equal(k.haus.rufe.length, 0, '0 callService: ' + JSON.stringify(k.haus.rufe));
+  assert.equal(k.karte._pending, null, 'kein optimistischer Zustand');
+});
+
+test('M18 zurück online: Knöpfe frei, Hinweis weg, ein vorher fehlgeschlagener Kartenabruf läuft sofort erneut', async () => {
+  const k = await datenKarte({ zufall: 0.5 });
+  k.n.status = () => 500;
+  k.karte.hass = getrennt(k.haus);
+  neuerFrame(k, 1181);
+  k.karte.hass = getrennt(k.haus);
+  await mikro(); await mikro();
+  const vorher = k.n.abrufe.length;
+  assert.equal(k.karte._map.el.hasAttribute('data-stale'), true, 'Abruf fehlgeschlagen');
+  k.n.status = () => 200;
+  k.karte.hass = getrennt(k.haus, true);
+  await mikro(); await mikro();
+  assert.equal(k.n.abrufe.length, vorher + 1, 'sofort neu geholt, ohne Backoff');
+  assert.equal(k.karte._map.el.hasAttribute('data-stale'), false);
+  assert.equal(k.karte.hasAttribute('data-offline'), false);
+  assert.ok(!meldungen(k.karte).includes('offline'));
+  const start = knopf(k.karte, 'start');
+  assert.equal(start.disabled, false, 'Start frei');
+  start.click();
+  assert.equal(k.haus.rufe.length, 1, 'online geht der Befehl raus');
+});
+
+test('M18 zurück online: eine offene Einstellung, die das Gerät inzwischen meldet, gilt als bestätigt', async () => {
+  const k = await datenKarte();
+  const I = k.u.registry.get('busch-vacuum-card').__internals;
+  const schalter = Object.keys(I.SETTINGS).find((key) => I.SETTINGS[key].control === 'switch' && I.settingState(k.karte, k.karte._model(), key).present);
+  assert.ok(schalter, 'ein vorhandener Schalter');
+  const alt = I.settingState(k.karte, k.karte._model(), schalter).value;
+  assert.equal(I.writeSetting(k.karte, schalter, !alt), true);
+  assert.equal(k.karte._settingWrites.has(schalter), true, 'wartet auf Bestätigung');
+  k.karte.hass = getrennt(k.haus);
+  k.karte._settingWrites.get(schalter).check = () => true; // das Gerät meldet den Wert inzwischen
+  k.karte.hass = getrennt(k.haus, true);
+  assert.equal(k.karte._settingWrites.has(schalter), false, 'bei Rückkehr bestätigt');
+  assert.equal(k.karte._settingNotes.has(schalter), false, 'kein Fehlerhinweis');
+});
