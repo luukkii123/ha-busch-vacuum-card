@@ -858,6 +858,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             laeufe: '{n} Läufe',
             gruppeTitel: 'Reinigung + Nachreinigung',
             verlaufLeer: 'Kein Verlauf — die Integration lädt ihn nur mit Cloud-Verbindung.',
+            letzteLaeufe: 'Letzte Läufe',
+            vorschauFehler: 'Verlauf nicht verfügbar — die letzten Läufe fehlen. Prüfe die Cloud-Verbindung der Integration.',
             raumNr: 'Raum {id}',
             verlaufDauer: 'Dauer',
             verlaufArt: 'Reinigungsart',
@@ -1520,6 +1522,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             laeufe: '{n} runs',
             gruppeTitel: 'Cleaning + re-cleaning',
             verlaufLeer: 'No history — the integration loads it only with a cloud connection.',
+            letzteLaeufe: 'Recent runs',
+            vorschauFehler: 'History unavailable — the recent runs are missing. Check the integration\'s cloud connection.',
             raumNr: 'Room {id}',
             verlaufDauer: 'Duration',
             verlaufArt: 'Cleaning type',
@@ -7561,6 +7565,9 @@ const RUN_LEVELS = {
 };
 const RUN_LEVEL_ORDER = ['done', 'notice', 'interrupted'];
 
+/** M47: runs in the wide panel's history preview. */
+const HISTORY_PREVIEW_RUNS = 3;
+
 /** A state text of the integration's sensor in HA's words (R26), else the raw text. */
 function integrationState(hass, sensor, raw) {
     if (raw === undefined || raw === null || raw === '') return '';
@@ -8357,6 +8364,85 @@ const FORCED_COLORS_STYLES = `
         outline: 2px solid Highlight;
         outline-offset: 2px;
     }
+}
+`;
+
+/**
+ * M47 (W16): the wide panel's history preview; the rows look like the
+ * history list of the dialog (same classes, fewer rules). Only from "wide".
+ */
+const HISTORY_PREVIEW_STYLES = `
+:host(:not([data-width=wide])) .history-slot {
+    display: none;
+}
+.history-slot .busch-ui-section {
+    border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+}
+.history-slot summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: 500;
+}
+.history-preview .history-run {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-3, 12px);
+    width: 100%;
+    min-height: 48px;
+    padding: var(--ha-space-2, 8px) var(--ha-space-1, 4px);
+    border: 0;
+    border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+    background: none;
+    color: var(--primary-text-color, #212121);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+.history-preview .history-run:hover {
+    background: var(--secondary-background-color, #f5f5f5);
+}
+.history-preview .history-run:focus-visible {
+    outline: 2px solid var(--primary-color, #03a9f4);
+    outline-offset: -2px;
+}
+.history-preview .run-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.history-preview .run-title,
+.history-preview .run-meta {
+    overflow-wrap: anywhere;
+}
+.history-preview .run-meta,
+.history-preview .history-empty {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+}
+.history-preview .run-status {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    font-size: var(--ha-font-size-s, 14px);
+    color: var(--bvc-success-color, var(--success-color, #43a047));
+}
+.history-preview .run-status[data-level=notice] {
+    color: var(--bvc-warning-color, var(--warning-color, #ffa600));
+}
+.history-preview .run-status[data-level=interrupted] {
+    color: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.history-preview .run-status span {
+    color: var(--primary-text-color, #212121);
+}
+.history-preview .preview-note {
+    margin: var(--ha-space-2, 8px) 0;
+    color: var(--bvc-error-color, var(--error-color, #db4437));
+    overflow-wrap: anywhere;
 }
 `;
 
@@ -11429,7 +11515,7 @@ class BuschVacuumCard extends HTMLElement {
         root.innerHTML = '';
         this._seen = null;
         const style = document.createElement('style');
-        style.textContent = CARD_STYLES + FORCED_COLORS_STYLES;
+        style.textContent = CARD_STYLES + HISTORY_PREVIEW_STYLES + FORCED_COLORS_STYLES;
         root.appendChild(style);
         const card = document.createElement('ha-card');
         card.dataset.uiContract = 'Busch HA UI 0.1.0';
@@ -11500,7 +11586,11 @@ class BuschVacuumCard extends HTMLElement {
             this._chipSlot = document.createElement('div');
             this._chipSlot.className = 'chip-slot';
             this._roomsOpen = false; // R21 on purpose: the collapsed room list is a view, not a preference
-            this._panelNode.append(handle, this._messages, this._stationSlot, this._taskArea, this._controls);
+            this._historySlot = document.createElement('div');
+            this._historySlot.className = 'history-slot';
+            this._historySlot.hidden = true;
+            this._historySeen = null;
+            this._panelNode.append(handle, this._messages, this._stationSlot, this._taskArea, this._historySlot, this._controls);
             const layout = document.createElement('div');
             layout.className = 'layout';
             layout.append(lead, this._mapSlot, this._panelNode);
@@ -11604,6 +11694,7 @@ class BuschVacuumCard extends HTMLElement {
         this._progress.replaceChildren(...(percent === null ? [] : [this._progressBar(percent)]));
         this._renderMessages(hass, model);
         this._renderStationHint(hass, model);
+        this._renderHistoryPreview(hass, model);
         const task = this._chosenTask(model);
         const ready = this._renderTasks(hass, model, active, task);
         this._syncTaskMap(model, active, task);
@@ -12824,6 +12915,57 @@ class BuschVacuumCard extends HTMLElement {
     }
 
     /** #1002: the station's warning or error as a bar in the panel; a tap opens the station view (DOCK-05). */
+    /**
+     * M47 (W16, decision 7): from "wide" the panel's free space shows the
+     * newest runs of the cleaning history, collapsible (open until closed, R21:
+     * only while the card lives). Data from the sensor the history view reads
+     * (`historyRuns`), no new data contract; a tap opens the history. Redrawn
+     * only for a new sensor object or language (M4: nothing under the finger).
+     */
+    _renderHistoryPreview(hass, model) {
+        const slot = this._historySlot;
+        if (!slot) return;
+        const id = model.can('history') ? model.entity('sensor.cleaning_history') : null;
+        const obj = id ? hass.states[id] || null : null;
+        const lang = localeOf(hass).language;
+        const seen = this._historySeen;
+        if (seen && seen.id === id && seen.obj === obj && seen.lang === lang) return;
+        this._historySeen = { id, obj, lang };
+        slot.hidden = !id;
+        if (!id) return slot.replaceChildren();
+        const content = document.createElement('div');
+        content.className = 'history-preview';
+        if (!obj || UNUSABLE.includes(obj.state)) {
+            const note = document.createElement('p');
+            note.className = 'preview-note';
+            note.setAttribute('data-kind', 'error');
+            note.setAttribute('role', 'status');
+            note.textContent = translate(hass, 'vorschauFehler');
+            content.appendChild(note);
+        } else {
+            const runs = historyRuns(obj).slice(0, HISTORY_PREVIEW_RUNS);
+            if (!runs.length) {
+                const empty = document.createElement('p');
+                empty.className = 'history-empty';
+                empty.setAttribute('role', 'status');
+                empty.textContent = translate(hass, 'verlaufLeer');
+                content.appendChild(empty);
+            }
+            for (const run of runs) {
+                const button = document.createElement('button');
+                button.className = 'history-run';
+                button.setAttribute('type', 'button');
+                button.setAttribute('data-run', String(run.timestamp));
+                button.addEventListener('click', () => this._openDialog(MODULE_VIEWS.history(this)));
+                const status = integrationState(hass, 'status', run.entry.status);
+                content.appendChild(runLine(button, [runDateText(hass, run.timestamp), status].filter(Boolean).join(' · '), runFacts(hass, run), runStatus(hass, run.level)));
+            }
+        }
+        const section = BuschUI.section({ title: translate(hass, 'letzteLaeufe'), content, open: this._historyOpen !== false });
+        section.addEventListener('toggle', () => { this._historyOpen = section.open; });
+        slot.replaceChildren(section);
+    }
+
     _renderStationHint(hass, model) {
         const status = model.can('dock') && !this._hidden('dock_status_indicator') ? dockStatus(model) : { level: 'ok' };
         if (status.level !== 'warning' && status.level !== 'error') {

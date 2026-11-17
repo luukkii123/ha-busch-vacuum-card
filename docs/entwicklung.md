@@ -93,6 +93,15 @@
   `.map-hint` (`setHint`, ohne Zeiger-Ereignisse) unten links.
 - Kontrast: Reihenfolge als Ring (Zahl in Textfarbe auf Kartenfarbe), Links in
   Textfarbe unterstrichen; Hex nur als Fallback hinter HA-Variablen.
+- Verlaufsvorschau (M47, Entscheidung 17.11.): `.history-slot` im Panel
+  zwischen `.task-area` und `.controls`, nur `wide` (schmal `display: none`).
+  Einklappbarer Abschnitt „Letzte Läufe“ (`BuschUI.section`, offen bis zum
+  Zuklappen, gilt solange die Karte lebt) mit den `HISTORY_PREVIEW_RUNS` (3)
+  neuesten Läufen aus `historyRuns` des Verlaufssensors (kein neuer
+  Datenvertrag, kein Abruf); ein Tipp öffnet den Verlauf. Leer: `verlaufLeer`,
+  Sensor nicht verfügbar: `vorschauFehler` (R12), ohne Sensor kein Block
+  (R18). Neu gezeichnet nur bei neuem Sensorobjekt oder neuer Sprache.
+  Stile in `HISTORY_PREVIEW_STYLES` (an den Kartenstil angehängt).
 
 ## Karte (Modul map-view)
 
