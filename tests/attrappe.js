@@ -14,6 +14,8 @@ function neueUhr(start = 1_800_000_000_000) {
   const wartend = new Map();
   const uhr = {
     get jetzt() { return jetzt; },
+    /** M17: wie viele Timer noch warten (Aushängen darf keinen offen lassen). */
+    get offen() { return wartend.size; },
     setTimeout(fn, ms = 0, ...a) { const id = ++nr; wartend.set(id, { zeit: jetzt + Math.max(0, Number(ms) || 0), fn, a }); return id; },
     clearTimeout(id) { wartend.delete(id); },
     /** Lässt `ms` vergehen und führt fällige Timer in Zeitreihenfolge aus. */

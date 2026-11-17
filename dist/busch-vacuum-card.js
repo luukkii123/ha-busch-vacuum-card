@@ -3696,7 +3696,10 @@ class MapView {
         stage.addEventListener('pointercancel', (e) => this._up(e, true));
         stage.addEventListener('wheel', (e) => this._wheel(e), { passive: false });
         this.region.addEventListener('keydown', (e) => this._onKey(e));
-        if (typeof ResizeObserver === 'function') new ResizeObserver(() => this._layout()).observe(stage);
+        if (typeof ResizeObserver === 'function') {
+            this._resize = new ResizeObserver(() => this._layout());
+            this._resize.observe(stage);
+        }
     }
 
     _stageRect() {
@@ -4282,7 +4285,7 @@ class MapView {
     /** Starts the wanted frame unless one runs, a retry waits or it is settled already. */
     _pumpData() {
         const f = this._fetch, want = f.wanted;
-        if (f.inflight || f.timer || !want || want.key === f.doneKey) return;
+        if (f.inflight || f.timer || !want || want.key === f.doneKey || this._background()) return;
         const a = this._attrs();
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
         const run = { key: want.key, frame: want.frame, index: want.index, seq: ++f.seq, controller, aborted: false };
@@ -4307,6 +4310,7 @@ class MapView {
      * while the picture is shown already, else after MAP_HEDGE_MS.
      */
     _hedgeImage(a) {
+        if (this._background()) return;
         const dataWay = a.frame_id !== undefined && typeof fetch === 'function' && !!a.access_token;
         if (!dataWay || this._imageUrl) {
             this._loadImage(a.entity_picture);
@@ -4381,6 +4385,42 @@ class MapView {
         this.el.toggleAttribute('data-stale', on);
     }
 
+    /** M17: off the page or in a hidden tab nothing is fetched; only `wanted` is kept. */
+    _background() {
+        return !!this._suspended || (typeof document !== 'undefined' && document.hidden === true);
+    }
+
+    /** M17: taken off the page – no timer, observer or request keeps running. */
+    suspend() {
+        this._suspended = true;
+        this._abortData();
+        const f = this._fetch;
+        clearTimeout(f.timer);
+        f.timer = null;
+        clearTimeout(this._hedgeTimer);
+        this._hedgeTimer = null;
+        clearTimeout(this._longTimer);
+        this._longTimer = null;
+        if (this._ignorePending) clearTimeout(this._ignorePending.timer);
+        this._ignorePending = null;
+        if (this._resize) this._resize.disconnect();
+    }
+
+    /** M17: back on the page or visible again (idempotent): observe again, the newest wanted frame once. */
+    resume() {
+        if (this._resize) this._resize.observe(this.stage);
+        this._suspended = false;
+        if (this._background()) return;
+        this._fetch.tries = 0;
+        this._pumpData();
+        if (!this._data && this._cam && this._showsMap()) this._hedgeImage(this._attrs());
+    }
+
+    /** M17: the map is dropped for good (the card rebuilds). */
+    destroy() {
+        this.suspend();
+    }
+
     /** M18: after the connection returns a waiting retry runs at once (no backoff). */
     retryNow() {
         const f = this._fetch;
@@ -4418,7 +4458,7 @@ class MapView {
     _loadImage(url, force) {
         // M43: every entity_picture path (hedge, data failure, retry) only on the own instance.
         url = ownPath(url, this.hass);
-        if (!url || (url === this._imageUrl && !force)) return;
+        if (!url || (url === this._imageUrl && !force) || this._background()) return;
         this._imageUrl = url;
         this._imageState = 'loading';
         this.stats.images++;
@@ -10996,6 +11036,34 @@ class BuschVacuumCard extends HTMLElement {
         this._mapSessions = new Set(); // map-editor: sessions of the maps view, fed like _editSession
         this._mapEdit = null; // map-editor: the open edit mode (MapEditor), lifts the map lock
         this._editSession = null;
+        // M17: a tab coming back to the front fetches the newest map frame once.
+        this._onVisibility = () => { if (this._map && !document.hidden) this._map.resume(); };
+    }
+
+    /** M17: (re)attached: idempotent – observers again, the map resumes, the state is drawn. */
+    connectedCallback() {
+        document.removeEventListener('visibilitychange', this._onVisibility);
+        document.addEventListener('visibilitychange', this._onVisibility);
+        if (!this._card || this._errorKey) return;
+        this._observeWidth();
+        if (this._map) this._map.resume();
+        if (this._hass) this._update();
+    }
+
+    /**
+     * M17: detached (another view, dashboard edit): nothing runs in the
+     * background – the dialog closes, optimistic state and open writes end,
+     * timers stop, observers disconnect, map requests abort.
+     */
+    disconnectedCallback() {
+        document.removeEventListener('visibilitychange', this._onVisibility);
+        if (this._dialog && this._dialog.isConnected) this._dialog._dismiss();
+        this._endPending();
+        clearTimeout(this._lockTimer);
+        this._lockTimer = null;
+        for (const key of [...this._settingWrites.keys()]) settleWrite(this, key);
+        if (this._widthObserver) this._widthObserver.disconnect();
+        if (this._map) this._map.suspend();
     }
 
     /** Set by Home Assistant in a panel view. */
@@ -11232,6 +11300,7 @@ class BuschVacuumCard extends HTMLElement {
             this._mapSlot = document.createElement('div');
             this._mapSlot.className = 'map-slot';
             this._mapSlot.hidden = true;
+            if (this._map) this._map.destroy(); // M17: the old map's timers and observer end with it
             this._map = null;
             // #1002: lead (head + status), map, panel (sheet on a phone, right column from 900 px).
             const lead = document.createElement('div');
@@ -11259,8 +11328,9 @@ class BuschVacuumCard extends HTMLElement {
 
     /** #1002: the card's own width decides the layout (panel mode included), never the window's. */
     _observeWidth() {
-        if (this._widthObserver || typeof ResizeObserver !== 'function') return;
-        this._widthObserver = new ResizeObserver((entries) => {
+        if (typeof ResizeObserver !== 'function') return;
+        // M17: the one observer is kept; after a disconnect it observes again (observing twice is a no-op).
+        if (!this._widthObserver) this._widthObserver = new ResizeObserver((entries) => {
             const last = entries && entries[entries.length - 1];
             this._setWidth(last && last.contentRect ? last.contentRect.width : 0);
         });

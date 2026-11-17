@@ -117,6 +117,17 @@
   Kartenbild nur als Absicherung: sofort ohne Datenweg, nach einem
   fehlgeschlagenen Abruf oder wenn schon ein Bild gezeigt wird, sonst erst nach
   600 ms ohne Daten (`MAP_HEDGE_MS`).
+- **Lebenszyklus (M17):** `disconnectedCallback` der Karte schließt einen
+  offenen Dialog (`_dismiss`, ohne Verlaufsschritt), beendet den optimistischen
+  Zustand (`_endPending`) und offene Schreibvorgänge (`settleWrite`), löscht die
+  Sperrtasten-Uhr, trennt den Breiten-Observer und hält die Karte an
+  (`MapView.suspend`: Abruf abbrechen, Backoff-, Absicherungs-, Langdruck- und
+  Ignorieren-Timer löschen, Bühnen-Observer trennen). `connectedCallback` ist
+  idempotent: Observer wieder an, `MapView.resume` holt den neuesten gewünschten
+  Frame genau einmal, die Karte zeichnet neu. Bei `document.hidden` merkt sich
+  `_loadData` nur `wanted`; `_pumpData`, `_hedgeImage` und `_loadImage` laden
+  nichts, `visibilitychange` zurück nach vorn ruft `resume`. Ein Neuaufbau
+  (`setConfig`) beendet die alte Karte mit `MapView.destroy`.
 - **Verbindung (M18):** bei `hass.connected === false` trägt der Host
   `data-offline`, die Meldungen zeigen `offlineHinweis` (`id="offline-hint"`),
   die Aktionsknöpfe sind mit `aria-describedby="offline-hint"` gesperrt, und
@@ -124,8 +135,9 @@
   Zustand). Zentral sperrt `callDevice` jeden Dienst offline (Ablehnung mit
   `code: 'offline'`, R12-Text des Aufrufers), damit auch Wege ohne eigenen
   Guard (Hindernis ignorieren, Reinigungsfolgen, Shortcuts) nichts senden;
-  einzige Ausnahme ist der Stopp-Schritt der Fernsteuerung (`stopAttempt`). Zurück online: offene Einstellungen, die das Gerät inzwischen
-  meldet, gelten als bestätigt; ein wartender Kartenabruf läuft sofort
+  einzige Ausnahme ist der Stopp-Schritt der Fernsteuerung (`stopAttempt`).
+  Zurück online: offene Einstellungen, die das Gerät inzwischen meldet, gelten
+  als bestätigt; ein wartender Kartenabruf läuft sofort
   (`MapView.retryNow`). Grund: HAs WebSocket-Bibliothek lehnt
   `sendMessagePromise` bei getrennter Verbindung sofort ab (`sendMessage`
   wirft `ERR_CONNECTION_LOST`) und bricht laufende Befehle beim Trennen ab —

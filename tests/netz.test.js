@@ -542,3 +542,84 @@ test('EDI-02 M20 eigener Frame: ein fremder Frame zwischen Speichern und eigenem
     assert.equal(ed.foreign, fremdZuerst, fremdZuerst ? 'Hinweis bleibt vom fremden Frame' : 'eigener Frame allein: kein Hinweis');
   }
 });
+
+// ── M17 · Lebenszyklus der Karte, nichts im Hintergrund ────────────────────
+
+/** ResizeObserver wie im Browser, zählt observe/disconnect je Instanz. */
+function beobachter(u) {
+  const alle = [];
+  u.kontext.ResizeObserver = class {
+    constructor(fn) { this.fn = fn; this.ziele = new Set(); this.getrennt = 0; alle.push(this); }
+    observe(el) { this.ziele.add(el); }
+    unobserve(el) { this.ziele.delete(el); }
+    disconnect() { this.ziele.clear(); this.getrennt++; }
+  };
+  return alle;
+}
+
+test('M17 Aushängen: kein offener Timer, Observer getrennt, Dialog zu, Abruf abgebrochen; Einhängen zeigt alles', async () => {
+  const u = umgebung({ zufall: 0.5 });
+  const obs = beobachter(u);
+  const n = netz(u, { status: () => 500 });
+  const haus = hausAus('voll');
+  haus.states = Object.assign({}, haus.states, kamera(haus, { frame_id: 1180 }));
+  const karte = neueKarte(u, haus);
+  await mikro(); await mikro();
+  const I = u.registry.get('busch-vacuum-card').__internals;
+  assert.ok(obs.length >= 2, 'Karte und Kartenbühne beobachtet: ' + obs.length);
+  // Laufend: Wiederholung nach 500er, optimistischer Befehl, Einstellung, Sperrtaste gehalten, offener Dialog.
+  assert.ok(karte._map._fetch.timer, 'Backoff wartet');
+  karte._call('pause', haus.states['vacuum.robo']);
+  const schalter = Object.keys(I.SETTINGS).find((key) => I.SETTINGS[key].control === 'switch');
+  I.writeSetting(karte, schalter, true);
+  karte._lock.dispatchEvent(u.neuesEreignis('pointerdown'));
+  karte._openDialog(karte._menuView());
+  const dialog = karte._dialog;
+  assert.ok(dialog && dialog.isConnected, 'Dialog offen');
+  assert.ok(u.uhr.offen > 0);
+  karte.remove();
+  assert.equal(u.uhr.offen, 0, 'kein offener Timer nach dem Aushängen');
+  assert.ok(obs.every((o) => o.ziele.size === 0), 'alle Observer getrennt');
+  assert.ok(obs.some((o) => o.getrennt > 0), 'disconnect aufgerufen');
+  assert.equal(dialog.isConnected, false, 'Dialog geschlossen');
+  assert.equal(karte._pending, null, 'kein optimistischer Zustand');
+  const vorher = n.abrufe.length;
+  u.uhr.vor(120000);
+  await mikro();
+  assert.equal(n.abrufe.length, vorher, 'ausgehängt kein Abruf');
+  // Wieder einhängen: alles da, Beobachter wieder an, der gewünschte Frame wird genau einmal geholt.
+  n.status = () => 200;
+  u.body.appendChild(karte);
+  await mikro(); await mikro();
+  assert.ok(obs.some((o) => o.ziele.size > 0), 'wieder beobachtet');
+  assert.ok(karte.shadowRoot.querySelectorAll('[data-action="start"]').length === 1, 'Startknopf da');
+  assert.ok(karte._map && karte._map.el.isConnected, 'Karte da');
+  assert.equal(n.abrufe.length, vorher + 1, 'genau ein Abruf nach dem Einhängen');
+  assert.equal(karte._map.el.hasAttribute('data-stale'), false);
+  u.body.appendChild(karte);
+  await mikro();
+  assert.equal(n.abrufe.length, vorher + 1, 'zweites Einhängen idempotent');
+});
+
+test('M17 hidden: 5 Frames ergeben 0 fetch und kein Bild, sichtbar genau 1 Abruf mit dem neuesten Frame', async () => {
+  const k = await datenKarte();
+  const vorher = k.n.abrufe.length, bilder = k.u.bilder.length;
+  k.u.document.hidden = true;
+  k.u.document.dispatchEvent(k.u.neuesEreignis('visibilitychange'));
+  for (let i = 1; i <= 5; i++) {
+    neuerFrame(k, 1180 + i);
+    await mikro();
+    k.u.uhr.vor(1000);
+    await mikro();
+  }
+  assert.equal(k.n.abrufe.length, vorher, '0 fetch im Hintergrund');
+  assert.equal(k.u.bilder.length, bilder, 'kein Kartenbild im Hintergrund');
+  k.u.document.hidden = false;
+  k.u.document.dispatchEvent(k.u.neuesEreignis('visibilitychange'));
+  await mikro(); await mikro();
+  assert.equal(k.n.abrufe.length, vorher + 1, 'genau 1 Abruf nach dem Zurückkommen');
+  assert.equal(frameVon(k.n.abrufe.at(-1).url), 1185, 'der neueste Frame');
+  k.u.uhr.vor(5000);
+  await mikro();
+  assert.equal(k.n.abrufe.length, vorher + 1, 'danach kein weiterer');
+});
