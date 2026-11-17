@@ -203,6 +203,38 @@ const BuschUI = (() => {
 /* END BUSCH SHARED UI */
 
 /*
+ * Contents (M49): every section marker of this file, by start line.
+ * A marker is the line // SECTION: <name>; tests/gliederung.test.js checks both lists.
+ *
+ *   Localisation ........................... 261
+ *   Configuration .......................... 1763
+ *   Device model ........................... 2062
+ *   Settings table ......................... 2231
+ *   Map data and geometry .................. 2820
+ *   Status and control ..................... 2987
+ *   Task type, messages, progress .......... 3128
+ *   Tasks .................................. 3159
+ *   Map view ............................... 3447
+ *   class MapView .......................... 3829
+ *   Settings views ......................... 5666
+ *   Cleaning settings ...................... 6668
+ *   Station ................................ 7423
+ *   Shortcuts .............................. 7676
+ *   History ................................ 7935
+ *   Styles ................................. 8797
+ *   class BuschVacuumDialog ................ 11635
+ *   class BuschVacuumCard .................. 11995
+ *   Card editor ............................ 14041
+ *   Map editor ............................. 14177
+ *   class MapEditSession ................... 14783
+ *   class MapEditor ........................ 15831
+ *   Remote control ......................... 17779
+ *   Map backup ............................. 18336
+ *   class ImageZoom ........................ 18622
+ *   Registration ........................... 19425
+ */
+
+/*
  * busch-vacuum-card — robot vacuum card for Home Assistant (Dreame first).
  *
  * Contains exactly one card: `busch-vacuum-card`. Its functions follow the
@@ -226,7 +258,7 @@ const DIALOG_HISTORY_KEY = 'buschVacuumDialog';
 const domainOf = (entityId) => String(entityId || '').split('.')[0];
 
 // ---------------------------------------------------------------------------
-// Localisation
+// SECTION: Localisation
 // ---------------------------------------------------------------------------
 
 /**
@@ -1728,7 +1760,7 @@ class ConfigError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Configuration
+// SECTION: Configuration
 // ---------------------------------------------------------------------------
 
 const LOCK_MODES = ['auto', 'only_touch', 'never', 'always'];
@@ -2027,6 +2059,7 @@ function firstWeekday(hass) {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Device model
 // Device model (CORE-01/02)
 // ---------------------------------------------------------------------------
 
@@ -2195,6 +2228,7 @@ class VacuumModel {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Settings table
 // Settings (device-settings): one table, one row, one write path — also for
 // dock and clean-settings (R08)
 // ---------------------------------------------------------------------------
@@ -2783,6 +2817,7 @@ function settingRow(card, model, key) {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Map data and geometry
 // Map data and geometry (map-view, pure functions)
 // ---------------------------------------------------------------------------
 
@@ -2949,6 +2984,7 @@ function viewMatrix({ width, height, stageWidth, stageHeight, rotation = 0, scal
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Status and control
 // Status and control (CORE-03/04/07/11)
 // ---------------------------------------------------------------------------
 
@@ -3089,6 +3125,7 @@ function stationStatus(model) {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Task type, messages, progress
 // Task type, messages, progress (CORE-06/09/10)
 // ---------------------------------------------------------------------------
 
@@ -3119,6 +3156,7 @@ function runningTask(model) {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Tasks
 // Tasks (clean-tasks): one selection model in robot mm for map, chips and
 // lists (R08); payload and checks are pure functions (testable without DOM)
 // ---------------------------------------------------------------------------
@@ -3406,6 +3444,7 @@ function snapshotUnchanged(snapshot, hass) {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Map view
 // Map view (map-view): the live map and the map contract for later modules
 // ---------------------------------------------------------------------------
 
@@ -3785,6 +3824,11 @@ function cacheFrame(camera, key, promise) {
     });
     return promise;
 }
+
+// ---------------------------------------------------------------------------
+// SECTION: class MapView
+// The map of one card: layers, zoom, labels, chips (map contract above).
+// ---------------------------------------------------------------------------
 
 class MapView {
     constructor(card) {
@@ -5619,10 +5663,7 @@ class MapView {
 }
 
 // ---------------------------------------------------------------------------
-// Card
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
+// SECTION: Settings views
 // Settings views (device-settings): overview → group → entry, at most three levels (R25)
 // ---------------------------------------------------------------------------
 
@@ -6624,6 +6665,7 @@ function voicePackConfirm(card, draft) {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Cleaning settings
 // Cleaning settings (clean-settings): global rows, CleanGenius, Customized
 // Cleaning per room, mop type, cleaning sequence (SET-01…06) — rows and the
 // write path are device-settings' (R08)
@@ -7378,6 +7420,7 @@ function sequenceView(card) {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Station
 // Station (dock): actions, dock menu, station view with tabs (DOCK-01…06)
 // ---------------------------------------------------------------------------
 
@@ -7630,6 +7673,7 @@ function stationView(card) {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Shortcuts
 // Shortcuts (shortcuts): scripts and device shortcuts, start, manage (SHO-01/02)
 // ---------------------------------------------------------------------------
 
@@ -7888,6 +7932,7 @@ function shortcutDeleteView(card, entry) {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: History
 // History (history): runs of the history sensors (HIS-01…03); map and data of
 // one run are fetched only while its detail is open
 // ---------------------------------------------------------------------------
@@ -8747,6 +8792,11 @@ function historyDetail(card, name, list, ts) {
     };
     return view;
 }
+
+// ---------------------------------------------------------------------------
+// SECTION: Styles
+// Forced colours, history preview, map, card and dialog styles.
+// ---------------------------------------------------------------------------
 
 /** The map's styles: in the card and, while the edit mode holds the map, in the dialog (map-editor). */
 /**
@@ -11581,6 +11631,11 @@ a.backup-download:focus-visible { outline: 2px solid var(--primary-color, #03a9f
 
 `;
 
+// ---------------------------------------------------------------------------
+// SECTION: class BuschVacuumDialog
+// The one dialog element of the card and its focus helpers.
+// ---------------------------------------------------------------------------
+
 /**
  * The card's one dialog element (CORE-12), after BuschLightDialog of
  * Lightcards 0.11.0: full screen below 450 x 500 px, centred above; sticky
@@ -11935,6 +11990,11 @@ class BuschVacuumDialog extends HTMLElement {
         return button;
     }
 }
+
+// ---------------------------------------------------------------------------
+// SECTION: class BuschVacuumCard
+// The card element: layout, panel, task area, map slot.
+// ---------------------------------------------------------------------------
 
 class BuschVacuumCard extends HTMLElement {
     constructor() {
@@ -13978,6 +14038,7 @@ class BuschVacuumCard extends HTMLElement {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Card editor
 // Editor
 // ---------------------------------------------------------------------------
 
@@ -14113,6 +14174,7 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Map editor
 // Map editor (map-editor): safety frame, edit data, tools — every write of the
 // robot's stored map passes MapEditSession and one confirmation (spec 2026-11-10)
 // ---------------------------------------------------------------------------
@@ -14716,6 +14778,11 @@ function mapWrite(card, grant, service, data) {
 
 /** A confirmation click: the only source of a grant for mapWrite. */
 const confirmGrant = (card) => ({ card, confirmed: true });
+
+// ---------------------------------------------------------------------------
+// SECTION: class MapEditSession
+// Safety frame of the map editor: one session per edit mode.
+// ---------------------------------------------------------------------------
 
 class MapEditSession {
     constructor(card) {
@@ -15759,6 +15826,11 @@ function editListLabel(hass, list) {
     const own = translate(hass, 'kartenObj_' + list);
     return own !== 'kartenObj_' + list ? own : translate(hass, 'mapobj_' + list);
 }
+
+// ---------------------------------------------------------------------------
+// SECTION: class MapEditor
+// Edit mode of the map editor: tools, draft, save and undo.
+// ---------------------------------------------------------------------------
 
 /**
  * One edit mode: `base` = the lists as on the device (editLists), `draft` =
@@ -17704,6 +17776,7 @@ Object.assign(EDIT_LINES, {
 });
 
 // ---------------------------------------------------------------------------
+// SECTION: Remote control
 // Remote control (remote): one sender, sliders, hold buttons and keys feed it (R08)
 // ---------------------------------------------------------------------------
 
@@ -18260,6 +18333,7 @@ function remoteView(card) {
 }
 
 // ---------------------------------------------------------------------------
+// SECTION: Map backup
 // Map backup (map-backup: BAK-01, BAK-02, ALL-13): the states the device and
 // the cloud keep of a map — Original, Edited, Backup —, a full-screen view,
 // a manual backup, restoring (also from a file URL) and the raw file
@@ -18543,6 +18617,11 @@ function currentPicture(hass, model, mapId) {
     }
     return null;
 }
+
+// ---------------------------------------------------------------------------
+// SECTION: class ImageZoom
+// Zoom and pan of a picture (map backup full screen).
+// ---------------------------------------------------------------------------
 
 /**
  * Zoom and pan of a picture in a stage: the map's own rules (MAP_ZOOM,
@@ -19343,7 +19422,7 @@ function restoreFileView(card, home, start) {
 BACKUP_PARTS.push(restoreFilePart);
 
 // ---------------------------------------------------------------------------
-// Registration
+// SECTION: Registration
 // ---------------------------------------------------------------------------
 
 BuschVacuumCard.__internals = {

@@ -15,6 +15,14 @@
   `hass.locale`), Gerätemodell (`findRelated`, `VacuumModel.can()` — die
   einzige Stelle, die Fähigkeiten abfragt), Status/Steuerung, Aufgabenwahl,
   Meldungen, Menü, Stile, Dialog `busch-vacuum-dialog`, Karte, Editor.
+- Gliederung (M49): direkt nach dem Shared-UI-Block steht ein
+  Inhaltsverzeichnis (`Contents (M49)`) mit Abschnittsname und Startzeile;
+  jeder Abschnitt beginnt mit der Zeile `// SECTION: <Name>` zwischen zwei
+  Balken (`// ---…`, 75 Striche), auch vor den großen Klassen (`MapView`,
+  `BuschVacuumDialog`, `BuschVacuumCard`, `MapEditSession`, `MapEditor`,
+  `ImageZoom`). Wer Zeilen einfügt, trägt die Startzeilen nach;
+  `tests/gliederung.test.js` prüft Namen, Reihenfolge und Zeilen in beide
+  Richtungen. Kein Split, kein Build (Entscheidung 17.11.2026).
 - Rechte (M8): `ADMIN_ONLY` in `VacuumModel.can()` blendet für Nutzer ohne
   `hass.user.is_admin` Sprachpaket, Datei-Wiederherstellung, Karten löschen/
   wiederherstellen/bearbeiten, Shortcuts verwalten, Verbrauchsteile
