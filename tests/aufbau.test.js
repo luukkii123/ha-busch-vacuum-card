@@ -262,7 +262,7 @@ test('TASK-02 „Alle wählen“/„Auswahl leeren“ kleiner als die Zählzeile
   const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
   assert.match(stilRegel(CARD_STYLES, '.task-tools .busch-ui-action'), /font-size: 13px;/);
   const zahl = stilRegel(CARD_STYLES, '.task-count');
-  assert.match(zahl, /font-size: 14px;/);
+  assert.match(zahl, /font-size: var\(--ha-font-size-m, 14px\);/);
   assert.match(zahl, /font-weight: var\(--ha-font-weight-medium, 500\);/);
 });
 

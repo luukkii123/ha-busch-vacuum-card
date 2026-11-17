@@ -174,3 +174,13 @@ test('M40 Texttabellen ohne Kollision: addTexts mischt alle sechs, ein doppelter
   const doppelt = quelle.replace(anker, anker + "        rueckgaengig: 'Rückgängig',\n");
   assert.throws(() => neueUmgebung({ quelle: doppelt }), /rueckgaengig.*EDIT_TEXTS|EDIT_TEXTS.*rueckgaengig/);
 });
+
+test('M48 Schriftgrößen: 14 px als --ha-font-size-m, nur vier begründete feste px-Werte (13/13/15/18)', () => {
+  const zeilen = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'dist', 'busch-vacuum-card.js'), 'utf8').split('\n');
+  const fest = [];
+  zeilen.forEach((z, i) => { const m = z.match(/^\s*font-size:\s*(\d+)px;/); if (m) fest.push({ px: m[1], davor: zeilen[i - 1] }); });
+  assert.deepEqual(fest.map((f) => f.px).sort(), ['13', '13', '15', '18'], 'feste Schriftgrößen außerhalb von var()');
+  fest.forEach((f) => assert.match(f.davor, /^\s*\/\*.*\*\/\s*$/, 'Begründung direkt über ' + f.px + ' px'));
+  const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  assert.match(CARD_STYLES, /\.task-count \{[^}]*font-size: var\(--ha-font-size-m, 14px\);/);
+});

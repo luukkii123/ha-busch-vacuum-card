@@ -9817,7 +9817,7 @@ ha-card {
 .task-count {
     flex: 1 1 100%;
     color: var(--primary-text-color, #212121);
-    font-size: 14px;
+    font-size: var(--ha-font-size-m, 14px);
     font-weight: var(--ha-font-weight-medium, 500);
 }
 .task-repeats .task-count {
@@ -10182,6 +10182,7 @@ ha-card {
 }
 :host([data-width=wide]) .metric-value {
     max-width: 100%;
+    /* M48: no HA token for 18 px (l = 16, xl = 20); the wide tiles keep the approved artboard size. */
     font-size: 18px;
     font-weight: var(--ha-font-weight-medium, 500);
 }
@@ -10415,6 +10416,7 @@ ha-card {
 }
 .controls .ctl[data-variant=primary] {
     flex: 1 0 auto;
+    /* M48: no HA token for 15 px (m = 14, l = 16); the primary command stays one step above the bar. */
     font-size: 15px;
     font-weight: var(--ha-font-weight-medium, 500);
 }
