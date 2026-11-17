@@ -181,18 +181,30 @@ function einfacherSauger(zustand = 'docked', attribute = {}) {
 
 const ZUSTAND = { docked: 'Angedockt', cleaning: 'Reinigt', paused: 'Pausiert', returning: 'Kehrt zurück', idle: 'Untätig', error: 'Fehler', unavailable: 'Nicht verfügbar' };
 
+/** M21: Texte der synthetischen Übersetzung tests/fixtures/uebersetzung-de.json (id → Text). */
+function uebersetzungDe() {
+  return JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'uebersetzung-de.json'), 'utf8')).texte;
+}
+
 /**
  * `states` (und optional `entities`/`services`) wie in HA. `rufe` sammelt jeden
  * callService-Aufruf; `antwort` bestimmt, was callService zurückgibt (Vorgabe:
  * offenes Versprechen wie ein langsamer Roboter).
+ * M21: `uebersetzung` (Vorgabe: keine) gibt hass ein `localize` wie HA: Text der Tabelle
+ * (id → Text) oder '' für unbekannte Schlüssel; `{}` = HA ohne geladene Integrationstexte.
+ * `loadBackendTranslation` löst dann sofort auf und zählt in `haus.uebersetzungGeladen`.
  */
-function neuesHaus({ states, entities = {}, services = {}, devices, sprache = 'de', user = { id: 'nutzer', name: 'Testnutzer', is_admin: true, is_owner: false }, basis = null } = {}) {
+function neuesHaus({ states, entities = {}, services = {}, devices, sprache = 'de', user = { id: 'nutzer', name: 'Testnutzer', is_admin: true, is_owner: false }, basis = null, uebersetzung } = {}) {
   states = Object.assign({ 'vacuum.robo': einfacherSauger() }, states);
   for (let i = 0; i < 50; i++) states['sensor.fremd_' + i] = { entity_id: 'sensor.fremd_' + i, state: String(i), attributes: {} };
   // `zusatz` sammelt je Aufruf die Argumente nach `data` (target, notifyOnError, …), M5.
   // `user` wie hass.user (M8); Vorgabe Admin, damit alle bisherigen Fälle unverändert gelten.
-  const haus = { rufe: [], zusatz: [], antwort: () => new Promise(() => {}), sprache, entities, services, devices, user, basis };
-  haus.hass = () => ({
+  const haus = { rufe: [], zusatz: [], antwort: () => new Promise(() => {}), sprache, entities, services, devices, user, basis, uebersetzung, uebersetzungGeladen: [] };
+  const texte = () => (haus.uebersetzung ? {
+    localize: (id) => (Object.hasOwn(haus.uebersetzung, id) ? haus.uebersetzung[id] : ''),
+    loadBackendTranslation: (kategorie, integration) => { haus.uebersetzungGeladen.push([kategorie, integration]); return Promise.resolve(); },
+  } : {});
+  haus.hass = () => Object.assign({
     states: haus.states, entities: haus.entities, services: haus.services, devices: haus.devices, user: haus.user,
     language: haus.sprache, locale: { language: haus.sprache }, themes: {}, config: { unit_system: { length: 'km' } },
     // Wie HAs Formatierer: Zustände übersetzt, Zahl mit der Einheit der Entität.
@@ -200,7 +212,7 @@ function neuesHaus({ states, entities = {}, services = {}, devices, sprache = 'd
     callService: (domain, service, data, ...rest) => { haus.rufe.push({ domain, service, data }); haus.zusatz.push(rest); return haus.antwort(domain, service, data); },
     // `basis` (M29): hass.hassUrl wie im Frontend; Vorgabe ohne, dann bleiben Pfade relativ wie bisher.
     ...(haus.basis ? { hassUrl: (pfad = '') => (/^https?:\/\//i.test(pfad) ? pfad : haus.basis + pfad) } : {}),
-  });
+  }, texte());
   haus.states = states;
   /** Neuer Zustand wie von HA: neues states-Objekt, nur die genannten Einträge ersetzt. */
   haus.setze = (aenderungen) => { haus.states = Object.assign({}, haus.states, aenderungen); return haus.hass(); };
@@ -250,4 +262,4 @@ function verlaufsAbruf(umgebung, antwort = () => ({ status: 404 })) {
 /** Alle Mikrotasks (Promise-Ketten) abarbeiten. */
 const mikro = () => new Promise((r) => setImmediate(r));
 
-module.exports = { neueUhr, neueUmgebung, neuesHaus, hausAus, neueKarte, einfacherSauger, mikro, verlaufsAbruf };
+module.exports = { neueUhr, neueUmgebung, neuesHaus, hausAus, neueKarte, einfacherSauger, mikro, verlaufsAbruf, uebersetzungDe };
