@@ -623,3 +623,17 @@ test('M17 hidden: 5 Frames ergeben 0 fetch und kein Bild, sichtbar genau 1 Abruf
   await mikro();
   assert.equal(k.n.abrufe.length, vorher + 1, 'danach kein weiterer');
 });
+
+test('MAP-01 M15 Erstabruf der Kartendaten läuft, noch kein Bild: Ladehinweis sichtbar, danach weg', async () => {
+  const k = await datenKarte({ latenz: 1000 });
+  // Die Attrappe kennt keine zusammengesetzten Selektoren: .map-note und data-kind getrennt prüfen.
+  const note = () => k.karte.shadowRoot.querySelectorAll('.map-note').find((n) => n.getAttribute('data-kind') === 'loading') || null;
+  assert.equal(k.n.abrufe.length, 1, 'erster Datenabruf läuft');
+  assert.ok(!k.karte._map._image, 'noch kein Bild');
+  assert.ok(note(), 'Ladehinweis während des ersten Datenabrufs');
+  assert.equal(k.karte._map.stage.getAttribute('aria-busy'), 'true');
+  k.u.uhr.vor(1000); await mikro(); await mikro(); await mikro();
+  assert.equal(k.karte._map.current().mode, 'data');
+  assert.ok(!note(), 'Ladehinweis nach den Daten weg');
+  assert.equal(k.karte._map.stage.getAttribute('aria-busy'), 'false');
+});
