@@ -9658,17 +9658,20 @@ ha-card {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-:host .link-action {
+:host .text-action {
     flex: none;
+    min-height: 44px;
     padding: 0 var(--ha-space-2, 8px);
     background: transparent;
     color: var(--primary-text-color, #212121);
     font-size: var(--ha-font-size-s, 13px);
-    text-decoration: underline;
-    text-underline-offset: 3px;
+    font-weight: var(--ha-font-weight-medium, 500);
+    text-decoration: none;
 }
-.rooms-more {
+/* M31: "+ N weitere" starts at the chips' left edge; the 44 px target stays. */
+:host .rooms-more {
     align-self: flex-start;
+    padding-inline: 0;
 }
 .chip-slot .room-chips {
     gap: 6px;
@@ -9710,11 +9713,30 @@ ha-card {
 }
 .task-tools .busch-ui-action {
     background: transparent;
-    text-decoration: underline;
-    text-underline-offset: 3px;
 }
 .task-tools .busch-ui-action ha-icon {
     display: none;
+}
+/*
+ * M31: the panel's second-rank actions have exactly two styles. Text button (.text-action): words in
+ * text colour (contrast R16, not the primary colour), medium weight, no underline, 44 px target.
+ * Pill (.pill-action): an action that adds something to the map (zone, go-to target), symbol and words.
+ */
+:host .pill-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    min-height: 44px;
+    padding: 0 var(--ha-space-3, 12px);
+    border: 1px solid var(--divider-color, #e0e0e0);
+    border-radius: 22px;
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    color: var(--primary-text-color, #212121);
+    font-size: var(--ha-font-size-s, 13px);
+    font-weight: var(--ha-font-weight-medium, 500);
+}
+:host .pill-action ha-icon {
+    display: inline-flex;
 }
 .task-repeats .task-count {
     font-weight: var(--ha-font-weight-normal, 400);
@@ -11979,7 +12001,7 @@ class BuschVacuumCard extends HTMLElement {
         if (idle && model.can('customized_cleaning') && roomsInOrder(model).length) {
             const label = translate(hass, 'reihenfolgeAendern');
             const order = BuschUI.action({ label, text: label, variant: 'quiet', onClick: () => this._openDialog(sequenceView(this)) });
-            order.classList.add('link-action');
+            order.classList.add('text-action');
             order.setAttribute('data-action', 'sequence-open');
             order.setAttribute('aria-haspopup', 'dialog');
             head.appendChild(order);
@@ -11990,7 +12012,7 @@ class BuschVacuumCard extends HTMLElement {
         if (collapse) {
             const label = this._roomsOpen ? translate(hass, 'wenigerRaeume') : translate(hass, 'weitereRaeume', { n: n - 3 });
             const more = BuschUI.action({ label, text: label, variant: 'quiet', onClick: () => { this._roomsOpen = !this._roomsOpen; this._update(); } });
-            more.classList.add('link-action', 'rooms-more');
+            more.classList.add('text-action', 'rooms-more');
             more.setAttribute('data-action', 'rooms-more');
             more.setAttribute('aria-expanded', String(this._roomsOpen));
             nodes.push(more);
@@ -12029,6 +12051,14 @@ class BuschVacuumCard extends HTMLElement {
         const label = translate(hass, key, vars);
         const button = BuschUI.action({ label, text: label, icon, variant: 'secondary', disabled, onClick });
         button.setAttribute('data-action', name);
+        button.classList.add('text-action'); // M31: text button unless it adds something (_pill)
+        return button;
+    }
+
+    /** M31: an action that adds something to the map (zone, go-to target) is a pill with its symbol. */
+    _pill(button) {
+        button.classList.remove('text-action');
+        button.classList.add('pill-action');
         return button;
     }
 
@@ -12172,7 +12202,7 @@ class BuschVacuumCard extends HTMLElement {
             const c = this._mapCentre();
             if (c) this._addZone({ x0: c.x - SPOT_MM / 2, y0: c.y - SPOT_MM / 2, x1: c.x + SPOT_MM / 2, y1: c.y + SPOT_MM / 2 });
         }, !centre);
-        tools.appendChild(add);
+        tools.appendChild(this._pill(add));
         if (zones.length) tools.appendChild(this._panelButton(hass, 'auswahlLeeren', 'mdi:selection-remove', 'zones-clear', () => this._clearSelection('zones')));
         nodes.push(tools);
         if (zones.length) {
@@ -12411,7 +12441,7 @@ class BuschVacuumCard extends HTMLElement {
         }
         const tools = document.createElement('div');
         tools.className = 'task-tools';
-        tools.appendChild(this._panelButton(hass, 'zielMitte', 'mdi:crosshairs', 'goto-centre', () => this._setGoto(this._mapCentre()), !this._mapCentre()));
+        tools.appendChild(this._pill(this._panelButton(hass, 'zielMitte', 'mdi:crosshairs', 'goto-centre', () => this._setGoto(this._mapCentre()), !this._mapCentre())));
         nodes.push(tools);
         const points = this._gotoPoints();
         if (points.length) {

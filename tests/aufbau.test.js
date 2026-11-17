@@ -312,3 +312,41 @@ test('M36 Knopfzustand im Fehler: Start bleibt bedienbar (die Meldung sagt „ne
   assert.equal(start.getAttribute('aria-describedby'), null, 'kein Sperrgrund, weil nicht gesperrt');
   assert.equal(ctl(k, 'return').disabled, false);
 });
+
+// ── M31: Zweitaktionen mit zwei klaren Stilen ──────────────────────────────
+const stil = (node) => ['text-action', 'pill-action'].filter((c) => node.classList.contains(c));
+
+test('M31 Zweitaktionen: Textknopf für Reihenfolge/weitere/Auswahl, Pille für Bereich hinzufügen', () => {
+  const k = aufbau();
+  assert.deepEqual(stil($(k, '[data-action="sequence-open"]')), ['text-action']);
+  assert.deepEqual(stil($(k, '[data-action="rooms-more"]')), ['text-action']);
+  aufgabe(k, 'room').click();
+  for (const name of ['rooms-all', 'rooms-clear']) assert.deepEqual(stil($(k, '[data-action="' + name + '"]')), ['text-action'], name);
+  aufgabe(k, 'zone').click();
+  const add = $(k, '[data-action="zone-add"]');
+  assert.deepEqual(stil(add), ['pill-action']);
+  assert.equal(add.querySelector('ha-icon').getAttribute('icon'), 'mdi:plus-box-outline', 'Pille mit Symbol und Text');
+  assert.equal(add.textContent, 'Bereich hinzufügen');
+  for (const tools of $$(k, '.task-tools')) {
+    if (tools.classList.contains('task-repeats')) continue; // Stepper: Eingabe, keine Zweitaktion
+    for (const b of tools.querySelectorAll('.busch-ui-action')) assert.equal(stil(b).length, 1, 'genau ein Stil: ' + b.getAttribute('data-action'));
+  }
+});
+
+test('M31 CSS: zwei Stile, Textknopf ohne Unterstreichung mit 44 px, „+ N weitere“ bündig mit den Chips', () => {
+  const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  const regel = (sel) => { const m = CARD_STYLES.match(new RegExp('\\n' + sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' \\{([^}]*)\\}')); return m ? m[1] : null; };
+  const text = regel(':host .text-action');
+  assert.ok(text, 'Textknopf-Regel');
+  assert.match(text, /text-decoration: none;/);
+  assert.match(text, /min-height: 44px;/);
+  assert.match(text, /background: transparent;/);
+  const pille = regel(':host .pill-action');
+  assert.ok(pille, 'Pillen-Regel');
+  assert.match(pille, /border-radius: 22px;/);
+  assert.match(pille, /border: 1px solid var\(--divider-color, #e0e0e0\);/);
+  assert.match(pille, /min-height: 44px;/);
+  assert.match(regel(':host .pill-action ha-icon') || '', /display: inline-flex;/, 'Pille zeigt ihr Symbol');
+  assert.match(regel(':host .rooms-more') || '', /padding-inline: 0;/, 'Text beginnt am linken Chiprand');
+  assert.doesNotMatch(CARD_STYLES.replace(/\.map-layers \[data-highlight\][^}]*\}/, ''), /text-decoration: underline/, 'keine unterstrichenen Aktionen mehr (außer Raumname der Karte)');
+});
