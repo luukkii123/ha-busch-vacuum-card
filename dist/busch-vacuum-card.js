@@ -3336,6 +3336,17 @@ function messagesFor(hass, model) {
     return list;
 }
 
+/**
+ * M36: a message as [problem, next step]: the first sentence (without its full stop) and the rest.
+ * Only splits before a capital letter, so "5 min. lang" stays whole; one sentence has no step.
+ */
+function messageParts(text) {
+    const value = String(text || '').trim();
+    const split = /^([\s\S]{3,}?)[.!?]\s+(?=\p{Lu})([\s\S]+)$/u.exec(value);
+    if (split) return [split[1], split[2]];
+    return [value.replace(/\.$/, ''), ''];
+}
+
 /** M15: the robot reports no usable state (unavailable, unknown or missing): commands stay locked. */
 const robotOffline = (model) => !model.state || UNUSABLE.includes(model.state.state);
 
@@ -3422,6 +3433,22 @@ const MAP_SCHEMES = {
     dark: { floor: '#2a3038', wall: '#9aa4ae', room: ['#2d5680', '#3a6537', '#75602f', '#663b5e'], carpet: 'rgba(255, 255, 255, 0.14)', path: '#b0bac4' },
     grey: { floor: '#e3e3e3', wall: '#5e5e5e', room: ['#c2c2c2', '#d0d0d0', '#b0b0b0', '#dadada'], carpet: 'rgba(0, 0, 0, 0.14)', path: '#5e5e5e' }
 };
+
+/**
+ * M33: a dark card background also means dark rooms when the darkMode flag of HA is off (a dark-only
+ * theme): pastel rooms on near black glare. Relative luminance (WCAG) of the card background
+ * below 0.2 counts as dark; an unknown or transparent background changes nothing.
+ */
+function darkBackground(el) {
+    if (!el || typeof getComputedStyle !== 'function') return false;
+    const style = getComputedStyle(el);
+    const value = String(style.getPropertyValue('--ha-card-background') || style.getPropertyValue('--card-background-color') || '').trim();
+    if (!value) return false;
+    const [r, g, b, a] = parseColor(value, [255, 255, 255, 0]);
+    if (!a) return false;
+    const lin = (v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) < 0.2;
+}
 
 /** A CSS colour as [r, g, b, a] (0–255); hex and rgb()/rgba() here, other forms through a 1-px canvas. */
 function parseColor(value, fallback = [0, 0, 0, 0]) {
@@ -4124,9 +4151,12 @@ class MapView {
         return list;
     }
 
-    /** #1002: the card's panel holds the chips, except in the edit mode (the map then lives in its dialog). */
+    /**
+     * #1002: the panel of the card holds the chips. M34: in the edit mode the room slot of the editor below its
+     * toolbar (`MapEditor.chipHost`, shown only with the tool Räume); without one below the map.
+     */
     _chipHost() {
-        return this.card && this.card._mapEdit ? null : this.chipHost;
+        return this.card && this.card._mapEdit ? this.card._mapEdit.chipHost || null : this.chipHost;
     }
 
     _renderChips() {
@@ -4136,7 +4166,7 @@ class MapView {
         const rooms = this._showsMap() ? this.current().rooms : o.fallbackRooms ? o.fallbackRooms() : {};
         const picked = o.selected ? o.selected() : null;
         const ownOrder = o.order ? o.order() : null;
-        const key = JSON.stringify([rooms, this._highlight, BuschUI.language(this.hass, { legacy: true }), this._mode, picked, ownOrder, this.chipLimit, !!this._chipHost()]);
+        const key = JSON.stringify([rooms, this._highlight, BuschUI.language(this.hass, { legacy: true }), this._mode, picked, ownOrder, this.chipLimit, !!this._chipHost(), !!(this.card && this.card._mapEdit)]);
         if (key === this._chipsKey) return;
         this._chipsKey = key;
         const root = this.card.shadowRoot;
@@ -4155,7 +4185,7 @@ class MapView {
         this.chips = chips;
         // Zone, spot and go-to place points and areas: room chips would only be in the way there.
         chips.hidden = !chips.childNodes.length || !['view', 'pick-room'].includes(this._mode);
-        const limit = this._mode === 'view' && host ? this.chipLimit : null;
+        const limit = this._mode === 'view' && host && !(this.card && this.card._mapEdit) ? this.chipLimit : null;
         if (limit) chips.querySelectorAll('.room-chip').forEach((b, i) => { b.hidden = i >= limit; });
         const again = focusedRoom && chips.querySelector('[data-room="' + focusedRoom + '"]');
         if (again) {
@@ -4708,7 +4738,7 @@ class MapView {
     /** MAP-05/09: scheme colours (auto follows HA's dark mode) with override_colors, as --bvc-map-* on the view. */
     _applyScheme() {
         const opts = this.card._opts || {};
-        const scheme = opts.color_scheme === 'auto' || !opts.color_scheme ? (darkMode(this.hass) ? 'dark' : 'light') : opts.color_scheme;
+        const scheme = opts.color_scheme === 'auto' || !opts.color_scheme ? (darkMode(this.hass) || darkBackground(this.el) ? 'dark' : 'light') : opts.color_scheme;
         const own = Object.assign({}, opts.override_colors || {});
         const dark = own.dark || {};
         delete own.dark;
@@ -9466,6 +9496,19 @@ ha-card {
 .message-text strong {
     display: block;
 }
+/* M36: "Fehler: <problem>" as the title, the next step below it, one size smaller and secondary. */
+.message-title {
+    display: block;
+    font-size: var(--ha-font-size-l, 16px);
+    font-weight: var(--ha-font-weight-bold, 700);
+    line-height: 1.3;
+}
+.message-step {
+    display: block;
+    font-size: var(--ha-font-size-m, 14px);
+    color: var(--secondary-text-color, #727272);
+    line-height: 1.35;
+}
 .task-area {
     display: flex;
     flex-direction: column;
@@ -10022,17 +10065,20 @@ ha-card {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-:host .link-action {
+:host .text-action {
     flex: none;
+    min-height: 44px;
     padding: 0 var(--ha-space-2, 8px);
     background: transparent;
     color: var(--primary-text-color, #212121);
     font-size: var(--ha-font-size-s, 13px);
-    text-decoration: underline;
-    text-underline-offset: 3px;
+    font-weight: var(--ha-font-weight-medium, 500);
+    text-decoration: none;
 }
-.rooms-more {
+/* M31: "+ N weitere" starts at the chips' left edge; the 44 px target stays. */
+:host .rooms-more {
     align-self: flex-start;
+    padding-inline: 0;
 }
 .chip-slot .room-chips {
     gap: 6px;
@@ -10074,11 +10120,30 @@ ha-card {
 }
 .task-tools .busch-ui-action {
     background: transparent;
-    text-decoration: underline;
-    text-underline-offset: 3px;
 }
 .task-tools .busch-ui-action ha-icon {
     display: none;
+}
+/*
+ * M31: the panel's second-rank actions have exactly two styles. Text button (.text-action): words in
+ * text colour (contrast R16, not the primary colour), medium weight, no underline, 44 px target.
+ * Pill (.pill-action): an action that adds something to the map (zone, go-to target), symbol and words.
+ */
+:host .pill-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    min-height: 44px;
+    padding: 0 var(--ha-space-3, 12px);
+    border: 1px solid var(--divider-color, #e0e0e0);
+    border-radius: 22px;
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    color: var(--primary-text-color, #212121);
+    font-size: var(--ha-font-size-s, 13px);
+    font-weight: var(--ha-font-weight-medium, 500);
+}
+:host .pill-action ha-icon {
+    display: inline-flex;
 }
 .task-repeats .task-count {
     font-weight: var(--ha-font-weight-normal, 400);
@@ -10245,6 +10310,10 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rise { from { transform: translateY(32px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes grow { from { transform: scale(0.94); opacity: 0; } to { transform: none; opacity: 1; } }
+/* M32: the sheet takes the focus when opened by pointer; it shows no ring, the controls show theirs on :focus-visible. */
+.sheet:focus {
+    outline: none;
+}
 .sheet {
     position: relative;
     width: min(560px, 100%);
@@ -10313,6 +10382,13 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
         width: 100%;
         min-height: 48px;
     }
+}
+/* M35: the dock menu holds a few short rows; as wide as its content, full screen on phones like any dialog. */
+.sheet[data-view=station-menu] {
+    width: min(320px, 100%);
+}
+@media (max-width: 449.98px), (max-height: 499.98px) {
+    .sheet[data-view=station-menu] { width: 100%; }
 }
 .actions {
     display: flex;
@@ -11150,6 +11226,27 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 .form-note[data-kind=warning] { color: var(--bvc-warning-color, var(--warning-color, #b26a00)); }
 .form-note[data-kind=dirty]::before, .form-note[data-kind=warning]::before { content: "⚠ "; }
 .edit-map { position: relative; min-height: 220px; margin: 0 0 var(--ha-space-3, 12px); }
+/* M34: the rooms of the tool Räume below the toolbar, outlined chips unlike the filled tool buttons. */
+.edit-rooms { margin: 0 0 var(--ha-space-3, 12px); }
+.edit-rooms .room-chip {
+    min-height: 44px;
+    padding: 0 var(--ha-space-3, 12px);
+    border: 1px solid var(--divider-color, #e0e0e0);
+    border-radius: 22px;
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    color: var(--primary-text-color, #212121);
+}
+/* M34: open changes, Speichern and Verwerfen stay on screen while the sheet scrolls (R10). */
+.edit-bar {
+    position: sticky;
+    bottom: -16px;
+    z-index: 2;
+    margin: var(--ha-space-3, 12px) -16px -16px;
+    padding: var(--ha-space-2, 8px) 16px calc(16px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--divider-color, #e0e0e0);
+    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+}
+.edit-bar .actions { margin-top: var(--ha-space-2, 8px); }
 .edit-tools, .edit-list, .edit-row { display: flex; flex-wrap: wrap; gap: var(--ha-space-2, 8px); margin: 0 0 var(--ha-space-3, 12px); }
 .edit-tools [aria-pressed=true] { outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 1px; }
 .edit-list { flex-direction: column; }
@@ -11254,6 +11351,15 @@ function focusKey(node) {
     }
     return '';
 }
+
+/**
+ * M32: how the last input came (a pointer or a key), seen in the capture phase before the opener
+ * reacts. A dialog opened by pointer focuses itself, not its first button (no ring under the
+ * finger); by keyboard, or with no input seen yet, the first control as before (R03).
+ */
+let LAST_INPUT = 'key';
+document.addEventListener('pointerdown', () => { LAST_INPUT = 'pointer'; }, true);
+document.addEventListener('keydown', () => { LAST_INPUT = 'key'; }, true);
 
 class BuschVacuumDialog extends HTMLElement {
     constructor() {
@@ -11490,7 +11596,7 @@ class BuschVacuumDialog extends HTMLElement {
 
     _focusFirst() {
         if (!this._sheet || !this.isConnected) return;
-        (this._focusable()[0] || this._sheet).focus();
+        ((LAST_INPUT === 'key' && this._focusable()[0]) || this._sheet).focus();
     }
 
     _render() {
@@ -11777,13 +11883,18 @@ class BuschVacuumCard extends HTMLElement {
         rerender(this);
     }
 
+    /** M37: masonry size (50 px units) from the layout: panel 1, with the map 9, without 4. */
     getCardSize() {
-        return 4;
+        return this._panel ? 1 : this.hasAttribute('data-map') ? 9 : 4;
     }
 
-    /** Sections layout: full width by default, half (6 of 12) at the narrowest. */
+    /**
+     * Sections layout: full width by default, half (6 of 12) at the narrowest. M37: the height
+     * grows with the panel (ui-regeln, content with growing height), so rows stay automatic;
+     * min_rows keeps the map (320 px plus head) from being squeezed.
+     */
     getGridOptions() {
-        return { columns: 12, min_columns: 6 };
+        return { columns: 12, min_columns: 6, rows: 'auto', min_rows: this._panel ? 1 : this.hasAttribute('data-map') ? 8 : 4 };
     }
 
     _build() {
@@ -12484,7 +12595,7 @@ class BuschVacuumCard extends HTMLElement {
         if (idle && model.can('customized_cleaning') && roomsInOrder(model).length) {
             const label = translate(hass, 'reihenfolgeAendern');
             const order = BuschUI.action({ label, text: label, variant: 'quiet', onClick: () => this._openDialog(sequenceView(this)) });
-            order.classList.add('link-action');
+            order.classList.add('text-action');
             order.setAttribute('data-action', 'sequence-open');
             order.setAttribute('aria-haspopup', 'dialog');
             head.appendChild(order);
@@ -12495,7 +12606,7 @@ class BuschVacuumCard extends HTMLElement {
         if (collapse) {
             const label = this._roomsOpen ? translate(hass, 'wenigerRaeume') : translate(hass, 'weitereRaeume', { n: n - 3 });
             const more = BuschUI.action({ label, text: label, variant: 'quiet', onClick: () => { this._roomsOpen = !this._roomsOpen; this._update(); } });
-            more.classList.add('link-action', 'rooms-more');
+            more.classList.add('text-action', 'rooms-more');
             more.setAttribute('data-action', 'rooms-more');
             more.setAttribute('aria-expanded', String(this._roomsOpen));
             nodes.push(more);
@@ -12534,6 +12645,14 @@ class BuschVacuumCard extends HTMLElement {
         const label = translate(hass, key, vars);
         const button = BuschUI.action({ label, text: label, icon, variant: 'secondary', disabled, onClick });
         button.setAttribute('data-action', name);
+        button.classList.add('text-action'); // M31: text button unless it adds something (_pill)
+        return button;
+    }
+
+    /** M31: an action that adds something to the map (zone, go-to target) is a pill with its symbol. */
+    _pill(button) {
+        button.classList.remove('text-action');
+        button.classList.add('pill-action');
         return button;
     }
 
@@ -12677,7 +12796,7 @@ class BuschVacuumCard extends HTMLElement {
             const c = this._mapCentre();
             if (c) this._addZone({ x0: c.x - SPOT_MM / 2, y0: c.y - SPOT_MM / 2, x1: c.x + SPOT_MM / 2, y1: c.y + SPOT_MM / 2 });
         }, !centre);
-        tools.appendChild(add);
+        tools.appendChild(this._pill(add));
         if (zones.length) tools.appendChild(this._panelButton(hass, 'auswahlLeeren', 'mdi:selection-remove', 'zones-clear', () => this._clearSelection('zones')));
         nodes.push(tools);
         if (zones.length) {
@@ -12916,7 +13035,7 @@ class BuschVacuumCard extends HTMLElement {
         }
         const tools = document.createElement('div');
         tools.className = 'task-tools';
-        tools.appendChild(this._panelButton(hass, 'zielMitte', 'mdi:crosshairs', 'goto-centre', () => this._setGoto(this._mapCentre()), !this._mapCentre()));
+        tools.appendChild(this._pill(this._panelButton(hass, 'zielMitte', 'mdi:crosshairs', 'goto-centre', () => this._setGoto(this._mapCentre()), !this._mapCentre())));
         nodes.push(tools);
         const points = this._gotoPoints();
         if (points.length) {
@@ -13184,11 +13303,18 @@ class BuschVacuumCard extends HTMLElement {
             symbol.setAttribute('aria-hidden', 'true');
             const body = document.createElement('div');
             body.className = 'message-text';
+            // M36: title "Fehler: <problem>" over the next step, not one block as large as the card name.
+            const [problem, step] = messageParts(m.text);
             const word = document.createElement('strong');
-            word.textContent = translate(hass, look.word);
-            const text = document.createElement('span');
-            text.textContent = m.text;
-            body.append(word, text);
+            word.className = 'message-title';
+            word.textContent = translate(hass, look.word) + (problem ? ': ' + problem : '');
+            body.appendChild(word);
+            if (step) {
+                const text = document.createElement('span');
+                text.className = 'message-step';
+                text.textContent = step;
+                body.appendChild(text);
+            }
             node.append(symbol, body);
             if (m.kind === 'warning' && model.can('clear_warning')) {
                 const clear = BuschUI.action({ label: translate(hass, 'warnungLoeschen'), icon: 'mdi:broom', variant: 'quiet', onClick: () => this._clearWarning(model) });
@@ -15526,6 +15652,13 @@ function editRender(card, editor, body, hass, dialog) {
     holder.className = 'edit-map';
     holder.appendChild(m.el);
     body.appendChild(holder);
+    // M34: the tool is the choice, the room comes after it: chips below the toolbar, only in Räume.
+    if (!editor.chipHost) {
+        editor.chipHost = document.createElement('div');
+        editor.chipHost.className = 'edit-rooms';
+        m._chipsKey = null;
+        m._renderChips();
+    }
     const tools = EDIT_TOOL_NAMES.filter((name) => EDIT_TOOLS[name].panel && editor.toolCaps[name] && editor.toolCaps[name].shown);
     if (!tools.length) body.appendChild(noteLine(translate(hass, 'kartenKeineWerkzeuge')));
     const bar = document.createElement('div');
@@ -15552,6 +15685,7 @@ function editRender(card, editor, body, hass, dialog) {
         bar.appendChild(button);
     }
     if (tools.length) body.appendChild(bar);
+    if (editor.tool === 'rooms' && tools.includes('rooms')) body.appendChild(editor.chipHost);
     const reasons = [...new Set(tools.filter((n) => editor.toolCaps[n].locked).map((n) => editor.toolCaps[n].reason))];
     for (const reason of reasons) body.appendChild(noteLine(translate(hass, reason), 'locked'));
     const tool = editor.tool && EDIT_TOOLS[editor.tool];
@@ -15565,7 +15699,6 @@ function editRender(card, editor, body, hass, dialog) {
     const count = editor.count();
     const counter = noteLine(count ? translate(hass, 'kartenOffen', { n: count }) : translate(hass, 'kartenKeineOffen'), count ? 'dirty' : null);
     counter.setAttribute('data-counter', String(count));
-    body.appendChild(counter);
     const last = editor.session.undo[editor.session.undo.length - 1];
     if (last && !count) {
         const note = noteLine(translate(hass, 'kartenGespeichert') + ' · ' + last.text, 'success');
@@ -15602,7 +15735,11 @@ function editRender(card, editor, body, hass, dialog) {
     const done = BuschUI.action({ label: translate(hass, 'fertig'), text: translate(hass, 'fertig'), onClick: () => (dialog._views.length > 1 ? dialog._goBack() : dialog.close()) });
     done.setAttribute('data-action', 'done');
     actions.append(drop, done, save);
-    body.appendChild(actions);
+    // M34: the open-changes line with Speichern/Verwerfen as one bar fixed at the bottom of the sheet.
+    const footer = document.createElement('div');
+    footer.className = 'edit-bar';
+    footer.append(counter, actions);
+    body.appendChild(footer);
 }
 
 

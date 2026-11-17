@@ -57,6 +57,15 @@
   (`aria-selected`/`aria-checked`/`aria-pressed`) `Highlight`/`HighlightText`
   mit `forced-color-adjust: none`, der Fokus einen 2-px-Ring in `Highlight`.
   Neue Zustände tragen das passende ARIA-Attribut, nicht nur eine Füllfarbe.
+- Fokus beim Öffnen (M32): `LAST_INPUT` merkt in der Capture-Phase des Dokuments,
+  ob zuletzt ein Zeiger (`pointerdown`) oder eine Taste kam. Per Zeiger nimmt die
+  Dialogfläche (`.sheet`, `tabindex=-1`, ohne Ring) den Fokus, Tab führt auf das
+  erste Bedienelement; per Tastatur (oder ohne bekannte Eingabe) wie bisher das
+  erste Bedienelement mit Ring nur bei `:focus-visible` (2 px Versatz). Die
+  Fokusrückgabe an den Auslöser bleibt (`tests/dialog.test.js`, M32).
+- Stationsmenü (M35): `.sheet[data-view=station-menu]` ist ab 450 × 500 px
+  höchstens 320 px breit (statt 560 px), darunter Vollbild wie jeder Dialog;
+  als flüchtiges Menü (`kind: 'menu'`) schließt es per Escape und Außenklick.
 - Theme-Haken `--bvc-accent-color`, `--bvc-warning-color`, `--bvc-error-color`,
   `--bvc-success-color`, `--bvc-info-color`: nur gelesen, nie auf `:host`
   gesetzt (sonst würde ein Theme sie nicht erreichen); im HACS-Prüfer als
@@ -94,7 +103,8 @@
   mit eigener Höhe 520–780 px. Schmal: Karte 320 px randlos, Panel als Blatt mit
   Griff (16 px über der Karte), Aktionsleiste `position: sticky` unten.
 - Raum-Chips: `MapView.chipHost` = `.chip-slot` im Panel (im Bearbeitungsmodus
-  wieder unter der Karte im Dialog); `chipLimit` klappt sie in der Ansicht auf
+  im Dialog: M34 `MapEditor.chipHost` = `.edit-rooms` unter der
+  Werkzeugleiste, nur im Werkzeug „Räume“); `chipLimit` klappt sie in der Ansicht auf
   drei (Reihenfolge = Reinigungsfolge), „+ N weitere“ öffnet; Tastatur nur über
   sichtbare Chips.
 - Werkzeugleiste: eine Gruppe oben rechts (Zoom +/−, Einpassen | Bearbeiten,
@@ -112,6 +122,29 @@
   Sensor nicht verfügbar: `vorschauFehler` (R12), ohne Sensor kein Block
   (R18). Neu gezeichnet nur bei neuem Sensorobjekt oder neuer Sprache.
   Stile in `HISTORY_PREVIEW_STYLES` (an den Kartenstil angehängt).
+- Zweitaktionen im Panel (M31), genau zwei Stile: **Textknopf** `.text-action`
+  (Textfarbe statt Primärfarbe wegen Kontrast R16, mittleres Gewicht, keine
+  Unterstreichung, 44 px; „Reihenfolge ändern“, „+ N weitere“, Alle wählen,
+  Auswahl leeren, jede `_panelButton`-Aktion) und **Pille** `.pill-action`
+  (Rahmen, Radius 22 px, Symbol + Text; nur was etwas auf der Karte anlegt:
+  „Bereich hinzufügen“, „Ziel in Kartenmitte“, über `_pill`). „+ N weitere“ hat
+  keinen Innenabstand links und fluchtet mit dem linken Chiprand. Die
+  Wiederholungs-Stepper sind Eingaben, kein dritter Aktionsstil.
+- Karteneditor (M34): Reihenfolge Hinweise, `.edit-map`, Werkzeugleiste
+  `.edit-tools` direkt darunter, im Werkzeug „Räume“ die Raumchips
+  `.edit-rooms` (umrandet, Radius 22 px, anders als die gefüllten Werkzeug-
+  knöpfe), Panel; am Ende `.edit-bar` mit Änderungsstand (`[data-counter]`),
+  Verwerfen/Fertig/Speichern, `position: sticky` am unteren Blattrand.
+  Hinweis für Quelltext-Tests: Kommentare im JS ohne Apostroph schreiben
+  (`tests/karteneditor.test.js` liest Funktionskörper mit einem Zitat-Scanner).
+- Meldungen (M36): `messageParts` teilt den Text am ersten Satzende vor einem
+  Großbuchstaben; Titel `.message-title` „<Stufe>: <Problem>“ (16 px fett),
+  darunter `.message-step` mit dem Handlungsschritt (14 px, sekundär). Im
+  Fehlerzustand bleibt Start bedienbar: die Gerätemeldung verlangt „neu
+  starten“; gesperrt wird nur offline/Roboter weg/Auswahl unvollständig, mit Grund.
+- Größe (M37): `getCardSize` nach Layout (Panel 1, mit Kartenkamera 9, ohne 4);
+  `getGridOptions` 12/6 Spalten, `rows: 'auto'` (Höhe wächst mit dem Panel),
+  `min_rows` 8 mit Karte, 4 ohne, 1 im Panel. Test `tests/geruest.test.js`.
 
 ## Karte (Modul map-view)
 
@@ -188,9 +221,16 @@
   (`paintMapPixels`, ein Pixel je Gitterzelle, `image-rendering: pixelated`),
   nur bei neuem Frame, anderem Farbschema oder `map_display`;
   `map_display: floor_plan` = alle Räume ein Ton mit Konturen.
-  `color_scheme` `auto` (folgt `hass.themes.darkMode`), `light`, `dark`,
+  `color_scheme` `auto` (folgt `hass.themes.darkMode`, M33 zusätzlich einem
+  dunklen Kartenhintergrund: `darkBackground`, relative Leuchtdichte von
+  `--ha-card-background`/`--card-background-color` unter 0,2, für Themen nur
+  in Dunkel ohne Modus-Flag), `light`, `dark`,
   `grey`; `override_colors` (auch `dark: {…}`) setzt `--bvc-map-*` inline an
   `.map-view`. `icon_set` `busch` (eigene SVG-Formen) oder `material` (`mdi:`).
+- Zielwert dunkles Schema (M33): jede Raumfläche höchstens 0,13 relative
+  Leuchtdichte (Pastell hell ≈ 0,5–0,7), Etiketten (`--primary-text-color`,
+  dunkel `#e1e1e1`, hell `#212121`, Kontur in Kartenhintergrund) auf jeder
+  Raumfläche aller Schemata mindestens 4,5:1 (`tests/karte.test.js`, M33).
 - **R24-Ausnahme Bildmodus** (nur Rückfall, wenn die Kartendaten fehlen):
   Grund: das Bild rendert die Integration; Räume, Wände und eingebrannte
   Objekte (Pfad, Hindernisse, Teppiche des Bilds) lassen sich darin weder

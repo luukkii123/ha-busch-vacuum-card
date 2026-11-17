@@ -260,3 +260,52 @@ test('M11 Bestätigung: Knöpfe stehen als letzter Teil im Körper, Scrim schlie
   d.shadowRoot.querySelector('.scrim').click();
   assert.ok(d.isConnected, 'Bestätigung bleibt bei Klick auf den Scrim offen');
 });
+
+// ── Fokus beim Öffnen (M32) ────────────────────────────────────────────────
+/** Öffnet das Menü nach einem Zeiger- oder Tastenereignis auf dem Dokument (Eingabeart wie im Browser). */
+function offenPer(art) {
+  const u = neueUmgebung();
+  const karte = neueKarte(u, hausAus('voll'));
+  const knopf = menueKnopf(karte);
+  knopf.focus();
+  u.document.activeElement = karte;
+  if (art === 'zeiger') u.document.dispatchEvent(u.neuesEreignis('pointerdown'));
+  else u.document.dispatchEvent(u.neuesEreignis('keydown', { key: 'Enter' }));
+  knopf.click();
+  return { u, karte, knopf, d: dialogVon(u) };
+}
+
+test('M32 Öffnen per Maus/Touch: Fokus auf dem Dialog selbst, kein Knopf mit Ring', () => {
+  const { u, d } = offenPer('zeiger');
+  const sheet = d.shadowRoot.querySelector('.sheet');
+  assert.ok(d.shadowRoot.activeElement === sheet, 'Fokus auf dem Dialog');
+  assert.equal(sheet.getAttribute('role'), 'dialog');
+  taste(u, 'Tab');
+  assert.ok(d.shadowRoot.activeElement === d._focusable()[0], 'Tab führt auf das erste Bedienelement');
+  u.document.dispatchEvent(u.neuesEreignis('pointerdown'));
+  eintrag(u, 'settings').click();
+  assert.ok(d.shadowRoot.activeElement === d.shadowRoot.querySelector('.sheet'), 'Unteransicht per Zeiger: wieder der Dialog');
+});
+
+test('M32 Öffnen per Tastatur: Fokus auf dem ersten Bedienelement', () => {
+  const { u, d } = offenPer('taste');
+  assert.ok(d.shadowRoot.activeElement === d._focusable()[0], 'erstes Bedienelement');
+  u.document.dispatchEvent(u.neuesEreignis('keydown', { key: 'Enter' }));
+  eintrag(u, 'settings').click();
+  assert.ok(d.shadowRoot.activeElement === d._focusable()[0], 'Unteransicht per Tastatur: erstes Bedienelement');
+});
+
+test('M32 Fokusrückgabe auch nach dem Öffnen per Zeiger', () => {
+  const { u, karte, knopf } = offenPer('zeiger');
+  $d(u, '.head').querySelector('[data-action="close"]').click();
+  u.zurueck();
+  assert.equal(dialogVon(u), null);
+  assert.ok(karte.shadowRoot.activeElement === knopf, 'Fokus zurück auf den Menüknopf');
+});
+
+test('M32 CSS: Dialogfläche ohne Ring, Knopfring nur bei :focus-visible mit 2 px Versatz', () => {
+  const { DIALOG_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  assert.match(DIALOG_STYLES, /\.sheet:focus \{[^}]*outline: none;/);
+  assert.match(DIALOG_STYLES, /:where\(\.busch-ui-action\):focus-visible\{outline:2px solid [^;]+;outline-offset:2px\}/);
+  assert.doesNotMatch(DIALOG_STYLES, /busch-ui-action[^{,]*:focus(?![-\w])/, 'kein Ring bei bloßem :focus');
+});

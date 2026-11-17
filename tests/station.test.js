@@ -404,3 +404,22 @@ test('DOCK-05 Roboter außerhalb des Docks im Ruhezustand: „Zurück zum Dock�
   k.karte.shadowRoot.querySelectorAll('.ctl')[0].click();
   assert.deepEqual(aufrufe(k).map((c) => c.domain + '.' + c.service), ['vacuum.return_to_base']);
 });
+
+// ── M35: Stationsmenü nach Inhalt breit ─────────────────────────────────────
+test('M35 Stationsmenü: höchstens 360 px ab 450 px, am Handy Vollbild; Escape und Außenklick schließen', () => {
+  const { DIALOG_STYLES } = aufbau().I;
+  const breite = DIALOG_STYLES.match(/\n\.sheet\[data-view=station-menu\] \{\s*width: min\((\d+)px, 100%\);\s*\}/);
+  assert.ok(breite, 'eigene Breite für das Stationsmenü');
+  assert.ok(Number(breite[1]) >= 280 && Number(breite[1]) <= 360, 'Breite ' + breite[1] + ' px');
+  assert.match(DIALOG_STYLES, /@media \(max-width: 449\.98px\), \(max-height: 499\.98px\) \{\s*\.sheet\[data-view=station-menu\] \{ width: 100%; \}/, 'am Handy bleibt das Vollbild-Sheet');
+  assert.ok(DIALOG_STYLES.indexOf('.sheet[data-view=station-menu] { width: 100%; }') > DIALOG_STYLES.indexOf('.sheet[data-view=station-menu] {\n'), 'Handyregel steht danach und gewinnt');
+  const k = dockMenue();
+  assert.equal($d(k.u, '.sheet').getAttribute('data-view'), 'station-menu');
+  k.u.document.dispatchEvent(k.u.neuesEreignis('keydown', { key: 'Escape' }));
+  k.u.zurueck();
+  assert.equal(dialogVon(k.u), null, 'Escape schließt');
+  const a = dockMenue();
+  $d(a.u, '.scrim').click();
+  a.u.zurueck();
+  assert.equal(dialogVon(a.u), null, 'Außenklick schließt das flüchtige Menü (R04)');
+});
