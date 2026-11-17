@@ -6846,6 +6846,35 @@ function roomView(card, id) {
 }
 
 /**
+ * M23: rooms written one after the other, the one way for „Auf alle Räume
+ * übertragen“ and the room restore. `steps` = [{ id, data }]: one
+ * vacuum_set_custom_cleaning per step, in order, never in parallel; a step
+ * without data or a failed call stops the series (R12). `run` = { done, error,
+ * running } is the shared state the view draws; a second tap while it runs
+ * sends nothing (R11). `redraw` runs before the first call, after each step and
+ * at the end, only while the dialog is open.
+ */
+async function runSeries(card, steps, run, redraw) {
+    if (run.running) return; // R11: a double tap sends once
+    run.running = true;
+    run.error = '';
+    redraw();
+    for (const step of steps) {
+        if (!step.data) { run.error = translate(card.hass, 'raumUnvollstaendig'); break; }
+        try {
+            await callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card.opts.entity }, step.data));
+            run.done.push(step.id);
+        } catch (error) {
+            run.error = errorText(error);
+            break;
+        }
+        redraw();
+    }
+    run.running = false;
+    redraw();
+}
+
+/**
  * „Auf alle Räume übertragen“ (R02/R13): asks with the rooms it overwrites,
  * then one call per room, one after the other, progress visible (R11), stops
  * at the first error and names what changed (R12).
@@ -6869,27 +6898,16 @@ function applyAllView(card, sourceId) {
             }
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const close = BuschUI.action({ label: translate(hass, run ? 'zurueck' : 'abbrechen'), text: translate(hass, run ? 'zurueck' : 'abbrechen'), disabled: !!run && !run.finished, onClick: () => dialog.goBack() });
+            const close = BuschUI.action({ label: translate(hass, run ? 'zurueck' : 'abbrechen'), text: translate(hass, run ? 'zurueck' : 'abbrechen'), disabled: !!run && run.running, onClick: () => dialog.goBack() });
             close.setAttribute('data-action', 'cancel');
             actions.appendChild(close);
             if (!run) {
-                const go = BuschUI.action({ label: translate(hass, 'uebertragen'), text: translate(hass, 'uebertragen'), variant: 'primary', onClick: async () => {
+                const go = BuschUI.action({ label: translate(hass, 'uebertragen'), text: translate(hass, 'uebertragen'), variant: 'primary', onClick: () => {
+                    if (run) return; // R11: a double tap sends once
                     const values = Object.fromEntries(roomFields(model).map((key) => [key, rooms[sourceId][key]]));
-                    run = { done: [], total: targets.length, error: '', finished: false };
-                    for (const id of targets) {
-                        const data = roomPayload(model, rooms[id], values);
-                        if (!data) { run.error = translate(hass, 'raumUnvollstaendig'); break; }
-                        dialog.render();
-                        try {
-                            await callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card.opts.entity }, data));
-                            run.done.push(id);
-                        } catch (error) {
-                            run.error = errorText(error);
-                            break;
-                        }
-                    }
-                    run.finished = true;
-                    if (dialog.isConnected) dialog.render();
+                    run = { done: [], total: targets.length, error: '', running: false };
+                    const steps = targets.map((id) => ({ id, data: roomPayload(model, rooms[id], values) }));
+                    return runSeries(card, steps, run, () => { if (dialog.isConnected) dialog.render(); });
                 } });
                 go.setAttribute('data-action', 'confirm');
                 actions.appendChild(go);
@@ -18907,24 +18925,8 @@ function roomRestoreView(card, note) {
             actions.appendChild(close);
             if (rest.length) {
                 const label = translate(hass, run.error ? 'kartenErneut' : 'raeumeZurueckKnopf');
-                const go = BuschUI.action({ label, text: label, variant: 'primary', disabled: run.running || !!lock, onClick: async () => {
-                    if (run.running) return; // R11: a double tap sends once
-                    run.running = true;
-                    run.error = '';
-                    dialog.render();
-                    for (const r of rest) {
-                        try {
-                            await callDevice(card.hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card.opts.entity }, r.data));
-                            run.done.push(r.id);
-                        } catch (error) {
-                            run.error = errorText(error);
-                            break;
-                        }
-                        if (dialog.isConnected) dialog.render();
-                    }
-                    run.running = false;
-                    if (dialog.isConnected) dialog.render();
-                } });
+                const go = BuschUI.action({ label, text: label, variant: 'primary', disabled: run.running || !!lock,
+                    onClick: () => runSeries(card, rest, run, () => { if (dialog.isConnected) dialog.render(); }) });
                 go.setAttribute('data-action', 'confirm');
                 actions.appendChild(go);
             }
