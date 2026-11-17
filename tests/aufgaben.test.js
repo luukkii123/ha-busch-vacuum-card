@@ -226,6 +226,38 @@ test('TASK-01 Natürliches Ende (Verlauf completed nach Start) → Gesamt, Auswa
   assert.deepEqual(roh(karte._selection), { rooms: [], zones: [], spots: [], goto: null });
 });
 
+test('M38 TASK-01 Handyuhr 5 min vor: Ende über last_changed des ersten Aktivzustands → Gesamt, Auswahl leer', async () => {
+  const { u, haus, karte } = await kartenKarte();
+  const server = u.uhr.jetzt; // Zeit des Servers und des Geräts
+  u.uhr.vor(5 * 60000); // die Uhr des Browsers geht 5 min vor
+  waehle(karte, 'room', { rooms: [3] });
+  knopf(karte, 'start').click();
+  const aktiv = saugerNeu(haus, { started: true, segment_cleaning: true }, 'cleaning');
+  aktiv['vacuum.robo'].last_changed = new Date(server + 1000).toISOString();
+  karte.hass = haus.setze(aktiv);
+  const zurueck = saugerNeu(haus, { started: false, segment_cleaning: false }, 'returning');
+  zurueck['vacuum.robo'].last_changed = new Date(server + 900000).toISOString();
+  karte.hass = haus.setze(zurueck);
+  assert.deepEqual(gewaehlt(karte), ['room'], 'bis der Verlauf kommt, bleibt der Typ');
+  karte.hass = haus.setze(verlauf(haus, { completed: true, timestamp: server / 1000 + 120 }));
+  assert.deepEqual(gewaehlt(karte), ['all']);
+  assert.deepEqual(roh(karte._selection), { rooms: [], zones: [], spots: [], goto: null });
+});
+
+test('M38 TASK-01 Ein Verlaufseintrag von vor dem ersten Aktivzustand ist kein Ende (Serverzeit)', async () => {
+  const { u, haus, karte } = await kartenKarte();
+  const server = u.uhr.jetzt;
+  u.uhr.vor(5 * 60000);
+  waehle(karte, 'room', { rooms: [3] });
+  knopf(karte, 'start').click();
+  const aktiv = saugerNeu(haus, { started: true }, 'cleaning');
+  aktiv['vacuum.robo'].last_changed = new Date(server + 3600000).toISOString();
+  karte.hass = haus.setze(aktiv);
+  karte.hass = haus.setze(saugerNeu(haus, { started: false }, 'returning'));
+  karte.hass = haus.setze(verlauf(haus, { completed: true, timestamp: server / 1000 + 600 }));
+  assert.deepEqual(gewaehlt(karte), ['room'], 'alter Lauf (vor dem Start laut Server) beendet nichts');
+});
+
 test('TASK-01 Verlauf ohne completed (abgebrochen) → bleibt', async () => {
   const { u, haus, karte } = await kartenKarte();
   waehle(karte, 'room', { rooms: [3] });

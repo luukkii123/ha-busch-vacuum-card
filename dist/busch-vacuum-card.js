@@ -12556,11 +12556,18 @@ class BuschVacuumCard extends HTMLElement {
      * a task this card started — the newest history entry since the start says
      * completed (the integration loads it at status completed, device.py#L1889).
      * Own stop: never. Without the history sensor: unless the card stopped it.
+     * The start counts from `last_changed` of the first active state (server
+     * time, M38); the browser clock is only the fallback until then.
      */
     _checkEnd(model, active) {
         const run = this._run;
         if (!run) return;
         if (active) {
+            // M38: the end is compared with server stamps, so the start time is the server's, not the browser's.
+            if (!run.seen) {
+                const since = Date.parse(model.state && model.state.last_changed);
+                if (Number.isFinite(since)) run.at = since;
+            }
             run.seen = true;
             return;
         }
