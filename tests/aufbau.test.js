@@ -106,6 +106,17 @@ test('TASK-01 Gesamt: „Alle 7 Räume“, Räume in Reinigungsfolge, drei sicht
   assert.equal($(k, '[data-action="rooms-more"]').textContent, 'Weniger');
 });
 
+test('TASK-01 Gesamt breit (#1241): genug Platz in der Seitenleiste, alle 7 Chips ohne „+ N weitere“; schmal wieder drei', () => {
+  const k = aufbau({ breite: 1280 });
+  assert.equal(sichtbareChips(k).length, 7, 'breit alle sichtbar');
+  assert.equal($(k, '[data-action="rooms-more"]'), null);
+  k.setze(390);
+  assert.equal(sichtbareChips(k).length, 3, 'schmal eingeklappt');
+  assert.equal($(k, '[data-action="rooms-more"]').textContent, '+ 4 weitere');
+  k.setze(1280);
+  assert.equal(sichtbareChips(k).length, 7, 'Breitenwechsel zeichnet neu');
+});
+
 test('CORE-06 Gesamt: Tastatur wandert nur über sichtbare Chips (R15/R22)', () => {
   const k = aufbau();
   const chips = sichtbareChips(k);

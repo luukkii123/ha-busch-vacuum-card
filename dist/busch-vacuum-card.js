@@ -224,14 +224,14 @@ const BuschUI = (() => {
  *   Styles ................................. 8798
  *   class BuschVacuumDialog ................ 11636
  *   class BuschVacuumCard .................. 11996
- *   Card editor ............................ 14042
- *   Map editor ............................. 14178
- *   class MapEditSession ................... 14784
- *   class MapEditor ........................ 15832
- *   Remote control ......................... 17780
- *   Map backup ............................. 18337
- *   class ImageZoom ........................ 18623
- *   Registration ........................... 19426
+ *   Card editor ............................ 14046
+ *   Map editor ............................. 14182
+ *   class MapEditSession ................... 14788
+ *   class MapEditor ........................ 15836
+ *   Remote control ......................... 17784
+ *   Map backup ............................. 18341
+ *   class ImageZoom ........................ 18627
+ *   Registration ........................... 19430
  */
 
 /*
@@ -246,7 +246,7 @@ const BuschUI = (() => {
  * repositories ship a single file, no sub folders).
  */
 
-const CARD_VERSION = '0.5.0';
+const CARD_VERSION = '0.5.1';
 /** #1011: default entity of getStubConfig per entity registry, see there. */
 const STUB_PICKS = new WeakMap();
 
@@ -12521,7 +12521,10 @@ class BuschVacuumCard extends HTMLElement {
         if (!(width > 0)) return;
         const was = this.getAttribute('data-width') === 'wide';
         const value = width >= (was ? WIDE_MIN - WIDE_SLACK : WIDE_MIN) ? 'wide' : 'narrow';
-        if (this.getAttribute('data-width') !== value) this.setAttribute('data-width', value);
+        if (this.getAttribute('data-width') !== value) {
+            this.setAttribute('data-width', value);
+            if (this._hass) this._update(); // #1241: the room chips collapse only when narrow
+        }
         if (this._barWidth !== width) {
             this._barWidth = width;
             this._fitControls();
@@ -13132,7 +13135,8 @@ class BuschVacuumCard extends HTMLElement {
             head.appendChild(order);
         }
         nodes.push(head);
-        const collapse = n > 4;
+        // #1241: the wide side panel has room for every chip; narrow keeps three and "+ N weitere".
+        const collapse = n > 4 && this.getAttribute('data-width') !== 'wide';
         nodes.push(...this._chipNodes(collapse && !this._roomsOpen ? 3 : null));
         if (collapse) {
             const label = this._roomsOpen ? translate(hass, 'wenigerRaeume') : translate(hass, 'weitereRaeume', { n: n - 3 });
