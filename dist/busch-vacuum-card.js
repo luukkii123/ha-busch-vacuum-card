@@ -360,6 +360,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             stop: 'Stopp',
             return: 'Zurück',
             zurueckZumDock: 'Zurück zum Dock',
+            dockKurz: 'Dock',
             station: 'Station',
             dock: 'Dock',
             frischwasserFehlt: 'Frischwassertank fehlt',
@@ -1068,6 +1069,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             stop: 'Stop',
             return: 'Return',
             zurueckZumDock: 'Return to dock',
+            dockKurz: 'Dock',
             station: 'Station',
             dock: 'Dock',
             frischwasserFehlt: 'Clean water tank missing',
@@ -9830,7 +9832,8 @@ ha-card {
 .controls .ctl {
     flex: 1 1 0;
     justify-content: center;
-    min-width: 44px;
+    /* M2: a bar word is never shortened; without room the bar wraps once (data-wrap). */
+    min-width: max-content;
     min-height: 48px;
     border-radius: var(--ha-card-border-radius, 12px);
 }
@@ -9916,8 +9919,8 @@ ha-card {
 }
 .ctl-text {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
+    text-overflow: clip;
     white-space: nowrap;
 }
 .controls .ctl ha-icon {
@@ -9930,6 +9933,29 @@ ha-card {
 }
 :host(:not([data-width=wide])) .controls[data-many] .ctl[data-variant=secondary] ha-icon {
     display: none;
+}
+/* M2 (Buschcheck): at most two rows: the main action full width, the others below, equal. */
+.controls[data-wrap] {
+    flex-wrap: wrap;
+}
+.controls[data-wrap] > .ctl:first-child {
+    flex: 1 0 100%;
+}
+.controls[data-wrap] > .ctl:not(:first-child) {
+    flex: 1 1 0;
+}
+.controls[data-wrap] .dock {
+    order: 1;
+}
+/* M2: a soft fade above the sticky bar says that the panel scrolls on. */
+:host(:not([data-width=wide])) .controls::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    bottom: 100%;
+    height: var(--ha-space-4, 16px);
+    background: linear-gradient(to top, var(--ha-card-background, var(--card-background-color, #ffffff)), transparent);
+    pointer-events: none;
 }
 `;
 
@@ -11481,6 +11507,10 @@ class BuschVacuumCard extends HTMLElement {
         const was = this.getAttribute('data-width') === 'wide';
         const value = width >= (was ? WIDE_MIN - WIDE_SLACK : WIDE_MIN) ? 'wide' : 'narrow';
         if (this.getAttribute('data-width') !== value) this.setAttribute('data-width', value);
+        if (this._barWidth !== width) {
+            this._barWidth = width;
+            this._fitControls();
+        }
     }
 
     _model() {
@@ -11570,7 +11600,9 @@ class BuschVacuumCard extends HTMLElement {
         const kept = new Map(this._controls.childNodes.map((node) => [node.getAttribute('data-action'), node]));
         const buttons = names.map((name) => {
             // #1002: the primary start says what it cleans (CORE-07).
-            const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
+            // M2: while a task runs the return button says just "Dock"; its name stays "Return to dock".
+            const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, name === 'return' ? 'zurueckZumDock' : name);
+            const shown = name === 'return' && !outside ? translate(hass, 'dockKurz') : label;
             const offline = hass.connected === false; // M18: every command
             const robotGone = name === 'start' && robotOffline(model); // M15: the start
             const blocked = offline || robotGone || (name === 'start' && !ready.ok);
@@ -11580,7 +11612,7 @@ class BuschVacuumCard extends HTMLElement {
             // #1002: the words in their own box, so a narrow bar shortens them instead of cutting the symbol.
             const words = old ? old.querySelector('.ctl-text') : document.createElement('span');
             words.className = 'ctl-text';
-            words.textContent = label;
+            words.textContent = shown;
             if (!old) button.appendChild(words);
             if (blocked) button.setAttribute('aria-describedby', offline ? 'offline-hint' : robotGone ? 'robot-offline' : 'task-hint');
             else button.removeAttribute('aria-describedby');
@@ -11603,6 +11635,19 @@ class BuschVacuumCard extends HTMLElement {
         // #1002: with three or more buttons the station shrinks to its symbol (name stays in aria-label).
         if (buttons.length > 2) this._controls.setAttribute('data-many', '');
         else this._controls.removeAttribute('data-many');
+        const fit = buttons.map((node) => node.getAttribute('data-action') + ':' + node.textContent).join('|') + '@' + this._barWidth;
+        if (fit !== this._fitKey) {
+            this._fitKey = fit;
+            this._fitControls();
+        }
+    }
+
+    /** M2: measured, not guessed: the bar wraps (data-wrap) only when its words do not fit in one row. */
+    _fitControls() {
+        const bar = this._controls;
+        if (!bar) return;
+        bar.removeAttribute('data-wrap');
+        if (bar.childNodes.length > 1 && bar.scrollWidth > bar.clientWidth + 1) bar.setAttribute('data-wrap', '');
     }
 
     _openDialog(view) {
