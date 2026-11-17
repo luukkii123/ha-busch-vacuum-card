@@ -15,6 +15,11 @@
   `hass.locale`), Gerätemodell (`findRelated`, `VacuumModel.can()` — die
   einzige Stelle, die Fähigkeiten abfragt), Status/Steuerung, Aufgabenwahl,
   Meldungen, Menü, Stile, Dialog `busch-vacuum-dialog`, Karte, Editor.
+- Rechte (M8): `ADMIN_ONLY` in `VacuumModel.can()` blendet für Nutzer ohne
+  `hass.user.is_admin` Sprachpaket, Datei-Wiederherstellung, Karten löschen/
+  wiederherstellen/bearbeiten, Shortcuts verwalten, Verbrauchsteile
+  zurücksetzen und den Rohdatei-Download aus; `admin_actions: all` zeigt sie
+  allen. Neue folgenreiche Funktionen fragen `can()` und kommen in die Liste.
 - Erkennung: über `hass.entities` (Register im Frontend) alle Entitäten mit
   der `device_id` des Saugers, abgelegt nach `<domain>.<translation_key>`,
   je Raum und je Kartenkamera. Ohne Register Rückfall über das Präfix der
@@ -50,6 +55,16 @@
   Sperrliste außerhalb des Repos (`BVC_SPERRLISTE`, HMAC-SHA-256). Ohne Variable
   werden diese Fälle sichtbar übersprungen (GitHub, fremde Klone); ist sie gesetzt
   und die Datei fehlt, ist der Lauf rot.
+- XSS (M27): `tests/senken.test.js` sperrt HTML-/Code-Senken in der Quelle
+  (`innerHTML` nur zum Leeren, kein `outerHTML`, `insertAdjacentHTML`, `eval`,
+  `on…=`, kein `setAttribute` mit berechnetem Namen außer `svgNode`, das
+  `on…` verwirft). `tests/fixtures/feindlich.json` trägt HTML, `javascript:`,
+  sehr lange Texte und RTL-Zeichen in Namen; sie müssen wörtlich als Text
+  erscheinen.
+- Adressen (M28/M29/M43): Kartenbilder der Konfiguration nur per Positivliste
+  (`PICTURE_URL`); Adressen aus Attributen nur über `ownPath` (`/api/` oder die
+  eigene Instanz); Sprachpaket nur `https://` oder die eigene Instanz, Datei-URL
+  zu einem fremden Host mit zweitem Haken.
 
 ## Layout 0.2 (#1002)
 

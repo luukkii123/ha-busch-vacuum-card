@@ -251,6 +251,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             locked: 'Karten-Sperre',
             touch_lock: 'Haltezeit zum Entsperren',
             disable_haptic: 'Vibration aus',
+            admin_actions: 'Gerätefunktionen für',
             display_section: 'Anzeige',
             hidden_card_objects: 'Ausgeblendete Teile',
             map_section: 'Karte',
@@ -299,10 +300,11 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             aspect_ratio: 'Feste Form der Karte wie 16:9, 4/3 oder 1.5; gilt nicht mit voller Höhe und nicht im Panel. Vorgabe leer.',
             max_height_offset: 'So viele Pixel zieht die Karte von ihrer größten Höhe ab, etwa für eigene Kopfzeilen. Vorgabe 0.',
             left_handed: 'Legt die Aktionsknöpfe nach links und die Stationsanzeige nach rechts. Vorgabe aus.',
-            operation_section: 'Sperre gegen versehentliches Verschieben der Karte und Vibration am Handy.',
+            operation_section: 'Sperre gegen versehentliches Verschieben der Karte, Vibration am Handy und wer folgenreiche Gerätefunktionen sieht.',
             locked: 'Wann die Karte gesperrt startet; Automatisch sperrt am Touchgerät außerhalb einer Panel-Ansicht. Vorgabe Automatisch.',
             touch_lock: 'So lange hältst du das Schloss, um die Sperre umzuschalten, 100 bis 400 Millisekunden. Vorgabe 200.',
             disable_haptic: 'Schaltet die kurze Vibration beim Tippen am Handy ab. Vorgabe aus.',
+            admin_actions: 'Wer Sprachpaket, Wiederherstellen aus Datei, Karten löschen, wiederherstellen und bearbeiten, Shortcuts verwalten, Verbrauchsteile zurücksetzen und Kartendateien herunterladen sieht. Home Assistant selbst prüft keine Rechte je Dienst. Vorgabe Nur Admins.',
             display_section: 'Welche Teile die Karte zeigt.',
             hidden_card_objects: 'Gewählte Teile zeigt die Karte nicht; ohne „Bestätigung beim Kartenwechsel“ wechselt sie die Karte ohne Rückfrage. „Kartenbearbeitung“ blendet Stift und Kartenverwaltung aus (z. B. für Wanddisplays); Kartenänderungen werden immer bestätigt. Vorgabe keine.',
             map_section: 'Darstellung der Live-Karte: Ansicht, Farben, Symbole und was sie zeigt.',
@@ -336,7 +338,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             left: 'So viel Prozent schneidet die Karte links ab. Vorgabe 0.',
             background_image: 'Eigenes Bild unter der Karte, etwa ein Grundriss; Ecken in Roboter-Millimetern aus der Karteninfo. Vorgabe keines.',
             overlay_image: 'Eigenes Bild über der Karte, unter den Symbolen; Ecken wie beim Hintergrundbild. Vorgabe keines.',
-            url: 'Adresse des Bilds, etwa /local/grundriss.png. Vorgabe leer.',
+            url: 'Adresse des Bilds, etwa /local/grundriss.png; erlaubt sind /local/, /media/, /api/, http(s):// und PNG-, JPEG-, WebP- oder GIF-Daten. Vorgabe leer.',
             x0: 'Linke Bildkante in Roboter-Millimetern. Vorgabe leer.',
             y0: 'Untere Bildkante in Roboter-Millimetern. Vorgabe leer.',
             x1: 'Rechte Bildkante in Roboter-Millimetern. Vorgabe leer.',
@@ -514,6 +516,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             lock_only_touch: 'Nur am Touchgerät',
             lock_never: 'Nie',
             lock_always: 'Immer',
+            admin_admins: 'Nur Admins',
+            admin_all: 'Alle Nutzer',
             obj_title: 'Titel',
             obj_state: 'Statuszeile',
             obj_menu: 'Menü',
@@ -668,6 +672,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             skripte: 'Skripte',
             laeuft: 'läuft',
             skripteFehlen: 'Nicht gefunden: {liste}.',
+            bildFremd: 'Ein Kartenbild liegt auf einem fremden Server ({host}): er sieht jeden Aufruf des Dashboards.',
             verwalten: 'Verwalten',
             shortcutsVerwalten: 'Shortcuts verwalten',
             keineShortcuts: 'Keine Shortcuts auf dem Gerät. Shortcuts legst du in der Dreame-App an; danach hier „Neu laden“.',
@@ -766,7 +771,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             feld_md5: 'MD5-Prüfsumme',
             feld_size: 'Größe in Bytes',
             fehlerSprachId: 'Pflichtfeld: Buchstaben, Ziffern, - oder _ (z. B. DE).',
-            fehlerUrl: 'Pflichtfeld: vollständige Adresse mit http:// oder https://, ohne Leer- und Anführungszeichen.',
+            fehlerUrl: 'Pflichtfeld: vollständige Adresse mit https:// oder eine Adresse dieses Home Assistant (/local/…), ohne Leer- und Anführungszeichen.',
+            adresseServer: 'Server: ',
+            adresseEigen: ' – dieses Home Assistant',
+            adresseFremd: ' – fremder Server',
             fehlerMd5: 'Pflichtfeld: genau 32 Zeichen aus 0–9 und a–f.',
             fehlerGroesse: 'Pflichtfeld: ganze Zahl über 0.',
             weiter: 'Weiter',
@@ -894,6 +902,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             locked: 'Map lock',
             touch_lock: 'Hold time to unlock',
             disable_haptic: 'Vibration off',
+            admin_actions: 'Device functions for',
             display_section: 'Display',
             hidden_card_objects: 'Hidden parts',
             map_section: 'Map',
@@ -942,10 +951,11 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             aspect_ratio: 'Fixed shape such as 16:9, 4/3 or 1.5; ignored with full height and in a panel. Default empty.',
             max_height_offset: 'Pixels taken off the largest card height, for example for custom headers. Default 0.',
             left_handed: 'Puts the action buttons on the left and the station status on the right. Default off.',
-            operation_section: 'Lock against moving the map by accident, and vibration on phones.',
+            operation_section: 'Lock against moving the map by accident, vibration on phones and who sees consequential device functions.',
             locked: 'When the map starts locked; Automatic locks on touch devices outside a panel view. Default Automatic.',
             touch_lock: 'How long you hold the lock to toggle it, 100 to 400 milliseconds. Default 200.',
             disable_haptic: 'Turns off the short vibration on taps on phones. Default off.',
+            admin_actions: 'Who sees voice pack, restore from file, deleting, restoring and editing maps, managing shortcuts, resetting consumables and downloading map files. Home Assistant itself checks no rights per service. Default Admins only.',
             display_section: 'Which parts the card shows.',
             hidden_card_objects: 'The card does not show the chosen parts; without “Map change confirmation” it changes maps without asking. “Map editing” hides the pen and map management (e.g. for wall displays); map changes are always confirmed. Default none.',
             map_section: 'How the live map looks: view, colours, icons and what it shows.',
@@ -979,7 +989,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             left: 'Percent the map cuts off on the left. Default 0.',
             background_image: 'Own picture below the map, such as a floor plan; corners in robot millimetres from the map info. Default none.',
             overlay_image: 'Own picture above the map, below the icons; corners as for the background image. Default none.',
-            url: 'Address of the picture, such as /local/floorplan.png. Default empty.',
+            url: 'Address of the picture, such as /local/floorplan.png; allowed are /local/, /media/, /api/, http(s):// and PNG, JPEG, WebP or GIF data. Default empty.',
             x0: 'Left picture edge in robot millimetres. Default empty.',
             y0: 'Bottom picture edge in robot millimetres. Default empty.',
             x1: 'Right picture edge in robot millimetres. Default empty.',
@@ -1157,6 +1167,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             lock_only_touch: 'Touch devices only',
             lock_never: 'Never',
             lock_always: 'Always',
+            admin_admins: 'Admins only',
+            admin_all: 'All users',
             obj_title: 'Title',
             obj_state: 'Status line',
             obj_menu: 'Menu',
@@ -1311,6 +1323,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             skripte: 'Scripts',
             laeuft: 'running',
             skripteFehlen: 'Not found: {liste}.',
+            bildFremd: 'A map picture is on an external server ({host}): it sees every view of the dashboard.',
             verwalten: 'Manage',
             shortcutsVerwalten: 'Manage shortcuts',
             keineShortcuts: 'No shortcuts on the device. Create shortcuts in the Dreame app, then “Reload” here.',
@@ -1409,7 +1422,10 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             feld_md5: 'MD5 checksum',
             feld_size: 'Size in bytes',
             fehlerSprachId: 'Required: letters, digits, - or _ (e.g. DE).',
-            fehlerUrl: 'Required: full address with http:// or https://, without blanks or quotes.',
+            fehlerUrl: 'Required: full address with https:// or an address of this Home Assistant (/local/…), without blanks or quotes.',
+            adresseServer: 'Server: ',
+            adresseEigen: ' – this Home Assistant',
+            adresseFremd: ' – external server',
             fehlerMd5: 'Required: exactly 32 characters of 0–9 and a–f.',
             fehlerGroesse: 'Required: a whole number above 0.',
             weiter: 'Next',
@@ -1556,6 +1572,8 @@ class ConfigError extends Error {
 // ---------------------------------------------------------------------------
 
 const LOCK_MODES = ['auto', 'only_touch', 'never', 'always'];
+/** M8: who sees the consequential device functions (VacuumModel ADMIN_ONLY). */
+const ADMIN_ACTIONS = ['admins', 'all'];
 const TOUCH_LOCK_MS = { min: 100, max: 400, standard: 200 };
 
 /** Parts `hidden_card_objects` can hide (inventory CORE-18); shortcuts takes effect with its module. */
@@ -1604,11 +1622,18 @@ const MAP_CONFIG_DEFAULTS = {
 };
 const MAP_ROTATIONS = [0, 90, 180, 270];
 
+/**
+ * M28: picture URLs by an allow list — paths of this Home Assistant, http(s) and
+ * raster data URLs. Everything else (data:text/html, data:image/svg+xml,
+ * javascript:, //host, relative) is dropped.
+ */
+const PICTURE_URL = /^(?:\/(?:local|media|api)\/|https?:\/\/[^/\s]|data:image\/(?:png|jpeg|webp|gif);base64,)/i;
+
 /** An own picture on the map: a safe URL and its corners in robot mm (values from the map info). */
 function mapPicture(value) {
     if (!value || typeof value !== 'object' || typeof value.url !== 'string') return null;
     const url = value.url.trim();
-    if (!url || /^(?:javascript|vbscript|file|data:text):/i.test(url)) return null;
+    if (!PICTURE_URL.test(url)) return null;
     const corners = ['x0', 'y0', 'x1', 'y1'].map((k) => numberOf(value[k]));
     if (!corners.every(Number.isFinite)) return null;
     return { url, x0: corners[0], y0: corners[1], x1: corners[2], y1: corners[3] };
@@ -1683,7 +1708,8 @@ const SCHEMA_BUSCH_VACUUM_CARD = [
     { name: 'operation_section', type: 'expandable', flatten: true, icon: 'mdi:lock-outline', schema: [
         { name: 'locked', selector: { select: { mode: 'dropdown', options: LOCK_MODES } } },
         { name: 'touch_lock', selector: { number: { min: TOUCH_LOCK_MS.min, max: TOUCH_LOCK_MS.max, step: 10, mode: 'slider', unit_of_measurement: 'ms' } } },
-        { name: 'disable_haptic', selector: { boolean: {} } }
+        { name: 'disable_haptic', selector: { boolean: {} } },
+        { name: 'admin_actions', selector: { select: { mode: 'dropdown', options: ADMIN_ACTIONS } } }
     ] },
     { name: 'display_section', type: 'expandable', flatten: true, icon: 'mdi:eye-off-outline', schema: [
         { name: 'hidden_card_objects', selector: { select: { multiple: true, mode: 'list', options: HIDDEN_OBJECTS } } }
@@ -1705,7 +1731,7 @@ const SCHEMA_BUSCH_VACUUM_CARD = [
 /** What the editor shows for an unset option; equal values are never written. */
 const EDITOR_DEFAULTS = {
     title: '', scripts: [], full_height: false, aspect_ratio: '', max_height_offset: 0, left_handed: false,
-    locked: 'auto', touch_lock: TOUCH_LOCK_MS.standard, disable_haptic: false, hidden_card_objects: [],
+    locked: 'auto', touch_lock: TOUCH_LOCK_MS.standard, disable_haptic: false, admin_actions: 'admins', hidden_card_objects: [],
     map_display: 'standard', color_scheme: 'auto', icon_set: 'busch', hidden_objects: [], override_colors: {}, map_config: {}
 };
 
@@ -1776,6 +1802,7 @@ function normalizeConfig(raw) {
         locked: LOCK_MODES.includes(raw.locked) ? raw.locked : 'auto',
         touch_lock: Number.isFinite(hold) ? Math.min(TOUCH_LOCK_MS.max, Math.max(TOUCH_LOCK_MS.min, hold)) : TOUCH_LOCK_MS.standard,
         disable_haptic: raw.disable_haptic === true,
+        admin_actions: ADMIN_ACTIONS.includes(raw.admin_actions) ? raw.admin_actions : 'admins',
         hidden_objects: Array.isArray(raw.hidden_objects) ? raw.hidden_objects.filter((name) => MAP_OBJECTS.includes(name)) : [],
         map_display: MAP_DISPLAYS.includes(raw.map_display) ? raw.map_display : 'standard',
         color_scheme: COLOR_SCHEMES.includes(raw.color_scheme) ? raw.color_scheme : 'auto',
@@ -1914,14 +1941,28 @@ const CONSUMABLES = {
     roller_mop_filter_dirty: 'roller_mop_filter', water_outlet_filter_dirty: 'water_outlet_filter', track_cleaning: null
 };
 
+/** M8: `hass.user.is_admin`; without `hass.user` no admin. */
+const isAdmin = (hass) => !!(hass && hass.user && hass.user.is_admin === true);
+
+/**
+ * M8 (security S1): consequential functions only admins see — voice pack, restore
+ * from file, delete/restore/edit maps, manage shortcuts, reset consumables, raw map
+ * file. Not a security boundary (HA lets every user call services), a guard
+ * against mistakes; `admin_actions: all` shows them to everyone.
+ */
+const ADMIN_ONLY = new Set(['dreame_vacuum.vacuum_install_voice_pack', 'dreame_vacuum.vacuum_restore_map_from_file', 'dreame_vacuum.vacuum_delete_map',
+    'map_recovery', 'map_edit', 'shortcut_manage', 'consumable_reset', 'map_download']);
+
 /**
  * What the device can do. `can()` is the ONE place every part of the card
  * asks (spec: Boundaries) — from the vacuum's `capabilities`, its feature
  * bits, the entities found and the services Home Assistant offers.
  */
 class VacuumModel {
-    constructor(hass, entityId, related) {
+    constructor(hass, entityId, related, adminActions = 'admins') {
         this.hass = hass;
+        // M8: without admin rights (and `admin_actions: admins`) the ADMIN_ONLY functions are hidden.
+        this.restricted = adminActions !== 'all' && !isAdmin(hass);
         this.entityId = entityId;
         this.state = (hass && hass.states && hass.states[entityId]) || null;
         this.related = related || findRelated(hass, entityId);
@@ -1951,6 +1992,7 @@ class VacuumModel {
     }
 
     can(name) {
+        if (this.restricted && ADMIN_ONLY.has(name)) return false;
         if (name.includes('.')) {
             const [domain, service] = name.split('.');
             const services = (this.hass && this.hass.services) || {};
@@ -1978,6 +2020,9 @@ class VacuumModel {
             // CORE-10: the button is what v2.0.3 offers; the documented service only if present.
             case 'clear_warning': return !!this.entity('button.clear_warning') || this.can('dreame_vacuum.vacuum_clear_warning');
             case 'consumables': return Object.keys(this.consumables()).length > 0;
+            case 'consumable_reset': return this.can('consumables');
+            // BAK-02: the raw file needs no service, only the attribute (downloadAction).
+            case 'map_download': return true;
             case 'remote': return this.can('dreame_vacuum.vacuum_remote_control_move_step');
             case 'settings': return this.can('dreame_vacuum.vacuum_set_property');
             case 'shortcuts': return this.caps.has('shortcuts') && this.can('dreame_vacuum.vacuum_start_shortcut');
@@ -4371,6 +4416,8 @@ class MapView {
     }
 
     _loadImage(url, force) {
+        // M43: every entity_picture path (hedge, data failure, retry) only on the own instance.
+        url = ownPath(url, this.hass);
         if (!url || (url === this._imageUrl && !force)) return;
         this._imageUrl = url;
         this._imageState = 'loading';
@@ -4953,7 +5000,7 @@ class MapView {
                     button.setAttribute('data-map', String(entry.id));
                     if (current) button.setAttribute('aria-current', 'true');
                     const cam = this._floorCamera(entry.index);
-                    const picture = cam && hass.states[cam].attributes.entity_picture;
+                    const picture = cam && ownPath(hass.states[cam].attributes.entity_picture, hass);
                     if (picture) {
                         const img = document.createElement('img');
                         img.className = 'floor-preview';
@@ -4976,10 +5023,10 @@ class MapView {
 
     // ── Layers (MAP-03) ───────────────────────────────────────────────────
 
-    /** An SVG element with attributes; layers draw with it. */
+    /** An SVG element with attributes; layers draw with it. Never an event attribute (on…, M27). */
     svgNode(tag, attrs) {
         const node = document.createElementNS(SVG_NS, tag);
-        for (const [key, value] of Object.entries(attrs || {})) if (value !== undefined && value !== null) node.setAttribute(key, String(value));
+        for (const [key, value] of Object.entries(attrs || {})) if (value !== undefined && value !== null && !/^on/i.test(key)) node.setAttribute(key, String(value));
         return node;
     }
 
@@ -5604,7 +5651,8 @@ function consumableParts(card, model, body, hass, dialog) {
         const reset = BuschUI.action({ label: translate(hass, 'zuruecksetzenVon', { name: label }), text: translate(hass, 'zuruecksetzen'), disabled: full || card._settingWrites.has('reset:' + name), onClick: () => dialog.show(resetConfirm(card, name, label, percent)) });
         reset.setAttribute('data-action', 'reset');
         if (full) reset.title = translate(hass, 'schonVoll');
-        row.append(text, reset);
+        row.appendChild(text);
+        if (model.can('consumable_reset')) row.appendChild(reset);
         list.appendChild(row);
     }
     body.appendChild(list);
@@ -5934,11 +5982,44 @@ function formField(name, label, input, error) {
 }
 
 /** Inline checks of the voice pack form; keys of the error texts. */
-function voicePackErrors(draft) {
+/** M29: `scheme://host[:port]` of an absolute http(s) address in lower case, else ''. */
+const originOf = (url) => { const m = /^(https?:\/\/[^/?#\s]+)/i.exec(String(url || '').trim()); return m ? m[1].toLowerCase() : ''; };
+/** M29: the origin of this Home Assistant (hass.hassUrl), '' when unknown. */
+const ownOrigin = (hass) => originOf(hass && typeof hass.hassUrl === 'function' ? hass.hassUrl('/') : '');
+
+/** M29: an address of this Home Assistant — absolute with its origin, or a path like /local/… made absolute — else ''. */
+function ownAddress(hass, url) {
+    const own = ownOrigin(hass);
+    const value = String(url || '').trim();
+    if (!own) return '';
+    if (value.startsWith('/') && !value.startsWith('//')) return own + value;
+    return originOf(value) === own ? value : '';
+}
+
+/** M29: the host of an address, highlighted, and whether it is this Home Assistant (confirmations). */
+function hostLine(hass, url) {
+    const own = !!ownAddress(hass, url);
+    const line = document.createElement('p');
+    line.className = 'form-note';
+    line.setAttribute('data-part', 'host');
+    if (!own) line.setAttribute('data-kind', 'warning');
+    const label = document.createElement('span');
+    label.textContent = translate(hass, 'adresseServer');
+    const host = document.createElement('strong');
+    host.textContent = originOf(url).replace(/^https?:\/\//, '');
+    const note = document.createElement('span');
+    note.textContent = translate(hass, own ? 'adresseEigen' : 'adresseFremd');
+    line.append(label, host, note);
+    return line;
+}
+
+function voicePackErrors(draft, hass) {
     const errors = {};
     if (!/^[A-Za-z0-9_-]{1,16}$/.test(draft.lang_id.trim())) errors.lang_id = 'fehlerSprachId';
     // The integration pastes url into a JSON string by hand (device.py#L5972): no quotes or blanks.
-    if (!/^https?:\/\/[^\s"'\\<>]+$/i.test(draft.url.trim())) errors.url = 'fehlerUrl';
+    // M29: https, or this Home Assistant (also http and /local/…); the robot downloads it, MD5 is the user's own.
+    const url = ownAddress(hass, draft.url) || draft.url.trim();
+    if (!/^https?:\/\/[^\s"'\\<>]+$/i.test(url) || !(/^https:/i.test(url) || ownAddress(hass, url))) errors.url = 'fehlerUrl';
     if (!/^[0-9a-f]{32}$/i.test(draft.md5.trim())) errors.md5 = 'fehlerMd5';
     if (!/^[1-9]\d{0,11}$/.test(draft.size.trim())) errors.size = 'fehlerGroesse';
     return errors;
@@ -5960,7 +6041,7 @@ function voicePackView(card) {
         watch: () => [],
         render: (body, hass, dialog) => {
             body.appendChild(noteLine(translate(hass, 'sprachpaketHinweis')));
-            const errors = checked ? voicePackErrors(draft) : {};
+            const errors = checked ? voicePackErrors(draft, card._hass) : {};
             const fields = {};
             for (const name of ['lang_id', 'url', 'md5', 'size']) {
                 const input = document.createElement('input');
@@ -5972,7 +6053,7 @@ function voicePackView(card) {
                 const field = formField(name, translate(hass, 'feld_' + name), input, errors[name] ? translate(hass, errors[name]) : '');
                 input.addEventListener('input', () => {
                     draft[name] = input.value;
-                    if (checked) field.update(voicePackErrors(draft)[name] ? translate(hass, voicePackErrors(draft)[name]) : '');
+                    if (checked) field.update(voicePackErrors(draft, card._hass)[name] ? translate(hass, voicePackErrors(draft, card._hass)[name]) : '');
                 });
                 fields[name] = field;
                 body.appendChild(field.wrap);
@@ -5981,7 +6062,7 @@ function voicePackView(card) {
             actions.className = 'actions';
             const next = BuschUI.action({ label: translate(hass, 'weiter'), text: translate(hass, 'weiter'), variant: 'primary', onClick: () => {
                 checked = true;
-                if (Object.keys(voicePackErrors(draft)).length) dialog._render();
+                if (Object.keys(voicePackErrors(draft, card._hass)).length) dialog._render();
                 else dialog.show(voicePackConfirm(card, draft));
             } });
             next.setAttribute('data-action', 'submit');
@@ -5992,7 +6073,7 @@ function voicePackView(card) {
 }
 
 function voicePackConfirm(card, draft) {
-    const data = { entity_id: card._opts.entity, lang_id: draft.lang_id.trim(), url: draft.url.trim(), md5: draft.md5.trim().toLowerCase(), size: Number(draft.size.trim()) };
+    const data = { entity_id: card._opts.entity, lang_id: draft.lang_id.trim(), url: ownAddress(card._hass, draft.url) || draft.url.trim(), md5: draft.md5.trim().toLowerCase(), size: Number(draft.size.trim()) };
     return {
         title: translate(card._hass, 'sprachpaketFrageTitel'),
         id: 'voice-pack-confirm',
@@ -6002,6 +6083,7 @@ function voicePackConfirm(card, draft) {
             const busy = card._settingWrites.has('voice_pack');
             const failed = card._settingNotes.get('voice_pack');
             body.appendChild(noteLine(translate(hass, 'sprachpaketFrage', { id: data.lang_id, url: data.url, groesse: data.size })));
+            body.appendChild(hostLine(hass, data.url));
             if (failed) body.appendChild(noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error'));
             const actions = document.createElement('div');
             actions.className = 'actions';
@@ -7514,6 +7596,19 @@ const historyCamera = (card) => card._model().related.maps.map[0] || null;
 const hassUrl = (hass, path) => (hass && typeof hass.hassUrl === 'function' ? hass.hassUrl(path) : path);
 
 /**
+ * M43 (security S8): an address from an entity attribute only when it stays on
+ * this Home Assistant — a path below /api/ or its own origin —, else null (the
+ * existing empty or failed state). The camera token never goes to another host.
+ */
+function ownPath(url, hass) {
+    if (typeof url !== 'string') return null;
+    const value = url.trim();
+    if (value.startsWith('/api/')) return value;
+    const own = ownOrigin(hass);
+    return own && originOf(value) === own ? value : null;
+}
+
+/**
  * The URL of a run from the camera's current attribute, matched by `v=` (the
  * run's timestamp; the index moves with every new run). `data`: map data
  * (gzip JSON); else the picture without burnt-in text, cleaning or WiFi map.
@@ -7522,7 +7617,7 @@ function historyUrl(camera, run, { kind = 'history', data = false, wifi = false 
     const pictures = camera && camera.attributes && camera.attributes[HISTORY_KINDS[kind].picture];
     if (!pictures || typeof pictures !== 'object') return null;
     const v = String(Math.trunc(run.timestamp));
-    const base = Object.values(pictures).find((url) => typeof url === 'string' && (/[?&]v=(\d+)/.exec(url) || [])[1] === v);
+    const base = Object.values(pictures).find((url) => ownPath(url) && (/[?&]v=(\d+)/.exec(url) || [])[1] === v);
     if (!base) return null;
     if (data) return base + '&data=1';
     return base + '&info=0' + (HISTORY_KINDS[kind].cruising ? '' : wifi ? '&wifi=1' : '&cleaning=1');
@@ -11187,7 +11282,7 @@ class BuschVacuumCard extends HTMLElement {
             this._related = findRelated(hass, this._opts.entity);
             this._relatedFrom = hass.entities;
         }
-        return new VacuumModel(hass, this._opts.entity, this._related);
+        return new VacuumModel(hass, this._opts.entity, this._related, this._opts.admin_actions);
     }
 
     _update() {
@@ -12590,7 +12685,7 @@ class BuschVacuumCard extends HTMLElement {
 const EDITOR_STYLES = BuschUI.editorStyles;
 
 /** The schema with the select options named in the user's language. */
-const OPTION_PREFIX = { locked: 'lock_', hidden_card_objects: 'obj_', map_display: 'display_', color_scheme: 'scheme_', icon_set: 'icons_', hidden_objects: 'mapobj_' };
+const OPTION_PREFIX = { locked: 'lock_', admin_actions: 'admin_', hidden_card_objects: 'obj_', map_display: 'display_', color_scheme: 'scheme_', icon_set: 'icons_', hidden_objects: 'mapobj_' };
 
 function localSchema(hass, schema = SCHEMA_BUSCH_VACUUM_CARD) {
     return schema.map((field) => {
@@ -12646,6 +12741,19 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
         return hass && hass.states ? scripts.filter((id) => !hass.states[id]).join(', ') : '';
     }
 
+    /** M28: hosts of map pictures on another server than this Home Assistant (each sees every dashboard view). */
+    _foreignPictures() {
+        const own = ownOrigin(this._hass);
+        const hosts = new Set();
+        for (const floor of Object.values((this._config && this._config.map_config) || {})) {
+            for (const key of ['background_image', 'overlay_image']) {
+                const origin = floor && floor[key] && originOf(floor[key].url);
+                if (origin && origin !== own) hosts.add(origin.replace(/^https?:\/\//, ''));
+            }
+        }
+        return [...hosts].join(', ');
+    }
+
     /** Floors of the chosen vacuum (`maps`: id, index, name, custom_name). */
     _maps(hass = this._hass) {
         const id = this._config && this._config.entity;
@@ -12677,6 +12785,7 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
             };
             form.computeHelper = (item) => {
                 if (item.name && floor(item.name)) return translate(this._hass, 'stockwerkHelfer');
+                if (item.name === 'url' && this._foreignPictures()) return fieldHelper(this._hass, 'url') + ' ' + translate(this._hass, 'bildFremd', { host: this._foreignPictures() });
                 if (item.name === 'scripts' && this._missingScripts()) return fieldHelper(this._hass, 'scripts') + ' ' + translate(this._hass, 'skripteFehlen', { liste: this._missingScripts() });
                 return item.name ? fieldHelper(this._hass, item.name) : '';
             };
@@ -14065,7 +14174,7 @@ function mapRow(card, model, hass, dialog, home, sessions, entry, name, current)
     row.setAttribute('data-map', String(entry.id));
     if (current) row.setAttribute('aria-current', 'true');
     const cam = model.related.maps.saved_map.find((id) => hass.states[id] && hass.states[id].attributes.map_index === entry.index);
-    const picture = cam && hass.states[cam].attributes.entity_picture;
+    const picture = cam && ownPath(hass.states[cam].attributes.entity_picture, hass);
     if (picture) {
         const img = document.createElement('img');
         img.className = 'floor-preview';
@@ -16158,7 +16267,7 @@ function wifiSource(card) {
     const cur = m.current();
     const cams = card._model().related.maps.wifi_map.map((id) => hass.states[id]).filter(Boolean);
     const cam = cams.find((c) => String(c.attributes.map_id) === String(cur.mapId)) || null;
-    const url = (cam && cam.attributes.entity_picture) || cur.objects.wifi_map_picture || null;
+    const url = ownPath((cam && cam.attributes.entity_picture) || cur.objects.wifi_map_picture, hass);
     if (!url) return null;
     return { url, matrix: affineFrom((cam && cam.attributes.calibration_points) || cur.objects.calibration_points) };
 }
@@ -16862,6 +16971,7 @@ function recoveryEntries(hass, model, mapId) {
     const byNumber = (attr) => {
         const found = {};
         for (const [key, url] of Object.entries(keyed[attr] || {})) {
+            if (!ownPath(url, hass)) continue;
             const m = RECOVERY_KEY.exec(key);
             const k = m ? Number(m[2]) : Number((/[?&]index=(\d+)/.exec(String(url)) || [])[1]);
             if (k) found[k] = { url, when: m ? m[1] : '', typeText: m ? m[3] : '' };
@@ -17012,7 +17122,7 @@ function backupsView(card, mapId) {
             }
             body.appendChild(noteLine(translate(hass, 'kartenKarte', { karte: map.name })));
             body.append(...backupStatusLines(hass, model));
-            if (!model.can('map_recovery')) body.appendChild(noteLine(translate(hass, 'sicherungNurAnsehen')));
+            if (!model.can('map_recovery') && !model.restricted) body.appendChild(noteLine(translate(hass, 'sicherungNurAnsehen')));
             for (const part of BACKUP_PARTS) {
                 const node = part(card, model, hass, dialog, view, map);
                 if (node) body.appendChild(node);
@@ -17069,7 +17179,7 @@ function backupRow(card, model, hass, dialog, home, map, entry, position) {
 /** The current picture of a map (its saved-map camera, for the active map else camera.*_map), as the first entry to compare. */
 function currentPicture(hass, model, mapId) {
     for (const id of recoveryCameras(hass, model, mapId)) {
-        const picture = hass.states[id].attributes.entity_picture;
+        const picture = ownPath(hass.states[id].attributes.entity_picture, hass);
         if (picture) return picture;
     }
     return null;
@@ -17490,7 +17600,9 @@ function restoreConfirm(card, session, home, map, source) {
     const replaced = lastBackup(hass, model, map.entry.id);
     const isBackup = !!entry && entry.type === 'backup';
     const can = session.canBackup(model);
-    const choice = { backup: can && !isBackup && !replaced };
+    const choice = { backup: can && !isBackup && !replaced, foreign: false };
+    // M29: Home Assistant itself fetches a file URL; another host needs a second confirmation.
+    const foreign = !entry && !ownAddress(hass, source.url);
     const stand = entry ? recoveryFrom(hass, entry) : source.url;
     session.backedUpAt = null; // the backup belongs to this restore, not to an earlier one
     session.error = null;
@@ -17506,11 +17618,29 @@ function restoreConfirm(card, session, home, map, source) {
             .concat(rooms ? [translate(hass, 'wiederherstellenRaeumeMerken', { raeume: roomCount(hass, rooms.length) })] : []),
         action: translate(hass, 'wiederherstellenKnopf'),
         destructive: true,
-        blocked: () => restoreLock(card, card._model()),
+        blocked: () => restoreLock(card, card._model()) || (foreign && !choice.foreign ? 'dateiFremdBestaetigen' : ''),
         backup: () => choice.backup,
         backupNote: false,
         calls: [Object.assign(call, { wait: 'map_recovery_status', busy: 'restore', timeout: RESTORE_TIMEOUT_MS, timeoutKey: 'wiederherstellenZeit' })],
         extra: (body, h, dialog) => {
+            if (!entry) body.appendChild(hostLine(h, source.url));
+            if (foreign) {
+                const wrap = document.createElement('label');
+                wrap.className = 'backup-option';
+                const input = document.createElement('input');
+                input.setAttribute('type', 'checkbox');
+                input.setAttribute('data-field', 'foreign_ok');
+                input.checked = choice.foreign;
+                input.disabled = !!session.busy;
+                input.addEventListener('change', () => {
+                    choice.foreign = !!input.checked;
+                    dialog._render();
+                });
+                const label = document.createElement('span');
+                label.textContent = translate(h, 'dateiFremdHaken');
+                wrap.append(input, label);
+                body.appendChild(wrap);
+            }
             if (entry && entry.picture) {
                 const img = document.createElement('img');
                 img.className = 'backup-preview';
@@ -17683,7 +17813,9 @@ const BACKUP_FILE_TEXTS = {
         dateiHinweis: 'Die Kartendatei (.mb.tbz2) muss unter einer für Home Assistant erreichbaren URL liegen, z. B. /local/… mit voller Adresse. Hochladen aus dem Browser bietet die Integration nicht an.',
         feld_file_url: 'Datei-URL',
         feld_target_map: 'Zielkarte',
-        fehlerDateiUrl: 'Eine vollständige Adresse mit http:// oder https:// eingeben.'
+        fehlerDateiUrl: 'Eine vollständige Adresse mit http:// oder https:// eingeben, bis zur Datei.',
+        dateiFremdHaken: 'Home Assistant ruft diese fremde Adresse ab; ich vertraue ihr.',
+        dateiFremdBestaetigen: 'Erst bestätigen, dass Home Assistant die fremde Adresse abrufen darf.'
     },
     en: {
         sicherungHerunterladen: 'Download',
@@ -17694,7 +17826,9 @@ const BACKUP_FILE_TEXTS = {
         dateiHinweis: 'The map file (.mb.tbz2) must be at a URL Home Assistant can reach, e.g. /local/… with the full address. The integration offers no upload from the browser.',
         feld_file_url: 'File URL',
         feld_target_map: 'Target map',
-        fehlerDateiUrl: 'Enter a full address with http:// or https://.'
+        fehlerDateiUrl: 'Enter a full address with http:// or https://, up to the file.',
+        dateiFremdHaken: 'Home Assistant fetches this external address; I trust it.',
+        dateiFremdBestaetigen: 'First confirm that Home Assistant may fetch the external address.'
     }
 };
 for (const language of Object.keys(BACKUP_FILE_TEXTS)) Object.assign(TEXTE_BUSCH_VACUUM_CARD[language].texte, BACKUP_FILE_TEXTS[language]);
@@ -17705,7 +17839,7 @@ for (const language of Object.keys(BACKUP_FILE_TEXTS)) Object.assign(TEXTE_BUSCH
  * (token current). A read of the cloud, no write.
  */
 function downloadAction(card, model, hass, dialog, home, map, entry) {
-    if (!entry.file) return null;
+    if (!entry.file || !model.can('map_download')) return null;
     const fresh = () => {
         const now = recoveryEntries(card._hass, card._model(), map.entry.id).find((e) => e.k === entry.k);
         const url = (now && now.file) || entry.file;
@@ -17731,12 +17865,14 @@ BACKUP_ACTIONS.push(downloadAction);
 
 /** The floor-plan note once per list (spec Inhalt 5), when any state can be downloaded. */
 function downloadNotePart(card, model, hass, dialog, view, map) {
-    return recoveryEntries(hass, model, map.entry.id).some((e) => e.file) ? noteLine(translate(hass, 'sicherungGrundriss'), 'warning') : null;
+    return model.can('map_download') && recoveryEntries(hass, model, map.entry.id).some((e) => e.file) ? noteLine(translate(hass, 'sicherungGrundriss'), 'warning') : null;
 }
 BACKUP_PARTS.push(downloadNotePart);
 
 /** Inline check of the file URL (R10): http(s), no blanks — cv.url of the service (vacuum.py#L616). */
-const fileUrlError = (url) => (/^https?:\/\/[^\s"'<>]+$/i.test(String(url || '').trim()) ? '' : 'fehlerDateiUrl');
+// M29: also /local/… of this Home Assistant (made absolute); a bare folder such as the prefilled …/local/ is no file.
+const fileUrl = (hass, url) => ownAddress(hass, url) || String(url || '').trim();
+const fileUrlError = (url, hass) => { const v = fileUrl(hass, url); return /^https?:\/\/[^\s"'<>]+$/i.test(v) && !v.endsWith('/') ? '' : 'fehlerDateiUrl'; };
 
 /** "Aus Datei-URL wiederherstellen" under "Erweitert" (only with the service). */
 function restoreFilePart(card, model, hass, dialog, view, map) {
@@ -17757,7 +17893,9 @@ function restoreFilePart(card, model, hass, dialog, view, map) {
  */
 function restoreFileView(card, home, start) {
     const key = 'restore-url';
-    if (!card._drafts.has(key)) card._drafts.set(key, { url: '', mapId: start.entry.id });
+    // M29: prefilled with /local/ of this Home Assistant (the usual place for the file).
+    const prefill = ownOrigin(card._hass) ? ownOrigin(card._hass) + '/local/' : '';
+    if (!card._drafts.has(key)) card._drafts.set(key, { url: prefill, mapId: start.entry.id });
     const draft = card._drafts.get(key);
     let checked = false;
     const sessions = new Map();
@@ -17771,13 +17909,13 @@ function restoreFileView(card, home, start) {
         }
         return sessions.get(String(map.entry.id));
     };
-    const dirty = () => draft.url.trim() !== '';
+    const dirty = () => draft.url.trim() !== prefill;
     const submit = (dialog) => {
         checked = true;
         const map = backupMap(card._model(), draft.mapId);
-        if (fileUrlError(draft.url) || !map || !map.active) return dialog._render();
+        if (fileUrlError(draft.url, card._hass) || !map || !map.active) return dialog._render();
         // A finished restore ends the draft; a cancelled one keeps it (R10).
-        dialog.show(restoreConfirm(card, sessionFor(map), home, map, { url: draft.url.trim(), done: () => card._drafts.delete(key) }));
+        dialog.show(restoreConfirm(card, sessionFor(map), home, map, { url: fileUrl(card._hass, draft.url), done: () => card._drafts.delete(key) }));
         return undefined;
     };
     const view = {
@@ -17810,11 +17948,11 @@ function restoreFileView(card, home, start) {
             input.setAttribute('aria-required', 'true');
             input.setAttribute('placeholder', 'https://…/karte.mb.tbz2');
             input.value = draft.url;
-            const error = checked ? fileUrlError(draft.url) : '';
+            const error = checked ? fileUrlError(draft.url, card._hass) : '';
             const field = formField('file_url', translate(hass, 'feld_file_url'), input, error ? translate(hass, error) : '');
             input.addEventListener('input', () => {
                 draft.url = input.value;
-                if (checked) field.update(fileUrlError(draft.url) ? translate(hass, fileUrlError(draft.url)) : '');
+                if (checked) field.update(fileUrlError(draft.url, card._hass) ? translate(hass, fileUrlError(draft.url, card._hass)) : '');
             });
             body.appendChild(field.wrap);
             const select = document.createElement('select');

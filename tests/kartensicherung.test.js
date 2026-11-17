@@ -589,6 +589,9 @@ test('BAK-02 Herunterladen: Link = recovery_map_file-URL (frisch aus dem Attribu
 
 test('BAK-02 Aus Datei-URL wiederherstellen (Erweitert): Pflichtfeld mit Inlineprüfung http(s)://, Zielkarte, Dirty-Schutz; gleicher Bestätigungsrahmen → vacuum_restore_map_from_file { entity_id, file_url, map_id }', async () => {
   const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2 } });
+  // M29: ha.local:8123 ist die eigene Instanz (hass.hassUrl); fremde Hosts prüft eingaben.test.js.
+  k.haus.basis = 'http://ha.local:8123';
+  k.karte.hass = k.haus.hass();
   const d = sicherungen(k);
   knopf(k, 'restore-file').click();
   assert.equal(d._views.at(-1).kind, 'editor');

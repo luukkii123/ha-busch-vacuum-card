@@ -184,17 +184,20 @@ const ZUSTAND = { docked: 'Angedockt', cleaning: 'Reinigt', paused: 'Pausiert', 
  * callService-Aufruf; `antwort` bestimmt, was callService zurückgibt (Vorgabe:
  * offenes Versprechen wie ein langsamer Roboter).
  */
-function neuesHaus({ states, entities = {}, services = {}, devices, sprache = 'de' } = {}) {
+function neuesHaus({ states, entities = {}, services = {}, devices, sprache = 'de', user = { id: 'nutzer', name: 'Testnutzer', is_admin: true, is_owner: false }, basis = null } = {}) {
   states = Object.assign({ 'vacuum.robo': einfacherSauger() }, states);
   for (let i = 0; i < 50; i++) states['sensor.fremd_' + i] = { entity_id: 'sensor.fremd_' + i, state: String(i), attributes: {} };
   // `zusatz` sammelt je Aufruf die Argumente nach `data` (target, notifyOnError, …), M5.
-  const haus = { rufe: [], zusatz: [], antwort: () => new Promise(() => {}), sprache, entities, services, devices };
+  // `user` wie hass.user (M8); Vorgabe Admin, damit alle bisherigen Fälle unverändert gelten.
+  const haus = { rufe: [], zusatz: [], antwort: () => new Promise(() => {}), sprache, entities, services, devices, user, basis };
   haus.hass = () => ({
-    states: haus.states, entities: haus.entities, services: haus.services, devices: haus.devices,
+    states: haus.states, entities: haus.entities, services: haus.services, devices: haus.devices, user: haus.user,
     language: haus.sprache, locale: { language: haus.sprache }, themes: {}, config: { unit_system: { length: 'km' } },
     // Wie HAs Formatierer: Zustände übersetzt, Zahl mit der Einheit der Entität.
     formatEntityState: (s, zustand = s.state) => (ZUSTAND[zustand] || zustand) + (s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : ''),
     callService: (domain, service, data, ...rest) => { haus.rufe.push({ domain, service, data }); haus.zusatz.push(rest); return haus.antwort(domain, service, data); },
+    // `basis` (M29): hass.hassUrl wie im Frontend; Vorgabe ohne, dann bleiben Pfade relativ wie bisher.
+    ...(haus.basis ? { hassUrl: (pfad = '') => (/^https?:\/\//i.test(pfad) ? pfad : haus.basis + pfad) } : {}),
   });
   haus.states = states;
   /** Neuer Zustand wie von HA: neues states-Objekt, nur die genannten Einträge ersetzt. */
