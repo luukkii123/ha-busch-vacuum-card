@@ -626,7 +626,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             speichert: 'Speichert …',
             wertUnbekannt: 'Wert unbekannt',
             aenderung: 'Änderung',
-            nichtUebernommen: '{name}: Das Gerät hat die Änderung nicht übernommen. Der bisherige Wert gilt weiter. Versuche es erneut.',
+            nichtUebernommen: '{name}: Das Gerät hat die Änderung noch nicht bestätigt. Angezeigt ist der zuletzt gemeldete Wert.',
             schreibFehler: '{name} wurde nicht geändert ({grund}). Der bisherige Wert gilt weiter. Versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
             bereich: 'Erlaubt sind Werte von {min} bis {max}.',
             sperre_idle: 'Während einer Aufgabe nicht änderbar.',
@@ -1264,7 +1264,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             speichert: 'Saving …',
             wertUnbekannt: 'Value unknown',
             aenderung: 'Change',
-            nichtUebernommen: '{name}: The device did not take the change. The previous value still applies. Try again.',
+            nichtUebernommen: '{name}: The device has not confirmed the change yet. Shown is the last reported value.',
             schreibFehler: '{name} was not changed ({grund}). The previous value still applies. Try again; if that does not help, check the dreame_vacuum integration.',
             bereich: 'Allowed values are {min} to {max}.',
             sperre_idle: 'Cannot change during a task.',
@@ -2226,6 +2226,12 @@ function settingState(card, model, key) {
     const entity = entityId ? hass.states[entityId] : null;
     const pending = card._settingWrites.get(key);
     if (pending && pending.check(model)) settleWrite(card, key);
+    // M3: a confirmation after the note (cloud latency) clears it; the device has the wanted value.
+    const late = card._settingLate.get(key);
+    if (!pending && late && late(model)) {
+        card._settingLate.delete(key);
+        card._settingNotes.delete(key);
+    }
     const busy = card._settingWrites.get(key);
     const list = model.attr(key + '_list');
     let options = def.options || (Array.isArray(list) ? list : entity && Array.isArray(entity.attributes.options) ? entity.attributes.options : null);
@@ -2296,14 +2302,17 @@ const errorText = (error) => String((error && (error.message || error.code)) || 
 
 /**
  * Tracks one write until the device confirms it (`check`), or reports why not:
- * a service error at once, no confirmation after OPTIMISTIC_HOLD_MS (some
- * setters end silently). Without `check` (actions) the service's answer is the
- * confirmation; `done` runs then. A second tap while one runs is ignored (R11).
+ * a service error at once, no confirmation OPTIMISTIC_HOLD_MS after the
+ * service answered (M3: `sending` until the answer, capped at SENDING_CAP_MS,
+ * then `confirming`; some setters end silently). A confirmation after the note
+ * clears it (settingState). Without `check` (actions) the service's answer is
+ * the confirmation; `done` runs then. A second tap while one runs is ignored (R11).
  */
 function trackWrite(card, key, { want, check, call, label, done, failKey = 'schreibFehler' }) {
     if (card._settingWrites.has(key)) return false;
     card._settingNotes.delete(key);
-    const pending = { want, check: check || (() => false), timer: null };
+    card._settingLate.delete(key);
+    const pending = { want, check: check || (() => false), timer: null, phase: 'sending' };
     const name = label || (SETTINGS[key] ? settingLabel(card._hass, key) : translate(card._hass, 'aenderung'));
     const fail = (text) => {
         if (card._settingWrites.get(key) !== pending) return;
@@ -2311,10 +2320,22 @@ function trackWrite(card, key, { want, check, call, label, done, failKey = 'schr
         if (text) card._settingNotes.set(key, text);
         rerender(card);
     };
-    if (check) pending.timer = setTimeout(() => fail(check(card._model()) ? '' : translate(card._hass, 'nichtUebernommen', { name })), OPTIMISTIC_HOLD_MS);
+    const unconfirmed = () => {
+        if (card._settingWrites.get(key) !== pending) return;
+        if (check(card._model())) return fail('');
+        card._settingLate.set(key, check);
+        fail(translate(card._hass, 'nichtUebernommen', { name }));
+    };
+    if (check) pending.timer = setTimeout(unconfirmed, SENDING_CAP_MS);
     card._settingWrites.set(key, pending);
     Promise.resolve(call()).then(() => {
-        if (check || card._settingWrites.get(key) !== pending) return;
+        if (card._settingWrites.get(key) !== pending) return;
+        if (check) {
+            pending.phase = 'confirming';
+            clearTimeout(pending.timer);
+            pending.timer = setTimeout(unconfirmed, OPTIMISTIC_HOLD_MS);
+            return;
+        }
         if (done) done();
         fail('');
     }, (error) => fail(translate(card._hass, failKey, { name, grund: errorText(error) })));
@@ -2664,6 +2685,8 @@ function viewMatrix({ width, height, stageWidth, stageHeight, rotation = 0, scal
 
 /** How long a tapped target state is shown before the device has to confirm it. */
 const OPTIMISTIC_HOLD_MS = 5000;
+// M3: longest wait for the service's answer before the confirmation window gives up.
+const SENDING_CAP_MS = 15000;
 /** #1002: two columns from this card width (px); back to narrow only below WIDE_MIN - WIDE_SLACK. */
 const WIDE_MIN = 900;
 const WIDE_SLACK = 20;
@@ -10557,6 +10580,7 @@ class BuschVacuumCard extends HTMLElement {
         this._lockHeld = false;
         this._settingWrites = new Map(); // setting key → write waiting for the device (writeSetting)
         this._settingNotes = new Map(); // setting key → why the last write failed (R12)
+        this._settingLate = new Map(); // setting key → check of a write that timed out; a late confirmation clears the note (M3)
         this._settingDone = new Map(); // action → what it achieved, shown once in its group (R11)
         this._drafts = new Map(); // form → unsaved input, kept when the form is left (R10)
         this._settingTexts = null;
@@ -12143,13 +12167,21 @@ class BuschVacuumCard extends HTMLElement {
         this._haptic();
         this._endPending();
         if ((name === 'stop' || name === 'return') && this._run) this._run.stopped = true;
-        const pending = { state: control.target, from: real ? real.state : null, timer: null };
-        pending.timer = setTimeout(() => {
+        // M3: `sending` until the service answers (capped), then OPTIMISTIC_HOLD_MS for the device.
+        const pending = { state: control.target, from: real ? real.state : null, timer: null, sending: true };
+        const expire = () => {
             if (this._pending === pending) { this._pending = null; this._update(); }
-        }, OPTIMISTIC_HOLD_MS);
+        };
+        pending.timer = setTimeout(expire, SENDING_CAP_MS);
         this._pending = pending;
         const data = Object.assign({ entity_id: this._opts.entity }, call ? call.data : {});
-        Promise.resolve(this._hass.callService(call ? call.domain : 'vacuum', call ? call.service : control.service, data)).catch((error) => {
+        Promise.resolve(this._hass.callService(call ? call.domain : 'vacuum', call ? call.service : control.service, data)).then(() => {
+            if (this._pending !== pending) return;
+            pending.sending = false;
+            clearTimeout(pending.timer);
+            pending.timer = setTimeout(expire, OPTIMISTIC_HOLD_MS);
+            this._update();
+        }, (error) => {
             if (call) {
                 // R12: what failed and why; the selection stays for the next try.
                 this._run = null;

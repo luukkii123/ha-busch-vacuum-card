@@ -133,8 +133,9 @@ test('DEV-04 Zahl außerhalb der Grenzen: kein Aufruf, Hinweis in der Zeile (R10
   assert.match(zeile(k, 'volume').querySelector('.setting-status').textContent, /0.*100/);
 });
 
-test('Bestätigt erst über das Attribut; sonst nach OPTIMISTIC_HOLD_MS alter Wert und Hinweis', () => {
+test('Bestätigt erst über das Attribut; sonst OPTIMISTIC_HOLD_MS nach der Dienstantwort alter Wert und Hinweis', async () => {
   const k = aufbau();
+  k.haus.antwort = () => Promise.resolve();
   zeile(k, 'child_lock').querySelector('[role="switch"]').click();
   neu(k, { child_lock: true });
   k.u.uhr.vor(6000);
@@ -142,11 +143,63 @@ test('Bestätigt erst über das Attribut; sonst nach OPTIMISTIC_HOLD_MS alter We
   assert.equal(ok.querySelector('[role="switch"]').getAttribute('aria-checked'), 'true');
   assert.equal(ok.querySelector('.setting-status').textContent, '');
   zeile(k, 'resume_cleaning').querySelector('[role="switch"]').click();
+  await mikro();
   k.u.uhr.vor(5000);
   const alt = zeile(k, 'resume_cleaning');
   assert.equal(alt.querySelector('[role="switch"]').getAttribute('aria-checked'), 'true', 'alter Wert');
-  assert.match(alt.querySelector('.setting-status').textContent, /nicht übernommen/);
+  assert.match(alt.querySelector('.setting-status').textContent, /noch nicht bestätigt/);
   assert.equal(alt.getAttribute('data-state'), 'error');
+});
+
+/** Dienstantwort erst nach `ms` (Uhr-Attrappe), wie ein langsamer Cloud-Roboter. */
+const antwortNach = (k, ms) => { k.haus.antwort = () => new Promise((ok) => k.u.uhr.setTimeout(ok, ms)); };
+
+test('M3 Fenster ab Dienstantwort: Dienst nach 4 s, Gerät nach 8 s – nie ein Hinweis', async () => {
+  const k = aufbau();
+  antwortNach(k, 4000);
+  zeile(k, 'resume_cleaning').querySelector('[role="switch"]').click();
+  for (let t = 0; t < 8; t++) {
+    k.u.uhr.vor(1000);
+    await mikro();
+    const z = zeile(k, 'resume_cleaning');
+    assert.doesNotMatch(z.querySelector('.setting-status').textContent, /nicht übernommen|nicht bestätigt/, 'nach ' + (t + 1) + ' s');
+    assert.notEqual(z.getAttribute('data-state'), 'error');
+  }
+  neu(k, { resume_cleaning: false });
+  k.u.uhr.vor(5000);
+  const z = zeile(k, 'resume_cleaning');
+  assert.equal(z.querySelector('[role="switch"]').getAttribute('aria-checked'), 'false');
+  assert.equal(z.querySelector('.setting-status').textContent, '');
+  assert.equal(aufrufe(k).length, 1);
+});
+
+test('M3 späte Bestätigung nach dem Hinweis löscht ihn beim nächsten Rendern', async () => {
+  const k = aufbau();
+  k.haus.antwort = () => Promise.resolve();
+  zeile(k, 'resume_cleaning').querySelector('[role="switch"]').click();
+  await mikro();
+  k.u.uhr.vor(5000);
+  const alt = zeile(k, 'resume_cleaning');
+  assert.match(alt.querySelector('.setting-status').textContent, /noch nicht bestätigt/);
+  assert.match(alt.querySelector('.setting-status').textContent, /zuletzt gemeldete Wert/);
+  assert.doesNotMatch(alt.querySelector('.setting-status').textContent, /erneut/);
+  assert.equal(alt.getAttribute('data-state'), 'error');
+  neu(k, { resume_cleaning: false });
+  const z = zeile(k, 'resume_cleaning');
+  assert.equal(z.querySelector('[role="switch"]').getAttribute('aria-checked'), 'false');
+  assert.equal(z.querySelector('.setting-status').textContent, '');
+  assert.notEqual(z.getAttribute('data-state'), 'error');
+});
+
+test('M3 hängender Dienst: belegt bis zum Deckel von 15 s, dann Hinweis', () => {
+  const k = aufbau();
+  zeile(k, 'resume_cleaning').querySelector('[role="switch"]').click();
+  k.u.uhr.vor(14000);
+  zeile(k, 'resume_cleaning').querySelector('[role="switch"]').click();
+  assert.equal(aufrufe(k).length, 1, 'Doppeltipp während des Sendens bleibt ignoriert');
+  assert.doesNotMatch(zeile(k, 'resume_cleaning').querySelector('.setting-status').textContent, /nicht bestätigt/);
+  k.u.uhr.vor(1000);
+  assert.match(zeile(k, 'resume_cleaning').querySelector('.setting-status').textContent, /noch nicht bestätigt/);
 });
 
 test('Dienstfehler: R12-Text mit Grund, Folge und nächstem Schritt; Wert zurück', async () => {

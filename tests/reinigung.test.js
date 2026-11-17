@@ -242,7 +242,7 @@ test('SET-04 Räume einstellen: Liste in Reihenfolge mit Kurzwerten; Schalter Cu
   assert.match(liste[0].textContent, /Salon.*Turbo · 16 · 2×/);
 });
 
-test('SET-04 Raumseite: Wert ändern sendet den Raum mit allen Werten; optimistisch bis Kamera bestätigt', () => {
+test('SET-04 Raumseite: Wert ändern sendet den Raum mit allen Werten; optimistisch bis Kamera bestätigt', async () => {
   const k = raumSeite(3);
   assert.equal($d(k.u, 'h1').textContent, 'Salon');
   const feld = () => raumFeld(k, 'suction_level').querySelector('select');
@@ -255,14 +255,17 @@ test('SET-04 Raumseite: Wert ändern sendet den Raum mit allen Werten; optimisti
   assert.equal(raumFeld(k, 'suction_level').getAttribute('data-state'), 'busy');
   neueRaeume(k, { 3: { suction_level: 0 } });
   assert.equal(raumFeld(k, 'suction_level').getAttribute('data-state'), 'ok', 'Kamera bestätigt');
+  const { mikro } = require('./attrappe.js');
+  k.haus.antwort = () => Promise.resolve(); // M3: das Fenster läuft ab der Dienstantwort
   const n = raumFeld(k, 'wetness_level').querySelector('input');
   n.value = '20';
   n.dispatchEvent(k.u.neuesEreignis('change'));
   assert.deepEqual(aufrufe(k)[1].data.wetness_level, [20]);
   assert.deepEqual(aufrufe(k)[1].data.suction_level, [0], 'bestätigter neuer Wert mitgesendet');
+  await mikro();
   k.u.uhr.vor(5000);
   assert.equal(raumFeld(k, 'wetness_level').querySelector('input').value, '16', 'ohne Bestätigung zurück');
-  assert.match(raumFeld(k, 'wetness_level').textContent, /nicht übernommen/);
+  assert.match(raumFeld(k, 'wetness_level').textContent, /noch nicht bestätigt/);
 });
 
 test('Raumseite gesperrt mit Grund: Aufgabe läuft, temporäre Karte', () => {

@@ -159,14 +159,49 @@ test('CORE-07 Sofortanzeige: Zielzustand sofort, bleibt bei fremden Updates', ()
   assert.equal($(karte, '.state').textContent, 'Reinigt');
 });
 
-test('Sofortanzeige endet nach 5 s ohne Antwort des Geräts', () => {
-  const { karte, u } = karteMit('voll');
+test('Sofortanzeige endet 5 s nach der Dienstantwort ohne Antwort des Geräts', async () => {
+  const { karte, u, haus } = karteMit('voll');
+  haus.antwort = () => Promise.resolve();
   knopf(karte, 'start').click();
+  await mikro();
   u.uhr.vor(4900);
   assert.equal($(karte, '.state').textContent, 'Reinigt');
   u.uhr.vor(200);
   assert.equal($(karte, '.state').textContent, 'Angedockt');
   assert.deepEqual(aktionen(karte), ['start']);
+});
+
+test('M3 Start mit hängendem Dienst (7 s): Vorschau bleibt, ein zweiter Start sendet nichts', async () => {
+  const { karte, u, haus } = karteMit('voll');
+  const start = knopf(karte, 'start');
+  start.click();
+  u.uhr.vor(7000);
+  await mikro();
+  assert.equal($(karte, '.state').textContent, 'Reinigt', 'noch beim Senden');
+  start.click();
+  if (knopf(karte, 'start')) knopf(karte, 'start').click();
+  assert.equal(haus.rufe.length, 1);
+});
+
+test('M3 Fenster ab Dienstantwort: Dienst nach 4 s hält die Vorschau bis 5 s danach', async () => {
+  const { karte, u, haus } = karteMit('voll');
+  haus.antwort = () => new Promise((ok) => u.uhr.setTimeout(ok, 4000));
+  knopf(karte, 'start').click();
+  u.uhr.vor(4000);
+  await mikro();
+  u.uhr.vor(4900);
+  assert.equal($(karte, '.state').textContent, 'Reinigt');
+  u.uhr.vor(200);
+  assert.equal($(karte, '.state').textContent, 'Angedockt');
+});
+
+test('M3 hängender Dienst: Vorschau endet am Deckel von 15 s', () => {
+  const { karte, u } = karteMit('voll');
+  knopf(karte, 'start').click();
+  u.uhr.vor(14900);
+  assert.equal($(karte, '.state').textContent, 'Reinigt');
+  u.uhr.vor(200);
+  assert.equal($(karte, '.state').textContent, 'Angedockt');
 });
 
 test('Fehler von callService setzt sofort auf den echten Zustand zurück', async () => {

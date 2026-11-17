@@ -136,7 +136,7 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 | `SETTINGS[key]` | aus `SETTING_KEYS` (Gruppe → Steuerung → Schlüssel, alle switch/select/number/time von v2.0.3; `station` = dock, `clean` = clean-settings) plus `SETTING_EXTRA` (Grenzen, `wire`, `confirm`, `pick`, `replacedBy`) und `SETTING_NEEDS` (Sperren aus `PROPERTY_AVAILABILITY`) |
 | `settingState(card, model, key)` | `{ present, value, known, source: 'attr'\|'entity', options, min, max, locked, reason, busy, note }`; Wert: Attribut → aktivierte Entität → unbekannt |
 | `settingRow(card, model, key)` | Zeile oder `null`; Schalter `role=switch` mit Wort, unbekannt = Ein/Aus, Auswahl, Zahl (Grenzen inline), Zeit `HH:MM` |
-| `writeSetting(card, key, value)` | genau ein `vacuum_set_property`; optimistisch, bestätigt nur über den Gerätewert, sonst nach `OPTIMISTIC_HOLD_MS` Hinweis; Dienstfehler R12; Doppeltipp ignoriert |
+| `writeSetting(card, key, value)` | genau ein `vacuum_set_property`; optimistisch, bestätigt nur über den Gerätewert, sonst `OPTIMISTIC_HOLD_MS` nach der Dienstantwort (Deckel `SENDING_CAP_MS` 15 s) Hinweis „noch nicht bestätigt“, den eine späte Bestätigung löscht (M3); Dienstfehler R12; Doppeltipp ignoriert |
 | `callAction(card, key, value, { track, label, done })` | `vacuum_call_action`; belegt bis zur Antwort des Dienstes |
 | `MODULE_VIEWS` | Menü-Einträge mit eigener Ansicht; ein Modul trägt sich hier ein |
 | `GROUP_HEAD`/`GROUP_EXTRAS` | Inhalt einer Gruppe vor/nach ihren Zeilen (DnD, Zeitpläne, Zubehör, Geräteinfo, Audio, Verweis Station) |
@@ -223,8 +223,9 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
   Stichpunkten `passable === false`, Punkt `passable === false`, Go-To im
   Umkreis 2 × `grid_size` des Roboters nur ohne Fähigkeit `cruising`.
   `passable === null` (Bildmodus) sperrt nie; dann meldet der Dienst.
-- Start `card._startTask()`: genau ein Dienst über `_call` (optimistisch,
-  `OPTIMISTIC_HOLD_MS`), solange `_pending` läuft, kein zweiter. Fehler →
+- Start `card._startTask()`: genau ein Dienst über `_call` (optimistisch;
+  `sending` bis zur Dienstantwort, höchstens `SENDING_CAP_MS`, dann
+  `OPTIMISTIC_HOLD_MS`, M3), solange `_pending` läuft, kein zweiter. Fehler →
   `.task-error` (role alert) mit dem Text der Integration, Auswahl bleibt.
   Customized Cleaning (Attribut `customized_cleaning: true`) schickt
   `repeats`/`suction_level`/`water_volume` als Listen aus den Raumattributen
