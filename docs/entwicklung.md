@@ -41,6 +41,12 @@
   (höchstens 560 px, Bestätigung 320 px); Kopf sticky; Seite gesperrt;
   Escape/Zurück über eigene Verlaufseinträge; Fokusfalle. Außenklick schließt
   nur das flüchtige Menü (R04).
+- Erzwungene Farben (M45): `FORCED_COLORS_STYLES` hängt als letzte Regel an
+  Karten- und Dialogstil. Unter `@media (forced-colors: active)` bekommen
+  gewählte Reiter, Optionen, Radios, Schalter und gedrückte Knöpfe
+  (`aria-selected`/`aria-checked`/`aria-pressed`) `Highlight`/`HighlightText`
+  mit `forced-color-adjust: none`, der Fokus einen 2-px-Ring in `Highlight`.
+  Neue Zustände tragen das passende ARIA-Attribut, nicht nur eine Füllfarbe.
 - Theme-Haken `--bvc-accent-color`, `--bvc-warning-color`, `--bvc-error-color`,
   `--bvc-success-color`, `--bvc-info-color`: nur gelesen, nie auf `:host`
   gesetzt (sonst würde ein Theme sie nicht erreichen); im HACS-Prüfer als

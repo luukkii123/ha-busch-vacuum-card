@@ -8253,6 +8253,29 @@ function historyDetail(card, name, list, ts) {
 }
 
 /** The map's styles: in the card and, while the edit mode holds the map, in the dialog (map-editor). */
+/**
+ * M45 (F8): in forced colours (Windows contrast themes) a state shown only by
+ * its fill would vanish. Appended last to the card and the dialog styles, so
+ * it wins over the normal state rules; system colours only.
+ */
+const FORCED_COLORS_STYLES = `
+@media (forced-colors: active) {
+    [role=tab][aria-selected=true],
+    [role=option][aria-selected=true],
+    [role=radio][aria-checked=true],
+    [role=switch][aria-checked=true],
+    [aria-pressed=true] {
+        forced-color-adjust: none;
+        background: Highlight;
+        color: HighlightText;
+    }
+    :focus-visible {
+        outline: 2px solid Highlight;
+        outline-offset: 2px;
+    }
+}
+`;
+
 const MAP_STYLES = `
 .map-slot,
 .map-view,
@@ -10951,7 +10974,7 @@ class BuschVacuumDialog extends HTMLElement {
     _build() {
         const root = this.shadowRoot;
         const style = document.createElement('style');
-        style.textContent = DIALOG_STYLES;
+        style.textContent = DIALOG_STYLES + FORCED_COLORS_STYLES;
         const scrim = document.createElement('div');
         scrim.className = 'scrim';
         scrim.addEventListener('click', () => {
@@ -11283,7 +11306,7 @@ class BuschVacuumCard extends HTMLElement {
         root.innerHTML = '';
         this._seen = null;
         const style = document.createElement('style');
-        style.textContent = CARD_STYLES;
+        style.textContent = CARD_STYLES + FORCED_COLORS_STYLES;
         root.appendChild(style);
         const card = document.createElement('ha-card');
         card.dataset.uiContract = 'Busch HA UI 0.1.0';
