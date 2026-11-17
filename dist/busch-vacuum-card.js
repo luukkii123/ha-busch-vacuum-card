@@ -5452,7 +5452,7 @@ class MapView {
         const shift = (b, v) => ({ x0: b.x0 + v.x, x1: b.x1 + v.x, y0: b.y0 + v.y, y1: b.y1 + v.y });
         const overlap = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
         const grow = (b) => box({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }, (b.x1 - b.x0) / 2 + gap, (b.y1 - b.y0) / 2 + gap);
-        const material = !!(this.card._opts && this.card._opts.icon_set === 'material');
+        const material = !!(this.card.opts && this.card.opts.icon_set === 'material');
         const half = (g) => (material ? MAP_MARKER_HALF.material : MAP_MARKER_HALF[g.getAttribute('data-symbol')]) || MAP_MARKER_HALF.point;
         const markers = [];
         const shown = (name) => {
