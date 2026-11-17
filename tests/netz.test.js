@@ -243,3 +243,74 @@ test('M6 loadSettingTexts: ein fehlgeschlagenes Laden der Übersetzungen wird be
   assert.equal(rufe, 2, 'zweiter Versuch');
   assert.ok(k.karte._settingTexts, 'Erfolg gemerkt');
 });
+
+// ── M19 · Frame-Cache, Bild nur als Absicherung ───────────────────────────
+
+/** Zwei Karten derselben Kamera in einer Umgebung (ein Modul, ein Cache). */
+async function zweiKarten(optionen = {}) {
+  const u = umgebung();
+  const n = netz(u, optionen);
+  const haus = hausAus('voll');
+  haus.states = Object.assign({}, haus.states, kamera(haus, { frame_id: 1180 }));
+  const a = neueKarte(u, haus), b = neueKarte(u, haus);
+  return { u, n, haus, a, b };
+}
+
+test('MAP-01 M19 zwei Karten, ein Frame, Daten < 600 ms: genau 1 Datenabruf und 0 Bildabrufe; cacheHits zählt', async () => {
+  const { u, n, a, b } = await zweiKarten({ latenz: 300 });
+  await mikro();
+  u.uhr.vor(300); await mikro(); await mikro();
+  u.uhr.vor(1000); await mikro();
+  assert.equal(n.abrufe.length, 1, 'ein Datenabruf: ' + n.abrufe.map((x) => x.url).join(' | '));
+  assert.equal(a._map.stats.images + b._map.stats.images, 0, 'kein Kartenbild');
+  assert.equal(u.bilder.length, 0);
+  assert.equal(a._map.stats.data + b._map.stats.data, 1);
+  assert.equal(a._map.stats.cacheHits + b._map.stats.cacheHits, 1, 'die zweite Karte aus dem Cache');
+  for (const k of [a, b]) assert.equal(k._map.current().mode, 'data');
+});
+
+test('MAP-01 M19 Daten nach 1 s: genau 1 Bildabruf nach 600 ms, danach Wechsel auf das Canvas', async () => {
+  const k = await datenKarte({ latenz: 1000 });
+  const m = k.karte._map;
+  assert.equal(m.stats.images, 0, 'sofort kein Bild');
+  k.u.uhr.vor(599); await mikro();
+  assert.equal(m.stats.images, 0, 'vor 600 ms kein Bild');
+  k.u.uhr.vor(1); await mikro();
+  assert.equal(m.stats.images, 1, 'Absicherung nach 600 ms');
+  assert.equal(k.karte.shadowRoot.querySelector('.map-base').tagName, 'IMG', 'erst das Bild');
+  k.u.uhr.vor(400); await mikro(); await mikro();
+  assert.equal(m.current().mode, 'data');
+  assert.equal(k.karte.shadowRoot.querySelector('.map-base').tagName, 'CANVAS', 'dann das Canvas');
+  assert.equal(m.stats.images, 1, 'genau ein Bildabruf');
+  neuerFrame(k, 1181);
+  k.u.uhr.vor(2000); await mikro(); await mikro();
+  assert.equal(m.stats.images, 1, 'im Datenmodus kein weiteres Bild');
+});
+
+test('MAP-01 M19 Cache: höchstens 2 Frames je Kamera; Fehler bleiben nicht im Cache', async () => {
+  const { u, n, haus, a } = await zweiKarten();
+  await mikro(); await mikro();
+  const I = u.registry.get('busch-vacuum-card').__internals;
+  for (const f of [1181, 1182, 1183]) { a.hass = haus.setze(kamera(haus, { frame_id: f })); await mikro(); await mikro(); }
+  assert.deepEqual(I.FRAME_CACHE.get(CAM).map((e) => e.key), ['1:1182', '1:1183'], 'die zwei neuesten');
+  n.status = () => 500;
+  a.hass = haus.setze(kamera(haus, { frame_id: 1184 }));
+  await mikro(); await mikro();
+  assert.ok(!I.FRAME_CACHE.get(CAM).some((e) => e.key === '1:1184'), 'fehlgeschlagen: nicht gemerkt');
+});
+
+test('M19 loadEditData teilt den laufenden Abruf der MapView (ungespeicherte Karte): 0 zusätzliche Abrufe', async () => {
+  const u = umgebung();
+  const n = netz(u, { latenz: 1000 });
+  const haus = hausAus('voll');
+  const alt = haus.states['vacuum.robo'];
+  haus.states = Object.assign({}, haus.states, kamera(haus, { frame_id: 1180 }), { 'vacuum.robo': Object.assign({}, alt, { attributes: Object.assign({}, alt.attributes, { has_temporary_map: true }) }) });
+  const karte = neueKarte(u, haus);
+  await mikro();
+  assert.equal(n.abrufe.length, 1);
+  const I = u.registry.get('busch-vacuum-card').__internals;
+  const daten = I.loadEditData(karte);
+  u.uhr.vor(1000); await mikro(); await mikro();
+  assert.ok(await daten, 'Bearbeitungsdaten aus demselben Abruf');
+  assert.equal(n.abrufe.length, 1, 'kein zweiter Abruf');
+});

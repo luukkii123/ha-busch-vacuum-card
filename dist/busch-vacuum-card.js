@@ -3418,13 +3418,38 @@ const MAP_DRAW = {
 /** M6: retries of a failed map data request (ms), each spread by ±20 %. */
 const MAP_RETRY_MS = [2000, 5000, 15000, 60000];
 const MAP_RETRY_JITTER = 0.2;
+/** M19: in data mode the integration's picture is fetched only when the data is not there after this long. */
+const MAP_HEDGE_MS = 600;
+
+/**
+ * M19: map data shared by every card of the page, per camera at most
+ * FRAME_CACHE_SIZE frames `{ key: '<map_index>:<frame_id>', promise }` (the
+ * token stays out of the key). A failed request leaves it at once.
+ */
+const FRAME_CACHE = new Map();
+const FRAME_CACHE_SIZE = 2;
+const cachedFrame = (camera, key) => {
+    const entry = (FRAME_CACHE.get(camera) || []).find((e) => e.key === key);
+    return entry ? entry.promise : null;
+};
+function cacheFrame(camera, key, promise) {
+    const list = (FRAME_CACHE.get(camera) || []).filter((e) => e.key !== key);
+    const entry = { key, promise };
+    list.push(entry);
+    FRAME_CACHE.set(camera, list.slice(-FRAME_CACHE_SIZE));
+    promise.catch(() => {
+        const now = FRAME_CACHE.get(camera);
+        if (now) FRAME_CACHE.set(camera, now.filter((e) => e !== entry));
+    });
+    return promise;
+}
 
 class MapView {
     constructor(card) {
         this.card = card;
         this.hass = null;
         this.model = null;
-        this.stats = { images: 0, data: 0, renders: 0, paints: 0 }; // for tests and the performance check
+        this.stats = { images: 0, data: 0, renders: 0, paints: 0, cacheHits: 0 }; // for tests and the performance check
         this._cam = null;
         this._key = null;
         this._imageUrl = null;
@@ -4095,8 +4120,8 @@ class MapView {
         this._applyScheme();
         if (this._showsMap()) {
             // Data mode paints its own map: the integration's picture only until the data is there.
-            if (!this._data) this._loadImage(a.entity_picture);
             this._loadData(a);
+            if (!this._data) this._hedgeImage(a);
             this._paint();
         }
         this._render();
@@ -4137,12 +4162,36 @@ class MapView {
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
         const run = { key: want.key, frame: want.frame, index: want.index, seq: ++f.seq, controller, aborted: false };
         f.inflight = run;
-        this.stats.data++;
         const url = '/api/camera_map_data_proxy/' + this._cameraId + '?token=' + encodeURIComponent(a.access_token) + '&v=' + encodeURIComponent(want.frame);
-        Promise.resolve().then(() => fetch(this._url(url), controller ? { signal: controller.signal } : undefined)).then((res) => {
-            if (!res || !res.ok) throw Object.assign(new Error('HTTP ' + (res && res.status)), { status: res && res.status });
-            return res.json();
-        }).then((raw) => this._dataDone(run, raw), (error) => this._dataFailed(run, error));
+        // M19: another card (or the editor) fetching the same frame shares its request.
+        let request = cachedFrame(this._cameraId, want.key);
+        if (request) this.stats.cacheHits++;
+        else {
+            this.stats.data++;
+            request = cacheFrame(this._cameraId, want.key, Promise.resolve().then(() => fetch(this._url(url), controller ? { signal: controller.signal } : undefined)).then((res) => {
+                if (!res || !res.ok) throw Object.assign(new Error('HTTP ' + (res && res.status)), { status: res && res.status });
+                return res.json();
+            }));
+        }
+        request.then((raw) => this._dataDone(run, raw), (error) => this._dataFailed(run, error));
+    }
+
+    /**
+     * M19: the integration's picture is the costlier request; in data mode it
+     * is only a fallback – at once without a data way, after a failed one or
+     * while the picture is shown already, else after MAP_HEDGE_MS.
+     */
+    _hedgeImage(a) {
+        const dataWay = a.frame_id !== undefined && typeof fetch === 'function' && !!a.access_token;
+        if (!dataWay || this._imageUrl) {
+            this._loadImage(a.entity_picture);
+            return;
+        }
+        if (this._hedgeTimer) return;
+        this._hedgeTimer = setTimeout(() => {
+            this._hedgeTimer = null;
+            if (!this._data) this._loadImage(this._attrs().entity_picture);
+        }, MAP_HEDGE_MS);
     }
 
     _abortData() {
@@ -4164,6 +4213,8 @@ class MapView {
             this._data = grid ? { raw, grid } : null;
             this._dataFrame = run.frame;
             this._setStale(false);
+            clearTimeout(this._hedgeTimer);
+            this._hedgeTimer = null;
             if (this._data) {
                 this._matrix = gridAffine(grid).matrix;
                 this._paint();
@@ -13605,7 +13656,9 @@ function loadEditData(card) {
     }
     const url = '/api/camera_map_data_proxy/' + cur.camera + '?token=' + encodeURIComponent(cur.objects.access_token || '')
         + (saved ? '&saved=1&index=' + encodeURIComponent(cur.index) : '') + '&v=' + encodeURIComponent(cur.frameId);
-    entry.promise = typeof fetch !== 'function' ? Promise.resolve(settle(null))
+    // M19: the active map's data (not the stored one) comes from map-view's frame cache when it is fetching it.
+    const shared = saved ? null : cachedFrame(cur.camera, cur.index + ':' + cur.frameId);
+    entry.promise = shared ? shared.then(settle, () => settle(null)) : typeof fetch !== 'function' ? Promise.resolve(settle(null))
         : Promise.resolve().then(() => fetch(m._url(url))).then((res) => (res && res.ok ? res.json() : null)).then(settle, () => settle(null));
     return entry.promise;
 }
@@ -17540,6 +17593,7 @@ BuschVacuumCard.__internals = {
     EDIT_GROUPS,
     editCaps,
     loadEditData,
+    FRAME_CACHE,
     mapsView,
     EDIT_TOOLS,
     MapEditor,

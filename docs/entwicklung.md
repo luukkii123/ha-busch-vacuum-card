@@ -84,6 +84,14 @@
   neuer ist als das angezeigte, erscheint; überholte `<img>` bekommen
   `src=''`. Fehlgeschlagene `loadEditData`/`loadSettingTexts` werden nicht
   gemerkt. Tests: `tests/netz.test.js`.
+- **Frame-Cache (M19):** `FRAME_CACHE` auf Modulebene, je Kamera höchstens 2
+  Frames, Schlüssel `<map_index>:<frame_id>` (ohne Token); alle Karten der
+  Seite und `loadEditData` (aktive, nicht gespeicherte Karte) teilen einen
+  laufenden Abruf, ein Fehler verlässt den Cache sofort. `stats.data` zählt
+  gestartete Abrufe, `stats.cacheHits` geteilte. Im Datenmodus kommt das
+  Kartenbild nur als Absicherung: sofort ohne Datenweg, nach einem
+  fehlgeschlagenen Abruf oder wenn schon ein Bild gezeigt wird, sonst erst nach
+  600 ms ohne Daten (`MAP_HEDGE_MS`).
 - Testdaten nur synthetisch (`tests/kartendaten.js` aus den verfremdeten
   Raumrechtecken); echte Kartendaten schließt `tests/datenschutz.test.js` aus.
 
