@@ -79,7 +79,11 @@ test('M41 kein toter Code: jede Funktion außerhalb des Shared-UI-Blocks hat ein
   assert.deepEqual(namen.filter((n) => zaehle(ohneBlock, n) < 2), [], 'Funktionen ohne Aufrufer (nur Kopf, höchstens __internals)');
   const eintraege = Array.from(quelle.slice(a, b).matchAll(/^\s+([\w$]+)\s*[:,]/gm), (m) => m[1]);
   assert.ok(eintraege.length > 50, '__internals-Einträge: ' + eintraege.length);
-  const tests = fs.readdirSync(__dirname).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n');
+  const render = fs.readFileSync(path.join(__dirname, '..', 'docs', 'render', 'render.py'), 'utf8');
+  // Das Renderskript nutzt __internals wie die Node-Tests; was es liest, muss es geben.
+  const imRender = Array.from(new Set(Array.from(render.matchAll(/(?:\bI|__internals)\.([\w$]+)/g), (m) => m[1])));
+  assert.deepEqual(imRender.filter((n) => !eintraege.includes(n)), [], '__internals-Einträge, die docs/render/render.py liest, aber nicht gibt');
+  const tests = render + '\n' + fs.readdirSync(__dirname).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n');
   assert.deepEqual(eintraege.filter((n) => zaehle(tests, n, '(?<![\\w$])') === 0), [], '__internals-Einträge ohne Testnutzer');
 });
 

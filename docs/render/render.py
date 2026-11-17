@@ -3705,7 +3705,7 @@ M10_JS = """(a) => {
     // Stack = two equal warnings (layer and data-ignored) whose anchors lie closer than a finger (MAP_PLACE.bundle).
     const m = window.card()._map, anchors = {};
     for (const l of a.warnungen) for (const g of all('.map-layers [data-layer=' + l + '] [data-symbol]')) {
-        const t = String(g.style.transform).match(/translate\(\s*(-?[\d.e+-]+)px,\s*(-?[\d.e+-]+)px\)/);
+        const t = String(g.style.transform).match(/translate\\(\\s*(-?[\\d.e+-]+)px,\\s*(-?[\\d.e+-]+)px\\)/);
         if (t) (anchors[l + '|' + (g.getAttribute('data-ignored') || '')] = anchors[l + '|' + (g.getAttribute('data-ignored') || '')] || []).push(m.toScreen({ x: +t[1], y: +t[2] })); }
     let near = 0;
     for (const list of Object.values(anchors)) for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++)

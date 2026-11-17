@@ -19428,6 +19428,10 @@ BACKUP_PARTS.push(restoreFilePart);
 BuschVacuumCard.__internals = {
     TEXTE: TEXTE_BUSCH_VACUUM_CARD,
     SCHEMA: SCHEMA_BUSCH_VACUUM_CARD,
+    // read by docs/render/render.py (backup and room restore cases)
+    backupsView,
+    backupImageView,
+    roomSnapshot,
     normalizeConfig,
     MAP_CONFIG_FIELDS,
     VacuumModel,
