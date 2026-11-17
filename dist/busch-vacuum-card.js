@@ -10263,7 +10263,6 @@ ha-card {
     min-width: 0;
     overflow: visible;
     text-overflow: clip;
-    white-space: nowrap;
 }
 .controls .ctl ha-icon {
     flex: none;
@@ -10958,7 +10957,6 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 }
 .run-status {
     grid-column: 3;
-    white-space: nowrap;
     display: inline-flex;
     align-items: center;
     gap: var(--ha-space-1, 4px);

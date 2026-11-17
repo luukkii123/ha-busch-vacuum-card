@@ -541,7 +541,7 @@ test('M12 CSS: Raster mit 40-px-Symbolspalte, keine Einrückung der Gruppe, Chip
   assert.match(regel('.run-lead'), /grid-column: 1;[^]*width: 40px;/);
   assert.match(regel('.history-members .run-lead::before'), /width: 2px;[^]*background: var\(--divider-color/, 'Gruppe als Linie in der Spalte');
   assert.match(DIALOG_STYLES, /\n\.history-members \{\n    padding-inline-start: 0;/, 'Mitglieder ohne Einrückung, die Spalte zeigt die Gruppe');
-  assert.match(regel('.run-status'), /white-space: nowrap;/);
+  assert.doesNotMatch(regel('.run-status'), /white-space: nowrap;/, 'R1/R3.4: kein nowrap ohne Ellipsis; der Chip ist inline-flex mit Einzelwort');
   const i = DIALOG_STYLES.indexOf('/* M12: on a phone');
   assert.ok(i > 0);
   const schmal = DIALOG_STYLES.slice(i, DIALOG_STYLES.indexOf('\n}\n', i));

@@ -282,6 +282,7 @@ test('M2 CSS: Leistenknöpfe nie mit „…“, Mindestbreite nach Inhalt, Umbru
   const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
   assert.match(stil(CARD_STYLES, '.controls .ctl'), /min-width: max-content;/);
   assert.match(stil(CARD_STYLES, '.ctl-text'), /overflow: visible;[^]*text-overflow: clip;/);
+  assert.doesNotMatch(stil(CARD_STYLES, '.ctl-text'), /white-space: nowrap;/, 'R1/R3.4: einzeilig hält min-width: max-content am Knopf, nicht nowrap');
   assert.match(stil(CARD_STYLES, '.controls .dock'), /text-overflow: clip;/, 'Stationsknopf in der Leiste erbt kein „…“ aus .dock');
   assert.match(stil(CARD_STYLES, '.controls[data-wrap]'), /flex-wrap: wrap;/);
   assert.match(stil(CARD_STYLES, '.controls[data-wrap] > .ctl:first-child'), /flex: 1 0 100%;/, 'Hauptaktion volle Breite');
