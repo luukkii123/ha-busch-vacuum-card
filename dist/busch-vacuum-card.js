@@ -3561,6 +3561,14 @@ const MAP_SYMBOLS = {
     station: [['path', { d: 'M0 -9 L9 7 H-9 Z', class: 'body' }], ['path', { d: 'M0 -3 V2 M0 4 V4.5', class: 'mark' }]]
 };
 
+/**
+ * M10: half size of each marker in symbol units (screen px over object_scale)
+ * for label placement, bundling and edge clamping; material icons are 24 px.
+ */
+const MAP_MARKER_HALF = { robot: 13, charger: 10, router: 9, obstacle: 10, stain: 10, pet: 10, blocked: 9, point: 8, station: 9, material: 12 };
+/** M10: layers whose equal warnings closer than `bundle` symbol units share one mark with a count; `gap` keeps labels off markers and edges. */
+const MAP_PLACE = { bundled: ['obstacles', 'stains', 'pets', 'blocked_rooms'], markers: ['predefined_points', 'router', 'charger', 'station_status', 'robot'], bundle: 2 * TAP.hitPx, gap: 2, count: { x: 10, y: -10, r: 7 } };
+
 /** Corners of an area item (x0…y3, or a rectangle x0/y0/x1/y1) in robot mm. */
 function areaCorners(item) {
     if (Array.isArray(item)) return [0, 2, 4, 6].map((i) => ({ x: item[i], y: item[i + 1] }));
@@ -4847,6 +4855,7 @@ class MapView {
         this.svg.style.setProperty('--bvc-map-symbol', String(options.object_scale / Math.hypot(m.a, m.b)));
         this.svg.style.setProperty('--bvc-map-turn', -(Number(this._display.rotation) || 0) + 'deg');
         this.svg.style.opacity = String(options.object_opacity);
+        this._placeLabels();
     }
 
     /** MAP-06: the map's opacity and own pictures under/over it, placed by their robot-mm corners. */
@@ -5338,6 +5347,7 @@ class MapView {
             const layer = this._layers.get(id);
             if (layer) this._renderLayer(layer, true);
         } else for (const layer of this._layers.values()) this._renderLayer(layer, true);
+        this._placeLabels();
         // A module's selection may show on the chips too (pick-room).
         this._renderChips();
     }
@@ -5345,6 +5355,7 @@ class MapView {
     _renderLayers() {
         for (const layer of this._layers.values()) this._renderLayer(layer, false);
         this._placeRobot();
+        this._placeLabels();
     }
 
     _renderLayer(layer, force) {
@@ -5384,6 +5395,170 @@ class MapView {
         const rad = (Number(pos.a) || 0) * Math.PI / 180;
         const angle = Math.atan2(m.b * Math.cos(rad) + m.d * Math.sin(rad), m.a * Math.cos(rad) + m.c * Math.sin(rad)) * 180 / Math.PI;
         node.style.transform = 'translate(' + p.x + 'px, ' + p.y + 'px) scale(var(--bvc-map-symbol)) rotate(' + Math.round(angle) + 'deg)';
+    }
+
+    /**
+     * M10: room names and order rings step aside from markers and stay inside
+     * the stage; equal warnings closer than a finger share one mark with a
+     * count. Works in symbol units (the frame of every upright symbol, screen
+     * aligned) and runs after drawing, robot moves, zoom and pan. Only moves
+     * (style.translate, ring transform) and the bundle marks change; no layer
+     * redraws, hits and taps stay on the true positions.
+     */
+    _placeLabels() {
+        const m = this._view;
+        if (!m || !this._matrix || !this._layers || !this._size.width) return;
+        const options = this.config(this._attrs().map_index);
+        const k = options.object_scale / Math.hypot(m.a, m.b);
+        const t = -(Number(this._display.rotation) || 0) * Math.PI / 180;
+        // Symbol units to stage px: the view, then scale(k) rotate(turn) of _symbol.
+        const lin = { a: m.a, b: m.b, c: m.c, d: m.d, e: 0, f: 0 };
+        const unitToStage = multiplyAffine(lin, { a: k * Math.cos(t), b: k * Math.sin(t), c: -k * Math.sin(t), d: k * Math.cos(t), e: 0, f: 0 });
+        const stageToUnit = invertAffine(unitToStage), stageToImage = invertAffine(lin);
+        if (!stageToUnit || !stageToImage) return;
+        const anchor = (g) => {
+            const n = (String(g.style.transform).match(/translate\(\s*(-?[\d.e+-]+)px,\s*(-?[\d.e+-]+)px\)/) || []).slice(1).map(Number);
+            return n.length === 2 && n.every(Number.isFinite) ? applyAffine(stageToUnit, applyAffine(m, { x: n[0], y: n[1] })) : null;
+        };
+        const unitsToImage = (v) => applyAffine(stageToImage, applyAffine(unitToStage, v));
+        const move = (g, v) => {
+            const p = v.x || v.y ? unitsToImage(v) : null;
+            const text = p ? +p.x.toFixed(2) + 'px ' + +p.y.toFixed(2) + 'px' : '';
+            if ((g.style.translate || '') !== text) g.style.translate = text;
+        };
+        const { width, height } = this._stageRect();
+        const corners = [[0, 0], [width, 0], [0, height], [width, height]].map(([x, y]) => applyAffine(stageToUnit, { x, y }));
+        const gap = MAP_PLACE.gap;
+        const edge = { x0: Math.min(...corners.map((c) => c.x)) + gap, x1: Math.max(...corners.map((c) => c.x)) - gap, y0: Math.min(...corners.map((c) => c.y)) + gap, y1: Math.max(...corners.map((c) => c.y)) - gap };
+        const inside = (p) => p.x >= edge.x0 - gap && p.x <= edge.x1 + gap && p.y >= edge.y0 - gap && p.y <= edge.y1 + gap;
+        // Shift that brings box b inside the stage (only for anchors on the stage: nothing is pulled in from outside).
+        const clamp = (b) => ({
+            x: b.x1 - b.x0 > edge.x1 - edge.x0 ? 0 : Math.max(0, edge.x0 - b.x0) - Math.max(0, b.x1 - edge.x1),
+            y: b.y1 - b.y0 > edge.y1 - edge.y0 ? 0 : Math.max(0, edge.y0 - b.y0) - Math.max(0, b.y1 - edge.y1)
+        });
+        const box = (p, hx, hy, dx = 0, dy = 0) => ({ x0: p.x + dx - hx, x1: p.x + dx + hx, y0: p.y + dy - hy, y1: p.y + dy + hy });
+        const shift = (b, v) => ({ x0: b.x0 + v.x, x1: b.x1 + v.x, y0: b.y0 + v.y, y1: b.y1 + v.y });
+        const overlap = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+        const grow = (b) => box({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }, (b.x1 - b.x0) / 2 + gap, (b.y1 - b.y0) / 2 + gap);
+        const material = !!(this.card._opts && this.card._opts.icon_set === 'material');
+        const half = (g) => (material ? MAP_MARKER_HALF.material : MAP_MARKER_HALF[g.getAttribute('data-symbol')]) || MAP_MARKER_HALF.point;
+        const markers = [];
+        const shown = (name) => {
+            const layer = this._layers.get(name);
+            return layer && !layer.group.hidden ? Array.from(layer.group.childNodes).filter((g) => g.getAttribute('data-symbol')) : [];
+        };
+        // Bundles: per layer and ignore state, greedy around the first mark.
+        for (const name of MAP_PLACE.bundled) {
+            const items = shown(name).map((g) => ({ g, p: anchor(g), key: g.getAttribute('data-ignored') || '' })).filter((i) => i.p);
+            const heads = [];
+            for (const item of items) {
+                const head = heads.find((h) => h.key === item.key && Math.hypot(h.p.x - item.p.x, h.p.y - item.p.y) < MAP_PLACE.bundle);
+                if (head) head.members.push(item);
+                else heads.push(Object.assign(item, { members: [item] }));
+            }
+            for (const head of heads) {
+                const count = head.members.length;
+                for (const item of head.members) if (item !== head) {
+                    if (!item.g.hasAttribute('data-bundled')) item.g.setAttribute('data-bundled', '');
+                    item.g.removeAttribute('data-count');
+                    const old = Array.from(item.g.childNodes).find((c) => c.getAttribute('class') === 'count');
+                    if (old) old.remove();
+                    move(item.g, { x: 0, y: 0 });
+                }
+                const g = head.g;
+                g.removeAttribute('data-bundled');
+                let mark = Array.from(g.childNodes).find((c) => c.getAttribute('class') === 'count');
+                if (count > 1) {
+                    if (g.getAttribute('data-count') !== String(count)) g.setAttribute('data-count', String(count));
+                    if (!mark) {
+                        const c = MAP_PLACE.count;
+                        mark = this.svgNode('g', { class: 'count', transform: 'translate(' + c.x + ' ' + c.y + ')' });
+                        mark.appendChild(this.svgNode('circle', { r: c.r }));
+                        mark.appendChild(this.svgNode('text', { 'font-size': 10, 'text-anchor': 'middle', y: 3.5 }));
+                        g.appendChild(mark);
+                    }
+                    const text = mark.childNodes[1];
+                    if (text.textContent !== String(count)) text.textContent = String(count);
+                } else {
+                    g.removeAttribute('data-count');
+                    if (mark) mark.remove();
+                }
+                let b = box(head.p, half(g), half(g));
+                if (count > 1) {
+                    const c = MAP_PLACE.count;
+                    b = { x0: b.x0, y0: Math.min(b.y0, head.p.y + c.y - c.r), x1: Math.max(b.x1, head.p.x + c.x + c.r), y1: b.y1 };
+                }
+                markers.push({ g, p: head.p, b });
+            }
+        }
+        for (const name of MAP_PLACE.markers) for (const g of shown(name)) {
+            const p = anchor(g);
+            // The station mark sits 14 units up right of the charger (MAP_DRAW.station).
+            if (p) markers.push({ g, p, b: box(p, half(g), half(g), name === 'station_status' ? 14 : 0, name === 'station_status' ? -14 : 0) });
+        }
+        // Markers keep their place unless they would leave the stage.
+        for (const marker of markers) {
+            const v = inside(marker.p) ? clamp(marker.b) : { x: 0, y: 0 };
+            move(marker.g, v);
+            marker.b = shift(marker.b, v);
+        }
+        const blocked = markers.map((marker) => grow(marker.b));
+        const placed = [];
+        // Covering a marker weighs more than touching another label.
+        const score = (b) => blocked.reduce((s, x) => s + 10 * overlap(b, x), 0) + placed.reduce((s, x) => s + overlap(b, x), 0);
+        const size = options.font_size;
+        const settings = new Map(shown('cleaning_settings').map((g) => [g.getAttribute('data-object'), g]));
+        for (const g of shown('rooms')) {
+            const p = anchor(g);
+            const parts = Array.from(g.childNodes);
+            const name = parts.find((c) => c.getAttribute('data-role') === 'name');
+            if (!p || !name) continue;
+            const ring = parts.find((c) => c.getAttribute('class') === 'badge');
+            const w = this._textWidth(name, size);
+            // The name around its anchor (baseline at 0.35 size), its ring above by default.
+            const own = box(p, w / 2, size * 0.6, 0, -size * 0.05);
+            const r = size * 0.75;
+            const rings = [{ x: 0, y: -size * 1.4 }, { x: w / 2 + r + gap, y: 0 }, { x: -(w / 2 + r + gap), y: 0 }, { x: 0, y: size * 1.4 }];
+            const ringBox = (v, o) => box(p, r, r, v.x + o.x, v.y + o.y);
+            const both = (v, o) => { const a = shift(own, v), b = ringBox(v, o); return ring ? { x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), y0: Math.min(a.y0, b.y0), y1: Math.max(a.y1, b.y1) } : a; };
+            // Candidates: in place, then just clear of what covers it below, above, right, left.
+            const hits = blocked.filter((x) => overlap(own, x) > 0);
+            const moves = [{ x: 0, y: 0 }];
+            if (hits.length) {
+                moves.push({ x: 0, y: Math.max(...hits.map((x) => x.y1 - own.y0)) }, { x: 0, y: Math.min(...hits.map((x) => x.y0 - own.y1)) },
+                    { x: Math.max(...hits.map((x) => x.x1 - own.x0)), y: 0 }, { x: Math.min(...hits.map((x) => x.x0 - own.x1)), y: 0 });
+            }
+            let best = null;
+            search: for (const v0 of moves) for (const o of ring ? rings : [rings[0]]) {
+                const c = inside(p) ? clamp(both(v0, o)) : { x: 0, y: 0 };
+                const v = { x: v0.x + c.x, y: v0.y + c.y };
+                const s = score(shift(own, v)) + (ring ? score(ringBox(v, o)) : 0);
+                if (!best || s < best.s) best = { s, v, o };
+                if (s === 0) break search;
+            }
+            move(g, best.v);
+            const cell = settings.get(g.getAttribute('data-object'));
+            if (cell) move(cell, best.v);
+            if (ring) {
+                const transform = 'translate(' + +best.o.x.toFixed(2) + ' ' + +best.o.y.toFixed(2) + ')';
+                if (ring.getAttribute('transform') !== transform) ring.setAttribute('transform', transform);
+                placed.push(ringBox(best.v, best.o));
+            }
+            placed.push(shift(own, best.v));
+        }
+    }
+
+    /** M10: width of a room name in symbol units; measured once per node in the browser, estimated without layout. */
+    _textWidth(node, size) {
+        const cache = this._textWidths || (this._textWidths = new WeakMap());
+        const known = cache.get(node);
+        if (known && known.text === node.textContent) return known.width;
+        let width = 0;
+        try { width = typeof node.getBBox === 'function' ? node.getBBox().width : 0; } catch (err) { width = 0; }
+        const measured = width > 0;
+        if (!measured) width = String(node.textContent).length * size * 0.6;
+        if (measured) cache.set(node, { text: node.textContent, width });
+        return width;
     }
 
     /** Card options merged with `map_config.map_<index>`; hidden objects add up. */
@@ -8960,7 +9135,7 @@ canvas.map-base {
 [data-layer=path] [data-object] {
     stroke: var(--bvc-map-path, var(--secondary-text-color, #727272));
     stroke-width: 1px;
-    opacity: 0.7;
+    opacity: 0.4;
 }
 [data-layer=path] [data-kind="2"] {
     stroke-dasharray: 3 2;
@@ -9028,12 +9203,30 @@ canvas.map-base {
     stroke-width: 3px;
     font-family: inherit;
 }
+/* M10: the cleaning order as a ring (number in text colour on the map colour), moved aside when covered. */
 .map-layers .badge circle {
-    fill: var(--bvc-accent-color, var(--primary-color, #03a9f4));
+    fill: var(--ha-card-background, var(--card-background-color, #ffffff));
+    stroke: var(--bvc-accent-color, var(--primary-color, #03a9f4));
+    stroke-width: 2px;
 }
 .map-layers .badge text {
-    fill: var(--text-primary-color, #ffffff);
+    fill: var(--primary-text-color, #212121);
     stroke: none;
+    font-weight: var(--ha-font-weight-bold, 700);
+}
+/* M10: equal warnings within a finger share one mark; the count sits at its upper right. */
+.map-layers [data-bundled] {
+    display: none;
+}
+.map-layers .count circle {
+    fill: var(--primary-text-color, #212121);
+    stroke: var(--ha-card-background, var(--card-background-color, #ffffff));
+    stroke-width: 1.5px;
+}
+.map-layers .count text {
+    fill: var(--ha-card-background, var(--card-background-color, #ffffff));
+    stroke: none;
+    font-weight: var(--ha-font-weight-bold, 700);
 }
 .map-layers [data-symbol] .body {
     fill: var(--ha-card-background, var(--card-background-color, #ffffff));
