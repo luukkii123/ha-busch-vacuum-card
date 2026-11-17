@@ -231,3 +231,32 @@ test('CORE-12 Geometrie wie Lightcards 0.11.0 (Messung im Browser folgt mit Task
   assert.match(DIALOG_STYLES, /width: min\(560px, 100%\)/);
   assert.match(DIALOG_STYLES, /prefers-reduced-motion: reduce/);
 });
+
+// ── M11 (Buschcheck 17.11.2026, W3): Bestätigung am Handy mit festen Knöpfen unten ──
+test('M11 CSS: Bestätigung unter 450 × 500 px als Bottom-Sheet (mind. 90 %), Knöpfe unten fest, volle Breite 48 px', () => {
+  const { DIALOG_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  const i = DIALOG_STYLES.indexOf('/* M11');
+  assert.ok(i > 0, 'M11-Block vorhanden');
+  const block = DIALOG_STYLES.slice(i, DIALOG_STYLES.indexOf('\n}\n', i) + 2);
+  assert.match(block, /^\/\* M11[^]*@media \(max-width: 449\.98px\), \(max-height: 499\.98px\) \{/);
+  const regel = (sel) => { const m = block.indexOf(sel + ' {'); return m < 0 ? null : block.slice(m, block.indexOf('}', m)); };
+  assert.match(regel('    .sheet[data-kind=confirm]'), /width: 100%;[^]*height: auto;[^]*min-height: 90%;[^]*align-self: flex-end;[^]*display: flex;[^]*flex-direction: column;/);
+  assert.match(regel('    .sheet[data-kind=confirm] > .body'), /flex: 1 0 auto;[^]*display: flex;[^]*flex-direction: column;/);
+  assert.match(regel('    .sheet[data-kind=confirm] .actions'), /position: sticky;[^]*bottom: -16px;[^]*margin-top: auto;[^]*flex-direction: column;/);
+  assert.match(regel('    .sheet[data-kind=confirm] .actions .busch-ui-action'), /width: 100%;[^]*min-height: 48px;/);
+});
+
+test('M11 Bestätigung: Knöpfe stehen als letzter Teil im Körper, Scrim schließt nicht (R04)', () => {
+  const { u, karte } = offen();
+  const d = karte._dialog;
+  d.show({ title: 'Wirklich?', id: 'probe-confirm', kind: 'confirm', render: (body) => {
+    const p = u.document.createElement('p'); p.textContent = 'Frage'; body.appendChild(p);
+    const a = u.document.createElement('div'); a.className = 'actions'; body.appendChild(a);
+  } });
+  const sheet = d.shadowRoot.querySelector('.sheet');
+  assert.equal(sheet.getAttribute('data-kind'), 'confirm');
+  const body = sheet.querySelector('.body');
+  assert.ok(body.childNodes.at(-1).className === 'actions', 'Aktionen zuletzt, damit margin-top: auto sie nach unten schiebt');
+  d.shadowRoot.querySelector('.scrim').click();
+  assert.ok(d.isConnected, 'Bestätigung bleibt bei Klick auf den Scrim offen');
+});

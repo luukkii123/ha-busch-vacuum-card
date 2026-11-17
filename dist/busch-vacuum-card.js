@@ -360,6 +360,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             stop: 'Stopp',
             return: 'Zurück',
             zurueckZumDock: 'Zurück zum Dock',
+            dockKurz: 'Dock',
             station: 'Station',
             dock: 'Dock',
             frischwasserFehlt: 'Frischwassertank fehlt',
@@ -719,6 +720,11 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             raeumeEinstellen: 'Räume einstellen',
             keineRaeume: 'Keine Räume auf der aktiven Karte.',
             durchgaenge: 'Durchgänge',
+            raumWertSaugstufe: 'Saugstufe {wert}',
+            raumWertWasser: 'Wasser {wert}',
+            raumWertFeuchte: 'Feuchte {wert}',
+            raumWertDurchgang: '1 Durchgang',
+            raumWertDurchgaenge: '{n} Durchgänge',
             raumUnvollstaendig: 'Ein Wert dieses Raums ist unbekannt; die Karte sendet nichts, statt zu raten.',
             aufAlleTitel: 'Auf alle Räume übertragen',
             aufAlleFrage: 'Die Werte von {raum} ersetzen die Werte dieser Räume: {raeume}.',
@@ -820,6 +826,61 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             set_total_runtime: 'Gesamtlaufzeit',
             set_total_cruise_time: 'Gesamte Cruising-Zeit',
             set_track_cleaning_left: 'Spurreinigung',
+            // M21: the card's own words for known Dreame options and run types (`opt_<enum>`), used when HA has none.
+            opt_quiet: 'Leise',
+            opt_standard: 'Standard',
+            opt_strong: 'Stark',
+            opt_turbo: 'Turbo',
+            opt_sweeping: 'Saugen',
+            opt_mopping: 'Wischen',
+            opt_sweeping_and_mopping: 'Saugen und Wischen',
+            opt_mopping_after_sweeping: 'Wischen nach dem Saugen',
+            opt_low: 'Niedrig',
+            opt_medium: 'Mittel',
+            opt_high: 'Hoch',
+            opt_slightly_dry: 'Leicht trocken',
+            opt_moist: 'Feucht',
+            opt_wet: 'Nass',
+            opt_intensive: 'Intensiv',
+            opt_deep: 'Gründlich',
+            opt_quick: 'Schnell',
+            opt_off: 'Aus',
+            opt_light: 'Leicht',
+            opt_normal: 'Normal',
+            opt_warm: 'Warm',
+            opt_avoidance: 'Meiden',
+            opt_adaptation: 'Anpassen',
+            opt_remove_mop: 'Pads abnehmen',
+            opt_vacuum_and_mop: 'Saugen und Wischen',
+            opt_ignore: 'Ignorieren',
+            opt_high_frequency: 'Häufig',
+            opt_low_frequency: 'Selten',
+            opt_by_area: 'Nach Fläche',
+            opt_by_time: 'Nach Zeit',
+            opt_by_room: 'Nach Raum',
+            opt_intelligent: 'Intelligent',
+            opt_routine_cleaning: 'Routinereinigung',
+            opt_deep_cleaning: 'Tiefenreinigung',
+            opt_in_all_modes: 'In allen Modi',
+            opt_cleaning: 'Reinigung',
+            opt_room_cleaning: 'Raumreinigung',
+            opt_zone_cleaning: 'Zonenreinigung',
+            opt_spot_cleaning: 'Punktreinigung',
+            opt_cruising_path: 'Cruising-Route',
+            opt_cruising_point: 'Cruising-Punkt',
+            opt_fast_mapping: 'Schnellkartierung',
+            opt_default: 'Standardmodus',
+            opt_custom: 'Eigener Modus',
+            opt_button: 'Taste am Gerät',
+            opt_app: 'App',
+            opt_scheduled: 'Zeitplan',
+            opt_voice: 'Sprachbefehl',
+            set_cleaning_mode: 'Reinigungsmodus',
+            set_suction_level: 'Saugstufe',
+            set_mop_pad_humidity: 'Feuchte der Wischpads',
+            set_wetness_level: 'Feuchtigkeitsstufe',
+            set_water_volume: 'Wassermenge',
+            set_cleaning_route: 'Reinigungsroute',
             frage_map_rotation: 'Die gespeicherte Karte des Roboters auf {wert} drehen? Das ändert die Karte im Gerät, nicht nur die Anzeige.',
             aendern: 'Ändern',
             einmalig: 'Einmalig',
@@ -1013,6 +1074,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             stop: 'Stop',
             return: 'Return',
             zurueckZumDock: 'Return to dock',
+            dockKurz: 'Dock',
             station: 'Station',
             dock: 'Dock',
             frischwasserFehlt: 'Clean water tank missing',
@@ -1372,6 +1434,11 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             raeumeEinstellen: 'Room settings',
             keineRaeume: 'No rooms on the active map.',
             durchgaenge: 'Passes',
+            raumWertSaugstufe: 'Suction {wert}',
+            raumWertWasser: 'Water {wert}',
+            raumWertFeuchte: 'Humidity {wert}',
+            raumWertDurchgang: '1 pass',
+            raumWertDurchgaenge: '{n} passes',
             raumUnvollstaendig: 'A value of this room is unknown; the card sends nothing instead of guessing.',
             aufAlleTitel: 'Apply to all rooms',
             aufAlleFrage: 'The values of {raum} replace those of these rooms: {raeume}.',
@@ -1473,6 +1540,61 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             set_total_runtime: 'Total runtime',
             set_total_cruise_time: 'Total cruising time',
             set_track_cleaning_left: 'Track cleaning',
+            // M21: the card's own words for known Dreame options and run types (`opt_<enum>`), used when HA has none.
+            opt_quiet: 'Quiet',
+            opt_standard: 'Standard',
+            opt_strong: 'Strong',
+            opt_turbo: 'Turbo',
+            opt_sweeping: 'Sweeping',
+            opt_mopping: 'Mopping',
+            opt_sweeping_and_mopping: 'Sweeping and mopping',
+            opt_mopping_after_sweeping: 'Mopping after sweeping',
+            opt_low: 'Low',
+            opt_medium: 'Medium',
+            opt_high: 'High',
+            opt_slightly_dry: 'Slightly dry',
+            opt_moist: 'Moist',
+            opt_wet: 'Wet',
+            opt_intensive: 'Intensive',
+            opt_deep: 'Deep',
+            opt_quick: 'Quick',
+            opt_off: 'Off',
+            opt_light: 'Light',
+            opt_normal: 'Normal',
+            opt_warm: 'Warm',
+            opt_avoidance: 'Avoidance',
+            opt_adaptation: 'Adaptation',
+            opt_remove_mop: 'Remove mop',
+            opt_vacuum_and_mop: 'Vacuum and mop',
+            opt_ignore: 'Ignore',
+            opt_high_frequency: 'High frequency',
+            opt_low_frequency: 'Low frequency',
+            opt_by_area: 'By area',
+            opt_by_time: 'By time',
+            opt_by_room: 'By room',
+            opt_intelligent: 'Intelligent',
+            opt_routine_cleaning: 'Routine cleaning',
+            opt_deep_cleaning: 'Deep cleaning',
+            opt_in_all_modes: 'In all modes',
+            opt_cleaning: 'Cleaning',
+            opt_room_cleaning: 'Room cleaning',
+            opt_zone_cleaning: 'Zone cleaning',
+            opt_spot_cleaning: 'Spot cleaning',
+            opt_cruising_path: 'Cruising path',
+            opt_cruising_point: 'Cruising point',
+            opt_fast_mapping: 'Fast mapping',
+            opt_default: 'Default mode',
+            opt_custom: 'Custom mode',
+            opt_button: 'Button',
+            opt_app: 'App',
+            opt_scheduled: 'Scheduled',
+            opt_voice: 'Voice',
+            set_cleaning_mode: 'Cleaning mode',
+            set_suction_level: 'Suction level',
+            set_mop_pad_humidity: 'Mop pad humidity',
+            set_wetness_level: 'Wetness level',
+            set_water_volume: 'Water volume',
+            set_cleaning_route: 'Cleaning route',
             frage_map_rotation: 'Rotate the robot’s stored map to {wert}? This changes the map in the device, not only the display.',
             aendern: 'Change',
             einmalig: 'Once',
@@ -2342,7 +2464,18 @@ function optionLabel(hass, key, option) {
     if (typeof option === 'boolean') return translate(hass, option ? 'an' : 'aus');
     const id = 'component.dreame_vacuum.entity.select.' + key + '.state.' + enumName(option);
     const fromHa = hass && typeof hass.localize === 'function' ? hass.localize(id) : '';
-    return fromHa && fromHa !== id ? fromHa : String(option);
+    return fromHa && fromHa !== id ? fromHa : optionWord(hass, option) || String(option);
+}
+
+/** M21: the card's own word for a known Dreame option or run type (`opt_<enum>`, also without `_mode`), else ''. */
+function optionWord(hass, raw) {
+    const slug = enumName(raw);
+    if (!slug) return '';
+    for (const name of [slug, slug.replace(/_mode$/, '')]) {
+        const text = translate(hass, 'opt_' + name);
+        if (text !== 'opt_' + name) return text;
+    }
+    return '';
 }
 
 function rerender(card) {
@@ -6359,6 +6492,19 @@ function roomValueText(hass, model, key, code) {
 const roomShort = (hass, model, room) => ['suction_level', model.can('wetness_level') ? 'wetness_level' : 'water_volume', 'cleaning_times']
     .map((key) => roomValueText(hass, model, key, roomCode(key, room[key]))).join(' · ');
 
+/** M13: the room's values with their names: "Saugstufe Turbo · Wasser 16 · 2 Durchgänge" (no number without a label). */
+function roomLine(hass, model, room) {
+    const water = model.can('wetness_level') ? 'wetness_level' : 'water_volume';
+    const value = (key) => roomValueText(hass, model, key, roomCode(key, room[key]));
+    const passes = roomCode('cleaning_times', room.cleaning_times);
+    return [
+        translate(hass, 'raumWertSaugstufe', { wert: value('suction_level') }),
+        translate(hass, water === 'water_volume' && model.can('self_wash_base') ? 'raumWertFeuchte' : 'raumWertWasser', { wert: value(water) }),
+        passes === undefined ? translate(hass, 'durchgaenge') + ' ' + translate(hass, 'wertUnbekannt')
+            : translate(hass, passes === 1 ? 'raumWertDurchgang' : 'raumWertDurchgaenge', { n: passes })
+    ].join(' · ');
+}
+
 /** One room write until the camera shows it (R17), else back with a note (pattern writeSetting). */
 function writeRoom(card, id, change) {
     const model = card._model();
@@ -6453,8 +6599,22 @@ function roomsView(card) {
             const list = document.createElement('div');
             list.className = 'menu room-list';
             for (const id of ids) {
-                const text = roomName(rooms[id], id) + ' · ' + roomShort(hass, model, rooms[id]);
-                const item = BuschUI.action({ label: text, text, icon: rooms[id].icon || 'mdi:floor-plan', variant: 'quiet', onClick: () => dialog.show(roomView(card, id)) });
+                // M13: the name bold, its labelled values below, a chevron: the row opens the room.
+                const name = roomName(rooms[id], id), values = roomLine(hass, model, rooms[id]);
+                const item = BuschUI.action({ label: name + ': ' + values, icon: rooms[id].icon || 'mdi:floor-plan', variant: 'quiet', onClick: () => dialog.show(roomView(card, id)) });
+                const words = document.createElement('span');
+                words.className = 'room-words';
+                const title = document.createElement('span');
+                title.className = 'room-name';
+                title.textContent = name;
+                const line = document.createElement('span');
+                line.className = 'room-values';
+                line.textContent = values;
+                words.append(title, line);
+                const chevron = BuschUI.ha.icon('mdi:chevron-right');
+                chevron.setAttribute('aria-hidden', 'true');
+                chevron.classList.add('room-chevron');
+                item.append(words, chevron);
                 item.classList.add('menu-item');
                 item.setAttribute('data-room', id);
                 list.appendChild(item);
@@ -7464,6 +7624,8 @@ function integrationState(hass, sensor, raw) {
         const text = hass && typeof hass.localize === 'function' ? hass.localize(id) : '';
         if (text && text !== id) return text;
     }
+    const own = optionWord(hass, raw);
+    if (own) return own;
     const words = String(raw).replace(/_/g, ' ');
     return words.charAt(0).toUpperCase() + words.slice(1);
 }
@@ -7496,8 +7658,16 @@ function runStatus(hass, level) {
     return chip;
 }
 
-/** One line of a run (or of a group head): title, facts, status. */
-function runLine(button, title, facts, status) {
+/**
+ * One line of a run (or of a group head): symbol column, title, facts, status.
+ * M12: the symbol column is always there (empty or the group's chevron), so every title starts at the same x;
+ * members of a group show a line in it instead of an indent.
+ */
+function runLine(button, title, facts, status, icon) {
+    const lead = document.createElement('span');
+    lead.className = 'run-lead';
+    lead.setAttribute('aria-hidden', 'true');
+    if (icon) lead.appendChild(BuschUI.ha.icon(icon));
     const text = document.createElement('span');
     text.className = 'run-text';
     const head = document.createElement('span');
@@ -7507,7 +7677,7 @@ function runLine(button, title, facts, status) {
     meta.className = 'run-meta';
     meta.textContent = facts.filter(Boolean).join(' · ');
     text.append(head, meta);
-    button.append(text, status);
+    button.append(lead, text, status);
     return button;
 }
 
@@ -7576,8 +7746,9 @@ function historyView(card, name) {
                     state.scroll = dialog._sheet ? dialog._sheet.scrollTop : 0;
                     dialog.show(historyDetail(card, name, state, run.timestamp));
                 });
+                // M12: the date leads, the kind of run comes second with area and time.
                 const status = integrationState(hass, 'status', run.entry.status);
-                return runLine(button, [runDateText(hass, run.timestamp), status].filter(Boolean).join(' · '), runFacts(hass, run), runStatus(hass, run.level));
+                return runLine(button, runDateText(hass, run.timestamp), [status, ...runFacts(hass, run)], runStatus(hass, run.level));
             };
             const done = new Set();
             for (const run of runs) {
@@ -7599,11 +7770,9 @@ function historyView(card, name) {
                 head.setAttribute('aria-expanded', String(open));
                 const s = historySums(members, hass);
                 const worst = members.reduce((w, r) => (RUN_LEVEL_ORDER.indexOf(r.level) > RUN_LEVEL_ORDER.indexOf(w) ? r.level : w), 'done');
-                runLine(head, runDateText(hass, members.at(-1).timestamp) + ' · ' + translate(hass, 'gruppeTitel'),
-                    [runsText(hass, s.count), kind.cruising ? '' : s.areaText, s.timeText], runStatus(hass, worst));
-                const chevron = BuschUI.ha.icon(open ? 'mdi:chevron-up' : 'mdi:chevron-down');
-                chevron.setAttribute('aria-hidden', 'true');
-                head.insertBefore(chevron, head.firstChild);
+                runLine(head, runDateText(hass, members.at(-1).timestamp),
+                    [translate(hass, 'gruppeTitel'), runsText(hass, s.count), kind.cruising ? '' : s.areaText, s.timeText], runStatus(hass, worst),
+                    open ? 'mdi:chevron-up' : 'mdi:chevron-down');
                 head.addEventListener('click', () => toggle(run.group, !open));
                 head.addEventListener('keydown', (event) => {
                     const want = event.key === '+' ? true : event.key === '-' ? false : null;
@@ -9707,7 +9876,8 @@ ha-card {
 .controls .ctl {
     flex: 1 1 0;
     justify-content: center;
-    min-width: 44px;
+    /* M2: a bar word is never shortened; without room the bar wraps once (data-wrap). */
+    min-width: max-content;
     min-height: 48px;
     border-radius: var(--ha-card-border-radius, 12px);
 }
@@ -9793,8 +9963,8 @@ ha-card {
 }
 .ctl-text {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
+    text-overflow: clip;
     white-space: nowrap;
 }
 .controls .ctl ha-icon {
@@ -9807,6 +9977,29 @@ ha-card {
 }
 :host(:not([data-width=wide])) .controls[data-many] .ctl[data-variant=secondary] ha-icon {
     display: none;
+}
+/* M2 (Buschcheck): at most two rows: the main action full width, the others below, equal. */
+.controls[data-wrap] {
+    flex-wrap: wrap;
+}
+.controls[data-wrap] > .ctl:first-child {
+    flex: 1 0 100%;
+}
+.controls[data-wrap] > .ctl:not(:first-child) {
+    flex: 1 1 0;
+}
+.controls[data-wrap] .dock {
+    order: 1;
+}
+/* M2: a soft fade above the sticky bar says that the panel scrolls on. */
+:host(:not([data-width=wide])) .controls::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    bottom: 100%;
+    height: var(--ha-space-4, 16px);
+    background: linear-gradient(to top, var(--ha-card-background, var(--card-background-color, #ffffff)), transparent);
+    pointer-events: none;
 }
 `;
 
@@ -9868,8 +10061,39 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 .sheet[data-kind=confirm] {
     width: min(320px, 100%);
 }
+/* M11 (Buschcheck): on phones a confirmation is a bottom sheet, at least 90 % high (ui-regeln Regel 2),
+   its buttons fixed at the bottom, full width; the scrim above it does not close it (R04). */
 @media (max-width: 449.98px), (max-height: 499.98px) {
-    .sheet[data-kind=confirm] { width: 100%; }
+    .sheet[data-kind=confirm] {
+        width: 100%;
+        height: auto;
+        min-height: 90%;
+        align-self: flex-end;
+        border-radius: 16px 16px 0 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .sheet[data-kind=confirm] .head { border-radius: 16px 16px 0 0; }
+    .sheet[data-kind=confirm] > .body {
+        flex: 1 0 auto;
+        display: flex;
+        flex-direction: column;
+    }
+    .sheet[data-kind=confirm] .actions {
+        position: sticky;
+        bottom: -16px;
+        z-index: 2;
+        margin: 0 -16px -16px;
+        margin-top: auto;
+        padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+        flex-direction: column;
+        border-top: 1px solid var(--divider-color, #e0e0e0);
+        background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    }
+    .sheet[data-kind=confirm] .actions .busch-ui-action {
+        width: 100%;
+        min-height: 48px;
+    }
 }
 .actions {
     display: flex;
@@ -10147,6 +10371,27 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
     white-space: normal;
     overflow-wrap: anywhere;
 }
+/* M13 (Buschcheck): room name bold, the labelled values below, a chevron at the end, a pressed state. */
+.room-words {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.room-name {
+    font-weight: var(--ha-font-weight-medium, 500);
+}
+.room-values {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+}
+.menu-item[data-room] .room-chevron {
+    order: 1;
+    margin-inline-start: auto;
+    color: var(--secondary-text-color, #727272);
+}
+.menu-item[data-room]:active {
+    background: var(--secondary-background-color, #f5f5f5);
+}
 .manage-start {
     flex: 1 1 10em;
     min-width: 0;
@@ -10307,12 +10552,14 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
     flex-direction: column;
 }
 .history-members {
-    padding-inline-start: var(--ha-space-6, 24px);
+    padding-inline-start: 0;
 }
+/* M12 (Buschcheck): a fixed 40 px symbol column, the text, the status chip; every title starts at the same x. */
 .history-run {
-    display: flex;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--ha-space-3, 12px);
+    column-gap: var(--ha-space-3, 12px);
     width: 100%;
     min-height: 48px;
     padding: var(--ha-space-2, 8px) var(--ha-space-1, 4px);
@@ -10331,11 +10578,24 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
     outline: 2px solid var(--primary-color, #03a9f4);
     outline-offset: -2px;
 }
-.history-run > ha-icon {
-    flex: none;
+.run-lead {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    align-self: stretch;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    color: var(--secondary-text-color, #727272);
+}
+.history-members .run-lead::before {
+    content: '';
+    align-self: stretch;
+    width: 2px;
+    background: var(--divider-color, rgba(0, 0, 0, 0.12));
 }
 .run-text {
-    flex: 1 1 auto;
+    grid-column: 2;
     min-width: 0;
     display: flex;
     flex-direction: column;
@@ -10349,7 +10609,8 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
     font-size: var(--ha-font-size-s, 14px);
 }
 .run-status {
-    flex: none;
+    grid-column: 3;
+    white-space: nowrap;
     display: inline-flex;
     align-items: center;
     gap: var(--ha-space-1, 4px);
@@ -10364,6 +10625,17 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 }
 .run-status span {
     color: var(--primary-text-color, #212121);
+}
+/* M12: on a phone the chip goes under the text, so it never pushes the title into two lines. */
+@media (max-width: 449.98px) {
+    .history-run {
+        grid-template-columns: 40px minmax(0, 1fr);
+        row-gap: var(--ha-space-1, 4px);
+    }
+    .run-status {
+        grid-column: 2;
+        justify-self: start;
+    }
 }
 .history-head {
     display: flex;
@@ -11358,6 +11630,10 @@ class BuschVacuumCard extends HTMLElement {
         const was = this.getAttribute('data-width') === 'wide';
         const value = width >= (was ? WIDE_MIN - WIDE_SLACK : WIDE_MIN) ? 'wide' : 'narrow';
         if (this.getAttribute('data-width') !== value) this.setAttribute('data-width', value);
+        if (this._barWidth !== width) {
+            this._barWidth = width;
+            this._fitControls();
+        }
     }
 
     _model() {
@@ -11447,7 +11723,9 @@ class BuschVacuumCard extends HTMLElement {
         const kept = new Map(Array.from(this._controls.childNodes, (node) => [node.getAttribute('data-action'), node]));
         const buttons = names.map((name) => {
             // #1002: the primary start says what it cleans (CORE-07).
-            const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
+            // M2: while a task runs the return button says just "Dock"; its name stays "Return to dock".
+            const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, name === 'return' ? 'zurueckZumDock' : name);
+            const shown = name === 'return' && !outside ? translate(hass, 'dockKurz') : label;
             const offline = hass.connected === false; // M18: every command
             const robotGone = name === 'start' && robotOffline(model); // M15: the start
             const blocked = offline || robotGone || (name === 'start' && !ready.ok);
@@ -11457,7 +11735,7 @@ class BuschVacuumCard extends HTMLElement {
             // #1002: the words in their own box, so a narrow bar shortens them instead of cutting the symbol.
             const words = old ? old.querySelector('.ctl-text') : document.createElement('span');
             words.className = 'ctl-text';
-            words.textContent = label;
+            words.textContent = shown;
             if (!old) button.appendChild(words);
             if (blocked) button.setAttribute('aria-describedby', offline ? 'offline-hint' : robotGone ? 'robot-offline' : 'task-hint');
             else button.removeAttribute('aria-describedby');
@@ -11480,6 +11758,19 @@ class BuschVacuumCard extends HTMLElement {
         // #1002: with three or more buttons the station shrinks to its symbol (name stays in aria-label).
         if (buttons.length > 2) this._controls.setAttribute('data-many', '');
         else this._controls.removeAttribute('data-many');
+        const fit = buttons.map((node) => node.getAttribute('data-action') + ':' + node.textContent).join('|') + '@' + this._barWidth;
+        if (fit !== this._fitKey) {
+            this._fitKey = fit;
+            this._fitControls();
+        }
+    }
+
+    /** M2: measured, not guessed: the bar wraps (data-wrap) only when its words do not fit in one row. */
+    _fitControls() {
+        const bar = this._controls;
+        if (!bar) return;
+        bar.removeAttribute('data-wrap');
+        if (bar.childNodes.length > 1 && bar.scrollWidth > bar.clientWidth + 1) bar.setAttribute('data-wrap', '');
     }
 
     _openDialog(view) {
@@ -18100,6 +18391,7 @@ BuschVacuumCard.__internals = {
     dockStatus,
     settingState,
     settingRow,
+    optionWord,
     MODULE_VIEWS,
     VIEW_IDS,
     ROOM_KEYS,

@@ -505,3 +505,45 @@ test('HIS-03 Cruising: Liste ohne Flächensumme, Detail mit cruising=1, Dauer/Ar
   const run = k.I.historyRuns(k.haus.states['sensor.robo_cruising_history'])[0];
   assert.match(k.I.historyUrl(k.haus.states['camera.robo_map'], run, { kind: 'cruising_history' }), /&cruising=1&info=0$/);
 });
+
+// ── M12 (Buschcheck 17.11.2026, W2): Verlaufsliste fluchtet ──
+test('M12 HIS-01 Liste: jede Zeile hat vorn die feste Symbolspalte, Titel = Datum, Typ in der Zeile darunter', () => {
+  const k = aufbau('voll', { haus: mitTexten });
+  oeffne(k);
+  const kopf = $d(k.u, '[data-group="1794228271"]');
+  kopf.click();
+  const zeilen = $$d(k.u, '.history-run');
+  assert.ok(zeilen.length > 5);
+  for (const z of zeilen) {
+    const erstes = z.childNodes[0];
+    assert.ok(erstes.className === 'run-lead', 'Symbolspalte zuerst: ' + z.getAttribute('data-run'));
+    assert.equal(erstes.getAttribute('aria-hidden'), 'true');
+    assert.ok(z.childNodes[1].className === 'run-text', 'Text immer an zweiter Stelle, also gleiches x');
+  }
+  const offenerKopf = $d(k.u, '[data-group="1794228271"]');
+  assert.equal(offenerKopf.querySelector('.run-lead').querySelector('ha-icon').getAttribute('icon'), 'mdi:chevron-up', 'Chevron in der Spalte');
+  const mitglied = $d(k.u, '[data-run="1794228429"]');
+  assert.equal(mitglied.querySelector('.run-lead').querySelector('ha-icon'), null, 'Mitglied: Linie per CSS statt Einrückung');
+  const einzel = $d(k.u, '[data-run="1794047923"]');
+  assert.equal(einzel.querySelector('.run-lead').querySelector('ha-icon'), null, 'Einzellauf: leerer Platzhalter');
+  const titel = mitglied.querySelector('.run-title').textContent;
+  assert.match(titel, /09\.11\./);
+  assert.doesNotMatch(titel, /Reinigen|·/, 'Titel nur Datum (primär)');
+  assert.match(mitglied.querySelector('.run-meta').textContent, /^Reinigen · 24 m² · 53 min$/, 'Typ sekundär vor Fläche und Dauer');
+  assert.doesNotMatch(offenerKopf.querySelector('.run-title').textContent, /·/, 'Gruppentitel nur Datum');
+  assert.match(offenerKopf.querySelector('.run-meta').textContent, /^Reinigung \+ Nachreinigung · /);
+});
+
+test('M12 CSS: Raster mit 40-px-Symbolspalte, keine Einrückung der Gruppe, Chip schmal unter dem Titel', () => {
+  const { DIALOG_STYLES } = aufbau().I;
+  const regel = (sel) => { const i = DIALOG_STYLES.indexOf('\n' + sel + ' {'); return i < 0 ? null : DIALOG_STYLES.slice(i, DIALOG_STYLES.indexOf('}', i)); };
+  assert.match(regel('.history-run'), /display: grid;[^]*grid-template-columns: 40px minmax\(0, 1fr\) auto;/);
+  assert.match(regel('.run-lead'), /grid-column: 1;[^]*width: 40px;/);
+  assert.match(regel('.history-members .run-lead::before'), /width: 2px;[^]*background: var\(--divider-color/, 'Gruppe als Linie in der Spalte');
+  assert.match(DIALOG_STYLES, /\n\.history-members \{\n    padding-inline-start: 0;/, 'Mitglieder ohne Einrückung, die Spalte zeigt die Gruppe');
+  assert.match(regel('.run-status'), /white-space: nowrap;/);
+  const i = DIALOG_STYLES.indexOf('/* M12: on a phone');
+  assert.ok(i > 0);
+  const schmal = DIALOG_STYLES.slice(i, DIALOG_STYLES.indexOf('\n}\n', i));
+  assert.match(schmal, /@media \(max-width: 449\.98px\)[^]*\.history-run \{[^}]*grid-template-columns: 40px minmax\(0, 1fr\);[^]*\.run-status \{[^}]*grid-column: 2;/);
+});

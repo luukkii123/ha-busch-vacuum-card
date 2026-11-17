@@ -249,3 +249,55 @@ test('CORE-18 hidden_card_objects gelten im neuen Aufbau in beiden Breiten', () 
     assert.equal(sr.querySelectorAll('.task').length, 0, breite + ' Aufgabenwahl');
   }
 });
+
+// ── M2 (Buschcheck 17.11.2026, F1/W5): Aktionsleiste kürzt nie, bricht höchstens einmal um ──
+const { sauger: saugerMit } = require('./hilfen.js');
+const stil = (css, sel) => { const i = css.indexOf('\n' + sel + ' {'); return i < 0 ? null : css.slice(i + sel.length + 3, css.indexOf('}', i)); };
+function leiste(zustand = 'cleaning', breite = 390) {
+  const u = umgebung();
+  const beobachter = [];
+  u.kontext.ResizeObserver = class { constructor(fn) { this.fn = fn; this.ziele = []; beobachter.push(this); } observe(el) { this.ziele.push(el); } disconnect() { this.ziele = []; } };
+  const haus = hausAus('voll');
+  haus.states = Object.assign({}, haus.states, saugerMit(haus, {}, zustand));
+  const k = neueKarte(u, haus);
+  const setze = (w) => { for (const b of beobachter) if (b.ziele.includes(k)) b.fn([{ target: k, contentRect: { width: w, height: 800 } }]); };
+  setze(breite);
+  return { u, haus, karte: k, setze, bar: k.shadowRoot.querySelector('.controls') };
+}
+const sichtbar = (b) => { const t = b.querySelector('.ctl-text'); return t ? t.textContent : b.textContent; };
+
+test('M2 Aktionsleiste beim Reinigen: kurze Wörter „Pause/Stopp/Dock“, „Zurück zum Dock“ als Name', () => {
+  const { karte: k } = leiste('cleaning');
+  const knoepfe = k.shadowRoot.querySelectorAll('.ctl').filter((b) => ['pause', 'stop', 'return'].includes(b.getAttribute('data-action')));
+  assert.deepEqual(knoepfe.map(sichtbar), ['Pause', 'Stopp', 'Dock']);
+  assert.equal(knopf(k, 'return').getAttribute('aria-label'), 'Zurück zum Dock');
+  for (const b of knoepfe) assert.ok(b.querySelector('ha-icon'), 'Wort und Symbol, kein reiner Symbolknopf');
+  const draussen = leiste('idle');
+  draussen.haus.states = Object.assign({}, draussen.haus.states, saugerMit(draussen.haus, { docked: false }, 'idle'));
+  draussen.karte.hass = draussen.haus.hass();
+  assert.equal(sichtbar(knopf(draussen.karte, 'return')), 'Zurück zum Dock', 'außerhalb des Docks bleibt der volle Primärtext');
+});
+
+test('M2 CSS: Leistenknöpfe nie mit „…“, Mindestbreite nach Inhalt, Umbruch nur mit data-wrap', () => {
+  const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  assert.match(stil(CARD_STYLES, '.controls .ctl'), /min-width: max-content;/);
+  assert.match(stil(CARD_STYLES, '.ctl-text'), /overflow: visible;[^]*text-overflow: clip;/);
+  assert.match(stil(CARD_STYLES, '.controls[data-wrap]'), /flex-wrap: wrap;/);
+  assert.match(stil(CARD_STYLES, '.controls[data-wrap] > .ctl:first-child'), /flex: 1 0 100%;/, 'Hauptaktion volle Breite');
+  assert.match(stil(CARD_STYLES, '.controls[data-wrap] > .ctl:not(:first-child)'), /flex: 1 1 0;/, 'Nebenaktionen darunter gleich breit');
+  assert.match(stil(CARD_STYLES, '.controls[data-wrap] .dock'), /order: 1;/, 'Station hinten in der zweiten Reihe');
+  assert.match(stil(CARD_STYLES, ':host(:not([data-width=wide])) .controls::before'), /linear-gradient\(to top,[^]*pointer-events: none;/, 'weicher Verlauf als Scroll-Hinweis');
+});
+
+test('M2 Umbruch nach Messung: passt die Reihe nicht, data-wrap; passt sie wieder, keiner', () => {
+  const { bar, setze } = leiste('cleaning', 390);
+  assert.equal(bar.hasAttribute('data-wrap'), false, 'ohne Maße kein Umbruch');
+  let breit = 420;
+  Object.defineProperty(bar, 'scrollWidth', { configurable: true, get: () => breit });
+  Object.defineProperty(bar, 'clientWidth', { configurable: true, get: () => 358 });
+  setze(320);
+  assert.equal(bar.hasAttribute('data-wrap'), true, 'Inhalt breiter als die Leiste → zwei Reihen');
+  breit = 300;
+  setze(1280);
+  assert.equal(bar.hasAttribute('data-wrap'), false, 'genug Platz → eine Reihe');
+});
