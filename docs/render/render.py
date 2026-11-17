@@ -67,7 +67,9 @@ Usage:
     the time per area, "ruheUeberschritten" every readiness wait that ran out.
 """
 
+import functools
 import http.server
+import inspect
 import json
 import math
 import socketserver
@@ -134,6 +136,10 @@ try:
 except ImportError:
     REGELN_DA = False
     THEMA_CSS = ""
+# M22 (#1163): regeln.py takes warten= (called instead of its fixed waits); an older hacs checkout keeps them.
+REGELN_WARTEN = REGELN_DA and all("warten" in inspect.signature(f).parameters for f in (selbsttest, messe_popup, lauf_breiten))
+if REGELN_DA:
+    _SELBSTTEST, _MESSE_POPUP, _LAUF_BREITEN = selbsttest, messe_popup, lauf_breiten
 
 # Inventory IDs of the render checks (release Task 1, scripts/vacuum-inventar-pruefen.py): by name start.
 RENDER_IDS = [
@@ -655,6 +661,8 @@ FRAMES_JS = "(n) => new Promise((r) => { const f = (k) => (k ? requestAnimationF
 
 # Conditions for ruhe(wann=...): JS expressions (c, d, sr, m in scope, see RUHE_JS).
 WANN_DIALOG_ZU = "!d"
+# regeln.py's waits: rest, and no close pending on the popstate it waits for (close() -> history.go -> _dismiss).
+WANN_KEIN_SCHLIESSEN = "!d || !d._closing"
 WANN_AUFRUF = "window.__serviceCalls.length > 0"
 # Remote: a stop and its repeat after stopRepeatMs (the controller always sends both) are the last two steps.
 WANN_STOPP = ("(() => { const s = window.__serviceCalls.filter((x) => x.service === 'vacuum_remote_control_move_step');"
@@ -2363,6 +2371,13 @@ def bereich_regeln(k):
         report["uiRegeln"] = {"kein_urteil": "regeln.py nicht gefunden — /work war nicht gemountet"}
     else:
         r = report["uiRegeln"]
+        # M22 (#1163): regeln.py waits for rest (ruhe) instead of its fixed 150-400 ms where it can.
+        if REGELN_WARTEN:
+            warten = functools.partial(ruhe, WANN_KEIN_SCHLIESSEN)
+            selbsttest, messe_popup, lauf_breiten = (functools.partial(f, warten=warten) for f in (_SELBSTTEST, _MESSE_POPUP, _LAUF_BREITEN))
+        else:
+            selbsttest, messe_popup, lauf_breiten = _SELBSTTEST, _MESSE_POPUP, _LAUF_BREITEN
+        r["warten"] = "ruhe" if REGELN_WARTEN else "fest (regeln.py ohne warten=)"
         page.set_viewport_size({"width": 620, "height": 1200})
         theme("light")  # as the full run leaves it after "sicherung" (so --nur regeln measures the same)
         build("error")
