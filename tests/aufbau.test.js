@@ -341,6 +341,7 @@ test('M31 CSS: zwei Stile, Textknopf ohne Unterstreichung mit 44 px, „+ N weit
   assert.match(text, /text-decoration: none;/);
   assert.match(text, /min-height: 44px;/);
   assert.match(text, /background: transparent;/);
+  assert.match(text, /font-size: 13px;/, 'Auswahlwerkzeuge 13 px unter der 14-px-Zeile; --ha-font-size-s ist in HA 12 px');
   const pille = regel(':host .pill-action');
   assert.ok(pille, 'Pillen-Regel');
   assert.match(pille, /border-radius: 22px;/);

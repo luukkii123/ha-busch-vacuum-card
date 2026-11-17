@@ -10072,7 +10072,8 @@ ha-card {
     padding: 0 var(--ha-space-2, 8px);
     background: transparent;
     color: var(--primary-text-color, #212121);
-    font-size: var(--ha-font-size-s, 13px);
+    /* TASK-02: 13 px below the 14 px count line; HA sets --ha-font-size-s to 12 px. */
+    font-size: 13px;
     font-weight: var(--ha-font-weight-medium, 500);
     text-decoration: none;
 }
