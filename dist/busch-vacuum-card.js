@@ -338,7 +338,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             left: 'So viel Prozent schneidet die Karte links ab. Vorgabe 0.',
             background_image: 'Eigenes Bild unter der Karte, etwa ein Grundriss; Ecken in Roboter-Millimetern aus der Karteninfo. Vorgabe keines.',
             overlay_image: 'Eigenes Bild über der Karte, unter den Symbolen; Ecken wie beim Hintergrundbild. Vorgabe keines.',
-            url: 'Adresse des Bilds, etwa /local/grundriss.png. Vorgabe leer.',
+            url: 'Adresse des Bilds, etwa /local/grundriss.png; erlaubt sind /local/, /media/, /api/, http(s):// und PNG-, JPEG-, WebP- oder GIF-Daten. Vorgabe leer.',
             x0: 'Linke Bildkante in Roboter-Millimetern. Vorgabe leer.',
             y0: 'Untere Bildkante in Roboter-Millimetern. Vorgabe leer.',
             x1: 'Rechte Bildkante in Roboter-Millimetern. Vorgabe leer.',
@@ -667,6 +667,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             skripte: 'Skripte',
             laeuft: 'läuft',
             skripteFehlen: 'Nicht gefunden: {liste}.',
+            bildFremd: 'Ein Kartenbild liegt auf einem fremden Server ({host}): er sieht jeden Aufruf des Dashboards.',
             verwalten: 'Verwalten',
             shortcutsVerwalten: 'Shortcuts verwalten',
             keineShortcuts: 'Keine Shortcuts auf dem Gerät. Shortcuts legst du in der Dreame-App an; danach hier „Neu laden“.',
@@ -983,7 +984,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             left: 'Percent the map cuts off on the left. Default 0.',
             background_image: 'Own picture below the map, such as a floor plan; corners in robot millimetres from the map info. Default none.',
             overlay_image: 'Own picture above the map, below the icons; corners as for the background image. Default none.',
-            url: 'Address of the picture, such as /local/floorplan.png. Default empty.',
+            url: 'Address of the picture, such as /local/floorplan.png; allowed are /local/, /media/, /api/, http(s):// and PNG, JPEG, WebP or GIF data. Default empty.',
             x0: 'Left picture edge in robot millimetres. Default empty.',
             y0: 'Bottom picture edge in robot millimetres. Default empty.',
             x1: 'Right picture edge in robot millimetres. Default empty.',
@@ -1312,6 +1313,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             skripte: 'Scripts',
             laeuft: 'running',
             skripteFehlen: 'Not found: {liste}.',
+            bildFremd: 'A map picture is on an external server ({host}): it sees every view of the dashboard.',
             verwalten: 'Manage',
             shortcutsVerwalten: 'Manage shortcuts',
             keineShortcuts: 'No shortcuts on the device. Create shortcuts in the Dreame app, then “Reload” here.',
@@ -1610,11 +1612,18 @@ const MAP_CONFIG_DEFAULTS = {
 };
 const MAP_ROTATIONS = [0, 90, 180, 270];
 
+/**
+ * M28: picture URLs by an allow list — paths of this Home Assistant, http(s) and
+ * raster data URLs. Everything else (data:text/html, data:image/svg+xml,
+ * javascript:, //host, relative) is dropped.
+ */
+const PICTURE_URL = /^(?:\/(?:local|media|api)\/|https?:\/\/[^/\s]|data:image\/(?:png|jpeg|webp|gif);base64,)/i;
+
 /** An own picture on the map: a safe URL and its corners in robot mm (values from the map info). */
 function mapPicture(value) {
     if (!value || typeof value !== 'object' || typeof value.url !== 'string') return null;
     const url = value.url.trim();
-    if (!url || /^(?:javascript|vbscript|file|data:text):/i.test(url)) return null;
+    if (!PICTURE_URL.test(url)) return null;
     const corners = ['x0', 'y0', 'x1', 'y1'].map((k) => numberOf(value[k]));
     if (!corners.every(Number.isFinite)) return null;
     return { url, x0: corners[0], y0: corners[1], x1: corners[2], y1: corners[3] };
@@ -12302,6 +12311,19 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
         return hass && hass.states ? scripts.filter((id) => !hass.states[id]).join(', ') : '';
     }
 
+    /** M28: hosts of map pictures on another server than this Home Assistant (each sees every dashboard view). */
+    _foreignPictures() {
+        const own = ownOrigin(this._hass);
+        const hosts = new Set();
+        for (const floor of Object.values((this._config && this._config.map_config) || {})) {
+            for (const key of ['background_image', 'overlay_image']) {
+                const origin = floor && floor[key] && originOf(floor[key].url);
+                if (origin && origin !== own) hosts.add(origin.replace(/^https?:\/\//, ''));
+            }
+        }
+        return [...hosts].join(', ');
+    }
+
     /** Floors of the chosen vacuum (`maps`: id, index, name, custom_name). */
     _maps(hass = this._hass) {
         const id = this._config && this._config.entity;
@@ -12333,6 +12355,7 @@ class BuschVacuumCardEditor extends BuschUI.EditorBase {
             };
             form.computeHelper = (item) => {
                 if (item.name && floor(item.name)) return translate(this._hass, 'stockwerkHelfer');
+                if (item.name === 'url' && this._foreignPictures()) return fieldHelper(this._hass, 'url') + ' ' + translate(this._hass, 'bildFremd', { host: this._foreignPictures() });
                 if (item.name === 'scripts' && this._missingScripts()) return fieldHelper(this._hass, 'scripts') + ' ' + translate(this._hass, 'skripteFehlen', { liste: this._missingScripts() });
                 return item.name ? fieldHelper(this._hass, item.name) : '';
             };

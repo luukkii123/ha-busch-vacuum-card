@@ -127,7 +127,7 @@ Home Assistant itself does not check rights per service call.
 | `icon_set` | `busch` | `busch` (own icons) or `material` (`mdi:` icons). |
 | `hidden_objects` | none | Map objects to hide: `rooms`, `cleaning_settings`, `blocked_rooms`, `robot`, `charger`, `station_status`, `router`, `path`, `carpets`, `detected_carpets`, `deleted_carpets`, `furnitures`, `no_go_areas`, `no_mopping_areas`, `virtual_walls`, `passable_thresholds`, `impassable_thresholds`, `ramps`, `curtains`, `predefined_points`, `obstacles`, `stains`, `pets`. |
 | `override_colors` | none | Own colours for `floor`, `wall`, `room`, `carpet`, `no_go`, `no_mop`, `virtual_wall`, `path`, `robot`, `charger`; the same keys under `dark:` apply in the dark scheme. |
-| `map_config` | none | Per floor, keyed `map_<index>` (the floor's index in `maps`): `rotation` (0/90/180/270, display only), `scale`, `opacity`, `object_scale`, `object_opacity`, `font_size` (12), `crop` (`top`/`right`/`bottom`/`left` in percent), `background_image` and `overlay_image` (`url`, `x0`, `y0`, `x1`, `y1` in robot millimetres from *Map info*), `hidden_objects`. |
+| `map_config` | none | Per floor, keyed `map_<index>` (the floor's index in `maps`): `rotation` (0/90/180/270, display only), `scale`, `opacity`, `object_scale`, `object_opacity`, `font_size` (12), `crop` (`top`/`right`/`bottom`/`left` in percent), `background_image` and `overlay_image` (`url`, `x0`, `y0`, `x1`, `y1` in robot millimetres from *Map info*), `hidden_objects`. Picture URLs must start with `/local/`, `/media/`, `/api/` or `http(s)://`, or be PNG, JPEG, WebP or GIF `data:` URLs (base64); `data:image/svg+xml` is not accepted. A picture on another server sees every view of the dashboard. |
 
 ```yaml
 type: custom:busch-vacuum-card

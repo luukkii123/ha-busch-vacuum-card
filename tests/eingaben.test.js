@@ -128,3 +128,41 @@ test('M29 Datei-URL: eigener Host ohne Zusatzschritt; fremder Host braucht eine 
   assert.deepEqual(roh(f.haus.rufe).map((r) => [r.service, r.data.file_url]).filter((r) => r[0] === 'vacuum_restore_map_from_file'),
     [['vacuum_restore_map_from_file', 'https://fremd.invalid/karte.mb.tbz2']]);
 });
+
+// ── M28 Bild-URLs per Positivliste ──────────────────────────────────────────
+
+const BILD = (url) => ({ url, x0: 0, y0: 0, x1: 1000, y1: 1000 });
+const bildAus = (I, url) => I.normalizeConfig({ entity: 'vacuum.robo', map_config: { map_1: { background_image: BILD(url), overlay_image: BILD(url) } } }).map_config.map_1;
+
+test('M28 Bild-URL erlaubt: /local/, /media/, /api/, http(s)://, data:image/png|jpeg|webp|gif;base64', () => {
+  const I = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  for (const url of ['/local/grundriss.png', '/local/oben.svg', '/media/local/plan.jpg', '/api/image/serve/abc/original', 'https://bilder.invalid/plan.png', 'http://ha.invalid:8123/local/plan.png',
+    'data:image/png;base64,iVBORw0KGgo=', 'data:image/jpeg;base64,/9j/4AAQ', 'data:image/webp;base64,UklGRg==', 'data:image/gif;base64,R0lGODlh']) {
+    const m = bildAus(I, url);
+    assert.equal(m.background_image && m.background_image.url, url, url);
+    assert.equal(m.overlay_image && m.overlay_image.url, url, url);
+  }
+});
+
+test('M28 Bild-URL abgelehnt: data:text/html, data:image/svg+xml, javascript (jede Schreibung), //fremd, relative und andere Schemata', () => {
+  const I = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  for (const url of ['data:text/html,x', 'data:text/html;base64,PHNjcmlwdD4=', 'data:image/svg+xml;base64,PHN2Zz4=', 'data:image/svg+xml,<svg onload=alert(1)>', 'data:image/png,roh',
+    'JAVASCRIPT:x', 'javascript:alert(1)', ' vbscript:x', 'file:///etc/passwd', '//evil.invalid/x.png', 'bild.png', '../local/x.png', 'ftp://x.invalid/a.png', 'blob:http://ha/1', '/config/x.png']) {
+    const m = bildAus(I, url);
+    assert.equal(m.background_image, undefined, url);
+    assert.equal(m.overlay_image, undefined, url);
+  }
+});
+
+test('M28 Editor: fremder Bildserver steht im Hinweis des URL-Felds mit Host; eigene Adressen ohne Hinweis', () => {
+  const u = neueUmgebung();
+  const hinweis = (url) => {
+    const ed = u.document.createElement('busch-vacuum-card-editor');
+    ed.setConfig({ type: 'custom:busch-vacuum-card', entity: 'vacuum.robo', map_config: { map_1: { background_image: BILD(url) } } });
+    ed.hass = hausAus('voll', { basis: EIGEN }).hass();
+    u.body.appendChild(ed);
+    return ed.shadowRoot.querySelector('ha-form').computeHelper({ name: 'url' });
+  };
+  assert.match(hinweis('https://bilder.invalid/plan.png'), /fremden Server.*bilder\.invalid.*jeden Aufruf/);
+  for (const url of ['/local/plan.png', EIGEN + '/local/plan.png', 'data:image/png;base64,iVBORw0KGgo=']) assert.doesNotMatch(hinweis(url), /fremden Server/, url);
+});
