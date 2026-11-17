@@ -611,7 +611,7 @@ test('BAK-02 Aus Datei-URL wiederherstellen (Erweitert): Pflichtfeld mit Inlinep
   feld2.value = 'http://ha.local:8123/local/karte.mb.tbz2';
   feld2.dispatchEvent({ type: 'input' });
   // Dirty-Schutz: Escape fragt (Regel 2, R10), der Entwurf bleibt.
-  d._goBack();
+  d.goBack();
   assert.match(text(k), /Ungespeicherte Änderungen|ungespeicherte Änderung/);
   knopf(k, 'keep').click();
   k.u.zurueck();

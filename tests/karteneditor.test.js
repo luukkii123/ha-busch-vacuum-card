@@ -1107,7 +1107,7 @@ test('EDI-03 Zusammenführen: genau zwei Räume (Fläche/Chip), Nachbarschaft au
 
 // ── Checkpoint B (nach Task 3–6): Sicherheitsrahmen deckt jede Speicherung ──
 
-/** Quelltext ohne Kommentare; Zeichenketten bleiben (Dienstnamen sind Zeichenketten). */
+/** Quelltext ohne Kommentare; Zeichenketten bleiben (Dienstnamen sind Zeichenketten). '/" enden spätestens am Zeilenende (M9: ein Anführungszeichen in einem Regex verschob sonst den Rest). */
 function ohneKommentare(text) {
   let aus = '', i = 0;
   while (i < text.length) {
@@ -1116,7 +1116,7 @@ function ohneKommentare(text) {
     if (c === '/' && n === '*') { const e = text.indexOf('*/', i + 2); aus += ' '.repeat(e + 2 - i); i = e + 2; continue; }
     if (c === "'" || c === '"' || c === '`') {
       let j = i + 1;
-      while (j < text.length && text[j] !== c) j += text[j] === '\\' ? 2 : 1;
+      while (j < text.length && text[j] !== c && !(c !== '`' && text[j] === '\n')) j += text[j] === '\\' ? 2 : 1;
       aus += text.slice(i, j + 1); i = j + 1; continue;
     }
     aus += c; i++;
@@ -1130,7 +1130,7 @@ function spanne(text, kopf) {
   let i = text.indexOf('{', start + kopf.length - 1), tiefe = 0;
   for (; i < text.length; i++) {
     const c = text[i];
-    if (c === "'" || c === '"' || c === '`') { let j = i + 1; while (text[j] !== c) j += text[j] === '\\' ? 2 : 1; i = j; continue; }
+    if (c === "'" || c === '"' || c === '`') { let j = i + 1; while (j < text.length && text[j] !== c && !(c !== '`' && text[j] === '\n')) j += text[j] === '\\' ? 2 : 1; i = j; continue; }
     if (c === '{') tiefe++;
     if (c === '}' && --tiefe === 0) return [start, i + 1];
   }

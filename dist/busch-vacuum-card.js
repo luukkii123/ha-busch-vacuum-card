@@ -2501,7 +2501,7 @@ function optionWord(hass, raw) {
 }
 
 function rerender(card) {
-    if (card._dialog) card._dialog._render();
+    if (card._dialog) card._dialog.render();
 }
 
 function settleWrite(card, key) {
@@ -2640,11 +2640,11 @@ function confirmSetting(card, key, value) {
             body.appendChild(noteLine(translate(h, 'frage_' + key, { wert: optionLabel(h, key, value) })));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const cancel = BuschUI.action({ label: translate(h, 'abbrechen'), text: translate(h, 'abbrechen'), onClick: () => dialog._goBack() });
+            const cancel = BuschUI.action({ label: translate(h, 'abbrechen'), text: translate(h, 'abbrechen'), onClick: () => dialog.goBack() });
             cancel.setAttribute('data-action', 'cancel');
             const go = BuschUI.action({ label: translate(h, 'aendern'), text: translate(h, 'aendern'), variant: 'primary', onClick: () => {
                 writeSetting(card, key, value);
-                dialog._goBack();
+                dialog.goBack();
             } });
             go.setAttribute('data-action', 'confirm');
             actions.append(cancel, go);
@@ -5102,7 +5102,7 @@ class MapView {
             id: 'obstacle',
             kind: 'menu',
             watch: () => [],
-            update: () => { if (owner && what() !== shown) owner._render(); },
+            update: () => { if (owner && what() !== shown) owner.render(); },
             render: (body, hass, dialog) => {
                 owner = dialog;
                 shown = what();
@@ -5192,7 +5192,7 @@ class MapView {
             clearTimeout(pending.timer);
             this._ignorePending = null;
             if (text) this._ignoreNote = { id, text };
-            if (this.card._dialog) this.card._dialog._render();
+            if (this.card._dialog) this.card._dialog.render();
         };
         pending.timer = setTimeout(() => {
             const cam = this.hass.states[this._cameraId];
@@ -5202,7 +5202,7 @@ class MapView {
         this._ignorePending = pending;
         callDevice(this.hass, 'dreame_vacuum', 'vacuum_set_obstacle_ignore', { entity_id: this.card._opts.entity, x: item.x, y: item.y, obstacle_ignored: wanted })
             .catch((error) => done(translate(this.hass, 'befehlFehler', { name, grund: errorText(error) })));
-        if (this.card._dialog) this.card._dialog._render();
+        if (this.card._dialog) this.card._dialog.render();
     }
 
     // ── Floors (MAP-07) ───────────────────────────────────────────────────
@@ -5876,7 +5876,7 @@ function dndForm(card, id) {
             const dirty = JSON.stringify(draft) !== JSON.stringify(initial());
             if (dirty) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
             const errors = checked ? dndErrors(draft) : {};
-            const redraw = () => dialog._render();
+            const redraw = () => dialog.render();
             for (const name of ['start', 'end']) {
                 const input = document.createElement('input');
                 input.setAttribute('type', 'time');
@@ -5937,7 +5937,7 @@ function dndDelete(card, task) {
             body.appendChild(noteLine(translate(hass, 'zeitraumLoeschenFrage', { zeitraum: periodText(hass, task) })));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog.goBack() });
             cancel.setAttribute('data-action', 'cancel');
             const go = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'destructive', onClick: () => {
                 callAction(card, 'delete_dnd_task', String(task.id), { track: 'dnd_task', label: translate(hass, 'gruppe_dnd') });
@@ -6011,13 +6011,13 @@ function resetConfirm(card, name, label, percent) {
             body.appendChild(noteLine(translate(hass, 'zuruecksetzenFrage', { name: label, prozent: percent })));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog.goBack() });
             cancel.setAttribute('data-action', 'cancel');
             const go = BuschUI.action({ label: translate(hass, 'zuruecksetzen'), text: translate(hass, 'zuruecksetzen'), variant: 'destructive', onClick: () => {
                 const consumable = CONSUMABLES[name];
                 if (consumable === null) callAction(card, 'reset_track_cleaning', undefined, { track: 'reset:' + name, label });
                 else trackWrite(card, 'reset:' + name, { label, call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_reset_consumable', { entity_id: card._opts.entity, consumable }) });
-                dialog._goBack();
+                dialog.goBack();
             } });
             go.setAttribute('data-action', 'confirm');
             actions.append(cancel, go);
@@ -6170,7 +6170,7 @@ function scheduleForm(card, id) {
             card._drafts.set(draftKey, draft);
             const dirty = JSON.stringify(draft) !== JSON.stringify(initial());
             if (dirty) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
-            const redraw = () => dialog._render();
+            const redraw = () => dialog.render();
             const input = document.createElement('input');
             input.setAttribute('type', 'time');
             input.setAttribute('aria-required', 'true');
@@ -6230,7 +6230,7 @@ function scheduleDelete(card, task) {
             body.appendChild(noteLine(translate(hass, 'planLoeschenFrage', { zeit: timeText(hass, task.time), tage: scheduleDays(hass, task) })));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog.goBack() });
             cancel.setAttribute('data-action', 'cancel');
             const go = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'destructive', onClick: () => {
                 callAction(card, 'delete_scheduled_task', String(task.id), { track: 'schedule', label: translate(hass, 'gruppe_schedule') });
@@ -6390,7 +6390,7 @@ function voicePackView(card) {
             actions.className = 'actions';
             const next = BuschUI.action({ label: translate(hass, 'weiter'), text: translate(hass, 'weiter'), variant: 'primary', onClick: () => {
                 checked = true;
-                if (Object.keys(voicePackErrors(draft, card._hass)).length) dialog._render();
+                if (Object.keys(voicePackErrors(draft, card._hass)).length) dialog.render();
                 else dialog.show(voicePackConfirm(card, draft));
             } });
             next.setAttribute('data-action', 'submit');
@@ -6415,7 +6415,7 @@ function voicePackConfirm(card, draft) {
             if (failed) body.appendChild(noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error'));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog.goBack() });
             cancel.setAttribute('data-action', 'cancel');
             const go = BuschUI.action({ label: translate(hass, 'installieren'), text: translate(hass, busy ? 'speichert' : 'installieren'), variant: 'primary', disabled: busy, onClick: () => {
                 trackWrite(card, 'voice_pack', {
@@ -6869,7 +6869,7 @@ function applyAllView(card, sourceId) {
             }
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const close = BuschUI.action({ label: translate(hass, run ? 'zurueck' : 'abbrechen'), text: translate(hass, run ? 'zurueck' : 'abbrechen'), disabled: !!run && !run.finished, onClick: () => dialog._goBack() });
+            const close = BuschUI.action({ label: translate(hass, run ? 'zurueck' : 'abbrechen'), text: translate(hass, run ? 'zurueck' : 'abbrechen'), disabled: !!run && !run.finished, onClick: () => dialog.goBack() });
             close.setAttribute('data-action', 'cancel');
             actions.appendChild(close);
             if (!run) {
@@ -6879,7 +6879,7 @@ function applyAllView(card, sourceId) {
                     for (const id of targets) {
                         const data = roomPayload(model, rooms[id], values);
                         if (!data) { run.error = translate(hass, 'raumUnvollstaendig'); break; }
-                        dialog._render();
+                        dialog.render();
                         try {
                             await callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, data));
                             run.done.push(id);
@@ -6889,7 +6889,7 @@ function applyAllView(card, sourceId) {
                         }
                     }
                     run.finished = true;
-                    if (dialog.isConnected) dialog._render();
+                    if (dialog.isConnected) dialog.render();
                 } });
                 go.setAttribute('data-action', 'confirm');
                 actions.appendChild(go);
@@ -6956,7 +6956,7 @@ function sequenceView(card) {
             const lock = roomLock(model);
             const name = (id) => roomName(rooms[id], id);
             const redraw = (focusId) => {
-                dialog._render();
+                dialog.render();
                 const node = focusId && Array.from(dialog.shadowRoot.querySelectorAll('[role="option"]')).find((n) => n.getAttribute('data-room') === focusId);
                 if (node) node.focus();
             };
@@ -7243,11 +7243,11 @@ function stationConfirm(card, action) {
             body.appendChild(noteLine(translate(h, 'folge_' + action.name)));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const cancel = BuschUI.action({ label: translate(h, 'abbrechen'), text: translate(h, 'abbrechen'), onClick: () => dialog._goBack() });
+            const cancel = BuschUI.action({ label: translate(h, 'abbrechen'), text: translate(h, 'abbrechen'), onClick: () => dialog.goBack() });
             cancel.setAttribute('data-action', 'cancel');
             const go = BuschUI.action({ label: translate(h, 'starten'), text: translate(h, 'starten'), variant: 'primary', onClick: () => {
                 runStationAction(card, action);
-                dialog._goBack();
+                dialog.goBack();
             } });
             go.setAttribute('data-action', 'confirm');
             actions.append(cancel, go);
@@ -7364,7 +7364,7 @@ function stationView(card) {
                 const select = (name, focus) => {
                     tab = name;
                     storedTab(storeKey, name);
-                    dialog._render();
+                    dialog.render();
                     const node = focus && dialog.shadowRoot.querySelector('[data-tab="' + name + '"]');
                     if (node) node.focus();
                 };
@@ -7632,7 +7632,7 @@ function shortcutRenameView(card, entry) {
                 trackWrite(card, track, {
                     label: entry.name,
                     call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_rename_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id, shortcut_name: name }),
-                    done: () => { card._drafts.delete(key); dialog._goBack(); }
+                    done: () => { card._drafts.delete(key); dialog.goBack(); }
                 });
             } });
             save.setAttribute('data-action', 'save');
@@ -7666,14 +7666,14 @@ function shortcutDeleteView(card, entry) {
             body.appendChild(noteLine(translate(hass, 'frageShortcutLoeschen', { name: entry.name })));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog.goBack() });
             cancel.setAttribute('data-action', 'cancel');
             const go = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'primary', onClick: () => {
                 trackWrite(card, 'delete:' + entry.id, {
                     label: entry.name,
                     call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_delete_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id })
                 });
-                dialog._goBack();
+                dialog.goBack();
             } });
             go.setAttribute('data-action', 'confirm');
             actions.append(cancel, go);
@@ -7876,7 +7876,7 @@ function historyView(card, name) {
                 if (open === state.open.has(group)) return;
                 if (open) state.open.add(group);
                 else state.open.delete(group);
-                dialog._render();
+                dialog.render();
                 const head = Array.from(dialog.shadowRoot.querySelectorAll('[data-group]')).find((n) => n.getAttribute('data-group') === group);
                 if (head) head.focus();
             };
@@ -7887,7 +7887,7 @@ function historyView(card, name) {
                 button.setAttribute('data-run', String(run.timestamp));
                 button.addEventListener('click', () => {
                     state.back = run.timestamp;
-                    state.scroll = dialog._sheet ? dialog._sheet.scrollTop : 0;
+                    state.scroll = dialog.sheetScroll;
                     dialog.show(historyDetail(card, name, state, run.timestamp));
                 });
                 // M12: the date leads, the kind of run comes second with area and time.
@@ -7946,7 +7946,7 @@ function historyView(card, name) {
                 state.back = null;
                 abortRun(state.detail || { loads: new Map() });
                 requestAnimationFrame(() => {
-                    if (dialog._sheet) dialog._sheet.scrollTop = scroll;
+                    dialog.sheetScroll = scroll;
                     const run = runs.find((r) => r.timestamp === back);
                     const nodes = Array.from(dialog.shadowRoot.querySelectorAll('[data-run], [data-group]'));
                     const node = nodes.find((n) => n.getAttribute('data-run') === String(back)) || (run && run.group && nodes.find((n) => n.getAttribute('data-group') === run.group));
@@ -8159,7 +8159,7 @@ function runMapSection(card, hass, kind, run, load, detail, dialog) {
         list.setAttribute('aria-label', translate(hass, 'laufKarte'));
         const select = (name, focus) => {
             detail.tab = name;
-            dialog._render();
+            dialog.render();
             const node = focus && dialog.shadowRoot.querySelector('[data-tab="' + name + '"]');
             if (node) node.focus();
         };
@@ -8220,7 +8220,7 @@ function runMapSection(card, hass, kind, run, load, detail, dialog) {
         img.setAttribute('alt', alt);
         img.addEventListener('error', () => {
             (detail.failed || (detail.failed = new Set())).add(key);
-            dialog._render();
+            dialog.render();
         });
         stage.appendChild(img);
     } else {
@@ -8236,7 +8236,7 @@ function runMapSection(card, hass, kind, run, load, detail, dialog) {
     tools.className = 'history-zoom';
     const step = (to) => {
         detail.zoom = HISTORY_ZOOMS[Math.max(0, Math.min(HISTORY_ZOOMS.length - 1, to))];
-        dialog._render();
+        dialog.render();
     };
     const at = HISTORY_ZOOMS.indexOf(zoom);
     for (const [action, icon, label, to, off] of [['zoom-out', 'mdi:minus', 'zoomOut', at - 1, at <= 0], ['zoom-fit', 'mdi:fit-to-screen-outline', 'zoomFit', 0, at <= 0],
@@ -8357,11 +8357,11 @@ function recleanConfirm(card, names, all, rooms) {
             body.appendChild(noteLine(translate(hass, all ? 'nachFrageAlle' : 'nachFrageTeil', { raeume: names.join(', ') })));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog._goBack() });
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), onClick: () => dialog.goBack() });
             cancel.setAttribute('data-action', 'cancel');
             const go = BuschUI.action({ label: translate(hass, 'starten'), text: translate(hass, 'starten'), variant: 'primary', onClick: () => {
                 runReclean(card, rooms, all);
-                dialog._goBack();
+                dialog.goBack();
             } });
             go.setAttribute('data-action', 'confirm');
             actions.append(cancel, go);
@@ -8394,7 +8394,7 @@ function recleanSection(card, hass, run, runs, load, detail, dialog) {
         const chip = BuschUI.action({ label: name(id), text: name(id), icon: (rooms[id] && rooms[id].icon) || 'mdi:floor-plan', onClick: () => {
             if (chosen.has(id)) chosen.delete(id);
             else chosen.add(id);
-            dialog._render();
+            dialog.render();
             const again = Array.from(dialog.shadowRoot.querySelectorAll('[data-reclean-room]')).find((n) => n.getAttribute('data-reclean-room') === id);
             if (again) again.focus();
         } });
@@ -8450,7 +8450,7 @@ function historyDetail(card, name, list, ts) {
                 closing = true;
                 dialog.addEventListener('dialog-closed', () => abortRun(detail));
             }
-            const redraw = () => { if (dialog._views[dialog._views.length - 1] === view) dialog._render(); };
+            const redraw = () => { if (dialog.current === view) dialog.render(); };
             const runs = historyRunsOf(card, kind, list, hass);
             const index = runs.findIndex((r) => r.timestamp === current);
             const wrap = document.createElement('div');
@@ -8467,7 +8467,7 @@ function historyDetail(card, name, list, ts) {
                 abortRun(detail);
                 current = runs[to].timestamp;
                 list.back = current;
-                dialog._render();
+                dialog.render();
                 const again = action && dialog.shadowRoot.querySelector('[data-action="' + action + '"]');
                 if (again && !again.disabled) again.focus();
             };
@@ -8513,7 +8513,7 @@ function historyDetail(card, name, list, ts) {
             wrap.appendChild(facts);
             const note = runLoadNote(hass, load, () => {
                 detail.loads.delete(current);
-                dialog._render();
+                dialog.render();
             });
             if (note) wrap.appendChild(note);
 
@@ -11391,7 +11391,7 @@ class BuschVacuumDialog extends HTMLElement {
         this._gesture = false;
         this._composing = false;
         const flush = () => setTimeout(() => {
-            if (this._deferred && !this._holding()) this._render();
+            if (this._deferred && !this._holding()) this.render();
         }, 0);
         this.shadowRoot.addEventListener('pointerdown', () => { this._gesture = true; });
         for (const type of ['pointerup', 'pointercancel']) this.shadowRoot.addEventListener(type, () => { this._gesture = false; flush(); });
@@ -11413,7 +11413,7 @@ class BuschVacuumDialog extends HTMLElement {
             if (event.key !== 'Escape') return;
             event.preventDefault();
             event.stopPropagation();
-            this._goBack();
+            this.goBack();
         };
         this._onFocus = (event) => {
             if (this.isConnected && !event.composedPath().includes(this)) this._focusFirst();
@@ -11421,7 +11421,7 @@ class BuschVacuumDialog extends HTMLElement {
         this._onPop = () => {
             if (this._closing) {
                 this._closing = false;
-                this._dismiss();
+                this.dismiss();
                 return;
             }
             if (!this._popSteps && this._guarded()) {
@@ -11435,11 +11435,11 @@ class BuschVacuumDialog extends HTMLElement {
                 this._popSteps = 0;
                 this._depth = Math.max(0, this._depth - steps);
                 this._leave(this._views.splice(-steps));
-                this._render();
+                this.render();
                 return;
             }
             this._depth = 0;
-            this._dismiss();
+            this.dismiss();
         };
     }
 
@@ -11447,7 +11447,7 @@ class BuschVacuumDialog extends HTMLElement {
         const unchanged = snapshotUnchanged(this._seen, hass);
         this._hass = hass;
         if (!unchanged && this._holding()) this._deferred = true;
-        else if (!unchanged) this._render();
+        else if (!unchanged) this.render();
         // A view with `update` (remote) repaints itself in place on every hass.
         const view = this._views[this._views.length - 1];
         if (view && view.update && this._sheet) view.update(hass);
@@ -11466,7 +11466,7 @@ class BuschVacuumDialog extends HTMLElement {
     show(view) {
         this._views.push(view);
         if (this.isConnected) this._push();
-        this._render();
+        this.render();
         this._focusFirst();
     }
 
@@ -11522,7 +11522,7 @@ class BuschVacuumDialog extends HTMLElement {
     }
 
     /** Escape and the back arrow: one view back, out only from the first. */
-    _goBack() {
+    goBack() {
         if (this._guarded()) return;
         if (this._views.length > 1) {
             this._leave(this._views.slice(-1));
@@ -11531,7 +11531,7 @@ class BuschVacuumDialog extends HTMLElement {
                 return;
             }
             this._views.pop();
-            this._render();
+            this.render();
             return;
         }
         this.close();
@@ -11548,7 +11548,40 @@ class BuschVacuumDialog extends HTMLElement {
             return;
         }
         this._views.splice(-n);
-        this._render();
+        this.render();
+    }
+
+    /** M9: the view on top of the stack, or undefined. */
+    get current() {
+        return this._views[this._views.length - 1];
+    }
+
+    /** M9: the open views, bottom first (a copy; change the stack only through show/back/replaceTop). */
+    get views() {
+        return this._views.slice();
+    }
+
+    /** M9: scroll position of the sheet (0 before it exists); a list view keeps it across a detail view. */
+    get sheetScroll() {
+        return this._sheet ? this._sheet.scrollTop : 0;
+    }
+
+    set sheetScroll(value) {
+        if (this._sheet) this._sheet.scrollTop = value;
+    }
+
+    /** Replaces the top view in place (its history entry carries the new one): a choice that leads on. */
+    replaceTop(view) {
+        this._leave(this._views.slice(-1));
+        this._views[this._views.length - 1] = view;
+        this.render();
+        this._focusFirst();
+    }
+
+    /** The way back to an earlier view of the same dialog (a form, its choice and its confirmation at once). */
+    backTo(view) {
+        const index = this._views.indexOf(view);
+        if (index >= 0 && index < this._views.length - 1) this.back(this._views.length - 1 - index);
     }
 
     close() {
@@ -11560,13 +11593,13 @@ class BuschVacuumDialog extends HTMLElement {
             this._closing = true;
             history.go(-steps);
             // Insurance: if popstate never arrives, the dialog must not stay open.
-            setTimeout(() => { if (this.isConnected) this._dismiss(); }, 300);
+            setTimeout(() => { if (this.isConnected) this.dismiss(); }, 300);
             return;
         }
-        this._dismiss();
+        this.dismiss();
     }
 
-    _dismiss() {
+    dismiss() {
         if (this._closed) return;
         this._closed = true;
         this._leave(this._views);
@@ -11611,7 +11644,7 @@ class BuschVacuumDialog extends HTMLElement {
         ((LAST_INPUT === 'key' && this._focusable()[0]) || this._sheet).focus();
     }
 
-    _render() {
+    render() {
         const hass = this._hass;
         const view = this._views[this._views.length - 1];
         if (!hass || !view) return;
@@ -11635,7 +11668,7 @@ class BuschVacuumDialog extends HTMLElement {
 
         const head = document.createElement('div');
         head.className = 'head';
-        if (this._views.length > 1) head.appendChild(this._headButton('back', 'mdi:arrow-left', 'zurueck', () => this._goBack()));
+        if (this._views.length > 1) head.appendChild(this._headButton('back', 'mdi:arrow-left', 'zurueck', () => this.goBack()));
         // Rule 2, anatomy: the close X sits top left, ahead of the title.
         head.appendChild(this._headButton('close', 'mdi:close', 'schliessen', () => this.close()));
         const title = document.createElement('h1');
@@ -11721,7 +11754,7 @@ class BuschVacuumCard extends HTMLElement {
      */
     disconnectedCallback() {
         document.removeEventListener('visibilitychange', this._onVisibility);
-        if (this._dialog && this._dialog.isConnected) this._dialog._dismiss();
+        if (this._dialog && this._dialog.isConnected) this._dialog.dismiss();
         this._endPending();
         clearTimeout(this._lockTimer);
         this._lockTimer = null;
@@ -12231,9 +12264,9 @@ class BuschVacuumCard extends HTMLElement {
         if (editor && editor.dirty() && this._dialog) {
             editor.ask(this._dialog, { discard: (d) => {
                 if (this._hidden('map_change_confirmation')) {
-                    d._goBack();
+                    d.goBack();
                     change();
-                } else replaceTop(d, this._mapChangeView(name, change));
+                } else d.replaceTop(this._mapChangeView(name, change));
             } });
             return;
         }
@@ -12248,7 +12281,7 @@ class BuschVacuumCard extends HTMLElement {
 
     /** CORE-20's question; inside the edit mode it returns to the editor instead of closing everything. */
     _mapChangeView(name, change) {
-        const leave = (dialog) => (this._mapEdit ? dialog._goBack() : dialog.close());
+        const leave = (dialog) => (this._mapEdit ? dialog.goBack() : dialog.close());
         return {
             title: translate(this._hass, 'kartenWechselTitel'),
             id: 'map-change',
@@ -12414,7 +12447,7 @@ class BuschVacuumCard extends HTMLElement {
         const editor = this._mapEdit;
         if (editor && editor.dirty() && this._dialog) {
             editor.ask(this._dialog, { discard: (d) => {
-                d._goBack();
+                d.goBack();
                 this._chooseTask(name, quiet);
             } });
             return;
@@ -14478,13 +14511,13 @@ function mapConfirm(card, session, opts) {
             if (session.error) body.appendChild(noteLine(session.error.text, 'error'));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), disabled: !!session.busy, onClick: () => { session.error = null; dialog._goBack(); } });
+            const cancel = BuschUI.action({ label: translate(hass, 'abbrechen'), text: translate(hass, 'abbrechen'), disabled: !!session.busy, onClick: () => { session.error = null; dialog.goBack(); } });
             cancel.setAttribute('data-action', 'cancel');
             const label = session.error && session.error.kind !== 'lock' ? translate(hass, 'kartenErneut') : opts.action;
             const go = BuschUI.action({ label, text: label, variant: opts.destructive ? 'destructive' : 'primary', disabled: !!session.busy || !!blocked, onClick: () => {
                 if (session.busy || blocked) return; // R11: a double tap sends once
                 session.commit(confirmGrant(card), opts.calls, { undo: opts.undo, backup: wantBackup(), text: opts.title }).then((ok) => {
-                    if (!ok) return dialog._render();
+                    if (!ok) return dialog.render();
                     if (opts.done) opts.done(dialog);
                     else dialog.back(1);
                     return undefined;
@@ -14530,7 +14563,7 @@ function dirtyChoice(card, { count, save, discard, blocked = null }) {
             if (stop) body.appendChild(noteLine(translate(hass, stop), 'error'));
             const actions = document.createElement('div');
             actions.className = 'actions';
-            const keep = BuschUI.action({ label: translate(hass, 'kartenWeiter'), text: translate(hass, 'kartenWeiter'), onClick: () => dialog._goBack() });
+            const keep = BuschUI.action({ label: translate(hass, 'kartenWeiter'), text: translate(hass, 'kartenWeiter'), onClick: () => dialog.goBack() });
             keep.setAttribute('data-action', 'keep');
             const drop = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), variant: 'destructive', onClick: () => discard(dialog) });
             drop.setAttribute('data-action', 'discard');
@@ -14930,12 +14963,6 @@ function loadEditData(card) {
 
 // ── Map management (map-editor Task 3: EDI-01, ALL-13, ALL-10) ──────────────
 
-/** A view's way back to an earlier view of the same dialog (a form, its choice and its confirmation at once). */
-function backTo(dialog, view) {
-    const index = dialog._views.indexOf(view);
-    if (index >= 0 && index < dialog._views.length - 1) dialog.back(dialog._views.length - 1 - index);
-}
-
 const mapEntryName = (entry) => entry.custom_name || entry.name || String(entry.id);
 
 /** The vacuum's stored maps; the active one by the map camera's index (as map-view's floors). */
@@ -15000,7 +15027,7 @@ function mapsView(card) {
             const undoable = Array.from(sessions.values()).find((s) => s.undo.length);
             if (undoable) {
                 const note = noteLine(translate(hass, 'kartenGespeichert') + ' · ' + undoable.saved, 'success');
-                const undo = BuschUI.action({ label: translate(hass, 'rueckgaengig'), text: translate(hass, 'rueckgaengig'), icon: 'mdi:undo', onClick: () => dialog.show(mapUndoConfirm(card, undoable, (d) => backTo(d, view))) });
+                const undo = BuschUI.action({ label: translate(hass, 'rueckgaengig'), text: translate(hass, 'rueckgaengig'), icon: 'mdi:undo', onClick: () => dialog.show(mapUndoConfirm(card, undoable, (d) => d.backTo(view))) });
                 undo.setAttribute('data-action', 'undo');
                 note.appendChild(undo);
                 body.appendChild(note);
@@ -15089,7 +15116,7 @@ function deleteMapConfirm(card, home, session, entry, model) {
     return mapConfirm(card, session, {
         title: translate(hass, 'kartenLoeschenTitel'), lines, action: translate(hass, 'loeschen'), destructive: true, irreversible: true,
         calls: [{ service: 'vacuum_delete_map', data: { map_id: entry.id } }],
-        done: (dialog) => backTo(dialog, home)
+        done: (dialog) => dialog.backTo(home)
     });
 }
 
@@ -15112,7 +15139,7 @@ function renameMapView(card, home, session, entry) {
             undo: { text: translate(hass, 'kartenUmbenennenTitel'), calls: [{ service: 'vacuum_rename_map', data: { map_id: entry.id, map_name: original } }] },
             done: (d) => {
                 card._drafts.delete(key);
-                backTo(d, home);
+                d.backTo(home);
             }
         }));
     };
@@ -15131,7 +15158,7 @@ function renameMapView(card, home, session, entry) {
                 save: (d) => confirm(d),
                 discard: (d) => {
                     card._drafts.delete(key);
-                    backTo(d, home);
+                    d.backTo(home);
                 }
             }));
             return true;
@@ -15196,7 +15223,7 @@ function newMapActions(card, model, hass, dialog, home, sessions, active) {
                     calls: [],
                     done: (d) => {
                         callAction(card, key, undefined, { label });
-                        backTo(d, home);
+                        d.backTo(home);
                     }
                 })) });
             button.setAttribute('data-action', key);
@@ -15228,7 +15255,7 @@ function temporaryBlock(card, model, hass, dialog, home, sessions, entries) {
     box.appendChild(noteLine(translate(hass, 'temporaerText'), 'warning'));
     const session = mapSessionFor(card, sessions, null);
     const ask = (title, line, service, data, destructive) => dialog.show(mapConfirm(card, session, {
-        title, lines: [line], action: title, destructive, irreversible: true, calls: [{ service, data }], done: (d) => backTo(d, home)
+        title, lines: [line], action: title, destructive, irreversible: true, calls: [{ service, data }], done: (d) => d.backTo(home)
     }));
     const actions = document.createElement('div');
     actions.className = 'actions';
@@ -15318,14 +15345,6 @@ function editCount(before, after) {
 function editListLabel(hass, list) {
     const own = translate(hass, 'kartenObj_' + list);
     return own !== 'kartenObj_' + list ? own : translate(hass, 'mapobj_' + list);
-}
-
-/** Replaces the top view in place (its history entry carries the new one): a choice that leads on. */
-function replaceTop(dialog, view) {
-    dialog._leave(dialog._views.slice(-1));
-    dialog._views[dialog._views.length - 1] = view;
-    dialog._render();
-    dialog._focusFirst();
 }
 
 /**
@@ -15503,7 +15522,7 @@ class MapEditor {
                 this.ownSave = !this.expect;
                 this.foreign = false;
                 this.changed();
-                backTo(dialog, this.view);
+                dialog.backTo(this.view);
             }
         });
     }
@@ -15513,7 +15532,7 @@ class MapEditor {
         dialog.show(dirtyChoice(this.card, {
             count: () => this.count(names),
             blocked: () => this.blocked(),
-            save: (d) => replaceTop(d, this.saveConfirm()),
+            save: (d) => d.replaceTop(this.saveConfirm()),
             discard: (d) => {
                 this.discard(names);
                 discard(d);
@@ -15588,8 +15607,8 @@ function mapEditView(card, mapId, quick = null) {
         guard: (dialog) => {
             if (!editor || !editor.dirty()) return false;
             editor.ask(dialog, { discard: (d) => {
-                const index = d._views.indexOf(view);
-                if (index > 0) backTo(d, d._views[index - 1]);
+                const index = d.views.indexOf(view);
+                if (index > 0) d.backTo(d.views[index - 1]);
                 else d.close();
             } });
             return true;
@@ -15699,7 +15718,7 @@ function editRender(card, editor, body, hass, dialog) {
             if (open.length && editor.dirty(open)) {
                 editor.ask(dialog, { names: open, discard: (d) => {
                     editor.selectTool(name);
-                    d._goBack();
+                    d.goBack();
                 } });
                 return;
             }
@@ -15733,7 +15752,7 @@ function editRender(card, editor, body, hass, dialog) {
             editor.ownSave = true;
             editor.expect = null;
             editor.changed();
-            backTo(d, editor.view);
+            d.backTo(editor.view);
         })) });
         undo.setAttribute('data-action', 'undo');
         note.appendChild(undo);
@@ -15757,7 +15776,7 @@ function editRender(card, editor, body, hass, dialog) {
     save.setAttribute('data-action', 'save');
     const drop = BuschUI.action({ label: translate(hass, 'verwerfen'), text: translate(hass, 'verwerfen'), disabled: !count, onClick: () => editor.discard() });
     drop.setAttribute('data-action', 'discard-draft');
-    const done = BuschUI.action({ label: translate(hass, 'fertig'), text: translate(hass, 'fertig'), onClick: () => (dialog._views.length > 1 ? dialog._goBack() : dialog.close()) });
+    const done = BuschUI.action({ label: translate(hass, 'fertig'), text: translate(hass, 'fertig'), onClick: () => (dialog.views.length > 1 ? dialog.goBack() : dialog.close()) });
     done.setAttribute('data-action', 'done');
     actions.append(drop, done, save);
     // M34: the open-changes line with Speichern/Verwerfen as one bar fixed at the bottom of the sheet.
@@ -16115,7 +16134,7 @@ function roomActionDone(card, editor, dialog) {
     editor.room = null;
     editor.ownSave = true;
     endRoomAction(card, editor);
-    backTo(dialog, editor.view);
+    dialog.backTo(editor.view);
 }
 
 /** Client point of a robot point, or null without calibration. */
@@ -17484,7 +17503,7 @@ function remoteView(card) {
     };
     const onKey = (event) => {
         const dialog = ctl.dialog;
-        if (!dialog || dialog._views[dialog._views.length - 1] !== view) return;
+        if (!dialog || dialog.current !== view) return;
         const key = String(event.key || '').toLowerCase();
         const down = event.type === 'keydown';
         // Space always stops while the view is on top, armed or not, whatever has the focus: the
@@ -18211,7 +18230,7 @@ function backupImageView(card, mapId, start = 1, home = null) {
                 if (next === index) return;
                 index = next;
                 Object.assign(zoom, { zoom: 1, panX: 0, panY: 0 });
-                dialog._render();
+                dialog.render();
             };
             const head = document.createElement('div');
             head.className = 'backup-head';
@@ -18235,7 +18254,7 @@ function backupImageView(card, mapId, start = 1, home = null) {
                 const done = (state) => {
                     if (cache.get(key) !== shown) return;
                     shown.state = state;
-                    if (dialog._views[dialog._views.length - 1] === view) dialog._render();
+                    if (dialog.current === view) dialog.render();
                 };
                 (typeof img.decode === 'function' ? img.decode() : Promise.resolve()).then(() => done('ok'), () => done('error'));
             }
@@ -18260,7 +18279,7 @@ function backupImageView(card, mapId, start = 1, home = null) {
                 if (shown) {
                     const retry = BuschUI.action({ label: translate(hass, 'kartenErneut'), text: translate(hass, 'kartenErneut'), icon: 'mdi:refresh', onClick: () => {
                         cache.delete(key);
-                        dialog._render();
+                        dialog.render();
                     } });
                     retry.setAttribute('data-action', 'retry');
                     line.appendChild(retry);
@@ -18375,7 +18394,7 @@ function backupNowPart(card, model, hass, dialog, view, map) {
             action: translate(hass, 'sicherungKnopf'),
             calls: [],
             backupNote: false,
-            done: (d) => backTo(d, view)
+            done: (d) => d.backTo(view)
         }));
     } });
     now.setAttribute('data-action', 'backup-now');
@@ -18528,7 +18547,7 @@ function restoreConfirm(card, session, home, map, source) {
                 input.disabled = !!session.busy;
                 input.addEventListener('change', () => {
                     choice.foreign = !!input.checked;
-                    dialog._render();
+                    dialog.render();
                 });
                 const label = document.createElement('span');
                 label.textContent = translate(h, 'dateiFremdHaken');
@@ -18552,7 +18571,7 @@ function restoreConfirm(card, session, home, map, source) {
                 input.disabled = !!session.busy;
                 input.addEventListener('change', () => {
                     choice.backup = !!input.checked;
-                    dialog._render();
+                    dialog.render();
                 });
                 const label = document.createElement('span');
                 label.textContent = translate(h, 'wiederherstellenVorher');
@@ -18567,7 +18586,7 @@ function restoreConfirm(card, session, home, map, source) {
             card._restoreNote = { mapId: map.entry.id, text: translate(hass, 'wiederhergestellt', { stand, zeit: clockText(hass, now.getHours(), now.getMinutes()) }), frame,
                 rooms, roomRun: { done: [], error: '', running: false } };
             if (source.done) source.done();
-            backTo(d, home);
+            d.backTo(home);
         }
     });
 }
@@ -18666,7 +18685,7 @@ function roomRestoreView(card, note) {
             const actions = document.createElement('div');
             actions.className = 'actions';
             const closeKey = rest.length ? 'abbrechen' : 'zurueck';
-            const close = BuschUI.action({ label: translate(hass, closeKey), text: translate(hass, closeKey), disabled: run.running, onClick: () => dialog._goBack() });
+            const close = BuschUI.action({ label: translate(hass, closeKey), text: translate(hass, closeKey), disabled: run.running, onClick: () => dialog.goBack() });
             close.setAttribute('data-action', 'cancel');
             actions.appendChild(close);
             if (rest.length) {
@@ -18675,7 +18694,7 @@ function roomRestoreView(card, note) {
                     if (run.running) return; // R11: a double tap sends once
                     run.running = true;
                     run.error = '';
-                    dialog._render();
+                    dialog.render();
                     for (const r of rest) {
                         try {
                             await callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, r.data));
@@ -18684,10 +18703,10 @@ function roomRestoreView(card, note) {
                             run.error = errorText(error);
                             break;
                         }
-                        if (dialog.isConnected) dialog._render();
+                        if (dialog.isConnected) dialog.render();
                     }
                     run.running = false;
-                    if (dialog.isConnected) dialog._render();
+                    if (dialog.isConnected) dialog.render();
                 } });
                 go.setAttribute('data-action', 'confirm');
                 actions.appendChild(go);
@@ -18807,7 +18826,7 @@ function restoreFileView(card, home, start) {
     const submit = (dialog) => {
         checked = true;
         const map = backupMap(card._model(), draft.mapId);
-        if (fileUrlError(draft.url, card._hass) || !map || !map.active) return dialog._render();
+        if (fileUrlError(draft.url, card._hass) || !map || !map.active) return dialog.render();
         // A finished restore ends the draft; a cancelled one keeps it (R10).
         dialog.show(restoreConfirm(card, sessionFor(map), home, map, { url: fileUrl(card._hass, draft.url), done: () => card._drafts.delete(key) }));
         return undefined;
@@ -18827,7 +18846,7 @@ function restoreFileView(card, home, start) {
                 save: (d) => submit(d),
                 discard: (d) => {
                     card._drafts.delete(key);
-                    backTo(d, home);
+                    d.backTo(home);
                 }
             }));
             return true;
@@ -18860,7 +18879,7 @@ function restoreFileView(card, home, start) {
             select.value = String(draft.mapId);
             select.addEventListener('change', () => {
                 draft.mapId = Number(select.value);
-                dialog._render();
+                dialog.render();
             });
             const target = formField('map_id', translate(hass, 'feld_target_map'), select, '');
             body.appendChild(target.wrap);
