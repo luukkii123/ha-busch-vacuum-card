@@ -47,6 +47,14 @@
   (M12). „Räume einstellen“ zeigt Werte nur mit Label (`roomLine`, M13).
   Optionen und Lauftypen: HA-Übersetzung, sonst eigene Wörter `opt_<enum>`
   im Wörterbuch (`optionWord`), sonst der Rohwert (M21).
+- Kopplung (M9): Module greifen nur über öffentliche Schnittstellen zu.
+  Dialog: `show`, `render`, `goBack`, `back(n)`, `backTo(view)`,
+  `replaceTop(view)`, `close`, `dismiss`, `current`, `views` (Kopie),
+  `sheetScroll`. Karte: Block „M9: view context“ (Getter wie `opts`, `map`,
+  `drafts`, `settingWrites`, wenige Setter, Methoden wie `model()`,
+  `openDialog`, `update`, `isHidden`). Köpfe in Karteneditor und Sicherung
+  haben höchstens 4 Parameter (Kontextobjekt `ed`/`ctx`). Regeltest „M9
+  Kopplung“ in `tests/geruest.test.js`.
 - Dialog nach Lightcards 0.11.0: unter 450 × 500 px Vollbild, sonst zentriert
   (höchstens 560 px, Bestätigung 320 px); Kopf sticky; Seite gesperrt;
   Escape/Zurück über eigene Verlaufseinträge; Fokusfalle. Außenklick schließt
