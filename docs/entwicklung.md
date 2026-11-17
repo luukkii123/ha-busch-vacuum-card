@@ -35,7 +35,11 @@
   `firstWeekday`.
 - Fixtures `tests/fixtures/*.json` sind aus dem echten Gerät abgeleitet und
   anonymisiert (Namen, Seriennummer, Netzwerk, Grundriss ersetzt);
-  `tests/datenschutz.test.js` prüft das bei jedem Lauf.
+  `tests/datenschutz.test.js` prüft das bei jedem Lauf. Muster (IP, MAC, Token)
+  stehen im Test; Namen, Domain, Grundriss und Kartendaten nur in einer privaten
+  Sperrliste außerhalb des Repos (`BVC_SPERRLISTE`, HMAC-SHA-256). Ohne Variable
+  werden diese Fälle sichtbar übersprungen (GitHub, fremde Klone); ist sie gesetzt
+  und die Datei fehlt, ist der Lauf rot.
 
 ## Layout 0.2 (#1002)
 
@@ -505,6 +509,9 @@ docker run --rm --name test-hacs-t882-node $LABELS \
   -v "$REPO:/vac:ro" -w /vac node:22-alpine \
   sh -c 'node --check dist/busch-vacuum-card.js && node --test tests/*.test.js'
 ```
+
+Mit privater Sperrliste (lokal Pflicht, `scripts/karten-alle.sh` setzt sie selbst):
+`-v "$BVC_SPERRLISTE:/privat/s.json:ro" -e BVC_SPERRLISTE=/privat/s.json` ergänzen.
 
 Jeder `docker run` braucht (Hook-Pflicht seit 10.11.2026, Regeln in
 `docs/docker-stack-regeln.md` der Projektebene) den Namen
