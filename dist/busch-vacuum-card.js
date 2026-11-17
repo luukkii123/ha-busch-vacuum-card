@@ -10075,7 +10075,8 @@ ha-card {
     min-height: 440px;
 }
 :host([data-width=wide]) .task-area {
-    flex: 1 1 auto;
+    /* M16: shrinks and scrolls, never grows; the free space sits above the action bar (margin auto), not between the groups. */
+    flex: 0 1 auto;
     min-height: 0;
     overflow-y: auto;
 }

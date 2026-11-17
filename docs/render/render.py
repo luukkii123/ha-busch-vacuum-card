@@ -56,7 +56,7 @@ Buschcheck Welle 1/2 (#1163), appended after "regeln": rechte (M8 guest vs admin
 tests/fixtures/feindlich.json against a harmless copy), netz (M6 karte-veraltet, M18 offline, M39 netz-langsam/-fehler,
 fernsteuerung-langsam; faults made in the page, no real 5xx), teilfehler (M20), befehle (M3/M5), leiste (M2),
 oberflaeche (E6: M11, M12, M13, M21 words), feinschliff (E7: M31-M36), anzeige (E9: M45 forced colors, M46, M47),
-kontrast (M16), etiketten (M10 step 6: label/marker rectangles, karte-m10-rand/-zoom),
+kontrast (M16), etiketten (M10 step 6: label/marker rectangles, karte-m10-rand/-zoom), rhythmus (M16 panel spacing),
 abrufe (M19: camera_proxy picture fetches of the whole run, only over all areas).
 
 Usage:
@@ -66,7 +66,7 @@ Usage:
         karte, layout, dialog, bewegung, kartenansicht, einstellungen, station,
         shortcuts, aufgaben, verlauf, fernsteuerung, reinigung, editor, sicherung,
         uebersetzung, zustaende, regeln, rechte, adressen, feindlich, netz, teilfehler,
-        befehle, leiste, oberflaeche, feinschliff, anzeige, kontrast, etiketten, abrufe
+        befehle, leiste, oberflaeche, feinschliff, anzeige, kontrast, etiketten, rhythmus, abrufe
     An unknown area exits with 2 and the list. Checks that only mean something
     over all areas (every VIEW_IDS view pictured) are then listed under
     report.json "nichtGemessen", not counted as passed; report.json "bereiche"
@@ -3805,6 +3805,67 @@ def bereich_etiketten(k):
           json.dumps({"vorher": vorher["stacks"], "zoom": zoom["zoom"], "counted": zoom["counted"], "stacks": zoom["stacks"]}))
 
 
+# ── M16 · Panel-Rhythmus ───────────────────────────────────────────────────
+# The panel groups top to bottom: messages, station, task types (.task-head), context (room head, chips,
+# "+ N weitere", room tools, ...: everything of .task-area between the types and the settings row), the
+# settings row and the history preview. Box gaps (next top - previous bottom) of the visible ones.
+RHYTHMUS_ZWISCHEN, RHYTHMUS_INNEN, RHYTHMUS_TOLERANZ = 16, 8, 1
+RHYTHMUS_JS = """() => {
+    const sr = window.card().shadowRoot, panel = sr.querySelector('.panel');
+    const seen = (n) => { if (!n || n.hidden) return null; const cs = getComputedStyle(n); if (cs.display === 'none' || cs.visibility === 'hidden') return null;
+        const r = n.getBoundingClientRect(); return r.height >= 0.5 && r.width >= 0.5 ? { t: r.top, b: r.bottom } : null; };
+    const tag = (n) => (n.getAttribute('data-action') || n.getAttribute('data-note') || String(n.className) || n.tagName).split(' ')[0];
+    const groups = [];
+    const add = (name, nodes) => { const items = nodes.map((n) => ({ what: tag(n), b: seen(n) })).filter((x) => x.b);
+        if (items.length) groups.push({ name, items }); };
+    const own = (sel) => Array.from(panel.children).filter((n) => n.matches(sel));
+    const area = own('.task-area')[0], kids = area ? Array.from(area.children) : [];
+    add('meldungen', own('.messages').flatMap((n) => Array.from(n.children)));
+    add('station', own('.station-slot'));
+    add('reiter', kids.filter((n) => n.classList.contains('task-head')));
+    add('kontext', kids.filter((n) => !n.classList.contains('task-head') && !n.classList.contains('settings-row')));
+    add('einstellungen', kids.filter((n) => n.classList.contains('settings-row')));
+    add('verlauf', own('.history-slot'));
+    const r1 = (v) => Math.round(v * 10) / 10;
+    const zwischen = [], innen = [];
+    groups.forEach((g, i) => {
+        g.items.sort((x, y) => x.b.t - y.b.t);
+        for (let j = 1; j < g.items.length; j++) innen.push({ wo: g.name + ': ' + g.items[j - 1].what + ' > ' + g.items[j].what, px: r1(g.items[j].b.t - g.items[j - 1].b.b) });
+        if (i) { const prev = groups[i - 1];
+            zwischen.push({ wo: prev.name + ' > ' + g.name, px: r1(Math.min(...g.items.map((x) => x.b.t)) - Math.max(...prev.items.map((x) => x.b.b))) }); }
+    });
+    return { gruppen: groups.map((g) => g.name), zwischen, innen };
+}"""
+
+
+def bereich_rhythmus(k):
+    """M16: senkrechte Abstände der Panelgruppen, 390/1280 x hell/dunkel x Gesamt/Raum, angedockt."""
+    page, report, check, theme, build, ruhe, shot = k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot
+    rows = []
+    for width in (390, 1280):
+        for th in THEMES:
+            page.set_viewport_size({"width": width + 16, "height": 900})
+            theme(th)
+            build("docked", panel=True)
+            for task in ("all", "room"):
+                if task == "room":
+                    page.evaluate(room_pick)
+                    ruhe()
+                rows.append({"fall": f"panel-rhythmus-{task}-{width}-{th}", **page.evaluate(RHYTHMUS_JS)})
+                shot(f"panel-rhythmus-{task}-{width}-{th}.png")
+    report["rhythmus"] = rows
+    passt = lambda soll, x: abs(x["px"] - soll) <= RHYTHMUS_TOLERANZ
+    falsch = [{"fall": r["fall"], "zwischen": [x for x in r["zwischen"] if not passt(RHYTHMUS_ZWISCHEN, x)],
+               "innen": [x for x in r["innen"] if not passt(RHYTHMUS_INNEN, x)]} for r in rows]
+    falsch = [x for x in falsch if x["zwischen"] or x["innen"]]
+    # Each case needs at least the task types, the context and the settings row (two gaps between groups).
+    zu_wenig = [{"fall": r["fall"], "gruppen": r["gruppen"]} for r in rows if len(r["zwischen"]) < 2 or not r["innen"]]
+    check(f"M16 panel rhythm: only two spacing values between panel groups ({RHYTHMUS_ZWISCHEN} px between groups, "
+          f"{RHYTHMUS_INNEN} px inside a group, box gaps, tolerance <= {RHYTHMUS_TOLERANZ} px), 390/1280 x light/dark, "
+          f"Gesamt and Raum, docked ({len(rows)} cases)",
+          len(rows) == 8 and not falsch and not zu_wenig, json.dumps({"falsch": falsch[:4], "zuWenig": zu_wenig})[:1500])
+
+
 BEREICHE = [
     ("karte", bereich_karte),
     ("layout", bereich_layout),
@@ -3837,6 +3898,7 @@ BEREICHE = [
     ("anzeige", bereich_anzeige),
     ("kontrast", bereich_kontrast),
     ("etiketten", bereich_etiketten),
+    ("rhythmus", bereich_rhythmus),
     # M19 counts the picture fetches of everything before it: keep it last.
     ("abrufe", bereich_abrufe),
 ]

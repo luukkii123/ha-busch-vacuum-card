@@ -832,7 +832,10 @@ Dialog-Ereignis, gleich viele img/svg/script-Knoten), `netz` (M6
 sichtbaren Marker in den Zuständen von `karte-cleaning-*` 320/390/1280 und
 `layout-*-all/room`, ohne eigene Bilder; Warnstapel, wo gleiche Warnungen
 näher als 44 px liegen; dazu `karte-m10-rand-390-light` und
-`karte-m10-zoom-390-light`) und zuletzt `abrufe` (M19:
+`karte-m10-zoom-390-light`), `rhythmus` (M16: senkrechte Box-Abstände der
+Panelgruppen Meldungen, Station, Reiter, Kontext, Einstellungen,
+Verlaufsvorschau, 16 px zwischen, 8 px innerhalb, ±1 px, Bilder
+`panel-rhythmus-<all|room>-<390|1280>-<theme>`) und zuletzt `abrufe` (M19:
 `camera_proxy`-Bildabrufe des ganzen Laufs gegen 795, nur ohne `--nur`).
 Netzfehler entstehen dort in der Seite (`NETZ_JS`, synthetische 500 ohne
 echten Abruf), Dienstantworten im Harness-Stub (`DIENST_JS`: ablehnen,

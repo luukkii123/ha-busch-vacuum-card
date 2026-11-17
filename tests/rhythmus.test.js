@@ -68,6 +68,16 @@ test('M16 Abstandsskala: zwischen Panelgruppen --ha-space-4, innerhalb einer Gru
   assert.deepEqual([...zwischen], [16]);
 });
 
+test('M16 breites Panel: die Aufgabengruppe wächst nicht, Einstellungen und Verlaufsvorschau stehen 16 px auseinander', () => {
+  // Renderfall panel-rhythmus-*-1280: mit flex-grow 1 lag der freie Platz zwischen Einstellungszeile und Vorschau (120 px).
+  const breit = regel(':host([data-width=wide]) .task-area');
+  assert.ok(breit, 'Regel der breiten Aufgabengruppe');
+  assert.equal(wert(breit, 'flex'), '0 1 auto', 'schrumpft (scrollt), wächst nicht');
+  assert.equal(wert(breit, 'overflow-y'), 'auto');
+  // Der freie Platz geht über den Leistenrand nach unten: die Aktionsleiste bleibt am Ende.
+  assert.match(wert(regel(':host([data-width=wide]) .controls'), 'margin'), /^auto /);
+});
+
 test('M16 Aufbau: Reiter oben, Einstellungszeile zuletzt in der Aufgabengruppe (beide Breiten)', () => {
   for (const breite of [390, 1280]) {
     const u = neueUmgebung();
