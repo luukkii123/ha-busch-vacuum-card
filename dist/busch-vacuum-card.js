@@ -10017,8 +10017,39 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 .sheet[data-kind=confirm] {
     width: min(320px, 100%);
 }
+/* M11 (Buschcheck): on phones a confirmation is a bottom sheet, at least 90 % high (ui-regeln Regel 2),
+   its buttons fixed at the bottom, full width; the scrim above it does not close it (R04). */
 @media (max-width: 449.98px), (max-height: 499.98px) {
-    .sheet[data-kind=confirm] { width: 100%; }
+    .sheet[data-kind=confirm] {
+        width: 100%;
+        height: auto;
+        min-height: 90%;
+        align-self: flex-end;
+        border-radius: 16px 16px 0 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .sheet[data-kind=confirm] .head { border-radius: 16px 16px 0 0; }
+    .sheet[data-kind=confirm] > .body {
+        flex: 1 0 auto;
+        display: flex;
+        flex-direction: column;
+    }
+    .sheet[data-kind=confirm] .actions {
+        position: sticky;
+        bottom: -16px;
+        z-index: 2;
+        margin: 0 -16px -16px;
+        margin-top: auto;
+        padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+        flex-direction: column;
+        border-top: 1px solid var(--divider-color, #e0e0e0);
+        background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    }
+    .sheet[data-kind=confirm] .actions .busch-ui-action {
+        width: 100%;
+        min-height: 48px;
+    }
 }
 .actions {
     display: flex;
