@@ -9833,6 +9833,10 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rise { from { transform: translateY(32px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes grow { from { transform: scale(0.94); opacity: 0; } to { transform: none; opacity: 1; } }
+/* M32: the sheet takes the focus when opened by pointer; it shows no ring, the controls show theirs on :focus-visible. */
+.sheet:focus {
+    outline: none;
+}
 .sheet {
     position: relative;
     width: min(560px, 100%);
@@ -10725,6 +10729,15 @@ function focusKey(node) {
     return '';
 }
 
+/**
+ * M32: how the last input came (a pointer or a key), seen in the capture phase before the opener
+ * reacts. A dialog opened by pointer focuses itself, not its first button (no ring under the
+ * finger); by keyboard, or with no input seen yet, the first control as before (R03).
+ */
+let LAST_INPUT = 'key';
+document.addEventListener('pointerdown', () => { LAST_INPUT = 'pointer'; }, true);
+document.addEventListener('keydown', () => { LAST_INPUT = 'key'; }, true);
+
 class BuschVacuumDialog extends HTMLElement {
     constructor() {
         super();
@@ -10960,7 +10973,7 @@ class BuschVacuumDialog extends HTMLElement {
 
     _focusFirst() {
         if (!this._sheet || !this.isConnected) return;
-        (this._focusable()[0] || this._sheet).focus();
+        ((LAST_INPUT === 'key' && this._focusable()[0]) || this._sheet).focus();
     }
 
     _render() {

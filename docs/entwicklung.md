@@ -41,6 +41,12 @@
   (höchstens 560 px, Bestätigung 320 px); Kopf sticky; Seite gesperrt;
   Escape/Zurück über eigene Verlaufseinträge; Fokusfalle. Außenklick schließt
   nur das flüchtige Menü (R04).
+- Fokus beim Öffnen (M32): `LAST_INPUT` merkt in der Capture-Phase des Dokuments,
+  ob zuletzt ein Zeiger (`pointerdown`) oder eine Taste kam. Per Zeiger nimmt die
+  Dialogfläche (`.sheet`, `tabindex=-1`, ohne Ring) den Fokus, Tab führt auf das
+  erste Bedienelement; per Tastatur (oder ohne bekannte Eingabe) wie bisher das
+  erste Bedienelement mit Ring nur bei `:focus-visible` (2 px Versatz). Die
+  Fokusrückgabe an den Auslöser bleibt (`tests/dialog.test.js`, M32).
 - Theme-Haken `--bvc-accent-color`, `--bvc-warning-color`, `--bvc-error-color`,
   `--bvc-success-color`, `--bvc-info-color`: nur gelesen, nie auf `:host`
   gesetzt (sonst würde ein Theme sie nicht erreichen); im HACS-Prüfer als
