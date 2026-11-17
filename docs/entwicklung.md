@@ -784,7 +784,23 @@ Registry-Reihenfolge: `karte`, `layout`, `dialog`, `bewegung`,
 `uebersetzung` (M21: mit und ohne `localize` aus
 `tests/fixtures/uebersetzung-de.json`), `zustaende` (M15: Roboter weg,
 Kamera weg, lädt, Abruffehler, Konfigfehler, keine Räume bei 320/390/1280
-hell/dunkel), `regeln` (HACS-UI-Regeln über `regeln.py`). Ein unbekannter
+hell/dunkel), `regeln` (HACS-UI-Regeln über `regeln.py`), danach die
+Buschcheck-Fälle der Wellen 1 und 2 (#1163, nur angehängt): `rechte` (M8:
+Gast ohne `is_admin` gegen Admin, Bilder `rechte-<gast|admin>-…`),
+`adressen` (M29: `sprachpaket-bestaetigen-host-<fremd|eigen>-…`,
+`sprachpaket-http-fehler-…`, `sicherung-datei-fremd-…`), `feindlich` (M27:
+`tests/fixtures/feindlich.json` gegen eine entschärfte Kopie, kein
+Dialog-Ereignis, gleich viele img/svg/script-Knoten), `netz` (M6
+`karte-veraltet-…`, M18 `offline-…`, M39 `netz-langsam`/`netz-fehler`/
+`fernsteuerung-langsam`), `teilfehler` (M20), `befehle` (M3/M5), `leiste`
+(M2), `oberflaeche` (M11, M12, M13, M21 mit leerem `localize`),
+`feinschliff` (M31–M36), `anzeige` (M45 `forced-colors-…`, M46, M47
+`panel-verlaufsvorschau[-leer|-fehler]-…`) und zuletzt `abrufe` (M19:
+`camera_proxy`-Bildabrufe des ganzen Laufs gegen 795, nur ohne `--nur`).
+Netzfehler entstehen dort in der Seite (`NETZ_JS`, synthetische 500 ohne
+echten Abruf), Dienstantworten im Harness-Stub (`DIENST_JS`: ablehnen,
+hängen, langsam, n-ter Aufruf), Gast/offline über `HASS_EXTRA_JS`; jeder
+Bereich setzt das am Ende zurück. Ein unbekannter
 Name endet mit Code 2 und der Liste. Prüfungen, die nur über alle Bereiche
 etwas bedeuten (jede `VIEW_IDS`-Ansicht bebildert), stehen dann in
 `report.json` unter `nichtGemessen` statt als bestanden; `bereiche` nennt,
