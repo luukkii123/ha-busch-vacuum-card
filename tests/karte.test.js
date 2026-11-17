@@ -603,6 +603,146 @@ test('MAP-03 Objekte nicht nur über Farbe unterscheidbar (R17)', async () => {
   assert.ok(new Set(muster).size >= 6, 'Strichart/-stärke unterscheidet: ' + muster.join(' | '));
 });
 
+// ── M10: Etiketten und Marker kollisionsfrei ───────────────────────────────
+/** Karte auf einer Handy-Bühne (390×320 px) statt der 200×100 der Attrappe. */
+async function buehnenKarte(breite = 390, hoehe = 320, attribute = {}, config = {}) {
+  const { u, haus, karte } = await kartenKarte('voll', config);
+  karte._map.stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: breite, bottom: hoehe, width: breite, height: hoehe });
+  karte.hass = haus.setze(kamera(haus, attribute));
+  karte._map._layout();
+  return { u, haus, karte };
+}
+const zahlen = (s) => (String(s || '').match(/-?\d+(?:\.\d+)?(?:e-?\d+)?/g) || []).map(Number);
+/** Versatz aus `style.translate` (Bild-px), sonst 0. */
+const versatz = (g) => { const [x = 0, y = 0] = zahlen(g.style.translate); return { x, y }; };
+const schneiden = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+const kasten = (p, hx, hy = hx, dy = 0) => ({ x0: p.x - hx, x1: p.x + hx, y0: p.y + dy - hy, y1: p.y + dy + hy });
+/** Bühnen-px eines Symbols: Ankerpunkt aus dem transform plus Versatz (object_scale 1, keine Drehung). */
+function anker(karte, g) {
+  const [x, y] = zahlen(g.style.transform);
+  const v = versatz(g);
+  return karte._map.toScreen({ x: x + v.x, y: y + v.y });
+}
+/** Name- und Ringkasten eines Raumetiketts in Bühnen-px (Textbreite großzügig wie die Schätzung ohne Browser). */
+function etikett(karte, id) {
+  const g = ebene(karte, 'rooms').childNodes.find((n) => n.getAttribute('data-object') === String(id));
+  const size = karte._map.config(1).font_size;
+  const p = anker(karte, g);
+  const name = g.childNodes.find((n) => n.getAttribute('data-role') === 'name');
+  const ring = g.childNodes.find((n) => n.getAttribute('class') === 'badge');
+  const [bx, by] = ring ? zahlen(ring.getAttribute('transform')) : [0, 0];
+  return {
+    g, ring,
+    name: kasten(p, name.textContent.length * size * 0.3, size * 0.6, -size * 0.05),
+    nummer: ring ? kasten({ x: p.x + bx, y: p.y + by }, size * 0.75) : null
+  };
+}
+/** Markerkasten in Bühnen-px: halbe Größe der Busch-Symbole (Roboter-Ring 13, Dock 10, Router 9). */
+const HALB = { robot: 13, charger: 10, router: 9 };
+const marke = (karte, layer) => {
+  const g = ebene(karte, layer).childNodes.find((n) => n.getAttribute('data-symbol'));
+  return { g, kasten: kasten(anker(karte, g), HALB[layer]) };
+};
+
+test('M10 Etikett weicht dem Roboter aus: Name und Nummer 4 liegen nicht unter dem Marker', async () => {
+  const atelier = raeume()['1'];
+  const { karte } = await buehnenKarte(390, 320, { vacuum_position: { x: atelier.x, y: atelier.y, a: 0 } });
+  const roboter = marke(karte, 'robot').kasten;
+  const e = etikett(karte, 1);
+  assert.equal(e.ring.childNodes.find((n) => n.getAttribute('data-role') === 'order').textContent, '4');
+  assert.ok(!schneiden(e.name, roboter), 'Name frei: ' + JSON.stringify([e.name, roboter]));
+  assert.ok(!schneiden(e.nummer, roboter), 'Nummer 4 sichtbar: ' + JSON.stringify([e.nummer, roboter]));
+  // Ohne Marker im Etikett bleibt es an seinem Platz.
+  const { karte: frei } = await buehnenKarte(390, 320, { vacuum_position: { x: 4000, y: -9000, a: 0 }, charger_position: { x: 4000, y: -500, a: 0 } });
+  const g = etikett(frei, 1).g;
+  assert.deepEqual(versatz(g), { x: 0, y: 0 }, 'kein Versatz ohne Kollision');
+  // Fertig, wenn: kein Etikett (Name oder Nummer) schneidet irgendeinen Marker.
+  for (const k of [karte, frei]) {
+    const marken = ['robot', 'charger', 'router'].map((n) => marke(k, n).kasten);
+    for (const id of Object.keys(raeume())) {
+      const x = etikett(k, id);
+      for (const m of marken) {
+        assert.ok(!schneiden(x.name, m), 'Name ' + id);
+        if (x.nummer) assert.ok(!schneiden(x.nummer, m), 'Nummer ' + id);
+      }
+    }
+  }
+});
+
+test('M10 Etikett folgt dem Roboter: neue Position versetzt neu, ohne eine Ebene neu zu zeichnen', async () => {
+  const { haus, karte } = await buehnenKarte(390, 320, { vacuum_position: { x: 0, y: 0, a: 0 } });
+  const zaehler = () => Array.from(karte._map._layers.values()).map((l) => l.renders);
+  const z = zaehler();
+  const atelier = raeume()['1'];
+  karte.hass = haus.setze(kamera(haus, { vacuum_position: { x: atelier.x, y: atelier.y, a: 0 } }));
+  assert.deepEqual(zaehler(), z, 'nur transform/translate, kein Neuzeichnen');
+  const e = etikett(karte, 1);
+  assert.ok(!schneiden(e.name, marke(karte, 'robot').kasten) && !schneiden(e.nummer, marke(karte, 'robot').kasten));
+});
+
+test('M10 Raumnummer als Ring: Kartenfarbe innen, Akzent als Rand, Zahl in Textfarbe', async () => {
+  const { karte } = await kartenKarte();
+  const css = karte.shadowRoot.querySelector('style').textContent;
+  const regel = (sel) => (css.match(new RegExp(sel.replace(/[.[\]]/g, '\\$&') + '\\s*\\{([^}]*)\\}')) || [])[1] || '';
+  assert.match(regel('.map-layers .badge circle'), /fill: var\(--ha-card-background/);
+  assert.match(regel('.map-layers .badge circle'), /stroke: var\(--bvc-accent-color/);
+  assert.match(regel('.map-layers .badge text'), /fill: var\(--primary-text-color/);
+});
+
+test('M10 Fahrlinie unter allen Texten und Markern, Deckkraft höchstens 0,4', async () => {
+  const { karte } = await kartenKarte();
+  const reihe = ebenenReihe(karte);
+  for (const n of ['rooms', 'cleaning_settings', 'obstacles', 'robot', 'charger']) assert.ok(reihe.indexOf('path') < reihe.indexOf(n), 'path unter ' + n);
+  const css = karte.shadowRoot.querySelector('style').textContent;
+  const deckkraft = Number((css.match(/\[data-layer=path\] \[data-object\] \{[^}]*opacity: ([\d.]+)/) || [])[1]);
+  assert.ok(deckkraft > 0 && deckkraft <= 0.4, 'opacity ' + deckkraft);
+});
+
+test('M10 gleiche Warnungen im Radius: eine Marke mit Zähler, vergrößert wieder einzeln, Treffer bleibt', async () => {
+  const { haus, karte } = await buehnenKarte(200, 100);
+  const sichtbar = () => ebene(karte, 'obstacles').childNodes.filter((n) => !n.hasAttribute('data-bundled'));
+  assert.equal(ebene(karte, 'obstacles').childNodes.length, 3, 'drei Hindernisse gezeichnet');
+  assert.equal(sichtbar().length, 1, 'eine Marke');
+  const kopf = sichtbar()[0];
+  assert.equal(kopf.getAttribute('data-count'), '3');
+  const zahl = kopf.childNodes.find((n) => n.getAttribute('class') === 'count');
+  assert.equal(zahl.childNodes.find((n) => n.tagName === 'TEXT').textContent, '3', 'Zähler sichtbar');
+  const css = karte.shadowRoot.querySelector('style').textContent;
+  assert.match(css, /\.map-layers \[data-bundled\] \{\s*display: none;/);
+  // Treffer: die gebündelte Marke öffnet weiter ein Hindernis (Fingerbreite unverändert).
+  const id = kopf.getAttribute('data-object');
+  const treffer = karte._map.hitTest(bildschirm(karte, haus.states[CAM].attributes.obstacles[id]));
+  assert.equal(treffer.kind, 'object');
+  assert.equal(treffer.layer, 'obstacles');
+  // Ignorierte und nicht ignorierte Hindernisse sind keine gleichen Warnungen.
+  const o = JSON.parse(JSON.stringify(haus.states[CAM].attributes.obstacles));
+  o['2'].ignore_status = 'Manually Ignored';
+  karte.hass = haus.setze(kamera(haus, { obstacles: o }));
+  assert.deepEqual(sichtbar().map((n) => n.getAttribute('data-count') || '1').sort(), ['1', '2']);
+  // Große Bühne: weit genug auseinander, kein Bündel, kein Zähler.
+  karte._map.stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 2000, bottom: 2000, width: 2000, height: 2000 });
+  karte._map._layout();
+  assert.equal(sichtbar().length, 3, 'einzeln');
+  assert.ok(sichtbar().every((n) => !n.hasAttribute('data-count') && !n.childNodes.some((c) => c.getAttribute('class') === 'count')));
+});
+
+test('M10 Rand-Clamping: Etikett und Marker am Bühnenrand bleiben in der Bühne', async () => {
+  // Bild 1444 px, Bühne 390×320: Bild-y 0 ist Bühnen-y 0 und liegt bei Roboter-y 1675 mm.
+  const rooms = JSON.parse(JSON.stringify(raeume()));
+  rooms['1'].y = 1600;
+  const { karte } = await buehnenKarte(390, 320, { rooms, vacuum_position: { x: 3000, y: 1650, a: 0 } });
+  const e = etikett(karte, 1);
+  const size = karte._map.config(1).font_size;
+  assert.ok(e.name.y0 >= -0.5 && e.nummer.y0 >= -0.5, 'Etikett unter dem oberen Rand: ' + JSON.stringify([e.name, e.nummer, size]));
+  const r = marke(karte, 'robot');
+  assert.ok(r.kasten.y0 >= -0.5, 'Roboter ganz sichtbar: ' + JSON.stringify(r.kasten));
+  assert.match(r.g.style.transform, /translate\(/, 'transform bleibt der Ort (R20)');
+  // Außerhalb der Bühne (verschoben) wird nichts herangezogen.
+  rooms['1'].y = 4000;
+  const { karte: aussen } = await buehnenKarte(390, 320, { rooms });
+  assert.deepEqual(versatz(etikett(aussen, 1).g), { x: 0, y: 0 });
+});
+
 // ── Task 6: Treffertest, Modi, Raum-Chips ──────────────────────────────────
 /** Karte mit Kartendaten-Abruf (fetch wie im Browser); `antwort` steuert die Antwort. */
 async function datenKarte({ config = {}, antwort, fixture = 'voll' } = {}) {

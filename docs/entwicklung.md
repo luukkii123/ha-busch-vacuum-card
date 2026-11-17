@@ -245,6 +245,24 @@
   Leuchtdichte (Pastell hell ≈ 0,5–0,7), Etiketten (`--primary-text-color`,
   dunkel `#e1e1e1`, hell `#212121`, Kontur in Kartenhintergrund) auf jeder
   Raumfläche aller Schemata mindestens 4,5:1 (`tests/karte.test.js`, M33).
+- **Etiketten und Marker (M10, Buschcheck 17.11.2026):** `MapView._placeLabels`
+  läuft nach jedem Zeichnen, jeder Roboterbewegung, Zoom und Verschieben und
+  rechnet in Symboleinheiten (Rahmen der aufrechten Symbole, Bildschirm-px
+  durch `object_scale`). Liegt ein Marker (`MAP_MARKER_HALF`: Roboter, Dock,
+  Router, Stationsmarke, Punkte, Warnungen) im Raumnamen, rückt das Etikett
+  knapp darunter, darüber, rechts oder links daneben (`style.translate` am
+  Etikett und an `cleaning_settings`, nie ein Neuzeichnen); die Raumnummer ist
+  ein Ring (Zahl in Textfarbe auf Kartenfarbe, Rand in Akzentfarbe) über dem
+  Namen, sonst rechts, links oder darunter. Gleiche Warnungen einer Ebene
+  (`obstacles`, `stains`, `pets`, `blocked_rooms`, gleicher `data-ignored`)
+  näher als `MAP_PLACE.bundle` (44 Einheiten) zeigen eine Marke mit
+  `data-count` und Zähler `.count`, die übrigen tragen `data-bundled`
+  (ausgeblendet); Treffer und Tipps bleiben auf den echten Positionen
+  (Fingerbreite 44 px unverändert). Rand-Clamping: Etiketten und Marker,
+  deren Anker in der Bühne liegt, bleiben ganz in der Bühne; Marker nur per
+  `style.translate`, der Ort bleibt im `transform`. Fahrlinie (z 10) unter
+  allen Texten und Markern, Deckkraft 0,4. Tests „M10 …“ in
+  `tests/karte.test.js`.
 - **R24-Ausnahme Bildmodus** (nur Rückfall, wenn die Kartendaten fehlen):
   Grund: das Bild rendert die Integration; Räume, Wände und eingebrannte
   Objekte (Pfad, Hindernisse, Teppiche des Bilds) lassen sich darin weder
