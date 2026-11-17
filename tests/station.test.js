@@ -4,13 +4,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus, neueKarte, mikro } = require('./attrappe.js');
+const { roh, dialogVon, sauger } = require('./hilfen.js');
 
-const roh = (x) => JSON.parse(JSON.stringify(x));
 
-function sauger(haus, attribute = {}, zustand) {
-  const alt = haus.states['vacuum.robo'];
-  return { 'vacuum.robo': { entity_id: 'vacuum.robo', state: zustand || alt.state, attributes: Object.assign({}, alt.attributes, attribute) } };
-}
 function aufbau(name = 'voll', { attribute, states, zustand, config, speicher } = {}) {
   const u = neueUmgebung(), haus = hausAus(name);
   if (speicher !== undefined) u.kontext.localStorage = speicher;
@@ -109,7 +105,6 @@ test('ALL-12 Geräteinfo (ALL-12) nennt die Stationsprobleme aus stationStatus',
 
 // ── Task 2: Dock-Knopf und Aktionsmenü (DOCK-05) ─────────────────────────────
 
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
 const $$d = (u, sel) => dialogVon(u).shadowRoot.querySelectorAll(sel);
 const dockKnopf = (k) => k.karte.shadowRoot.querySelector('.dock');

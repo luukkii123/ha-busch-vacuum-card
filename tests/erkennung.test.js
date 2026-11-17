@@ -6,9 +6,9 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { neueUmgebung, hausAus, neueKarte } = require('./attrappe.js');
+const { roh } = require('./hilfen.js');
 
 const fixture = (name) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', name + '.json'), 'utf8'));
-const roh = (x) => JSON.parse(JSON.stringify(x));
 function modell(name, optionen) {
   const u = neueUmgebung();
   const { VacuumModel } = u.registry.get('busch-vacuum-card').__internals;

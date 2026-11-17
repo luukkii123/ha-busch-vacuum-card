@@ -6,14 +6,10 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { neueUmgebung, hausAus, neueKarte, mikro } = require('./attrappe.js');
+const { roh, dialogVon, sauger } = require('./hilfen.js');
 
-const roh = (x) => JSON.parse(JSON.stringify(x));
 const SCHLUESSEL = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'integration-schluessel.json'), 'utf8'));
 
-function sauger(haus, attribute = {}, zustand) {
-  const alt = haus.states['vacuum.robo'];
-  return { 'vacuum.robo': { entity_id: 'vacuum.robo', state: zustand || alt.state, attributes: Object.assign({}, alt.attributes, attribute) } };
-}
 
 /** Karte mit Fixture; `attribute` ergänzen den Sauger. */
 function aufbau(name = 'voll', { attribute, states, zustand } = {}) {
@@ -31,7 +27,6 @@ const aufrufe = (k) => roh(k.haus.rufe);
 const setze = (_k, key, value) => ({ domain: 'dreame_vacuum', service: 'vacuum_set_property', data: { entity_id: 'vacuum.robo', key, value } });
 
 // Dialog
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
 const $$d = (u, sel) => dialogVon(u).shadowRoot.querySelectorAll(sel);
 function menue(k) { k.karte.shadowRoot.querySelector('.menu-button').click(); }

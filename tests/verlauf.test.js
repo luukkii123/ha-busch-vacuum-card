@@ -4,9 +4,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus, neueKarte, mikro, verlaufsAbruf } = require('./attrappe.js');
+const { roh, dialogVon } = require('./hilfen.js');
 const { verlaufsdaten } = require('./kartendaten.js');
 
-const roh = (x) => JSON.parse(JSON.stringify(x));
 const HIST = 'sensor.robo_cleaning_history';
 
 function aufbau(name = 'voll', { states, config, services, haus: mitHaus, antwort } = {}) {
@@ -90,7 +90,6 @@ test('HIS-01 historySums: Fläche, Zeit, Anzahl aus den Texten; ft² mit HA-Einh
 
 // ── Task 2: Liste und Menüeinträge ──────────────────────────────────────────
 
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
 const $$d = (u, sel) => dialogVon(u).shadowRoot.querySelectorAll(sel);
 const menueEintraege = (k) => {

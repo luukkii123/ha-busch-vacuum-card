@@ -5,10 +5,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus, neueKarte, mikro, verlaufsAbruf } = require('./attrappe.js');
+const { roh, dialogVon } = require('./hilfen.js');
 const { ausFixture } = require('./kartendaten.js');
 
-const roh = (x) => JSON.parse(JSON.stringify(x));
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
 const $$d = (u, sel) => dialogVon(u).shadowRoot.querySelectorAll(sel);
 const dienste = (haus) => haus.rufe.filter((r) => r.domain === 'dreame_vacuum').map((r) => r.service);

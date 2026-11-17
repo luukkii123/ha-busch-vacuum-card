@@ -6,15 +6,11 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { neueUmgebung, hausAus, neueKarte } = require('./attrappe.js');
+const { roh, dialogVon, sauger } = require('./hilfen.js');
 
-const roh = (x) => JSON.parse(JSON.stringify(x));
 const SCHLUESSEL = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'integration-schluessel.json'), 'utf8'));
 const CAM = 'camera.robo_map';
 
-function sauger(haus, attribute = {}, zustand) {
-  const alt = haus.states['vacuum.robo'];
-  return { 'vacuum.robo': { entity_id: 'vacuum.robo', state: zustand || alt.state, attributes: Object.assign({}, alt.attributes, attribute) } };
-}
 /** Karte aus einer Fixture; `attribute` ergänzen den Sauger, `raeume` ersetzen Räume der Kamera (je id gemischt). */
 function aufbau(name = 'voll', { attribute, zustand, config, caps, raeume, services } = {}) {
   const u = neueUmgebung(), haus = hausAus(name);
@@ -35,7 +31,6 @@ function aufbau(name = 'voll', { attribute, zustand, config, caps, raeume, servi
 }
 const aufrufe = (k) => roh(k.haus.rufe);
 const setze = (key, value) => ({ domain: 'dreame_vacuum', service: 'vacuum_set_property', data: { entity_id: 'vacuum.robo', key, value } });
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
 const $$d = (u, sel) => dialogVon(u).shadowRoot.querySelectorAll(sel);
 const knopf = (k) => k.karte.shadowRoot.querySelector('[data-action="clean-settings"]');

@@ -5,8 +5,8 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus, neueKarte, mikro } = require('./attrappe.js');
+const { roh, dialogVon, sauger } = require('./hilfen.js');
 
-const roh = (x) => JSON.parse(JSON.stringify(x));
 /** Zwei Geräte-Shortcuts, absichtlich nicht nach index sortiert; Namen mit Umlaut und Emoji. */
 const SHORTCUTS = {
   32: { id: 32, index: 1, name: 'Gewächshaus nach dem Gießen 🍝', map_id: 1, running: false, tasks: [[{ segment_id: 3, order: 1 }]] },
@@ -15,10 +15,6 @@ const SHORTCUTS = {
 };
 const SKRIPT = (id, name, state = 'off', icon) => ({ [id]: { entity_id: id, state, attributes: Object.assign({ friendly_name: name }, icon ? { icon } : {}) } });
 
-function sauger(haus, attribute = {}, zustand) {
-  const alt = haus.states['vacuum.robo'];
-  return { 'vacuum.robo': { entity_id: 'vacuum.robo', state: zustand || alt.state, attributes: Object.assign({}, alt.attributes, attribute) } };
-}
 function aufbau(name = 'voll', { attribute, states, zustand, config } = {}) {
   const u = neueUmgebung(), haus = hausAus(name);
   if (attribute || zustand) haus.states = Object.assign({}, haus.states, sauger(haus, attribute, zustand));
@@ -30,7 +26,6 @@ function aufbau(name = 'voll', { attribute, states, zustand, config } = {}) {
 const mitShortcuts = (optionen = {}) => aufbau('voll', Object.assign({}, optionen, { attribute: Object.assign({ shortcuts: SHORTCUTS }, optionen.attribute) }));
 const aufrufe = (k) => roh(k.haus.rufe);
 const knopf = (k) => k.karte.shadowRoot.querySelector('[data-action="shortcuts"]');
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
 const $$d = (u, sel) => dialogVon(u).shadowRoot.querySelectorAll(sel);
 const eintraege = (k) => $$d(k.u, '[data-shortcut]').map((b) => b.getAttribute('data-shortcut'));

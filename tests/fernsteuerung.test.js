@@ -5,8 +5,8 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus, neueKarte, mikro } = require('./attrappe.js');
+const { roh, dialogVon } = require('./hilfen.js');
 
-const roh = (x) => JSON.parse(JSON.stringify(x));
 const DIENST = 'vacuum_remote_control_move_step';
 
 /** Haus mit Antworten auf Abruf: `offen` hält je Aufruf { ok, fehler }. */
@@ -178,7 +178,6 @@ test('RemoteSender: neue Bewegung nach Stopp setzt die Wiederholung aus', async 
 
 // ── Task 2: Ansicht, Freigabe, Auto-Stopp ───────────────────────────────────
 
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
 const eintrag = (u, name) => dialogVon(u).shadowRoot.querySelectorAll('.menu-item').find((b) => b.getAttribute('data-entry') === name);
 const taste = (u, key, extra = {}, typ = 'keydown') => u.document.dispatchEvent(u.neuesEreignis(typ, Object.assign({ key }, extra)));

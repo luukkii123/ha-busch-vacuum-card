@@ -3,12 +3,11 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus, neueKarte, neuesHaus } = require('./attrappe.js');
+const { roh, dialogVon } = require('./hilfen.js');
 
-const roh = (x) => JSON.parse(JSON.stringify(x));
 const intern = (u) => u.registry.get('busch-vacuum-card').__internals;
 const $ = (karte, sel) => karte.shadowRoot.querySelector(sel);
 const $$ = (karte, sel) => karte.shadowRoot.querySelectorAll(sel);
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 
 /** Alle Feldnamen des Schemas, Abschnitte (expandable) aufgelöst. */
 function felder(schema) {

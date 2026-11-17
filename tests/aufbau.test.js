@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus, neueKarte } = require('./attrappe.js');
+const { dialogVon } = require('./hilfen.js');
 
 function aufbau({ fixture = 'voll', attribute, zustand, config, breite } = {}) {
   const u = neueUmgebung();
@@ -20,7 +21,6 @@ function aufbau({ fixture = 'voll', attribute, zustand, config, breite } = {}) {
 }
 const $ = (k, sel) => k.sr.querySelector(sel);
 const $$ = (k, sel) => k.sr.querySelectorAll(sel);
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 const ansichtId = (u) => { const d = dialogVon(u); const s = d && d.shadowRoot.querySelector('.sheet'); return s ? s.getAttribute('data-view') : null; };
 const aufgabe = (k, name) => $$(k, '.task').find((b) => b.getAttribute('data-task') === name);
 const ctl = (k, name) => $$(k, '.ctl').find((b) => b.getAttribute('data-action') === name);

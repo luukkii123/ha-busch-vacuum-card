@@ -3,9 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus } = require('./attrappe.js');
+const { roh } = require('./hilfen.js');
 const { fixture } = require('./kartendaten.js');
 
-const roh = (x) => JSON.parse(JSON.stringify(x));
 const raeume = () => fixture('voll').states['camera.robo_map'].attributes.rooms;
 
 /** Modell aus der Fixture voll, Saugerattribute und Kamera-Attribute überschreibbar. */

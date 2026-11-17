@@ -3,20 +3,15 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus, neueKarte } = require('./attrappe.js');
+const { roh, dialogVon, sauger } = require('./hilfen.js');
 
-const roh = (x) => JSON.parse(JSON.stringify(x));
 const seite = (u) => u.document.documentElement.style.overflow || '';
 const menueKnopf = (karte) => karte.shadowRoot.querySelector('.menu-button');
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 const $d = (u, sel) => dialogVon(u).shadowRoot.querySelector(sel);
 const eintraege = (u) => dialogVon(u).shadowRoot.querySelectorAll('.menu-item').map((b) => b.getAttribute('data-entry'));
 const eintrag = (u, name) => dialogVon(u).shadowRoot.querySelectorAll('.menu-item').find((b) => b.getAttribute('data-entry') === name);
 const taste = (u, key, extra = {}) => u.document.dispatchEvent(u.neuesEreignis('keydown', Object.assign({ key }, extra)));
 
-function sauger(haus, attribute = {}) {
-  const alt = haus.states['vacuum.robo'];
-  return { 'vacuum.robo': { entity_id: 'vacuum.robo', state: alt.state, attributes: Object.assign({}, alt.attributes, attribute) } };
-}
 function offen(name = 'voll', attribute) {
   const u = neueUmgebung(), haus = hausAus(name);
   if (attribute) haus.states = Object.assign({}, haus.states, sauger(haus, attribute));

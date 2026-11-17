@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus, neueKarte, mikro } = require('./attrappe.js');
+const { dialogVon, sauger } = require('./hilfen.js');
 const { ausFixture, kartendaten, lauflaengen, fixture } = require('./kartendaten.js');
 
 const intern = () => neueUmgebung().registry.get('busch-vacuum-card').__internals;
@@ -204,10 +205,6 @@ function bildUmgebung({ breite = 1444, hoehe = 1444, fehler = false } = {}) {
 const kamera = (haus, attribute, zustand) => {
   const alt = haus.states[CAM];
   return { [CAM]: { entity_id: CAM, state: zustand || alt.state, attributes: Object.assign({}, alt.attributes, attribute) } };
-};
-const sauger = (haus, attribute, zustand) => {
-  const alt = haus.states['vacuum.robo'];
-  return { 'vacuum.robo': { entity_id: 'vacuum.robo', state: zustand || alt.state, attributes: Object.assign({}, alt.attributes, attribute) } };
 };
 const ansicht = (karte) => karte.shadowRoot.querySelector('.map-view');
 const hinweise = (karte) => karte.shadowRoot.querySelectorAll('.map-note').map((n) => n.getAttribute('data-kind'));
@@ -790,7 +787,6 @@ test('Beispiel späteres Modul: Ebene anlegen, pick-room, map-room-tap, Ebene en
 });
 
 // ── Task 7: Stockwerke und map_config ──────────────────────────────────────
-const dialogVon = (u) => u.body.childNodes.find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG') || null;
 /** Zwei Stockwerke: Karte 1 (aktiv, id 3) und Karte 2 (id 7) mit eigener Kamera camera.robo_map_2. */
 function zweiStockwerke(haus, vacuum = {}, zustand) {
   const maps = [

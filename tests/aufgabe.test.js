@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, hausAus, neueKarte } = require('./attrappe.js');
+const { roh } = require('./hilfen.js');
 
 const $ = (karte, sel) => karte.shadowRoot.querySelector(sel);
 const $$ = (karte, sel) => karte.shadowRoot.querySelectorAll(sel);
@@ -12,7 +13,6 @@ const gewaehlt = (karte) => $$(karte, '.task').filter((b) => b.getAttribute('ari
 const knopf = (karte, aktion) => $$(karte, '.ctl').find((b) => b.getAttribute('data-action') === aktion);
 const meldungen = (karte) => $$(karte, '.message').map((m) => m.getAttribute('data-kind'));
 const meldung = (karte, kind) => $$(karte, '.message').find((m) => m.getAttribute('data-kind') === kind);
-const roh = (x) => JSON.parse(JSON.stringify(x));
 
 function sauger(haus, zustand, attribute = {}) {
   const alt = haus.states['vacuum.robo'];
