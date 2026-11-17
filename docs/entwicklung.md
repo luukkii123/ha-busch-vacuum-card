@@ -827,7 +827,12 @@ Dialog-Ereignis, gleich viele img/svg/script-Knoten), `netz` (M6
 `fernsteuerung-langsam`), `teilfehler` (M20), `befehle` (M3/M5), `leiste`
 (M2), `oberflaeche` (M11, M12, M13, M21 mit leerem `localize`),
 `feinschliff` (M31–M36), `anzeige` (M45 `forced-colors-…`, M46, M47
-`panel-verlaufsvorschau[-leer|-fehler]-…`) und zuletzt `abrufe` (M19:
+`panel-verlaufsvorschau[-leer|-fehler]-…`), `etiketten` (M10 Schritt 6:
+`getBoundingClientRect` der sichtbaren Raumnamen und Nummernringe gegen die
+sichtbaren Marker in den Zuständen von `karte-cleaning-*` 320/390/1280 und
+`layout-*-all/room`, ohne eigene Bilder; Warnstapel, wo gleiche Warnungen
+näher als 44 px liegen; dazu `karte-m10-rand-390-light` und
+`karte-m10-zoom-390-light`) und zuletzt `abrufe` (M19:
 `camera_proxy`-Bildabrufe des ganzen Laufs gegen 795, nur ohne `--nur`).
 Netzfehler entstehen dort in der Seite (`NETZ_JS`, synthetische 500 ohne
 echten Abruf), Dienstantworten im Harness-Stub (`DIENST_JS`: ablehnen,

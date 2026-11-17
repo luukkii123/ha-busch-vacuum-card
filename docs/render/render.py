@@ -56,6 +56,7 @@ Buschcheck Welle 1/2 (#1163), appended after "regeln": rechte (M8 guest vs admin
 tests/fixtures/feindlich.json against a harmless copy), netz (M6 karte-veraltet, M18 offline, M39 netz-langsam/-fehler,
 fernsteuerung-langsam; faults made in the page, no real 5xx), teilfehler (M20), befehle (M3/M5), leiste (M2),
 oberflaeche (E6: M11, M12, M13, M21 words), feinschliff (E7: M31-M36), anzeige (E9: M45 forced colors, M46, M47),
+kontrast (M16), etiketten (M10 step 6: label/marker rectangles, karte-m10-rand/-zoom),
 abrufe (M19: camera_proxy picture fetches of the whole run, only over all areas).
 
 Usage:
@@ -65,7 +66,7 @@ Usage:
         karte, layout, dialog, bewegung, kartenansicht, einstellungen, station,
         shortcuts, aufgaben, verlauf, fernsteuerung, reinigung, editor, sicherung,
         uebersetzung, zustaende, regeln, rechte, adressen, feindlich, netz, teilfehler,
-        befehle, leiste, oberflaeche, feinschliff, anzeige, abrufe
+        befehle, leiste, oberflaeche, feinschliff, anzeige, kontrast, etiketten, abrufe
     An unknown area exits with 2 and the list. Checks that only mean something
     over all areas (every VIEW_IDS view pictured) are then listed under
     report.json "nichtGemessen", not counted as passed; report.json "bereiche"
@@ -3672,6 +3673,138 @@ def bereich_kontrast(k):
           "8 widths x light/dark, docked and cleaning (exempt: disabled, filled primary button in theme colour)", not bad, json.dumps(bad)[:1500])
 
 
+# ── M10 · Etiketten und Marker ──────────────────────────────────────────────
+# M10 step 6: client rectangles (getBoundingClientRect) of the visible room names and number rings
+# and of the visible markers; bundled warnings (data-bundled) are hidden and do not count.
+M10_LAGEN = ("robot", "charger", "router", "station_status", "predefined_points")
+M10_WARNUNGEN = ("obstacles", "stains", "pets", "blocked_rooms")
+M10_FINGER = 44  # MAP_PLACE.bundle of the card (2 x TAP.hitPx) in screen px at object_scale 1
+M10_JS = """(a) => {
+    const sr = window.card().shadowRoot, stage = sr.querySelector('.map-stage'), s = stage.getBoundingClientRect();
+    const seen = (n) => { const r = n.getBoundingClientRect(); if (r.width < 0.5 || r.height < 0.5) return null;
+        for (let e = n; e && e.nodeType === 1; e = e.parentNode) { if (e.hasAttribute('hidden')) return null;
+            const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) return null;
+            if (e === stage) break; }
+        return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
+    const all = (sel) => Array.from(sr.querySelectorAll(sel));
+    const L = '.map-layers [data-layer=rooms] [data-symbol=label] ';
+    const labels = [];
+    for (const n of all(L + 'text[data-role=name]')) { const b = seen(n); if (b) labels.push({ what: 'name ' + n.textContent, b }); }
+    for (const n of all(L + '.badge')) { const b = seen(n); if (b) labels.push({ what: 'ring ' + n.textContent, b }); }
+    const sel = a.lagen.map((l) => '.map-layers [data-layer=' + l + '] [data-symbol]')
+        .concat(a.warnungen.map((l) => '.map-layers [data-layer=' + l + '] [data-symbol]:not([data-bundled])')).join(', ');
+    const markers = [];
+    for (const n of all(sel)) { const b = seen(n); if (b) markers.push({ what: n.parentNode.getAttribute('data-layer') + ':' + n.getAttribute('data-object'), b,
+        count: Number(n.getAttribute('data-count') || 0), warn: a.warnungen.includes(n.parentNode.getAttribute('data-layer')) }); }
+    const cut = (x, y) => Math.min(x.r, y.r) - Math.max(x.l, y.l) > 0.01 && Math.min(x.b, y.b) - Math.max(x.t, y.t) > 0.01;
+    const r1 = (v) => Math.round(v * 10) / 10, short = (b) => [r1(b.l), r1(b.t), r1(b.r), r1(b.b)];
+    const hits = [];
+    for (const x of labels) for (const m of markers) if (cut(x.b, m.b)) hits.push(x.what + ' / ' + m.what + ' ' + JSON.stringify([short(x.b), short(m.b)]));
+    const out = labels.filter((x) => x.b.l < s.left - 0.5 || x.b.t < s.top - 0.5 || x.b.r > s.right + 0.5 || x.b.b > s.bottom + 0.5)
+        .map((x) => x.what + ' ' + JSON.stringify(short(x.b)));
+    // Stack = two equal warnings (layer and data-ignored) whose anchors lie closer than a finger (MAP_PLACE.bundle).
+    const m = window.card()._map, anchors = {};
+    for (const l of a.warnungen) for (const g of all('.map-layers [data-layer=' + l + '] [data-symbol]')) {
+        const t = String(g.style.transform).match(/translate\(\s*(-?[\d.e+-]+)px,\s*(-?[\d.e+-]+)px\)/);
+        if (t) (anchors[l + '|' + (g.getAttribute('data-ignored') || '')] = anchors[l + '|' + (g.getAttribute('data-ignored') || '')] || []).push(m.toScreen({ x: +t[1], y: +t[2] })); }
+    let near = 0;
+    for (const list of Object.values(anchors)) for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++)
+        if (Math.hypot(list[i].x - list[j].x, list[i].y - list[j].y) < a.finger) near++;
+    const warn = markers.filter((x) => x.warn), crowd = [];
+    for (let i = 0; i < warn.length; i++) for (let j = i + 1; j < warn.length; j++) if (cut(warn[i].b, warn[j].b)) crowd.push(warn[i].what + ' / ' + warn[j].what);
+    const ring4 = all(L + '.badge').filter((n) => seen(n) && n.textContent.trim() === '4').length;
+    return { labels: labels.length, markers: markers.length, hits, out, ring4,
+             stacks: markers.filter((m) => m.warn && m.count >= 2).map((m) => m.what + ' x' + m.count),
+             near, crowd, warns: warn.map((x) => ({ what: x.what, count: x.count, x: r1((x.b.l + x.b.r) / 2), y: r1((x.b.t + x.b.b) / 2) })),
+             counted: all('[data-count]').length, robot: (markers.find((m) => m.what.startsWith('robot:')) || {}).b || null,
+             stage: { l: s.left, t: s.top, r: s.right, b: s.bottom } };
+}"""
+
+
+def bereich_etiketten(k):
+    """M10 Schritt 6: Rechteckmessung Etiketten gegen Marker in karte-cleaning-* und layout-*, dazu Rand und Zoom."""
+    page, report, check, theme, build, ruhe, shot = k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot
+    arg = {"lagen": list(M10_LAGEN), "warnungen": list(M10_WARNUNGEN), "finger": M10_FINGER}
+    rows = []
+    # The states of karte-cleaning-<karte|panel>-<320|390|1280>-<theme> (viewport = card width, as bereich_karte) ...
+    for panel in (False, True):
+        for width in (320, 390, 1280):
+            for th in THEMES:
+                page.set_viewport_size({"width": width, "height": 900})
+                theme(th)
+                build("cleaning", panel=panel)
+                rows.append({"fall": f"karte-cleaning-{'panel' if panel else 'karte'}-{width}-{th}", **page.evaluate(M10_JS, arg)})
+    # ... and of layout-<karte|panel>-<all|room>-<width>-<theme> (card width = viewport - 16, as bereich_layout).
+    for panel in (False, True):
+        for width in LAYOUT_WIDTHS:
+            for th in THEMES:
+                page.set_viewport_size({"width": width + 16, "height": 900})
+                theme(th)
+                build("docked", panel=panel)
+                for task in ("all", "room"):
+                    if task == "room":
+                        page.evaluate(room_pick)
+                        ruhe()
+                    rows.append({"fall": f"layout-{'panel' if panel else 'karte'}-{task}-{width}-{th}", **page.evaluate(M10_JS, arg)})
+    report["etiketten"] = rows
+    n = len(rows)
+    check(f"M10 label and marker rectangles: no room name or number ring rectangle intersects a marker rectangle "
+          f"(karte-cleaning-* and layout-*, {n} cases, visible elements, bundled warnings excluded)",
+          n == 60 and all(r["labels"] and r["markers"] and not r["hits"] for r in rows),
+          json.dumps([{"fall": r["fall"], "labels": r["labels"], "markers": r["markers"], "hits": r["hits"][:3]}
+                      for r in rows if r["hits"] or not r["labels"] or not r["markers"]][:6])[:1500])
+    check(f"M10 labels inside the map: every visible room name and number ring lies in .map-stage ({n} cases)",
+          all(not r["out"] for r in rows), json.dumps([{"fall": r["fall"], "out": r["out"][:3]} for r in rows if r["out"]][:6])[:1500])
+    # Stack where equal warnings lie within a finger; on wide cards the three lie further apart and show singly.
+    stapel = lambda r: len(r["stacks"]) == 1 if r["near"] else (not r["stacks"] and not r["counted"] and not r["crowd"])
+    gestapelt = sum(1 for r in rows if r["near"])
+    check(f"M10 warning stack: where equal warnings lie within {M10_FINGER} px, exactly one visible warning mark with data-count >= 2 "
+          f"({gestapelt} of {n} cases); further apart every warning shows singly, no data-count, no two warning marks intersecting",
+          gestapelt > 0 and all(stapel(r) for r in rows),
+          json.dumps([{"fall": r["fall"], "near": r["near"], "stacks": r["stacks"], "crowd": r["crowd"]} for r in rows if not stapel(r)][:6]))
+    check(f"M10 number 4 visible: the number ring 4 is drawn and visible ({n} cases)",
+          all(r["ring4"] == 1 for r in rows), json.dumps([{"fall": r["fall"], "ring4": r["ring4"]} for r in rows if r["ring4"] != 1][:6]))
+
+    # karte-m10-rand: a room and the robot on the map's top edge (anchor 2 px below the stage top).
+    page.set_viewport_size({"width": 390, "height": 900})
+    theme("light")
+    build("docked")
+    top = page.evaluate("""() => { const m = window.card()._map, s = m.stage.getBoundingClientRect();
+        const at = (f) => m.toRobot(m.fromScreen({ x: s.left + s.width * f, y: s.top + 2 }));
+        return { room: at(0.35), robot: at(0.7) }; }""")
+
+    def an_den_rand(states):
+        for cam_id in ("camera.robo_map", "camera.robo_map_1"):
+            if cam_id in states:
+                a = states[cam_id]["attributes"]
+                a["rooms"]["1"].update({"x": round(top["room"]["x"]), "y": round(top["room"]["y"])})
+                a["vacuum_position"] = {"x": round(top["robot"]["x"]), "y": round(top["robot"]["y"]), "a": 0}
+    baue_daten(k, daten_mit(k, "docked", an_den_rand))
+    rand = page.evaluate(M10_JS, arg)
+    shot("karte-m10-rand-390-light.png")
+    report["etikettenRand"] = dict(rand, oben=top)
+    rb, st = rand["robot"], rand["stage"]
+    check("M10 map edge: a room and the robot at the top edge keep name, ring and robot rectangle in .map-stage, nothing intersects (karte-m10-rand, 390 light)",
+          rand["labels"] and not rand["out"] and not rand["hits"] and rb is not None
+          and rb["t"] >= st["t"] - 0.5 and rb["l"] >= st["l"] - 0.5 and rb["r"] <= st["r"] + 0.5 and rb["b"] <= st["b"] + 0.5,
+          json.dumps({kk: rand[kk] for kk in ("labels", "out", "hits", "robot", "stage")})[:1500])
+
+    # karte-m10-zoom: zoom 4 on the warning stack; apart, the warnings show singly (no data-count left).
+    build("docked")
+    vorher = page.evaluate(M10_JS, arg)
+    page.evaluate("""() => { const c = window.card(), m = c._map, sr = c.shadowRoot;
+        const head = sr.querySelector('.map-layers [data-count]'), r = head.getBoundingClientRect();
+        m._zoomAt(4, { x: r.left + r.width / 2, y: r.top + r.height / 2 }, false); }""")
+    ruhe()
+    zoom = page.evaluate(M10_JS, arg)
+    zoom["zoom"] = page.evaluate("() => window.card()._map._zoom")
+    shot("karte-m10-zoom-390-light.png")
+    report["etikettenZoom"] = {"vorher": vorher["stacks"], **zoom}
+    check("M10 zoom: zoom 4 on the warning stack leaves 0 elements with data-count (karte-m10-zoom, 390 light)",
+          len(vorher["stacks"]) == 1 and zoom["zoom"] == 4 and zoom["counted"] == 0,
+          json.dumps({"vorher": vorher["stacks"], "zoom": zoom["zoom"], "counted": zoom["counted"], "stacks": zoom["stacks"]}))
+
+
 BEREICHE = [
     ("karte", bereich_karte),
     ("layout", bereich_layout),
@@ -3703,6 +3836,7 @@ BEREICHE = [
     ("feinschliff", bereich_feinschliff),
     ("anzeige", bereich_anzeige),
     ("kontrast", bereich_kontrast),
+    ("etiketten", bereich_etiketten),
     # M19 counts the picture fetches of everything before it: keep it last.
     ("abrufe", bereich_abrufe),
 ]
