@@ -8575,6 +8575,16 @@ const HISTORY_PREVIEW_STYLES = `
 :host(:not([data-width=wide])) .history-slot {
     display: none;
 }
+/* The preview only fills free space: it gives way first, the task area keeps its height. */
+:host([data-width=wide]) .history-slot {
+    flex: 0 1000 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+.history-slot[data-cramped],
+.history-preview .history-run[hidden] {
+    display: none;
+}
 .history-slot .busch-ui-section {
     border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
 }
@@ -11998,6 +12008,7 @@ class BuschVacuumCard extends HTMLElement {
         if (!this._widthObserver) this._widthObserver = new ResizeObserver((entries) => {
             const last = entries && entries[entries.length - 1];
             this._setWidth(last && last.contentRect ? last.contentRect.width : 0);
+            this._fitHistory();
         });
         this._widthObserver.observe(this);
     }
@@ -12141,6 +12152,7 @@ class BuschVacuumCard extends HTMLElement {
             this._fitKey = fit;
             this._fitControls();
         }
+        this._fitHistory();
     }
 
     /** M2: measured, not guessed: the bar wraps (data-wrap) only when its words do not fit in one row. */
@@ -12149,6 +12161,17 @@ class BuschVacuumCard extends HTMLElement {
         if (!bar) return;
         bar.removeAttribute('data-wrap');
         if (bar.childNodes.length > 1 && bar.scrollWidth > bar.clientWidth + 1) bar.setAttribute('data-wrap', '');
+    }
+
+    /** M47: measured: runs that do not fit whole are hidden; without room for the heading the block goes. */
+    _fitHistory() {
+        const slot = this._historySlot;
+        if (!slot || slot.hidden || this.getAttribute('data-width') !== 'wide') return;
+        slot.removeAttribute('data-cramped');
+        const runs = slot.querySelectorAll('.history-run');
+        for (const run of runs) run.hidden = false;
+        for (let i = runs.length - 1; i >= 0 && slot.scrollHeight > slot.clientHeight + 1; i--) runs[i].hidden = true;
+        if (slot.scrollHeight > slot.clientHeight + 1) slot.setAttribute('data-cramped', '');
     }
 
     _openDialog(view) {

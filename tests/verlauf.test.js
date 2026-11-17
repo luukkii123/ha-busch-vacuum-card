@@ -587,6 +587,29 @@ test('M47 Vorschau: im Panel zwischen Aufgaben und Aktionsleiste, einklappbar, d
   assert.match(css, /\.history-preview \.run-lead \{\n    display: none;/, 'M12-Symbolspalte ohne Gruppen in der Vorschau ohne Platz');
 });
 
+test('M47 Vorschau nur im freien Platz: Läufe, die nicht ganz passen, fallen weg; passt nicht einmal der Kopf, der Block', () => {
+  // Render-Lauf 17.11.: drei feste Läufe stauchten den Aufgabenbereich, die Stepperknöpfe lagen unter der Vorschau.
+  const k = breit();
+  const slot = vorschau(k);
+  const laeufe = slot.querySelectorAll('.history-run');
+  let platz = 150;
+  Object.defineProperty(slot, 'clientHeight', { get: () => platz, configurable: true });
+  Object.defineProperty(slot, 'scrollHeight', { get: () => (slot.hasAttribute('data-cramped') ? 0 : 44 + 48 * laeufe.filter((b) => !b.hidden).length), configurable: true });
+  k.karte._update();
+  assert.deepEqual(laeufe.map((b) => b.hidden), [false, false, true], 'zwei ganze Läufe passen in 150 px');
+  assert.equal(slot.hasAttribute('data-cramped'), false);
+  platz = 30;
+  k.karte._fitHistory();
+  assert.ok(slot.hasAttribute('data-cramped'), 'nicht einmal der Kopf: Block aus');
+  platz = 400;
+  k.karte._fitHistory();
+  assert.deepEqual(laeufe.map((b) => b.hidden), [false, false, false], 'wieder Platz: alle drei');
+  assert.equal(slot.hasAttribute('data-cramped'), false);
+  const css = k.karte.shadowRoot.querySelector('style').textContent;
+  assert.match(css, /:host\(\[data-width=wide\]\) \.history-slot \{[^}]*flex: 0 1000 auto;[^}]*min-height: 0;[^}]*overflow: hidden;/, 'die Vorschau gibt zuerst nach');
+  assert.match(css, /\.history-slot\[data-cramped\],\n\.history-preview \.history-run\[hidden\] \{\n    display: none;/);
+});
+
 test('M47 Vorschau: ein Tipp öffnet den Verlauf; Zuklappen bleibt beim nächsten Update', () => {
   const k = breit();
   vorschau(k).querySelectorAll('.history-run')[0].click();
