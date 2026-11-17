@@ -295,6 +295,38 @@ test('DEV-10 Übersicht: Gruppen nur mit Inhalt (voll, ohne Dock, minimal)', () 
   assert.deepEqual(gruppen(uebersicht('minimal')), ['info'], 'fremder Sauger: nur Geräteinfo');
 });
 
+test('M46 Übersicht: jede Gruppenzeile hat Kurzstatus (Zweitzeile, beschreibt den Knopf) und Chevron; ohne Verschleiß kein Warnpunkt', () => {
+  const k = einstellungen();
+  const zeilen = $$d(k.u, '[data-group]');
+  assert.equal(zeilen.length, 12);
+  for (const b of zeilen) {
+    const name = b.getAttribute('data-group');
+    const status = b.querySelector('.group-status');
+    assert.ok(status && status.textContent.trim(), name + ': Kurzstatus');
+    assert.ok(b.querySelector('.group-name').textContent.trim(), name + ': Name bleibt sichtbar');
+    assert.ok(b.getAttribute('aria-describedby').split(' ').includes(status.id), name + ': Status beschreibt den Knopf');
+    const chevron = b.querySelector('.group-chevron');
+    assert.ok(chevron && chevron.getAttribute('icon') === 'mdi:chevron-right', name + ': Chevron');
+    assert.equal(chevron.getAttribute('aria-hidden'), 'true');
+  }
+  assert.equal($$d(k.u, '.group-warn').length, 0, 'voll: kleinster Rest 69 %, kein Handlungsbedarf');
+  const zubehoer = gruppe(k, 'consumables').querySelector('.group-status').textContent;
+  assert.match(zubehoer, /69 %/, 'Zubehör nennt den kleinsten Rest');
+  assert.match(gruppe(k, 'cleaning').querySelector('.group-status').textContent, /^\d+ von \d+ an$/);
+  assert.match(gruppe(k, 'battery').querySelector('.group-status').textContent, /%/);
+});
+
+test('M46 Übersicht: Zubehör mit Verschleiß (12 %) zeigt den Warnpunkt mit Wort, andere Gruppen nicht', () => {
+  const k = einstellungen('voll', { attribute: { filter_left: 12 } });
+  const zubehoer = gruppe(k, 'consumables');
+  const warn = zubehoer.querySelector('.group-warn');
+  assert.ok(warn, 'Warnpunkt');
+  assert.match(warn.textContent, /Handlungsbedarf/, 'nicht nur Farbe (R17)');
+  assert.ok(zubehoer.getAttribute('aria-describedby').split(' ').includes(warn.id));
+  assert.match(zubehoer.querySelector('.group-status').textContent, /12 %/);
+  assert.deepEqual($$d(k.u, '[data-group]').filter((b) => b.querySelector('.group-warn')).map((b) => b.getAttribute('data-group')), ['consumables']);
+});
+
 test('Station führt in die Dock-Ansicht (Modul dock, Reiter statt Platzhalter)', () => {
   const k = einstellungen();
   gruppe(k, 'station').click();

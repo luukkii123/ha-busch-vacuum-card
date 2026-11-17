@@ -840,6 +840,14 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zeitraumLoeschenTitel: 'Zeitraum löschen?',
             zeitraumLoeschenFrage: 'Zeitraum {zeitraum} endgültig löschen?',
             treffer: '{n} Treffer',
+            kurzAn: '{an} von {n} an',
+            kurzEinstellungen: '{n} Einstellungen',
+            kurzEinstellungen1: '1 Einstellung',
+            kurzZeitplaene: '{n} Zeitpläne',
+            kurzZeitplaene1: '1 Zeitplan',
+            kurzZeitplaene0: 'Keine Zeitpläne',
+            kurzKeineTeile: 'Keine Werte',
+            handlungsbedarf: 'Handlungsbedarf',
             keineTreffer: 'Keine Einstellung gefunden. Versuche einen anderen Begriff.',
             dauerMin: '{m} min',
             dauerStdMin: '{h} h {m} min',
@@ -1494,6 +1502,14 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zeitraumLoeschenTitel: 'Delete period?',
             zeitraumLoeschenFrage: 'Permanently delete period {zeitraum}?',
             treffer: '{n} results',
+            kurzAn: '{an} of {n} on',
+            kurzEinstellungen: '{n} settings',
+            kurzEinstellungen1: '1 setting',
+            kurzZeitplaene: '{n} schedules',
+            kurzZeitplaene1: '1 schedule',
+            kurzZeitplaene0: 'No schedules',
+            kurzKeineTeile: 'No values',
+            handlungsbedarf: 'Needs attention',
             keineTreffer: 'No setting found. Try another term.',
             dauerMin: '{m} min',
             dauerStdMin: '{h} h {m} min',
@@ -5347,9 +5363,10 @@ function settingsView(card) {
                     list.className = 'menu settings-groups';
                     for (const group of SETTING_GROUPS.filter((g) => groupShown(model, g.name))) {
                         const label = translate(hass, 'gruppe_' + group.name);
-                        const item = BuschUI.action({ label, text: label, icon: group.icon, variant: 'quiet', onClick: () => dialog.show(groupView(card, group.name)) });
-                        item.classList.add('menu-item');
+                        const item = BuschUI.action({ label, text: '', icon: group.icon, variant: 'quiet', onClick: () => dialog.show(groupView(card, group.name)) });
+                        item.classList.add('menu-item', 'settings-group');
                         item.setAttribute('data-group', group.name);
+                        groupLine(item, label, groupStatus(model, group.name, hass), group.name, hass);
                         list.appendChild(item);
                     }
                     results.replaceChildren(list);
@@ -5370,6 +5387,73 @@ function settingsView(card) {
             body.append(search, count, results);
         }
     };
+}
+
+/** M46 (W15): consumables below this many percent left need attention (row `low`, overview warning). */
+const CONSUMABLE_LOW = 30;
+
+/**
+ * M46 (W15): the overview's second line per group — a short status and
+ * `warn` when the group needs attention (worn consumables, low battery).
+ * Setting groups count their switches that are on.
+ */
+function groupStatus(model, name, hass) {
+    const t = (key, vars) => translate(hass, key, vars);
+    switch (name) {
+        case 'consumables': {
+            const parts = Object.entries(model.consumables());
+            if (!parts.length) return { text: t('kurzKeineTeile') };
+            const [attribute, left] = parts.reduce((a, b) => (b[1] < a[1] ? b : a));
+            return { text: entityLabel(hass, 'sensor', attribute) + ' ' + Math.round(left) + ' %', warn: left < CONSUMABLE_LOW };
+        }
+        case 'battery': {
+            const battery = batteryInfo(hass, model);
+            if (battery) return { text: battery.text, warn: battery.kind === 'low' };
+            break;
+        }
+        case 'info': return { text: model.state ? formatState(hass, model.state) : '–' };
+        case 'schedule': {
+            const n = scheduleList(model).length;
+            return { text: n === 0 ? t('kurzZeitplaene0') : n === 1 ? t('kurzZeitplaene1') : t('kurzZeitplaene', { n }) };
+        }
+        case 'dnd': return { text: t(dndActive(model) ? 'an' : 'aus') };
+    }
+    const known = groupKeys(name).filter((key) => settingValue(model, key).source !== null);
+    const switches = known.filter((key) => SETTINGS[key].control === 'switch');
+    if (switches.length) return { text: t('kurzAn', { an: switches.filter((key) => settingValue(model, key).value === true).length, n: switches.length }) };
+    return { text: known.length === 1 ? t('kurzEinstellungen1') : t('kurzEinstellungen', { n: known.length }) };
+}
+
+/** M46: name over status, a warning dot with its word (R17) and a chevron; the status describes the button. */
+function groupLine(item, label, status, name, hass) {
+    const text = document.createElement('span');
+    text.className = 'group-text';
+    const caption = document.createElement('span');
+    caption.className = 'group-name';
+    caption.textContent = label;
+    const line = document.createElement('span');
+    line.className = 'group-status';
+    line.id = 'group-status-' + name;
+    line.textContent = status.text;
+    text.append(caption, line);
+    item.appendChild(text);
+    const described = [line.id];
+    if (status.warn) {
+        const warn = document.createElement('span');
+        warn.className = 'group-warn';
+        warn.id = 'group-warn-' + name;
+        const word = document.createElement('span');
+        word.className = 'group-warn-word';
+        word.textContent = translate(hass, 'handlungsbedarf');
+        warn.appendChild(word);
+        item.appendChild(warn);
+        described.push(warn.id);
+    }
+    const chevron = BuschUI.ha.icon('mdi:chevron-right');
+    chevron.classList.add('group-chevron');
+    chevron.setAttribute('aria-hidden', 'true');
+    item.appendChild(chevron);
+    item.setAttribute('aria-describedby', described.join(' '));
 }
 
 function groupView(card, name) {
@@ -5720,7 +5804,7 @@ function consumableParts(card, model, body, hass, dialog) {
         status.className = 'setting-status';
         const note = card._settingNotes.get('reset:' + name);
         status.textContent = card._settingWrites.has('reset:' + name) ? translate(hass, 'speichert') : note || translate(hass, 'rest', { prozent: percent, zeit: time || '–' });
-        row.setAttribute('data-state', note ? 'error' : left < 30 ? 'low' : 'ok');
+        row.setAttribute('data-state', note ? 'error' : left < CONSUMABLE_LOW ? 'low' : 'ok');
         text.append(caption, status);
         const full = left >= 100;
         // At 100 % the integration refuses the reset (ACTION_AVAILABILITY, types.py#L2308).
@@ -9974,6 +10058,45 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 .menu-item ha-icon {
     order: -1;
     flex: none;
+}
+/* M46 (W15): settings overview rows — name over a short status, warning dot, chevron at the end. */
+.settings-group .group-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.settings-group .group-name,
+.settings-group .group-status {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.settings-group .group-status {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 12px);
+}
+.settings-group .group-warn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    flex: none;
+    color: var(--bvc-warning-color, var(--warning-color, #ffa600));
+    font-size: var(--ha-font-size-s, 12px);
+}
+.settings-group .group-warn::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+}
+.settings-group .group-chevron {
+    order: 0;
+    flex: none;
+    color: var(--secondary-text-color, #727272);
+}
+.settings-group:dir(rtl) .group-chevron {
+    transform: scaleX(-1);
 }
 .badge {
     margin-inline-start: auto;

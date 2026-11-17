@@ -258,6 +258,14 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 - Entwürfe (DnD, Zeitplan, Sprachpaket) liegen in `card._drafts` und überleben
   Verlassen und Dienstfehler.
 
+Übersicht (M46): jede Gruppenzeile (`.settings-group`) zeigt Name und
+Kurzstatus (`groupStatus`: Zubehör = kleinster Rest, Akku = Stand, Geräteinfo
+= Zustand, Zeitplan = Anzahl, Nicht stören = An/Aus, sonst „N von M an“ der
+Schalter), am Ende ein Chevron. Handlungsbedarf (Zubehör unter
+`CONSUMABLE_LOW` 30 %, Akku niedrig) bekommt einen Punkt mit dem Wort
+„Handlungsbedarf“ (R17); Status und Warnung beschreiben den Knopf
+(`aria-describedby`).
+
 ## Station (Modul dock)
 
 - Dock-Schlüssel stehen in `SETTINGS` (Gruppe `station`) mit `tab`
