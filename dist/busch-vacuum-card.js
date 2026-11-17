@@ -820,6 +820,61 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             set_total_runtime: 'Gesamtlaufzeit',
             set_total_cruise_time: 'Gesamte Cruising-Zeit',
             set_track_cleaning_left: 'Spurreinigung',
+            // M21: the card's own words for known Dreame options and run types (`opt_<enum>`), used when HA has none.
+            opt_quiet: 'Leise',
+            opt_standard: 'Standard',
+            opt_strong: 'Stark',
+            opt_turbo: 'Turbo',
+            opt_sweeping: 'Saugen',
+            opt_mopping: 'Wischen',
+            opt_sweeping_and_mopping: 'Saugen und Wischen',
+            opt_mopping_after_sweeping: 'Wischen nach dem Saugen',
+            opt_low: 'Niedrig',
+            opt_medium: 'Mittel',
+            opt_high: 'Hoch',
+            opt_slightly_dry: 'Leicht trocken',
+            opt_moist: 'Feucht',
+            opt_wet: 'Nass',
+            opt_intensive: 'Intensiv',
+            opt_deep: 'Gründlich',
+            opt_quick: 'Schnell',
+            opt_off: 'Aus',
+            opt_light: 'Leicht',
+            opt_normal: 'Normal',
+            opt_warm: 'Warm',
+            opt_avoidance: 'Meiden',
+            opt_adaptation: 'Anpassen',
+            opt_remove_mop: 'Pads abnehmen',
+            opt_vacuum_and_mop: 'Saugen und Wischen',
+            opt_ignore: 'Ignorieren',
+            opt_high_frequency: 'Häufig',
+            opt_low_frequency: 'Selten',
+            opt_by_area: 'Nach Fläche',
+            opt_by_time: 'Nach Zeit',
+            opt_by_room: 'Nach Raum',
+            opt_intelligent: 'Intelligent',
+            opt_routine_cleaning: 'Routinereinigung',
+            opt_deep_cleaning: 'Tiefenreinigung',
+            opt_in_all_modes: 'In allen Modi',
+            opt_cleaning: 'Reinigung',
+            opt_room_cleaning: 'Raumreinigung',
+            opt_zone_cleaning: 'Zonenreinigung',
+            opt_spot_cleaning: 'Punktreinigung',
+            opt_cruising_path: 'Cruising-Route',
+            opt_cruising_point: 'Cruising-Punkt',
+            opt_fast_mapping: 'Schnellkartierung',
+            opt_default: 'Standardmodus',
+            opt_custom: 'Eigener Modus',
+            opt_button: 'Taste am Gerät',
+            opt_app: 'App',
+            opt_scheduled: 'Zeitplan',
+            opt_voice: 'Sprachbefehl',
+            set_cleaning_mode: 'Reinigungsmodus',
+            set_suction_level: 'Saugstufe',
+            set_mop_pad_humidity: 'Feuchte der Wischpads',
+            set_wetness_level: 'Feuchtigkeitsstufe',
+            set_water_volume: 'Wassermenge',
+            set_cleaning_route: 'Reinigungsroute',
             frage_map_rotation: 'Die gespeicherte Karte des Roboters auf {wert} drehen? Das ändert die Karte im Gerät, nicht nur die Anzeige.',
             aendern: 'Ändern',
             einmalig: 'Einmalig',
@@ -1473,6 +1528,61 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             set_total_runtime: 'Total runtime',
             set_total_cruise_time: 'Total cruising time',
             set_track_cleaning_left: 'Track cleaning',
+            // M21: the card's own words for known Dreame options and run types (`opt_<enum>`), used when HA has none.
+            opt_quiet: 'Quiet',
+            opt_standard: 'Standard',
+            opt_strong: 'Strong',
+            opt_turbo: 'Turbo',
+            opt_sweeping: 'Sweeping',
+            opt_mopping: 'Mopping',
+            opt_sweeping_and_mopping: 'Sweeping and mopping',
+            opt_mopping_after_sweeping: 'Mopping after sweeping',
+            opt_low: 'Low',
+            opt_medium: 'Medium',
+            opt_high: 'High',
+            opt_slightly_dry: 'Slightly dry',
+            opt_moist: 'Moist',
+            opt_wet: 'Wet',
+            opt_intensive: 'Intensive',
+            opt_deep: 'Deep',
+            opt_quick: 'Quick',
+            opt_off: 'Off',
+            opt_light: 'Light',
+            opt_normal: 'Normal',
+            opt_warm: 'Warm',
+            opt_avoidance: 'Avoidance',
+            opt_adaptation: 'Adaptation',
+            opt_remove_mop: 'Remove mop',
+            opt_vacuum_and_mop: 'Vacuum and mop',
+            opt_ignore: 'Ignore',
+            opt_high_frequency: 'High frequency',
+            opt_low_frequency: 'Low frequency',
+            opt_by_area: 'By area',
+            opt_by_time: 'By time',
+            opt_by_room: 'By room',
+            opt_intelligent: 'Intelligent',
+            opt_routine_cleaning: 'Routine cleaning',
+            opt_deep_cleaning: 'Deep cleaning',
+            opt_in_all_modes: 'In all modes',
+            opt_cleaning: 'Cleaning',
+            opt_room_cleaning: 'Room cleaning',
+            opt_zone_cleaning: 'Zone cleaning',
+            opt_spot_cleaning: 'Spot cleaning',
+            opt_cruising_path: 'Cruising path',
+            opt_cruising_point: 'Cruising point',
+            opt_fast_mapping: 'Fast mapping',
+            opt_default: 'Default mode',
+            opt_custom: 'Custom mode',
+            opt_button: 'Button',
+            opt_app: 'App',
+            opt_scheduled: 'Scheduled',
+            opt_voice: 'Voice',
+            set_cleaning_mode: 'Cleaning mode',
+            set_suction_level: 'Suction level',
+            set_mop_pad_humidity: 'Mop pad humidity',
+            set_wetness_level: 'Wetness level',
+            set_water_volume: 'Water volume',
+            set_cleaning_route: 'Cleaning route',
             frage_map_rotation: 'Rotate the robot’s stored map to {wert}? This changes the map in the device, not only the display.',
             aendern: 'Change',
             einmalig: 'Once',
@@ -2342,7 +2452,18 @@ function optionLabel(hass, key, option) {
     if (typeof option === 'boolean') return translate(hass, option ? 'an' : 'aus');
     const id = 'component.dreame_vacuum.entity.select.' + key + '.state.' + enumName(option);
     const fromHa = hass && typeof hass.localize === 'function' ? hass.localize(id) : '';
-    return fromHa && fromHa !== id ? fromHa : String(option);
+    return fromHa && fromHa !== id ? fromHa : optionWord(hass, option) || String(option);
+}
+
+/** M21: the card's own word for a known Dreame option or run type (`opt_<enum>`, also without `_mode`), else ''. */
+function optionWord(hass, raw) {
+    const slug = enumName(raw);
+    if (!slug) return '';
+    for (const name of [slug, slug.replace(/_mode$/, '')]) {
+        const text = translate(hass, 'opt_' + name);
+        if (text !== 'opt_' + name) return text;
+    }
+    return '';
 }
 
 function rerender(card) {
@@ -7464,6 +7585,8 @@ function integrationState(hass, sensor, raw) {
         const text = hass && typeof hass.localize === 'function' ? hass.localize(id) : '';
         if (text && text !== id) return text;
     }
+    const own = optionWord(hass, raw);
+    if (own) return own;
     const words = String(raw).replace(/_/g, ' ');
     return words.charAt(0).toUpperCase() + words.slice(1);
 }
@@ -18100,6 +18223,7 @@ BuschVacuumCard.__internals = {
     dockStatus,
     settingState,
     settingRow,
+    optionWord,
     MODULE_VIEWS,
     VIEW_IDS,
     ROOM_KEYS,
