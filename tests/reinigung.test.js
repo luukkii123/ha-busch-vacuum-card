@@ -297,6 +297,33 @@ test('SET-04 Auf alle Räume übertragen: Bestätigung mit Raumliste, nacheinand
   assert.match($d(k.u, '.body').textContent, /Bibliothek/, 'geänderte Räume genannt');
 });
 
+test('M23 Alle übertragen: Doppeltipp sendet einmal (R11); Zurück erst nach dem Lauf', async () => {
+  const { mikro } = require('./attrappe.js');
+  const k = raumSeite(3);
+  $d(k.u, '[data-action="apply-all"]').click();
+  k.haus.antwort = () => Promise.resolve();
+  const go = $d(k.u, '[data-action="confirm"]');
+  go.click();
+  go.click();
+  assert.equal(aufrufe(k).length, 1, 'ein Lauf, nicht zwei');
+  assert.equal($d(k.u, '[data-action="cancel"]').disabled, true, 'Zurück gesperrt, solange der Lauf läuft');
+  for (let i = 0; i < 20; i++) await mikro();
+  assert.deepEqual(aufrufe(k).map((c) => c.data.segment_id[0]), [5, 7, 1, 6, 9, 4], 'jeder andere Raum genau einmal, in Reihenfolge');
+  assert.match($d(k.u, '.body').textContent, /6 von 6 Räumen übertragen/, 'Fortschritt am Ende');
+  assert.equal($d(k.u, '[data-action="cancel"]').disabled, false);
+});
+
+test('M23 ein Ablauf: Auf alle übertragen und Raumeinstellungen wiederherstellen schreiben nur über runSeries', () => {
+  const quelle = fs.readFileSync(path.join(__dirname, '..', 'dist', 'busch-vacuum-card.js'), 'utf8');
+  const rumpf = (kopf) => { const a = quelle.indexOf(kopf); assert.ok(a >= 0, kopf); return quelle.slice(a, quelle.indexOf('\n}\n', a)); };
+  assert.equal((quelle.match(/\n(?:async )?function runSeries\(/g) || []).length, 1, 'genau eine Funktion');
+  for (const kopf of ['function applyAllView(', 'function roomRestoreView(']) {
+    const r = rumpf(kopf);
+    assert.ok(r.includes('runSeries('), kopf + ' nutzt runSeries');
+    assert.ok(!r.includes('callDevice('), kopf + ' ruft den Dienst nicht selbst');
+  }
+});
+
 // ── Task 4: Mop-Typ ─────────────────────────────────────────────────────────
 
 test('SET-06 Mop-Typ: X40 ohne Zeile; mit auto_change_mop genau vacuum_set_mop_type ohne map_id', () => {

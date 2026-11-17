@@ -84,7 +84,7 @@ test('M29 Datei-URL: mit /local/ der eigenen Instanz vorbelegt, das ist noch kei
   dateiFormular(k);
   assert.equal($d(k.u, '[data-field="file_url"]').value, EIGEN + '/local/');
   const d = dialogVon(k.u);
-  d._goBack();
+  d.goBack();
   k.u.zurueck();
   assert.doesNotMatch(text(k), /Ungespeicherte Änderung/i, 'Vorbelegung allein fragt nicht');
   assert.notEqual(d._views.at(-1).id, 'backup-file', 'Formular ohne Rückfrage verlassen');

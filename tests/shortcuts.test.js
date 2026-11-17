@@ -262,7 +262,7 @@ test('SHO-02 Umbenennen gesperrt während einer Aufgabe; Eingabe bleibt beim Ver
   const f = $d(k.u, '[data-field="shortcut_name"]');
   f.value = 'Entwurf';
   f.dispatchEvent(k.u.neuesEreignis('input'));
-  dialogVon(k.u)._goBack();
+  dialogVon(k.u).goBack();
   k.u.zurueck();
   darin(zeile(k, 30), '[data-action="rename"]').click();
   assert.equal($d(k.u, '[data-field="shortcut_name"]').value, 'Entwurf', 'ungespeicherter Name bleibt');
