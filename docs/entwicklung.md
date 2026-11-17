@@ -683,9 +683,47 @@ hell/dunkel; echte Eingabe (Außenklick lässt die Bestätigung offen, Pfeiltast
 Mausrad, Escape, Doppelklick auf „Sichern“ sendet genau ein
 `vacuum_backup_map`); Regel 1 je Ansicht, Regel 2 für Liste und Vollbild.
 
-Grenzen: `ha-card`, `ha-icon` und `ha-form` sind Attrappen; belegt sind
-Verdrahtung, Maße und erzeugte Konfiguration, nicht die Darstellung der
-echten HA-Selektoren.
+Bereiche (M22): `render.py` ist in Bereichsfunktionen `bereich_<name>(k)`
+geteilt, die Registry `BEREICHE` am Dateiende legt die Laufreihenfolge fest
+(die Funktionen stehen in derselben Reihenfolge in der Datei). Gewartet wird
+auf Ruhe (`ruhe(...)`: Bedingung erfüllt, laufende Animationen am Ende,
+keine Anfrage offen) statt fester Zeiten; jede abgelaufene Wartezeit steht in
+`report.json` unter `ruheUeberschritten`. Ein neuer Renderfall ist eine
+Funktion und eine Zeile in `BEREICHE`.
+
+```bash
+python3 /cards/docs/render/render.py <dist/busch-vacuum-card.js> <ausgabe> --nur verlauf,zustaende
+```
+
+`--nur <bereich>[,<bereich>…]` läuft nur die genannten Bereiche, in der
+Registry-Reihenfolge: `karte`, `layout`, `dialog`, `bewegung`,
+`kartenansicht`, `einstellungen`, `station`, `shortcuts`, `aufgaben`,
+`verlauf`, `fernsteuerung`, `reinigung`, `editor`, `sicherung`,
+`uebersetzung` (M21: mit und ohne `localize` aus
+`tests/fixtures/uebersetzung-de.json`), `zustaende` (M15: Roboter weg,
+Kamera weg, lädt, Abruffehler, Konfigfehler, keine Räume bei 320/390/1280
+hell/dunkel), `regeln` (HACS-UI-Regeln über `regeln.py`). Ein unbekannter
+Name endet mit Code 2 und der Liste. Prüfungen, die nur über alle Bereiche
+etwas bedeuten (jede `VIEW_IDS`-Ansicht bebildert), stehen dann in
+`report.json` unter `nichtGemessen` statt als bestanden; `bereiche` nennt,
+was lief, `nur` die Wahl, `bereichSekunden` die Zeit je Bereich. Eine
+Abnahme läuft immer ohne `--nur`.
+
+Symbole (M14): Der Harness zeichnet `ha-icon` mit den echten MDI-Glyphen aus
+`docs/render/mdi-pfade.json` (nur die benutzten Namen, aus `@mdi/js`,
+erzeugt mit `docs/render/mdi-pfade.py`, zur Laufzeit ohne Netz); ein
+unbekannter Name erscheint als Hohlkasten und in `window.__iconsMissing`.
+Kommt ein neues `mdi:`-Symbol dazu, meldet `tests/symbole.test.js` es, und
+die Tabelle wird neu erzeugt:
+
+```bash
+python3 -I docs/render/mdi-pfade.py <package/mdi.js> . docs/render/mdi-pfade.json
+```
+
+Grenzen: `ha-card` und `ha-form` sind Attrappen, `ha-icon` zeichnet nur die
+Glyphe (ohne HAs Laden und Größenlogik); belegt sind Verdrahtung, Maße,
+Symbole und erzeugte Konfiguration, nicht die Darstellung der echten
+HA-Selektoren.
 
 Abnahme vor einem Tag (einmal, mit hartem Zeitlimit; Node-Tests und
 `render.py` in einem Container, Ergebnis unter `hacs/artifacts/e2e/<lauf>/`):
