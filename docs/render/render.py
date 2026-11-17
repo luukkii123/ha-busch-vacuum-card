@@ -2327,6 +2327,8 @@ def zustand_aufbauen(k, szenario, config, task):
     """Builds one M15 state. Held answers of an earlier "laedt" go first; for "laedt" itself the wait is for the
     loading note, not for rest (its requests are held on purpose)."""
     zustand_freigeben(k)
+    # M19 frame cache: every width reuses the same frame, so a cached answer would skip the loading state.
+    k.page.evaluate("() => customElements.get('busch-vacuum-card').__internals.FRAME_CACHE.clear()")
     k.build(szenario, config=config, warten=szenario != "laedt")
     if task:
         k.page.evaluate("(t) => window.card().shadowRoot.querySelector('.task[data-task=' + t + ']').click()", task)
