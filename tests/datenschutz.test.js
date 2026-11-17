@@ -192,3 +192,108 @@ test('private Sperrliste geladen (Namen, Domain, Grundriss, Kartendaten)', { ski
 test('M7: der Test selbst enthält keine Sperrhashes', () => {
   assert.deepEqual(fs.readFileSync(__filename, 'utf8').match(/\b[0-9a-f]{64}\b/g) || [], []);
 });
+
+// ── M30: alle öffentlichen Dateien ──────────────────────────────────────────
+// Was im Repo liegt, ist öffentlich: `git ls-files`; ohne git (Testcontainer)
+// der Verzeichnislauf ohne .git und ohne das, was .gitignore ausschließt.
+const WURZEL = path.join(__dirname, '..');
+
+/** .gitignore-Zeilen als Prüfer (genug für die Muster dieses Repos: *, Ordner/, mit und ohne /). */
+function ignoriert(text) {
+  const regeln = text.split('\n').map((z) => z.trim()).filter((z) => z && !z.startsWith('#') && !z.startsWith('!')).map((muster) => {
+    const ordner = muster.endsWith('/');
+    const kern = muster.replace(/\/$/, '').replace(/^\//, '');
+    const re = kern.split('*').map((t) => t.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*');
+    const anker = muster.replace(/\/$/, '').includes('/') ? '^' : '(?:^|/)';
+    return new RegExp(anker + re + (ordner ? '/' : '(?:/|$)'));
+  });
+  return (datei) => regeln.some((r) => r.test(datei));
+}
+
+function oeffentlicheDateien(wurzel = WURZEL) {
+  try {
+    const liste = require('node:child_process').execFileSync('git', ['ls-files', '-z'], { cwd: wurzel, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const dateien = liste.split('\0').filter(Boolean);
+    if (dateien.length) return { weg: 'git ls-files', dateien };
+  } catch (e) {
+    // kein git im Container: Verzeichnislauf
+  }
+  const gitignore = fs.existsSync(path.join(wurzel, '.gitignore')) ? fs.readFileSync(path.join(wurzel, '.gitignore'), 'utf8') : '';
+  const aus = ignoriert(gitignore);
+  const lauf = (rel) => fs.readdirSync(path.join(wurzel, rel), { withFileTypes: true }).flatMap((e) => {
+    const p = rel ? rel + '/' + e.name : e.name;
+    if (e.name === '.git' || aus(e.isDirectory() ? p + '/' : p)) return [];
+    return e.isDirectory() ? lauf(p) : [p];
+  });
+  return { weg: 'Verzeichnislauf', dateien: lauf('') };
+}
+
+/** Text-Chunks einer PNG (tEXt, iTXt, zTXt, eXIf); Fehler bei kaputter Datei. */
+function pngChunks(puffer) {
+  assert.equal(puffer.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'PNG-Signatur');
+  const funde = [];
+  for (let i = 8; i + 8 <= puffer.length;) {
+    const laenge = puffer.readUInt32BE(i), typ = puffer.toString('latin1', i + 4, i + 8);
+    if (['tEXt', 'iTXt', 'zTXt', 'eXIf'].includes(typ)) funde.push(typ + ': ' + puffer.toString('latin1', i + 8, i + 8 + Math.min(laenge, 60)).replace(/\0/g, '='));
+    if (typ === 'IEND') break;
+    i += 12 + laenge;
+  }
+  return funde;
+}
+
+const istText = (puffer) => !puffer.subarray(0, 8000).includes(0);
+/**
+ * Bekannte öffentliche Werte, keine Geheimnisse: die SHA-256 des Busch-UI-Blocks
+ * in seiner Kopfzeile (dist, Zeile 1), Commit-SHAs gepinnter Actions (M1) und
+ * die Loopback-Adresse des Renderers.
+ */
+function ohneBekannte(datei, text) {
+  if (datei === 'dist/busch-vacuum-card.js') text = text.replace(/^(\/\* BEGIN BUSCH SHARED UI [\d.]+ sha256:)[0-9a-f]{64}/, '$1…');
+  if (datei.startsWith('.github/workflows/')) text = text.replace(/(uses:\s*[\w.-]+\/[\w./-]+@)[0-9a-f]{40}\b/g, '$1…');
+  return text.replace(/(?<![\d.])127\.0\.0\.1(?![\d.])/g, 'loopback');
+}
+/** Quelltexte mit Wörterbuch: nur Muster und Domain; Namen prüft die Sperrliste in Fixtures, Tests und Doku. */
+const NUR_MUSTER = new Set(['dist/busch-vacuum-card.js', 'docs/render/render.py']);
+
+const OEFFENTLICH = oeffentlicheDateien();
+
+test(`M30 alle öffentlichen Dateien (${OEFFENTLICH.weg}) gefunden: README, Quelle, Doku, Workflows, Fixtures, PNGs`, () => {
+  for (const d of ['README.md', 'dist/busch-vacuum-card.js', 'docs/entwicklung.md', '.github/workflows/release.yml', 'tests/fixtures/voll.json', 'hacs.json']) assert.ok(OEFFENTLICH.dateien.includes(d), d);
+  assert.ok(OEFFENTLICH.dateien.filter((d) => d.endsWith('.png')).length >= 18, 'Baseline-PNGs');
+  assert.equal(OEFFENTLICH.dateien.some((d) => d.startsWith('.git/') || d.startsWith('node_modules/')), false);
+});
+
+for (const datei of OEFFENTLICH.dateien) {
+  const puffer = fs.readFileSync(path.join(WURZEL, datei));
+  if (datei.endsWith('.png')) {
+    test(`M30 ${datei}: PNG ohne Text-Chunks`, () => assert.deepEqual(pngChunks(puffer), []));
+  } else if (istText(puffer) && datei !== 'tests/datenschutz.test.js') {
+    const woerter = NUR_MUSTER.has(datei) ? new Set() : VERBOTENE_WOERTER;
+    test(`M30 ${datei}: keine privaten Werte`, () => assert.deepEqual(privateFunde(ohneBekannte(datei, puffer.toString('utf8')), woerter), []));
+  }
+}
+
+test('M30 Gegenprobe: eine probehalber ins README gesetzte private IP ergibt einen Fund', () => {
+  const readme = fs.readFileSync(path.join(WURZEL, 'README.md'), 'utf8');
+  assert.deepEqual(privateFunde(readme), []);
+  const ip = ['10', '20', '30', '40'].join('.');
+  assert.deepEqual(privateFunde(readme.replace('## Installation', 'Server ' + ip + '\n\n## Installation')), ['IPv4: ' + ip]);
+  assert.deepEqual(privateFunde(ohneBekannte('README.md', 'Server ' + ip)), ['IPv4: ' + ip], 'die Ausnahmen lassen echte Adressen durch');
+  assert.deepEqual(privateFunde(ohneBekannte('.github/workflows/x.yml', 'token: ' + 'ab'.repeat(20))).length, 1, 'nur gepinnte uses: sind ausgenommen');
+});
+
+test('M30 Gegenprobe: eine PNG mit tEXt-Chunk wird erkannt, die Prüfung liest die Chunk-Folge richtig', () => {
+  const crc = () => Buffer.alloc(4);
+  const chunk = (typ, daten) => { const l = Buffer.alloc(4); l.writeUInt32BE(daten.length); return Buffer.concat([l, Buffer.from(typ, 'latin1'), daten, crc()]); };
+  const kopf = Buffer.from('89504e470d0a1a0a', 'hex');
+  const ihdr = chunk('IHDR', Buffer.alloc(13));
+  const mit = Buffer.concat([kopf, ihdr, chunk('tEXt', Buffer.from('Comment\0Raum Probe', 'latin1')), chunk('IDAT', Buffer.alloc(3)), chunk('IEND', Buffer.alloc(0))]);
+  assert.deepEqual(pngChunks(mit), ['tEXt: Comment=Raum Probe']);
+  assert.deepEqual(pngChunks(Buffer.concat([kopf, ihdr, chunk('IDAT', Buffer.alloc(3)), chunk('IEND', Buffer.alloc(0))])), []);
+});
+
+test('M30 Gegenprobe: .gitignore-Muster schließen lokale Dateien aus, öffentliche nicht', () => {
+  const aus = ignoriert('node_modules/\n*.pyc\ndocs/render/ergebnis*/\nAGENTS.md\ndocs/abnahme-*.md\n# Kommentar\n');
+  assert.deepEqual(['node_modules/', 'a/b.pyc', 'docs/render/ergebnis-1/', 'AGENTS.md', 'docs/abnahme-0.2.md'].filter((d) => !aus(d)), []);
+  assert.deepEqual(['README.md', 'docs/entwicklung.md', 'docs/render/render.py', 'tests/AGENTS.md.js'].filter(aus), []);
+});
