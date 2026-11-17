@@ -1156,8 +1156,8 @@ test('EDI-02 Checkpoint B: alle Aufrufer von mapWrite/confirmGrant gegen die Bes
   assert.equal(schreiber.length, 2);
   for (const i of schreiber) assert.ok(drin(i, session), 'mapWrite nur in MapEditSession');
   assert.deepEqual(fundstellen(quelle, /\.commit\(/g).filter((i) => !drin(i, confirm)), [], 'commit nur aus mapConfirm');
-  // 3. Jeder callService: Kartendienste nur über mapWrite oder die eigenen Wege.
-  const aufrufe = Array.from(quelle.matchAll(/callService\(\s*([^,]+?),\s*([^,]+?),/g), (m) => ({ i: m.index, dienst: m[2].trim() }));
+  // 3. Jeder Dienstaufruf (M5: alle über callDevice(hass, domain, service, data)): Kartendienste nur über mapWrite oder die eigenen Wege.
+  const aufrufe = Array.from(quelle.matchAll(/(?<!function )callDevice\(\s*[^,]+?,\s*([^,]+?),\s*([^,]+?),/g), (m) => ({ i: m.index, dienst: m[2].trim() }));
   const dynamisch = aufrufe.filter((a) => !/^'[^']*'$/.test(a.dienst));
   assert.deepEqual(dynamisch.map((a) => a.dienst).sort(), ['call ? call.service : control.service', 'payload.service', 'service'], 'nur bekannte Sender mit variablem Dienst');
   assert.ok(drin(dynamisch.find((a) => a.dienst === 'service').i, spanne(quelle, 'function mapWrite(')), 'variabler Kartendienst nur in mapWrite');
@@ -1166,7 +1166,7 @@ test('EDI-02 Checkpoint B: alle Aufrufer von mapWrite/confirmGrant gegen die Bes
   for (const d of KARTENDIENSTE) assert.ok(!aufgaben.includes("'" + d + "'"), 'Aufgabendienste sind keine Kartendienste: ' + d);
   for (const a of aufrufe.filter((x) => KARTENDIENSTE.includes(x.dienst.slice(1, -1)))) {
     const dienst = a.dienst.slice(1, -1);
-    assert.ok(EIGENE_WEGE[dienst], dienst + ' direkt über callService statt mapWrite');
+    assert.ok(EIGENE_WEGE[dienst], dienst + ' direkt über callDevice statt mapWrite');
     const zeile = quelle.slice(quelle.lastIndexOf('\n', a.i), a.i);
     if (dienst === 'vacuum_select_map') assert.match(zeile, /_confirmMapChange\(/, 'Kartenwahl nur hinter CORE-20');
     if (dienst === 'vacuum_request_map') assert.ok(drin(a.i, request), 'request_map nur in requestMap');

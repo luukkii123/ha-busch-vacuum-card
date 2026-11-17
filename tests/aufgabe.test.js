@@ -119,6 +119,30 @@ test('CORE-10 Warnung: über button.*_clear_warning löschbar', () => {
   assert.deepEqual(roh(haus.rufe), [{ domain: 'button', service: 'press', data: { entity_id: 'button.robo_clear_warning' } }]);
 });
 
+test('M5 Warnung löschen abgelehnt: R12-Text, keine unbehandelte Ablehnung, Doppeltipp ein Aufruf', async () => {
+  const liste = [];
+  const fang = (e) => liste.push(e);
+  process.on('unhandledRejection', fang);
+  let karte, haus;
+  try {
+    ({ karte, haus } = karteMit('voll', 'docked', { has_error: false, error: 'Remove mop' }, fehlerSensor('remove_mop', 'Mopp abnehmen')));
+    let ablehnen;
+    haus.antwort = () => new Promise((_ok, nein) => { ablehnen = nein; });
+    meldung(karte, 'warning').querySelector('[data-action="clear"]').click();
+    meldung(karte, 'warning').querySelector('[data-action="clear"]').click();
+    assert.equal(haus.rufe.length, 1, 'ein Aufruf bis zur Antwort');
+    ablehnen(new Error('Station antwortet nicht'));
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+  } finally { process.off('unhandledRejection', fang); }
+  assert.deepEqual(liste, []);
+  const m = meldung(karte, 'error');
+  assert.ok(m, 'Fehlermeldung');
+  assert.match(m.textContent, /Warnung löschen/);
+  assert.match(m.textContent, /Station antwortet nicht/);
+  assert.ok(meldung(karte, 'warning'), 'die Warnung bleibt');
+});
+
 function ohneLoeschknopf(services) {
   const u = neueUmgebung(), haus = hausAus('voll');
   const { 'button.robo_clear_warning': _a, ...states } = haus.states;

@@ -138,6 +138,7 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
 | `settingRow(card, model, key)` | Zeile oder `null`; Schalter `role=switch` mit Wort, unbekannt = Ein/Aus, Auswahl, Zahl (Grenzen inline), Zeit `HH:MM` |
 | `writeSetting(card, key, value)` | genau ein `vacuum_set_property`; optimistisch, bestätigt nur über den Gerätewert, sonst `OPTIMISTIC_HOLD_MS` nach der Dienstantwort (Deckel `SENDING_CAP_MS` 15 s) Hinweis „noch nicht bestätigt“, den eine späte Bestätigung löscht (M3); Dienstfehler R12; Doppeltipp ignoriert |
 | `callAction(card, key, value, { track, label, done })` | `vacuum_call_action`; belegt bis zur Antwort des Dienstes |
+| `callDevice(hass, domain, service, data)` | M5: einziger Aufruf von `hass.callService` (Regeltest in `tests/geruest.test.js`); immer ein Promise, `notifyOnError = false`, weil die Karte den R12-Text selbst zeigt. Orten, Warnung löschen und Kartenwechsel laufen über `trackWrite` (`CARD_WRITES`, Fehlertext in den Meldungen der Karte); der Kartenwechsel (`changeMap`) ist belegt, bis die Kartenkamera den Zielindex meldet |
 | `MODULE_VIEWS` | Menü-Einträge mit eigener Ansicht; ein Modul trägt sich hier ein |
 | `GROUP_HEAD`/`GROUP_EXTRAS` | Inhalt einer Gruppe vor/nach ihren Zeilen (DnD, Zeitpläne, Zubehör, Geräteinfo, Audio, Verweis Station) |
 
