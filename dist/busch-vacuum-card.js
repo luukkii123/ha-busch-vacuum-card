@@ -9760,7 +9760,8 @@ ha-card {
     display: flex;
     flex-direction: column;
     flex: 1 0 auto;
-    gap: var(--ha-space-3, 12px);
+    /* M16: spacing scale, 16 px between panel groups, 8 px inside a group (.task-area). */
+    gap: var(--ha-space-4, 16px);
     min-width: 0;
     padding: 0 var(--ha-space-4, 16px);
     background: var(--ha-card-background, var(--card-background-color, #ffffff));
@@ -9919,7 +9920,9 @@ ha-card {
 .metric {
     position: relative;
 }
+/* M16: the word sits on the grey tile; --secondary-text-color is 3.8:1 there, the text colour keeps 4.5:1 (size and weight rank it). */
 .metric-label {
+    color: var(--primary-text-color, #212121);
     position: absolute;
     inset: 0;
     opacity: 0;
@@ -9996,13 +9999,15 @@ ha-card {
 .task-head {
     display: block;
 }
+/* M16: the track has no grey fill, so inactive types read in --secondary-text-color on the card colour (4.5:1). */
 :host .tasks {
     display: flex;
     flex-wrap: nowrap;
     gap: 2px;
-    padding: 3px;
+    padding: 2px;
+    border: 1px solid var(--divider-color, #e0e0e0);
     border-radius: var(--ha-card-border-radius, 12px);
-    background: var(--secondary-background-color, #eef0f3);
+    background: transparent;
 }
 :host .task {
     flex: 1 1 0;
@@ -10010,17 +10015,25 @@ ha-card {
     padding: 0 var(--ha-space-1, 4px);
     border-radius: 9px;
     background: transparent;
-    color: var(--secondary-text-color, #3d4550);
+    color: var(--secondary-text-color, #727272);
     font-size: var(--ha-font-size-s, 13px);
 }
 :host .task ha-icon {
     display: none;
 }
+/* M16: the chosen type shows by its shape too (fill and a frame in text colour), not by colour alone. */
 :host .task[aria-checked=true] {
-    background: var(--ha-card-background, var(--card-background-color, #ffffff));
+    background: var(--secondary-background-color, #e5e5e5);
     color: var(--primary-text-color, #212121);
     font-weight: var(--ha-font-weight-medium, 500);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+    box-shadow: inset 0 0 0 1px var(--primary-text-color, #212121);
+}
+/* M16: task types, context and settings summary are three groups; 8 px gap + 8 px margin = 16 px between them. */
+:host .task-area > .task-head:not(:last-child) {
+    margin-bottom: var(--ha-space-2, 8px);
+}
+:host .task-area > .settings-row:not(:first-child) {
+    margin-top: var(--ha-space-2, 8px);
 }
 /* Settings summary: mode · suction · wetness, opens the cleaning settings (SET-01). */
 .settings-row {
