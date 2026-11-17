@@ -1134,6 +1134,7 @@ def bereich_kartenansicht(k):
     # ------------------------------------------------------------------
     # Image fallback: overlays on the calibration's pixels.
     routing["data"] = False
+    page.evaluate("() => customElements.get('busch-vacuum-card').__internals.FRAME_CACHE.clear()")  # M19 cache would still answer
     page.set_viewport_size({"width": 390, "height": 844})
     theme("light")
     image_data = json.loads(json.dumps(data["docked"]))
