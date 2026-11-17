@@ -37,6 +37,16 @@
   Einstellungs-Entitäten (Sensoren nur bei Zubehör/Geräteinfo, die Kamera nur
   bei Raumansichten). Umbenennen (Shortcut, Karte) und Hindernis-Details
   beobachten nichts und aktualisieren sich über `update` an Ort und Stelle.
+- Oberfläche E6 (Buschcheck 17.11.2026): Aktionsleistenknöpfe kürzen nie
+  (`min-width: max-content`); `_fitControls` misst bei neuer Knopfmenge oder
+  Breite und setzt `data-wrap` (Hauptaktion volle Breite, die übrigen darunter),
+  beim Reinigen heißt der Rückkehrknopf sichtbar „Dock“, sein Name bleibt
+  „Zurück zum Dock“ (M2). Bestätigungen sind unter 450 × 500 px ein
+  Bottom-Sheet (mindestens 90 % hoch, Regel 2) mit festen Knöpfen unten (M11).
+  Verlaufszeilen: Raster 40 px Symbolspalte | Datum + Typ/Fläche/Dauer | Status
+  (M12). „Räume einstellen“ zeigt Werte nur mit Label (`roomLine`, M13).
+  Optionen und Lauftypen: HA-Übersetzung, sonst eigene Wörter `opt_<enum>`
+  im Wörterbuch (`optionWord`), sonst der Rohwert (M21).
 - Dialog nach Lightcards 0.11.0: unter 450 × 500 px Vollbild, sonst zentriert
   (höchstens 560 px, Bestätigung 320 px); Kopf sticky; Seite gesperrt;
   Escape/Zurück über eigene Verlaufseinträge; Fokusfalle. Außenklick schließt
