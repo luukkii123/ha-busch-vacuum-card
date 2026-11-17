@@ -52,6 +52,11 @@ therefore lie inside the served repository (a copy of it is fine).
 Symbols (M14): ha-icon draws glyphs from docs/render/mdi-pfade.json (docs/render/mdi-pfade.py, @mdi/js).
 Translation (M21): area "uebersetzung" renders with localize (tests/fixtures/uebersetzung-de.json) and without.
 States (M15): area "zustaende" pictures karte-<roboter-weg|kamera-weg|laedt|abruf-fehler|konfig-fehler|keine-raeume>-<320|390|1280>-<theme>.png.
+Buschcheck Welle 1/2 (#1163), appended after "regeln": rechte (M8 guest vs admin), adressen (M29), feindlich (M27,
+tests/fixtures/feindlich.json against a harmless copy), netz (M6 karte-veraltet, M18 offline, M39 netz-langsam/-fehler,
+fernsteuerung-langsam; faults made in the page, no real 5xx), teilfehler (M20), befehle (M3/M5), leiste (M2),
+oberflaeche (E6: M11, M12, M13, M21 words), feinschliff (E7: M31-M36), anzeige (E9: M45 forced colors, M46, M47),
+abrufe (M19: camera_proxy picture fetches of the whole run, only over all areas).
 
 Usage:
     render.py <path/dist/busch-vacuum-card.js> <output-dir> [--nur <bereich>[,<bereich>...]]
@@ -59,7 +64,8 @@ Usage:
     --nur runs only the named areas (in the registry's order, BEREICHE below):
         karte, layout, dialog, bewegung, kartenansicht, einstellungen, station,
         shortcuts, aufgaben, verlauf, fernsteuerung, reinigung, editor, sicherung,
-        uebersetzung, zustaende, regeln
+        uebersetzung, zustaende, regeln, rechte, adressen, feindlich, netz, teilfehler,
+        befehle, leiste, oberflaeche, feinschliff, anzeige, abrufe
     An unknown area exits with 2 and the list. Checks that only mean something
     over all areas (every VIEW_IDS view pictured) are then listed under
     report.json "nichtGemessen", not counted as passed; report.json "bereiche"
@@ -72,6 +78,7 @@ import http.server
 import inspect
 import json
 import math
+import re
 import socketserver
 import sys
 import threading
@@ -2568,6 +2575,1037 @@ def bereich_regeln(k):
 
 
 # ---------------------------------------------------------------------------
+# Buschcheck Welle 1 und 2 (17.11.2026, #1163): render cases of the measures M2-M47.
+# Each area sets its own size, theme, hass extras and network shim and resets them at its end;
+# every deliberate service call lands in the harness stub and is emptied again (report "serviceCalls").
+# Network faults are made in the page (NETZ_JS answers a synthetic 500 without a real request), so the
+# run's badResponses/consoleErrors stay clean.
+# ---------------------------------------------------------------------------
+
+# Every hass the harness builds from now on carries `extra` (a guest user, connected false); null resets.
+HASS_EXTRA_JS = """(extra) => { if (!window.__makeHassBasis) window.__makeHassBasis = window.makeHass;
+    const basis = window.__makeHassBasis;
+    window.makeHass = extra ? (...a) => Object.assign(basis(...a), extra) : basis; return true; }"""
+
+# The current card's hass answers services differently (same object as the dialog's): ablehnen (reject with
+# `grund`), nte (reject only the n-th call), haengen (never answers), langsam (answers after `ms`).
+DIENST_JS = """(a) => { const h = window.card().hass; let n = 0;
+    h.callService = (domain, service, payload) => { n++; window.__serviceCalls.push({ domain, service, payload, at: performance.now() });
+      if (a.art === 'ablehnen' || (a.art === 'nte' && n === a.n)) return Promise.reject(new Error(a.grund || 'Gerät lehnt ab'));
+      if (a.art === 'haengen') return new Promise(() => {});
+      if (a.art === 'langsam') return new Promise((r) => setTimeout(r, a.ms || 0));
+      return Promise.resolve(); };
+    return true; }"""
+
+# Map data requests (camera_map_data_proxy, not &saved=1) with latency and synthetic 500 answers, counted
+# (laufend/hoechstens/abrufe in window.__netz); null restores the fetch of RUHE_INIT.
+NETZ_JS = """(a) => { if (!window.__fetchBasis) window.__fetchBasis = window.fetch; const basis = window.__fetchBasis;
+    const n = window.__netz = { laufend: 0, hoechstens: 0, abrufe: [] };
+    if (!a) { window.fetch = basis; return true; }
+    window.fetch = function (url, opt) {
+      const u = String(url && url.url ? url.url : url);
+      if (!/camera_map_data_proxy/.test(u) || /saved=1/.test(u)) return basis.apply(this, arguments);
+      const nr = n.abrufe.push(u); n.laufend++; n.hoechstens = Math.max(n.hoechstens, n.laufend);
+      const fehler = (a.fehlerFrame && u.includes('v=' + a.fehlerFrame)) || (a.fehlerNr || []).includes(nr);
+      const self = this, args = arguments;
+      return new Promise((r) => setTimeout(r, a.latenz || 0))
+        .then(() => (fehler ? new Response('', { status: 500, statusText: 'synthetisch' }) : basis.apply(self, args)))
+        .then((x) => { n.laufend--; return x; }, (e) => { n.laufend--; throw e; }); };
+    return true; }"""
+
+# A new frame on both map cameras (data URL and picture carry v=<frame>), as HA sends it.
+NEUER_FRAME_JS = """(a) => { const c = window.card(), h = c.hass, st = Object.assign({}, h.states);
+    for (const id of ['camera.robo_map', 'camera.robo_map_1']) { const s = st[id]; if (!s) continue;
+      st[id] = Object.assign({}, s, { attributes: Object.assign({}, s.attributes, { frame_id: a.frame,
+        entity_picture: '/api/camera_proxy/' + id + '?token=testtoken&v=' + a.frame }) }); }
+    c.hass = Object.assign({}, h, { states: st }); return true; }"""
+
+FRAME_CACHE_LEEREN = "() => customElements.get('busch-vacuum-card').__internals.FRAME_CACHE.clear()"
+DIALOGE_ZU = "() => { window.closeDialogs(); document.documentElement.style.overflow = ''; }"
+
+
+def hass_extra(k, extra=None):
+    k.page.evaluate(HASS_EXTRA_JS, extra)
+
+
+def dienst(k, art, **mehr):
+    k.page.evaluate(DIENST_JS, dict(mehr, art=art))
+
+
+def dienste_leeren(k):
+    """The calls since the last emptying (and empties the stub, so the run stays without service calls)."""
+    return k.page.evaluate("() => { const c = window.__serviceCalls.map((x) => [x.domain, x.service]); window.__serviceCalls = []; return c; }")
+
+
+def rest_aufrufe(k, wo):
+    """Calls left in the stub before a case that counts its own (e.g. a late safety stop): noted in report "restAufrufe", not dropped silently."""
+    rest = dienste_leeren(k)
+    if rest:
+        k.report.setdefault("restAufrufe", {}).setdefault(wo, []).extend(rest)
+
+
+def daten_mit(k, name, aendern):
+    """A copy of scenario `name` changed by aendern(states)."""
+    d = json.loads(json.dumps(k.data[name]))
+    aendern(d["states"])
+    return d
+
+
+def baue_daten(k, data, config=None, panel=False, texte=None, warten=True):
+    k.page.evaluate("(a) => window.buildCard(a)", {"data": data, "lang": "de", "config": config or {}, "panel": panel, "texte": texte})
+    if warten:
+        k.ruhe()
+
+
+def mit_frame(states, frame):
+    for cam_id in ("camera.robo_map", "camera.robo_map_1"):
+        if cam_id in states:
+            a = states[cam_id]["attributes"]
+            a["frame_id"] = frame
+            a["entity_picture"] = "/api/camera_proxy/%s?token=testtoken&v=%d" % (cam_id, frame)
+
+
+DIALOG_BOX_JS = """() => { const d = window.dialog(); if (!d) return { missing: true }; const sr = d.shadowRoot, sheet = sr.querySelector('.sheet'), r = sheet.getBoundingClientRect();
+    return { kind: sheet.getAttribute('data-kind'), view: sheet.getAttribute('data-view'), title: (sr.querySelector('h1') || {}).textContent || null,
+             top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height, W: innerWidth, H: innerHeight,
+             overflowX: sheet.scrollWidth - sheet.clientWidth, small: window.smallTargets(sr),
+             text: sheet.textContent.replace(/\\s+/g, ' ').slice(0, 600) }; }"""
+
+
+# ── M8 · Rechte ────────────────────────────────────────────────────────────
+RECHTE_GAST = {"user": {"id": "gast", "name": "Gast", "is_admin": False, "is_owner": False}}
+# (picture label, scenario, config, opener, its argument, the counts that must be 0 for a guest and > 0 for an admin)
+RECHTE_VIEWS = (
+    ("einstellungen-audio", "settings", None, "settings_open", [("[data-group=audio]", None)], ("voicePack",)),
+    ("einstellungen-sonstiges", "shortcuts", None, "settings_open", [("[data-group=other]", None)], ("shortcutsManage",)),
+    ("zubehoer", "settings", None, "settings_open", [("[data-group=consumables]", None)], ("reset",)),
+    ("shortcut-menue", "shortcuts", short_config, "short_open", [], ("manage",)),
+    ("kartenverwaltung", "floors", None, "edit_open", {"entry": "maps", "steps": []}, ("mapDelete", "mapEdit")),
+    ("sicherungsliste", "backup", None, "bak_open", {"steps": bak_list}, ("restore", "download", "restoreFile")),
+)
+RECHTE_JS = """() => { const d = window.dialog(), sr = d && d.shadowRoot, c = window.card();
+    const n = (sel) => (sr ? sr.querySelectorAll(sel).length : 0);
+    return { voicePack: n('[data-action=voice-pack]'), shortcutsManage: n('[data-action=shortcuts-manage]'), manage: n('[data-action=manage]'),
+             reset: n('[data-action=reset]'), parts: n('[data-part]'), maps: n('[data-map]'),
+             mapDelete: n('[data-map] [data-action=delete]') + n('[data-map] [data-action=edit]'),
+             mapEdit: c._map && c._map.tools ? c._map.tools.querySelectorAll('[data-action=map-edit]').length : 0,
+             restore: n('[data-action=restore]'), download: n('[data-action=download]'), restoreFile: n('[data-action=restore-file]'),
+             entries: n('.backup-entry') }; }"""
+
+
+def bereich_rechte(k):
+    """M8: Nutzer ohne is_admin sieht die sechs folgenreichen Funktionen nirgends; Admin wie bisher."""
+    page, report, check, theme, build, ruhe, shot = k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot
+    openers = {"settings_open": settings_open, "short_open": short_open, "edit_open": edit_open, "bak_open": bak_open}
+    rows = []
+    for rolle, extra in (("gast", RECHTE_GAST), ("admin", None)):
+        hass_extra(k, extra)
+        for w, h in ((390, 844), (1280, 800)):
+            page.set_viewport_size({"width": w, "height": h})
+            theme("light")
+            for label, szenario, config, opener, arg, keys in RECHTE_VIEWS:
+                build(szenario, config=config)
+                title = page.evaluate(openers[opener], arg)
+                ruhe()
+                g = dict(page.evaluate(RECHTE_JS), box=page.evaluate(DIALOG_BOX_JS))
+                shot(f"rechte-{rolle}-{label}-{w}-light.png")
+                page.evaluate(DIALOGE_ZU)
+                rows.append({"rolle": rolle, "label": label, "w": w, "title": title, "keys": keys,
+                             "sum": sum(g[x] for x in keys), **g})
+    hass_extra(k, None)
+    report["rechte"] = rows
+    gast = [r for r in rows if r["rolle"] == "gast"]
+    admin = [r for r in rows if r["rolle"] == "admin"]
+    missing = [(r["rolle"], r["label"], r["w"], r["title"]) for r in rows if str(r["title"]).startswith("missing")]
+    check("M8 rights: a user without is_admin sees none of the six functions (voice pack, shortcut management, consumable reset, "
+          "map delete/edit and pen, restore/download/restore from file; 390/1280 light)",
+          not missing and all(r["sum"] == 0 for r in gast)
+          and all(r["parts"] >= 3 for r in gast if r["label"] == "zubehoer") and all(r["entries"] > 0 for r in gast if r["label"] == "sicherungsliste"),
+          json.dumps({"missing": missing, "bad": [(r["label"], r["w"], {x: r[x] for x in r["keys"]}, r["parts"], r["entries"]) for r in gast
+                                                 if r["sum"] or (r["label"] == "zubehoer" and r["parts"] < 3)][:6]}))
+    check("M8 rights: an admin sees every one of them in the same views (comparison)",
+          not missing and all(all(r[x] > 0 for x in r["keys"]) for r in admin),
+          json.dumps([(r["label"], r["w"], {x: r[x] for x in r["keys"]}) for r in admin if not all(r[x] > 0 for x in r["keys"])][:6]))
+    bad = [(r["rolle"], r["label"], r["w"]) for r in rows if r["box"].get("missing") or not inside(r["box"]) or r["box"]["small"] or r["box"]["overflowX"] > 1]
+    check("M8 rights: guest and admin views inside the viewport, no sideways overflow, 44 px buttons", not bad, json.dumps(bad[:6]))
+
+
+# ── M29 · Adressen ─────────────────────────────────────────────────────────
+SPRACHPAKET_SCHRITTE = lambda url: [("[data-group=audio]", None), ("[data-action=voice-pack]", None), ("[data-field=lang_id]", "de2"),
+                                    ("[data-field=url]", url), ("[data-field=md5]", "0123456789abcdef0123456789abcdef"),
+                                    ("[data-field=size]", "1234"), ("[data-action=submit]", None)]
+HOST_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, line = sr.querySelector('[data-part=host]'), strong = line && line.querySelector('strong');
+    const ok = sr.querySelector('[data-field=foreign_ok]'), go = sr.querySelector('[data-action=confirm]');
+    return { kind: sr.querySelector('.sheet').getAttribute('data-kind'), host: strong ? strong.textContent : null, line: line ? line.textContent : null,
+             foreignOk: ok ? { checked: ok.checked, h: ok.getBoundingClientRect().height } : null, confirmDisabled: go ? go.disabled : null,
+             errors: Array.from(sr.querySelectorAll('.field-error')).map((e) => e.textContent).filter(Boolean),
+             text: sr.querySelector('.sheet').textContent.replace(/\\s+/g, ' ') , origin: location.origin, own: location.host }; }"""
+DATEI_FREMD_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, f = sr.querySelector('[data-field=file_url]');
+    if (!f) return { error: 'missing file_url' }; const preset = f.value; f.value = 'https://fremd.invalid/karte.mb.tbz2';
+    f.dispatchEvent(new Event('input', { bubbles: true })); const s = sr.querySelector('[data-action=submit]');
+    if (!s) return { error: 'missing submit', preset }; s.click(); return { preset }; }"""
+HAKEN_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, ok = sr.querySelector('[data-field=foreign_ok]'); if (!ok) return null;
+    ok.checked = true; ok.dispatchEvent(new Event('change', { bubbles: true })); return true; }"""
+
+
+def bereich_adressen(k):
+    """M29: Sprachpaket nur https oder eigene Instanz, Host hervorgehoben; Datei-URL zu fremdem Host mit zweitem Haken."""
+    page, report, check, theme, build, ruhe, shot = k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot
+    voice, files = [], []
+    for w, h in ((360, 640), (1280, 800)):
+        for th in THEMES:
+            page.set_viewport_size({"width": w, "height": h})
+            theme(th)
+            for variante, url in (("fremd", "https://pakete.invalid/de.pkg"), ("eigen", "/local/de.pkg"), ("http", "http://example.invalid/x")):
+                build("settings")
+                title = page.evaluate(settings_open, SPRACHPAKET_SCHRITTE(url))
+                ruhe()
+                g = page.evaluate(HOST_JS)
+                name = f"sprachpaket-bestaetigen-host-{variante}-{w}x{h}-{th}.png" if variante != "http" else f"sprachpaket-http-fehler-{w}x{h}-{th}.png"
+                shot(name)
+                page.evaluate(DIALOGE_ZU)
+                voice.append({"variante": variante, "w": w, "theme": th, "title": title, **(g or {"kind": None, "host": None, "line": None, "errors": [], "own": None})})
+            build("backup")
+            page.evaluate(bak_open, {"steps": bak_list + ["[data-action=restore-file]"]})
+            ruhe()
+            filled = page.evaluate(DATEI_FREMD_JS)
+            ruhe()
+            g = page.evaluate(HOST_JS) or {"kind": None, "host": None, "foreignOk": None, "confirmDisabled": None, "text": "", "origin": None}
+            box = page.evaluate(DIALOG_BOX_JS)
+            shot(f"sicherung-datei-fremd-{w}x{h}-{th}.png")
+            page.evaluate(HAKEN_JS)
+            ruhe()
+            after = page.evaluate("() => { const b = window.dialog() && window.dialog().shadowRoot.querySelector('[data-action=confirm]'); return b ? b.disabled : null; }")
+            page.evaluate(DIALOGE_ZU)
+            files.append({"w": w, "theme": th, "filled": filled, "afterTick": after, "box": box, **g})
+    calls = dienste_leeren(k)
+    report["adressen"] = {"sprachpaket": voice, "datei": files, "calls": calls}
+    ok_voice = lambda x: (x["variante"] == "fremd" and x["kind"] == "confirm" and x["host"] == "pakete.invalid" and "fremder Server" in (x["line"] or ""))\
+        or (x["variante"] == "eigen" and x["kind"] == "confirm" and x["host"] == x["own"] and "dieses Home Assistant" in (x["line"] or ""))\
+        or (x["variante"] == "http" and x["kind"] == "editor" and any("https://" in e for e in x["errors"]))
+    check("M29 voice pack: https host of another server confirmed with the host in bold and 'fremder Server', /local/ as this Home Assistant, "
+          "http:// of another host an inline error (360x640, 1280x800, light/dark); 0 calls",
+          all(ok_voice(x) for x in voice) and not calls,
+          json.dumps({"bad": [{kk: x.get(kk) for kk in ("variante", "w", "theme", "title", "kind", "host", "line", "errors")} for x in voice if not ok_voice(x)][:4], "calls": calls}))
+    ok_file = lambda x: (x["filled"] or {}).get("preset") == x["origin"] + "/local/" and x["kind"] == "confirm" and x["host"] == "fremd.invalid"\
+        and x["foreignOk"] and not x["foreignOk"]["checked"] and x["confirmDisabled"] is True and x["afterTick"] is False\
+        and "Home Assistant ruft diese fremde Adresse ab" in x["text"]
+    check("M29 restore from file: preset /local/ of this instance; another host needs the second tick (foreign_ok), the button stays locked "
+          "until then; host in bold (360x640, 1280x800, light/dark)",
+          all(ok_file(x) for x in files),
+          json.dumps([{kk: x.get(kk) for kk in ("w", "theme", "filled", "kind", "host", "foreignOk", "confirmDisabled", "afterTick")} for x in files if not ok_file(x)][:4]))
+    bad = [(x["w"], x["theme"]) for x in files if x["box"].get("missing") or not inside(x["box"]) or x["box"]["small"] or x["box"]["overflowX"] > 1]
+    check("M29 restore from file: confirmation inside the viewport, 44 px buttons", not bad, json.dumps(bad))
+
+
+# ── M27 · feindliche Namen ─────────────────────────────────────────────────
+FEINDLICH_MUSTER = re.compile(r'[<>"]|javascript:|[‏‪-‮]|Sehr langer')
+KNOTEN_JS = """() => { const roots = [], c = window.card(), d = window.dialog();
+    const walk = (r) => { roots.push(r); r.querySelectorAll('*').forEach((n) => { if (n.shadowRoot) walk(n.shadowRoot); }); };
+    walk(c.shadowRoot); if (d) walk(d.shadowRoot);
+    const count = { img: 0, svg: 0, script: 0, iframe: 0, object: 0, embed: 0 }, foreign = [];
+    for (const r of roots) r.querySelectorAll('*').forEach((n) => {
+      const t = n.tagName.toLowerCase(); if (Object.hasOwn(count, t)) count[t]++;
+      for (const a of Array.from(n.attributes)) {
+        if (/^on/i.test(a.name)) foreign.push(t + '[' + a.name + ']');
+        if (['href', 'src', 'xlink:href'].includes(a.name) && /^\\s*javascript:/i.test(a.value)) foreign.push(t + '[' + a.name + ']'); } });
+    const text = (r) => Array.from(r.childNodes).filter((n) => n.nodeName !== 'STYLE').map((n) => n.textContent).join(' ');
+    return { count, foreign, card: text(c.shadowRoot), dialog: d ? text(d.shadowRoot) : null }; }"""
+
+
+def entschaerft(obj, namen):
+    """The same data with every hostile string replaced by 'Harmlos <n>' (the comparison case)."""
+    if isinstance(obj, dict):
+        return {key: entschaerft(v, namen) for key, v in obj.items()}
+    if isinstance(obj, list):
+        return [entschaerft(v, namen) for v in obj]
+    if isinstance(obj, str) and FEINDLICH_MUSTER.search(obj):
+        namen.append(obj)
+        return "Harmlos %d" % len(namen)
+    return obj
+
+
+def bereich_feindlich(k):
+    """M27: feindliche Namen (tests/fixtures/feindlich.json) erscheinen wörtlich, ohne Dialog-Ereignis und fremde Knoten."""
+    page, report, check, theme, ruhe, shot = k.page, k.report, k.check, k.theme, k.ruhe, k.shot
+    fx = json.loads((k.repo_root / "tests" / "fixtures" / "feindlich.json").read_text(encoding="utf-8"))
+    feindlich = {key: fx[key] for key in ("states", "entities", "services")}
+    namen = []
+    harmlos = entschaerft(feindlich, namen)
+    vac = feindlich["states"]["vacuum.robo"]["attributes"]
+    title = vac["friendly_name"]
+    shortcut_names = [s["name"].strip() for s in vac["shortcuts"].values()]
+    config = {"scripts": ["script.feindlich"]}
+    dialogs = []
+    on_dialog = lambda d: (dialogs.append({"type": d.type, "message": d.message}), d.dismiss())
+    page.on("dialog", on_dialog)
+    rows = []
+    try:
+        for w in (390, 1280):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": 844 if w < 450 else 800})
+                theme(th)
+                for variante, data in (("feindlich", feindlich), ("harmlos", harmlos)):
+                    baue_daten(k, data, config=config)
+                    karte = page.evaluate(KNOTEN_JS)
+                    if variante == "feindlich":
+                        shot(f"feindlich-karte-{w}-{th}.png")
+                    page.evaluate("() => { const b = window.card().shadowRoot.querySelector('[data-action=shortcuts]'); if (b) b.click(); }")
+                    ruhe()
+                    menue = page.evaluate(KNOTEN_JS)
+                    if variante == "feindlich":
+                        shot(f"feindlich-menue-{w}-{th}.png")
+                    page.evaluate(DIALOGE_ZU)
+                    rows.append({"variante": variante, "w": w, "theme": th, "karte": karte, "menue": menue})
+    finally:
+        page.remove_listener("dialog", on_dialog)
+    calls = dienste_leeren(k)
+    report["feindlich"] = {"dialogs": dialogs, "calls": calls,
+                           "rows": [{kk: r[kk] for kk in ("variante", "w", "theme")} | {"karte": r["karte"]["count"], "menue": r["menue"]["count"],
+                                    "foreign": r["karte"]["foreign"] + r["menue"]["foreign"]} for r in rows]}
+    f_rows = [r for r in rows if r["variante"] == "feindlich"]
+    paare = [(a, b) for a in f_rows for b in rows if b["variante"] == "harmlos" and (b["w"], b["theme"]) == (a["w"], a["theme"])]
+    literal = lambda r: title in r["karte"]["card"] and r["menue"]["dialog"] is not None and all(n in r["menue"]["dialog"] for n in shortcut_names)
+    check("M27 hostile names: no dialog event (alert/confirm/prompt) and no foreign node (on* attribute, javascript: URL) in card and shortcut menu (390/1280, light/dark)",
+          not dialogs and all(not r["karte"]["foreign"] and not r["menue"]["foreign"] for r in rows),
+          json.dumps({"dialogs": dialogs, "foreign": [(r["w"], r["theme"], r["karte"]["foreign"] + r["menue"]["foreign"]) for r in rows if r["karte"]["foreign"] or r["menue"]["foreign"]][:4]}))
+    check("M27 hostile names: as many img/svg/script/iframe/object/embed nodes as with harmless names (no node from a name)",
+          len(paare) == 4 and all(a["karte"]["count"] == b["karte"]["count"] and a["menue"]["count"] == b["menue"]["count"] for a, b in paare),
+          json.dumps([(a["w"], a["theme"], a["karte"]["count"], b["karte"]["count"], a["menue"]["count"], b["menue"]["count"]) for a, b in paare
+                      if a["karte"]["count"] != b["karte"]["count"] or a["menue"]["count"] != b["menue"]["count"]][:4]))
+    check("M27 hostile names: title and every shortcut name appear literally as text",
+          all(literal(r) for r in f_rows), json.dumps([(r["w"], r["theme"], title in r["karte"]["card"]) for r in f_rows if not literal(r)][:4]))
+
+
+# ── M6, M18, M39 · Netz ────────────────────────────────────────────────────
+VERALTET_FRAMES = (990201, 990202)
+NETZ_STAND_JS = """() => { const c = window.card(), m = c._map, sr = c.shadowRoot;
+    const notes = Array.from(sr.querySelectorAll('.map-note')).filter((n) => n.getBoundingClientRect().height > 0)
+      .map((n) => ({ kind: n.getAttribute('data-kind'), role: n.getAttribute('role'), text: n.textContent }));
+    return { mode: m ? m.current().mode : null, stale: !!(m && m.el.hasAttribute('data-stale')), notes, stats: m ? JSON.parse(JSON.stringify(m.stats)) : null,
+             netz: window.__netz ? { laufend: window.__netz.laufend, hoechstens: window.__netz.hoechstens, abrufe: window.__netz.abrufe.length } : null,
+             frames: (window.__frames || []).slice(), pageOverflow: document.documentElement.scrollWidth - innerWidth, small: window.smallTargets(sr) }; }"""
+FRAMES_MERKEN_JS = """() => { window.__frames = []; window.card()._map.el.addEventListener('map-frame', (e) => window.__frames.push(e.detail && e.detail.frameId)); return true; }"""
+OFFLINE_JS = """() => { const c = window.card(), sr = c.shadowRoot, hint = sr.querySelector('#offline-hint');
+    const drive = Array.from(sr.querySelectorAll('.ctl')).filter((b) => ['start', 'pause', 'stop', 'return', 'resume'].includes(b.getAttribute('data-action')));
+    return { offline: c.hasAttribute('data-offline'), hint: hint && hint.getBoundingClientRect().height > 0 ? { role: hint.getAttribute('role'), text: hint.textContent } : null,
+             drive: drive.map((b) => ({ action: b.getAttribute('data-action'), disabled: b.disabled, why: b.getAttribute('aria-describedby') })),
+             pageOverflow: document.documentElement.scrollWidth - innerWidth, small: window.smallTargets(sr) }; }"""
+REMOTE_LANGSAM_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, r = sr.querySelector('.remote'), slow = sr.querySelector('.remote-slow');
+    return { rtt: r && r.hasAttribute('data-rtt') ? Number(r.getAttribute('data-rtt')) : null,
+             slow: slow ? { hidden: slow.hidden, shown: slow.getBoundingClientRect().height > 0, text: slow.textContent, role: slow.getAttribute('role') } : null }; }"""
+
+
+def bereich_netz(k):
+    """M6 karte-veraltet, M18 offline, M39 netz_langsam/netz_fehler/fernsteuerung_langsam."""
+    page, report, check, theme, build, ruhe, shot = k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot
+    out = {}
+    # M6: frame A shown, frame B answered with 500 -> the last good map stays, marked stale, with the hint.
+    stale = []
+    a, b = VERALTET_FRAMES
+    for w, th in ((390, "light"), (1280, "dark")):
+        page.set_viewport_size({"width": w, "height": 844 if w < 450 else 800})
+        theme(th)
+        page.evaluate(FRAME_CACHE_LEEREN)
+        page.evaluate(NETZ_JS, {"fehlerFrame": b})
+        baue_daten(k, daten_mit(k, "docked", lambda st: mit_frame(st, a)))
+        ruhe("m && m.current().mode === 'data'")
+        vorher = page.evaluate(NETZ_STAND_JS)
+        page.evaluate(NEUER_FRAME_JS, {"frame": b})
+        try:
+            page.wait_for_function("() => { const m = window.card()._map; return !!m && m.el.hasAttribute('data-stale'); }", timeout=8000)
+        except PlaywrightTimeout:
+            pass
+        ruhe("m && m.el.hasAttribute('data-stale')", ms=4000)
+        g = page.evaluate(NETZ_STAND_JS)
+        shot(f"karte-veraltet-{w}-{th}.png")
+        page.evaluate(NETZ_JS, None)
+        build("docked")
+        stale.append({"w": w, "theme": th, "before": vorher["mode"], **g})
+    out["veraltet"] = stale
+    ok_stale = lambda x: x["before"] == "data" and x["mode"] == "data" and x["stale"] and any(
+        n["kind"] == "stale" and "nicht aktuell" in n["text"] for n in x["notes"]) and x["pageOverflow"] <= 0 and not x["small"]
+    check("M6 stale map: frame B answered 500 keeps frame A in data mode, data-stale and the hint 'Karte nicht aktuell' (390 light, 1280 dark)",
+          all(ok_stale(x) for x in stale), json.dumps([{kk: x[kk] for kk in ("w", "theme", "before", "mode", "stale", "notes", "stats")} for x in stale if not ok_stale(x)]))
+
+    # M18: hass.connected false -> data-offline, the hint, every drive button locked with the reason, 0 calls (also from the menu).
+    offline = []
+    hass_extra(k, {"connected": False})
+    for w in (390, 1280):
+        for th in THEMES:
+            page.set_viewport_size({"width": w, "height": 900})
+            theme(th)
+            build("docked")
+            g = page.evaluate(OFFLINE_JS)
+            shot(f"offline-{w}-{th}.png")
+            page.evaluate("""() => { const c = window.card(); c.shadowRoot.querySelectorAll('.ctl').forEach((b) => b.click());
+                window.closeDialogs(); c.shadowRoot.querySelector('.menu-button').click();
+                const e = window.dialog() && window.dialog().shadowRoot.querySelector('[data-entry=locate]'); if (e) e.click(); }""")
+            ruhe()
+            page.evaluate(DIALOGE_ZU)
+            offline.append({"w": w, "theme": th, "calls": dienste_leeren(k), **g})
+    hass_extra(k, None)
+    out["offline"] = offline
+    ok_off = lambda x: x["offline"] and x["hint"] and x["drive"] and all(d["disabled"] and d["why"] == "offline-hint" for d in x["drive"]) and not x["calls"]
+    check("M18 offline: hass.connected false shows the hint, locks every drive button with aria-describedby offline-hint, clicks and Orten send 0 calls (390/1280, light/dark)",
+          all(ok_off(x) for x in offline) and all(x["pageOverflow"] <= 0 and not x["small"] for x in offline),
+          json.dumps([{kk: x[kk] for kk in ("w", "theme", "offline", "hint", "drive", "calls")} for x in offline if not ok_off(x)][:3]))
+
+    # M39 netz_langsam: latency 1.5 s, a new frame every 0.5 s (10 frames).
+    page.set_viewport_size({"width": 1280, "height": 800})
+    theme("dark")
+    page.evaluate(FRAME_CACHE_LEEREN)
+    baue_daten(k, daten_mit(k, "docked", lambda st: mit_frame(st, 990300)))
+    ruhe("m && m.current().mode === 'data'")
+    page.evaluate(FRAMES_MERKEN_JS)
+    page.evaluate(NETZ_JS, {"latenz": 1500})
+    page.evaluate("""async (n) => { for (let i = 1; i <= n; i++) {
+        const c = window.card(), h = c.hass, st = Object.assign({}, h.states);
+        for (const id of ['camera.robo_map', 'camera.robo_map_1']) { const s = st[id]; if (!s) continue;
+          st[id] = Object.assign({}, s, { attributes: Object.assign({}, s.attributes, { frame_id: 990300 + i, entity_picture: '/api/camera_proxy/' + id + '?token=testtoken&v=' + (990300 + i) }) }); }
+        c.hass = Object.assign({}, h, { states: st });
+        await new Promise((r) => setTimeout(r, 500)); } }""", 10)
+    try:
+        page.wait_for_function("() => window.__netz.laufend === 0 && window.__frames.length >= 2", timeout=10000, polling=100)
+    except PlaywrightTimeout:
+        pass
+    langsam = page.evaluate(NETZ_STAND_JS)
+    shot("netz-langsam-1280-dark.png")
+    page.evaluate(NETZ_JS, None)
+    out["langsam"] = langsam
+    s = langsam["stats"] or {}
+    check("M39 netz_langsam: latency 1.5 s, frames every 0.5 s -> >= 2 frames applied, at most 1 fetch at a time, fetchMs >= 1500 (median), discarded <= data, no failure (1280 dark)",
+          len(langsam["frames"]) >= 2 and langsam["netz"]["hoechstens"] <= 1 and (s.get("fetchMs") or 0) >= 1500
+          and s.get("discarded", 1e9) <= s.get("data", -1) and s.get("failures") == 0 and langsam["mode"] == "data",
+          json.dumps({kk: langsam[kk] for kk in ("frames", "netz", "stats", "mode")}))
+
+    # M39 netz_fehler: the first data fetch answers 500 -> failures 1, a retry after the backoff, data mode at the end.
+    page.evaluate(FRAME_CACHE_LEEREN)
+    page.evaluate(NETZ_JS, {"fehlerNr": [1]})
+    baue_daten(k, daten_mit(k, "docked", lambda st: mit_frame(st, 990400)), warten=False)
+    try:
+        page.wait_for_function("""() => { const m = window.card()._map; return !!m && m.stats.retries >= 1 && m.current().mode === 'data'
+            && window.__netz.laufend === 0; }""", timeout=10000, polling=100)
+    except PlaywrightTimeout:
+        pass
+    ruhe()
+    fehler = page.evaluate(NETZ_STAND_JS)
+    shot("netz-fehler-1280-dark.png")
+    page.evaluate(NETZ_JS, None)
+    build("docked")
+    out["fehler"] = fehler
+    s = fehler["stats"] or {}
+    check("M39 netz_fehler: first fetch 500 -> failures 1, retries >= 1, data mode at the end, no stale hint left (1280 dark)",
+          s.get("failures") == 1 and s.get("retries", 0) >= 1 and fehler["mode"] == "data" and not fehler["stale"],
+          json.dumps({kk: fehler[kk] for kk in ("stats", "mode", "stale", "notes", "netz")}))
+
+    # M39 fernsteuerung_langsam: every drive step answers after 800 ms -> data-rtt >= 600 and the hint.
+    page.set_viewport_size({"width": 390, "height": 844})
+    theme("light")
+    build("docked")
+    page.evaluate(remote_open, True)
+    ruhe()
+    dienst(k, "langsam", ms=800)
+    page.keyboard.down("w")
+    try:
+        page.wait_for_function("""() => { const r = window.dialog() && window.dialog().shadowRoot.querySelector('.remote');
+            return !!r && Number(r.getAttribute('data-rtt')) >= 600; }""", timeout=8000, polling=100)
+    except PlaywrightTimeout:
+        pass
+    k.frames(2)
+    remote = page.evaluate(REMOTE_LANGSAM_JS) or {"rtt": None, "slow": None}
+    shot("fernsteuerung-langsam-390x844-light.png")
+    page.keyboard.up("w")
+    ruhe(WANN_STOPP, ms=6000)
+    page.evaluate(DIALOGE_ZU)
+    page.wait_for_timeout(1200)  # real time on purpose: slow answers and the stop after closing land in the stub before it is emptied
+    remote["calls"] = len(dienste_leeren(k))
+    out["fernsteuerung"] = remote
+    report["netz"] = out
+    check("M39 fernsteuerung_langsam: drive steps answered after 800 ms -> data-rtt >= 600 and the visible hint 'Verbindung langsam' (390x844 light)",
+          remote["rtt"] is not None and remote["rtt"] >= 600 and remote["slow"] and not remote["slow"]["hidden"] and remote["slow"]["shown"]
+          and "langsam" in remote["slow"]["text"], json.dumps(remote))
+
+
+# ── M20 · Teilfehler beim Speichern ────────────────────────────────────────
+TEILFEHLER_JS = """async () => { const c = window.card(), I = customElements.get('busch-vacuum-card').__internals;
+    const s = c._editSession || new I.MapEditSession(c);
+    const ruf = (i) => ({ service: 'vacuum_set_restricted_zone', data: { walls: [], zones: [], no_mops: [], nr: i } });
+    const undo = { text: 'drei Gruppen', calls: [ruf(11), ruf(12), ruf(13)], groups: [1, 2, 3].map((i) => ({ count: 1, calls: [ruf(10 + i)] })) };
+    const ok = await s.commit({ card: c, confirmed: true }, [ruf(1), ruf(2), ruf(3)], { undo, backup: false });
+    return { ok, error: s.error && s.error.text, undo: s.undo.length, undoCalls: s.undo.length ? s.undo[s.undo.length - 1].calls.length : 0,
+             shared: c._editSession === s }; }"""
+
+
+def bereich_teilfehler(k):
+    """M20: drei Gruppen, die dritte scheitert -> „2 von 3 Gruppen gespeichert“ in der Speicherbestätigung."""
+    page, report, check, theme, build, ruhe, shot = k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot
+    rows = []
+    rest_aufrufe(k, "teilfehler")
+    for w, h in ((360, 640), (1280, 800)):
+        for th in THEMES:
+            page.set_viewport_size({"width": w, "height": h})
+            theme(th)
+            build("editor")
+            title = page.evaluate(edit_open, {"entry": "edit", "steps": ["[data-tool=zones]", "[data-action=edit-add]", "[data-action=save]"]})
+            ruhe()
+            dienst(k, "nte", n=3, grund="Gerät lehnt ab")
+            r = page.evaluate(TEILFEHLER_JS)
+            ruhe()
+            box = page.evaluate(DIALOG_BOX_JS)
+            label = page.evaluate("() => { const b = window.dialog() && window.dialog().shadowRoot.querySelector('[data-action=confirm]'); return b ? b.textContent : null; }")
+            shot(f"karten-teilfehler-{w}x{h}-{th}.png")
+            page.evaluate(DIALOGE_ZU)
+            rows.append({"w": w, "theme": th, "title": title, "calls": dienste_leeren(k), "label": label, "box": box, **r})
+    report["teilfehler"] = rows
+    ok = lambda x: x.get("ok") is False and "2 von 3 Gruppen gespeichert" in (x["error"] or "") and x["undo"] >= 1 and x["undoCalls"] == 2\
+        and x["box"].get("kind") == "confirm" and "2 von 3 Gruppen gespeichert" in x["box"].get("text", "") and len(x["calls"]) == 3
+    check("M20 partial save: the third of three calls fails -> '2 von 3 Gruppen gespeichert' in the open save confirmation, undo of the two written groups (360x640, 1280x800, light/dark)",
+          all(ok(x) for x in rows) and all(not x["box"].get("missing") and inside(x["box"]) and not x["box"]["small"] for x in rows),
+          json.dumps([{kk: x.get(kk) for kk in ("w", "theme", "title", "ok", "error", "undo", "undoCalls", "shared", "label", "calls")} for x in rows if not ok(x)][:3]))
+
+
+# ── M3, M5 · Befehle ───────────────────────────────────────────────────────
+MELDUNG_JS = """() => { const sr = window.card().shadowRoot, m = sr.querySelector('.message[data-kind=error]');
+    return m ? { role: m.getAttribute('role'), text: m.textContent, dismiss: !!m.querySelector('[data-action=dismiss]'),
+                 pageOverflow: document.documentElement.scrollWidth - innerWidth, small: window.smallTargets(sr) } : null; }"""
+
+
+def bereich_befehle(k):
+    """M3/M5: abgelehnter Befehl mit R12-Text, Start bei hängendem Dienst, Kartenwechsel läuft, Hindernis ignorieren scheitert."""
+    page, report, check, theme, build, ruhe, shot, open_menu, open_floors, open_obstacle = (
+        k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot, k.open_menu, k.open_floors, k.open_obstacle)
+    out = {"meldung": []}
+    rest_aufrufe(k, "befehle")
+    for w in (390, 1280):
+        for th in THEMES:
+            page.set_viewport_size({"width": w, "height": 900})
+            theme(th)
+            build("docked")
+            dienst(k, "ablehnen", grund="Roboter offline")
+            open_menu()
+            ruhe()
+            page.evaluate("() => { const e = window.dialog() && window.dialog().shadowRoot.querySelector('[data-entry=locate]'); if (e) e.click(); }")
+            try:
+                page.wait_for_function("() => !!window.card().shadowRoot.querySelector('.message[data-kind=error]')", timeout=5000)
+            except PlaywrightTimeout:
+                pass
+            page.evaluate(DIALOGE_ZU)
+            ruhe()
+            g = page.evaluate(MELDUNG_JS)
+            shot(f"karte-meldung-befehlfehler-{w}-{th}.png")
+            out["meldung"].append({"w": w, "theme": th, "calls": dienste_leeren(k), "m": g})
+    ok_m = lambda x: x["m"] and x["m"]["role"] == "alert" and "Orten" in x["m"]["text"] and "Roboter offline" in x["m"]["text"]\
+        and "erneut" in x["m"]["text"] and x["m"]["dismiss"] and x["calls"] == [["vacuum", "locate"]] and x["m"]["pageOverflow"] <= 0 and not x["m"]["small"]
+    check("M5 refused command: a refused Orten shows the R12 text (what, reason, try again) as alert in the card, dismissable, one call (390/1280, light/dark)",
+          all(ok_m(x) for x in out["meldung"]), json.dumps([x for x in out["meldung"] if not ok_m(x)][:2]))
+
+    # M3: a hanging start keeps the bar busy, a second tap sends nothing.
+    page.set_viewport_size({"width": 390, "height": 900})
+    theme("light")
+    build("docked")
+    dienst(k, "haengen")
+    # A double tap on the same node, then a tap on whatever start button the bar shows now (as tests/steuerung.test.js M3).
+    page.evaluate("() => { const b = window.card().shadowRoot.querySelector('.ctl[data-action=start]'); b.click(); b.click(); }")
+    k.frames(2)
+    page.evaluate("() => { const b = window.card().shadowRoot.querySelector('.ctl[data-action=start]'); if (b) b.click(); }")
+    k.frames(2)
+    start = page.evaluate("""() => { const sr = window.card().shadowRoot;
+        return { state: sr.querySelector('.state').textContent, actions: Array.from(sr.querySelectorAll('.ctl')).map((x) => x.getAttribute('data-action')) }; }""")
+    shot("karte-start-sendet-390-light.png")
+    start["calls"] = dienste_leeren(k)
+    build("docked")
+    out["start"] = start
+    check("M3 hanging start: the preview 'Reinigt' stays while the service hangs, a double tap and a further tap send nothing (exactly one call, 390 light)",
+          start["state"] == "Reinigt" and len(start["calls"]) == 1, json.dumps(start))
+
+    # M5: floor change running -> the dialog names it ("Wird gewechselt …", aria-busy), a tap sends no second call.
+    floors = []
+    for w, h in ((360, 640), (1280, 800)):
+        page.set_viewport_size({"width": w, "height": h})
+        theme("light")
+        build("floors", config={"hidden_card_objects": ["map_change_confirmation"]})
+        dienst(k, "haengen")
+        first = page.evaluate("() => window.card()._map.selectMap(7)")
+        open_floors()
+        ruhe()
+        g = page.evaluate("""() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, t = Array.from(sr.querySelectorAll('.floor')).find((e) => e.getAttribute('data-map') === '7');
+            const r = t ? { text: t.textContent, busy: t.getAttribute('aria-busy') } : null; if (t) t.click(); return r; }""")
+        k.frames(2)
+        box = page.evaluate(DIALOG_BOX_JS)
+        shot(f"dialog-stockwerk-wechselt-{w}x{h}-light.png")
+        page.evaluate(DIALOGE_ZU)
+        floors.append({"w": w, "first": first, "target": g, "box": box, "calls": dienste_leeren(k)})
+    build("docked")
+    out["stockwerk"] = floors
+    ok_f = lambda x: x["first"] is True and x["target"] and "Wird gewechselt" in x["target"]["text"] and x["target"]["busy"] == "true"\
+        and [c for c in x["calls"] if c[1] == "vacuum_select_map"] == [["dreame_vacuum", "vacuum_select_map"]]
+    check("M5 floor change running: the floor dialog shows 'Wird gewechselt …' with aria-busy, a tap on it sends no second call (360x640, 1280x800 light)",
+          all(ok_f(x) for x in floors) and all(not x["box"].get("missing") and inside(x["box"]) and not x["box"]["small"] for x in floors),
+          json.dumps([{kk: x[kk] for kk in ("w", "first", "target", "calls")} for x in floors if not ok_f(x)]))
+
+    # M5: ignoring an obstacle refused -> the note in the details names the reason, the button is usable again.
+    page.set_viewport_size({"width": 360, "height": 640})
+    theme("light")
+    build("docked")
+    dienst(k, "ablehnen", grund="Gerät offline")
+    open_obstacle()
+    ruhe()
+    page.evaluate("() => { const b = window.dialog() && window.dialog().shadowRoot.querySelector('[data-action=obstacle-ignore]'); if (b) b.click(); }")
+    try:
+        page.wait_for_function("""() => { const n = window.dialog() && window.dialog().shadowRoot.querySelector('.obstacle-note');
+            return !!n && n.textContent.includes('Gerät offline'); }""", timeout=5000)
+    except PlaywrightTimeout:
+        pass
+    ruhe()
+    obst = page.evaluate("""() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, n = sr.querySelector('.obstacle-note'), b = sr.querySelector('[data-action=obstacle-ignore]');
+        return { note: n ? n.textContent : null, button: b ? !b.disabled : null }; }""") or {"note": None, "button": None}
+    obst["box"] = page.evaluate(DIALOG_BOX_JS)
+    shot("dialog-hindernis-fehler-360x640-light.png")
+    page.evaluate(DIALOGE_ZU)
+    obst["calls"] = dienste_leeren(k)
+    out["hindernis"] = obst
+    report["befehle"] = out
+    check("M5 obstacle ignore refused: the details name the reason ('Gerät offline'), the button is usable again (360x640 light)",
+          obst["note"] and "Gerät offline" in obst["note"] and obst["button"] is True and len(obst["calls"]) == 1,
+          json.dumps({kk: obst[kk] for kk in ("note", "button", "calls")}))
+
+
+# ── M2 · Aktionsleiste ─────────────────────────────────────────────────────
+LEISTE_BREITEN = (320, 360, 390, 1280)
+LEISTE_JS = """() => { const sr = window.card().shadowRoot, bar = sr.querySelector('.controls');
+    const knoepfe = Array.from(bar.children).filter((b) => b.getBoundingClientRect().width > 0 && b.matches('button, .ctl, .dock'));
+    const tops = knoepfe.map((b) => Math.round(b.getBoundingClientRect().top)).sort((a, b) => a - b);
+    let rows = 0, last = -1e9; for (const t of tops) { if (t - last > 8) rows++; last = t; }
+    return { rows, wrap: bar.hasAttribute('data-wrap'), pageOverflow: document.documentElement.scrollWidth - innerWidth, small: window.smallTargets(sr),
+      knoepfe: knoepfe.map((b) => { const t = b.querySelector('.ctl-text') || b;
+        return { action: b.getAttribute('data-action') || b.className, text: (t.innerText || t.textContent || '').trim(), label: b.getAttribute('aria-label'),
+                 cut: b.scrollWidth - b.clientWidth, cutText: t.scrollWidth - t.clientWidth, overflow: getComputedStyle(t).textOverflow }; }) }; }"""
+
+
+def bereich_leiste(k):
+    """M2: Aktionsleiste reinigend/ruhend/außer Dock bei 320/360/390/1280 hell/dunkel: nie gekürzt, höchstens 2 Reihen."""
+    page, report, check, theme, ruhe, shot = k.page, k.report, k.check, k.theme, k.ruhe, k.shot
+
+    def ausser_dock(st):
+        st["vacuum.robo"]["state"] = "idle"
+        st["vacuum.robo"]["attributes"].update({"docked": False, "charging": False})
+    zustaende = (("reinigend", k.data["cleaning"]), ("ruhend", k.data["docked"]), ("ausserdock", daten_mit(k, "docked", ausser_dock)))
+    rows = []
+    for label, data in zustaende:
+        for w in LEISTE_BREITEN:
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": 900})
+                theme(th)
+                baue_daten(k, data)
+                g = page.evaluate(LEISTE_JS)
+                shot(f"leiste-{label}-{w}-{th}.png")
+                rows.append({"label": label, "w": w, "theme": th, **g})
+    report["leiste"] = rows
+    gekuerzt = lambda x: [b for b in x["knoepfe"] if "…" in b["text"] or b["cut"] > 0 or b["cutText"] > 0 or b["overflow"] == "ellipsis"]
+    check("M2 action bar: no button cut ('…', scrollWidth > clientWidth, text-overflow ellipsis) in cleaning/docked/undocked at 320/360/390/1280, light/dark",
+          all(not gekuerzt(x) for x in rows), json.dumps([(x["label"], x["w"], x["theme"], gekuerzt(x)) for x in rows if gekuerzt(x)][:4]))
+    check("M2 action bar: at most 2 rows, no sideways page scroll, 44 px buttons",
+          all(x["rows"] <= 2 and x["pageOverflow"] <= 0 and not x["small"] for x in rows),
+          json.dumps([(x["label"], x["w"], x["theme"], x["rows"], x["pageOverflow"], x["small"]) for x in rows if x["rows"] > 2 or x["pageOverflow"] > 0 or x["small"]][:4]))
+    words = lambda label: next((x for x in rows if x["label"] == label and x["w"] == 390 and x["theme"] == "light"), None)
+    rein, aus = words("reinigend"), words("ausserdock")
+    texte = lambda x: {b["action"]: b["text"] for b in x["knoepfe"]} if x else {}
+    labels = lambda x: {b["action"]: b["label"] for b in x["knoepfe"]} if x else {}
+    check("M2 action bar words: cleaning 'Pause/Stopp/Dock' (return named 'Zurück zum Dock'), undocked the full 'Zurück zum Dock' (390 light)",
+          [texte(rein).get(a) for a in ("pause", "stop", "return")] == ["Pause", "Stopp", "Dock"] and labels(rein).get("return") == "Zurück zum Dock"
+          and texte(aus).get("return") == "Zurück zum Dock", json.dumps({"reinigend": texte(rein), "ausserdock": texte(aus)}))
+
+
+# ── E6: M11, M12, M13, M21 ─────────────────────────────────────────────────
+M11_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet'), r = sheet.getBoundingClientRect();
+    const acts = sr.querySelector('.actions'), a = acts ? acts.getBoundingClientRect() : null;
+    const btns = acts ? Array.from(acts.querySelectorAll('button')).filter((b) => b.getBoundingClientRect().width > 0).map((b) => { const x = b.getBoundingClientRect(); return { w: x.width, h: x.height, t: x.top, b: x.bottom }; }) : [];
+    return { kind: sheet.getAttribute('data-kind'), top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height, W: innerWidth, H: innerHeight,
+             actions: a ? { t: a.top, b: a.bottom, w: a.width } : null, btns, scrollTop: sheet.scrollTop, small: window.smallTargets(sr) }; }"""
+M12_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet');
+    const titles = Array.from(sr.querySelectorAll('.run-title')).filter((t) => t.getBoundingClientRect().width > 0);
+    const lines = (t) => { const r = document.createRange(); r.selectNodeContents(t); const tops = [];
+      for (const x of Array.from(r.getClientRects())) { if (x.width < 1) continue; const y = Math.round(x.top); if (!tops.some((v) => Math.abs(v - y) <= 3)) tops.push(y); } return tops.length; };
+    return { n: titles.length, xs: titles.map((t) => Math.round(t.getBoundingClientRect().left * 10) / 10), wrapped: titles.filter((t) => lines(t) > 1).map((t) => t.textContent),
+             overflowX: sheet.scrollWidth - sheet.clientWidth, small: window.smallTargets(sr) }; }"""
+M13_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, rows = Array.from(sr.querySelectorAll('.room-list [data-room]'));
+    return { rows: rows.map((b) => { const ch = b.querySelector('.room-chevron'), v = b.querySelector('.room-values');
+      return { room: b.getAttribute('data-room'), chevron: !!ch && ch.getBoundingClientRect().width > 0, values: v ? v.textContent : null }; }),
+      overflowX: sr.querySelector('.sheet').scrollWidth - sr.querySelector('.sheet').clientWidth, small: window.smallTargets(sr) }; }"""
+# M21: "Turbo" is also the German word and "Wetness level" is a setting name, not an option word (both stay in ENGLISCHE_WOERTER for "mit").
+M21_ENGLISCH = tuple(w for w in ENGLISCHE_WOERTER if w not in ("Turbo", "Wetness level"))
+
+
+def bereich_oberflaeche(k):
+    """E6: M11 Bestätigung am Handy, M12 Verlaufsliste fluchtet, M13 Räume mit Labels, M21 Wörter ohne Übersetzung."""
+    page, report, check, theme, build, ruhe, shot, open_confirm = k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot, k.open_confirm
+    out = {}
+    m11 = []
+    for w, h, themes in ((360, 640, THEMES), (390, 844, THEMES), (800, 600, ("light",)), (1280, 800, ("light",))):
+        for th in themes:
+            page.set_viewport_size({"width": w, "height": h})
+            theme(th)
+            build("docked")
+            open_confirm()
+            ruhe()
+            g = page.evaluate(M11_JS)
+            shot(f"dialog-bestaetigung-m11-{w}x{h}-{th}.png")
+            page.evaluate(DIALOGE_ZU)
+            m11.append({"w": w, "h": h, "theme": th, **(g or {"actions": None, "btns": [], "small": ["kein Dialog"]})})
+    out["m11"] = m11
+
+    def m11_ok(x):
+        if not x.get("actions") or not x.get("btns"):
+            return False
+        if x["w"] < 450 or x["h"] < 500:
+            return (abs(x["bottom"] - x["H"]) <= 1 and x["height"] >= 0.9 * x["H"] - 1 and x["actions"]["b"] <= x["H"] + 0.5
+                    and x["bottom"] - x["actions"]["b"] <= 24 and all(b["h"] >= 48 and b["w"] >= x["actions"]["w"] - 1 for b in x["btns"]))
+        return abs(x["width"] - 320) <= 0.5 and x["top"] >= 12 and all(b["b"] <= x["bottom"] + 0.5 for b in x["btns"])
+    check("M11 confirmation: below 450 x 500 a bottom sheet (>= 90 % high) with the full-width 48 px buttons at its bottom, on screen without scrolling; "
+          "above 320 px centred (360x640/390x844 light/dark, 800x600, 1280x800)",
+          all(m11_ok(x) and not x["small"] for x in m11), json.dumps([x for x in m11 if not m11_ok(x) or x["small"]][:3]))
+
+    m12 = []
+    for w, h in ((360, 640), (390, 844), (1280, 800)):
+        for th in THEMES:
+            page.set_viewport_size({"width": w, "height": h})
+            theme(th)
+            build("docked")
+            page.evaluate(hist_open, {"entry": "history", "steps": ["[data-group='1794228271']"]})
+            ruhe()
+            g = page.evaluate(M12_JS)
+            shot(f"verlauf-liste-flucht-{w}x{h}-{th}.png")
+            page.evaluate(DIALOGE_ZU)
+            m12.append({"w": w, "theme": th, **(g or {"n": 0, "xs": [0], "wrapped": ["kein Dialog"], "overflowX": 0, "small": []})})
+    out["m12"] = m12
+    ok12 = lambda x: x["n"] > 5 and max(x["xs"]) - min(x["xs"]) <= 1 and not x["wrapped"] and x["overflowX"] <= 1 and not x["small"]
+    check("M12 history list with an open group: every title starts at the same x (<= 1 px) and does not wrap (360/390/1280, light/dark)",
+          all(ok12(x) for x in m12), json.dumps([{kk: x[kk] for kk in ("w", "theme", "n", "wrapped")} | {"xs": sorted(set(x["xs"]))[:6]} for x in m12 if not ok12(x)][:3]))
+
+    m13 = []
+    for th in THEMES:
+        page.set_viewport_size({"width": 360, "height": 640})
+        theme(th)
+        build("customized")
+        page.evaluate(clean_open, ["[data-action=rooms]"])
+        ruhe()
+        g = page.evaluate(M13_JS)
+        shot(f"reinigung-raeume-m13-360x640-{th}.png")
+        page.evaluate(DIALOGE_ZU)
+        m13.append({"theme": th, **(g or {"rows": [], "overflowX": 0, "small": []})})
+    out["m13"] = m13
+    unlabelled = lambda x: [r for r in x["rows"] if not r["chevron"] or not r["values"]
+                            or any(not re.search(r"[A-Za-zÄÖÜäöüß]", part) for part in r["values"].split(" · "))]
+    check("M13 Räume einstellen: every room row with a visible chevron, no value without its label (360x640 light/dark)",
+          all(x["rows"] and not unlabelled(x) and x["overflowX"] <= 1 and not x["small"] for x in m13),
+          json.dumps([(x["theme"], unlabelled(x)[:3], len(x["rows"])) for x in m13 if not x["rows"] or unlabelled(x)]))
+
+    # M21 words: HA without the integration's texts (localize gives '') and German.
+    theme("dark")
+    page.set_viewport_size({"width": 1296, "height": 900})
+    build("docked", panel=True, texte={})
+    panel = page.evaluate(UEB_TEXT_JS)
+    shot("uebersetzung-leer-layout-panel-all-1280-dark.png")
+    page.set_viewport_size({"width": 390, "height": 844})
+    build("docked", texte={})
+    page.evaluate(hist_open, {"entry": "history", "steps": []})
+    ruhe(wann_ansicht("history"))
+    verlauf = page.evaluate(UEB_TEXT_JS)
+    shot("uebersetzung-leer-verlauf-390x844-dark.png")
+    build("docked", texte={})
+    page.evaluate(clean_open, [])
+    ruhe(wann_ansicht("clean-settings"))
+    reinigung = page.evaluate(UEB_TEXT_JS)
+    shot("uebersetzung-leer-reinigung-390x844-dark.png")
+    page.evaluate(DIALOGE_ZU)
+    alles = panel["card"] + "\n" + verlauf["dialog"] + "\n" + reinigung["dialog"]
+    out["m21"] = {"summary": panel["summary"], "englisch": [w for w in ENGLISCHE_WOERTER if w in alles]}
+    report["oberflaeche"] = out
+    check("M21 words: with an empty localize and German no English option or run word in panel 1280 dark, history and cleaning settings",
+          not [w for w in M21_ENGLISCH if w in alles] and "Raumreinigung" in verlauf["dialog"], json.dumps(out["m21"]))
+
+
+# ── E7: M31, M32, M33, M34, M35, M36 ───────────────────────────────────────
+FOKUS_JS = """() => { const d = window.dialog(); if (!d) return null; const sr = d.shadowRoot, a = sr.activeElement, sheet = sr.querySelector('.sheet');
+    const ring = (n) => { if (!n) return null; const s = getComputedStyle(n); return { style: s.outlineStyle, width: s.outlineWidth, visible: n.matches(':focus-visible') }; };
+    const first = d._focusable ? d._focusable()[0] : null;
+    return { onSheet: a === sheet, first: !!a && a === first, ring: ring(a),
+             ringed: Array.from(sr.querySelectorAll('button')).filter((b) => b.matches(':focus-visible')).length }; }"""
+M31_JS = """() => { const sr = window.card().shadowRoot, vis = (n) => !!n && n.getBoundingClientRect().width > 0;
+    const chips = Array.from(sr.querySelectorAll('.chip-slot .room-chip')).filter(vis), more = sr.querySelector('[data-action=rooms-more]');
+    const chip = chips[0], cs = more ? getComputedStyle(more) : null;
+    return { chipLeft: chip ? chip.getBoundingClientRect().left : null, moreLeft: vis(more) ? more.getBoundingClientRect().left : null,
+             moreText: more ? more.textContent : null, moreClass: more ? more.className : null, moreDecoration: cs ? cs.textDecorationLine : null,
+             moreColor: cs ? cs.color : null, chipColor: chip ? getComputedStyle(chip).color : null,
+             pills: Array.from(sr.querySelectorAll('.pill-action')).filter(vis).map((p) => { const s = getComputedStyle(p);
+               return { radius: s.borderTopLeftRadius, border: s.borderTopWidth, h: p.getBoundingClientRect().height, icon: !!p.querySelector('ha-icon'), text: p.textContent.trim() }; }),
+             small: window.smallTargets(sr), pageOverflow: document.documentElement.scrollWidth - innerWidth }; }"""
+M33_JS = """() => { const c = window.card(), sr = c.shadowRoot, m = c._map, cv = sr.querySelector('.map-base');
+    if (!m || !cv || cv.tagName !== 'CANVAS') return { error: 'kein Canvas', mode: m ? m.current().mode : null };
+    const ctx = cv.getContext('2d'), box = cv.getBoundingClientRect();
+    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const lum = (p) => 0.2126 * lin(p[0]) + 0.7152 * lin(p[1]) + 0.0722 * lin(p[2]);
+    const pixel = (x, y) => { const px = Math.floor((x - box.left) / box.width * cv.width), py = Math.floor((y - box.top) / box.height * cv.height);
+      if (px < 0 || py < 0 || px >= cv.width || py >= cv.height) return null; const d = ctx.getImageData(px, py, 1, 1).data; return [d[0], d[1], d[2]]; };
+    const rooms = c.hass.states['camera.robo_map'].attributes.rooms, areas = [];
+    for (const [id, r] of Object.entries(rooms)) { if (r.x === undefined) continue; const s = m.toScreen(m.toImage({ x: r.x, y: r.y })); const p = pixel(s.x, s.y);
+      if (p) areas.push({ id, rgb: p, lum: Math.round(lum(p) * 1000) / 1000 }); }
+    const parse = (v) => (String(v).match(/[\\d.]+/g) || []).slice(0, 3).map(Number);
+    const labels = Array.from(sr.querySelectorAll('[data-layer=rooms] text[data-role=name]')).filter((t) => t.getBoundingClientRect().width > 0).map((t) => {
+      const b = t.getBoundingClientRect(), under = pixel(b.left + b.width / 2, b.top + b.height / 2), fill = parse(getComputedStyle(t).fill);
+      if (!under || fill.length < 3) return { text: t.textContent, ratio: null };
+      const L = [lum(fill), lum(under)].sort((x, y) => y - x); return { text: t.textContent, ratio: Math.round((L[0] + 0.05) / (L[1] + 0.05) * 100) / 100 }; });
+    return { mode: m.current().mode, areas, labels }; }"""
+M34_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot, sheet = sr.querySelector('.sheet');
+    const box = (sel) => { const n = sr.querySelector(sel); if (!n || !n.getClientRects().length) return null; const r = n.getBoundingClientRect(); return { t: r.top, b: r.bottom, h: r.height }; };
+    return { map: box('.edit-map .map-stage') || box('.edit-map'), tools: box('.edit-tools'), save: box('[data-action=save]'), bar: box('.edit-bar'),
+             scrollTop: sheet.scrollTop, H: innerHeight, small: window.smallTargets(sr) }; }"""
+M36_JS = """() => { const sr = window.card().shadowRoot, m = sr.querySelector('.message[data-kind=error]'); if (!m) return null;
+    const lines = (n) => { if (!n) return 0; const r = document.createRange(); r.selectNodeContents(n); const tops = [];
+      for (const x of Array.from(r.getClientRects())) { if (x.width < 1) continue; const y = Math.round(x.top); if (!tops.some((v) => Math.abs(v - y) <= 3)) tops.push(y); } return tops.length; };
+    const title = m.querySelector('.message-title'), step = m.querySelector('.message-step'), start = sr.querySelector('.ctl[data-action=start]');
+    return { title: title ? title.textContent : null, step: step ? step.textContent : null, lines: lines(title) + lines(step),
+             startDisabled: start ? start.disabled : null, small: window.smallTargets(sr), pageOverflow: document.documentElement.scrollWidth - innerWidth }; }"""
+
+
+def bereich_feinschliff(k):
+    """E7: M35 Stationsmenü, M32 Fokus beim Öffnen, M36 Fehlerbanner, M31 Zweitaktionen, M33 dunkle Flächen, M34 Karteneditor."""
+    page, report, check, theme, build, ruhe, shot = k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot
+    out = {}
+    # M35: station menu by content (<= 360 px from 450 x 500), full screen on a phone; Escape and an outside click close it.
+    m35 = []
+    for w, h, th in ((1280, 800, "dark"), (360, 640, "light")):
+        page.set_viewport_size({"width": w, "height": h})
+        theme(th)
+        build("docked")
+        page.evaluate(dock_open, [])
+        ruhe()
+        g = page.evaluate(DIALOG_BOX_JS)
+        shot(f"station-menu-m35-{w}x{h}-{th}.png")
+        page.keyboard.press("Escape")
+        ruhe(WANN_DIALOG_ZU, ms=4000)
+        esc = page.evaluate("() => !window.dialog()")
+        outside = None
+        if w >= 450:  # a phone menu is full screen: there is no outside
+            page.evaluate(dock_open, [])
+            ruhe()
+            page.mouse.click(4, 4)
+            ruhe(WANN_DIALOG_ZU, ms=4000)
+            outside = page.evaluate("() => !window.dialog()")
+        page.evaluate(DIALOGE_ZU)
+        m35.append({"w": w, "h": h, "theme": th, "escape": esc, "outside": outside, **g})
+    out["m35"] = m35
+    ok35 = lambda x: not x.get("missing") and x.get("view") == "station-menu" and x["escape"] and (x["w"] < 450 or x["outside"]) and (
+        x["width"] <= 360 if x["w"] >= 450 else abs(x["top"]) <= 1 and abs(x["bottom"] - x["H"]) <= 1 and abs(x["left"]) <= 1 and abs(x["right"] - x["W"]) <= 1)
+    check("M35 station menu: at 1280 at most 360 px wide and closed by Escape and an outside click; at 360x640 full screen, Escape closes",
+          all(ok35(x) and not x.get("small") for x in m35), json.dumps([{kk: x.get(kk) for kk in ("w", "view", "width", "top", "bottom", "escape", "outside", "small")} for x in m35]))
+
+    # M32: opened by a real mouse click -> focus on the sheet, no ring; by keyboard -> ring on the first control.
+    page.set_viewport_size({"width": 390, "height": 844})
+    theme("light")
+    build("docked")
+    pt = page.evaluate("() => { const b = window.card().shadowRoot.querySelector('.menu-button').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }")
+    page.mouse.click(pt["x"], pt["y"])
+    ruhe()
+    maus = page.evaluate(FOKUS_JS)
+    shot("dialog-fokus-maus-390x844-light.png")
+    page.evaluate(DIALOGE_ZU)
+    build("docked")
+    page.evaluate("() => window.card().shadowRoot.querySelector('.menu-button').focus()")
+    page.keyboard.press("Enter")
+    ruhe()
+    taste = page.evaluate(FOKUS_JS)
+    shot("dialog-fokus-taste-390x844-light.png")
+    page.evaluate(DIALOGE_ZU)
+    out["m32"] = {"maus": maus, "taste": taste}
+    check("M32 focus on opening: a real mouse click puts the focus on the sheet without a ring (no ringed button); the keyboard on the first control with a 2 px ring (390x844 light)",
+          bool(maus) and maus["onSheet"] and maus["ringed"] == 0 and maus["ring"] and (maus["ring"]["style"] == "none" or maus["ring"]["width"] == "0px")
+          and bool(taste) and taste["first"] and taste["ring"] and taste["ring"]["visible"] and taste["ring"]["style"] != "none" and taste["ring"]["width"] == "2px",
+          json.dumps(out["m32"]))
+
+    # M36: the error banner in at most 3 lines at 390, start stays usable.
+    m36 = []
+    for th in THEMES:
+        page.set_viewport_size({"width": 390, "height": 900})
+        theme(th)
+        build("error")
+        g = page.evaluate(M36_JS)
+        shot(f"karte-error-karte-m36-390-{th}.png")
+        m36.append({"theme": th, "m": g})
+    out["m36"] = m36
+    ok36 = lambda x: x["m"] and x["m"]["title"] and x["m"]["step"] and x["m"]["lines"] <= 3 and x["m"]["startDisabled"] is False and not x["m"]["small"] and x["m"]["pageOverflow"] <= 0
+    check("M36 error banner: title and step in at most 3 lines at 390, start stays usable (light/dark)", all(ok36(x) for x in m36), json.dumps(m36))
+
+    # M31: "+ N weitere" flush with the chips' left edge as a text button; the pill for what adds to the map.
+    m31 = []
+    for w in (390, 1280):
+        page.set_viewport_size({"width": w + 16, "height": 900})
+        theme("light")
+        build("docked", panel=True)
+        g = page.evaluate(M31_JS)
+        shot(f"zweitaktionen-panel-all-{w}-light.png")
+        m31.append({"w": w, "task": "all", **g})
+    page.set_viewport_size({"width": 390, "height": 844})
+    build("docked")
+    page.evaluate("() => window.card().shadowRoot.querySelector('.task[data-task=zone]').click()")
+    ruhe()
+    zone = page.evaluate(M31_JS)
+    shot("zweitaktionen-aufgabe-zone-390-light.png")
+    out["m31"] = {"panel": m31, "zone": zone}
+    ok31 = lambda x: x["moreLeft"] is not None and x["chipLeft"] is not None and abs(x["moreLeft"] - x["chipLeft"]) <= 1 and "text-action" in (x["moreClass"] or "")\
+        and x["moreDecoration"] == "none" and x["moreColor"] == x["chipColor"] and not x["small"] and x["pageOverflow"] <= 0
+    pill_ok = bool(zone["pills"]) and all(p["radius"] == "22px" and p["border"] != "0px" and p["h"] >= 44 and p["icon"] and p["text"] for p in zone["pills"])
+    check("M31 second actions: '+ N weitere' a text button in text colour without underline, flush with the chips (<= 1 px, panel 390/1280); zone task with the pill "
+          "(radius 22 px, border, symbol and words, 44 px)",
+          all(ok31(x) for x in m31) and pill_ok, json.dumps(out["m31"])[:1500])
+
+    # M33: dark theme without HA's darkMode flag -> dark room areas (<= 0.13), labels >= 4.5:1.
+    m33 = []
+    for w in (390, 1280):
+        page.set_viewport_size({"width": w, "height": 844 if w < 450 else 800})
+        theme("dark")
+        build("docked")
+        g = page.evaluate(M33_JS)
+        shot(f"karte-dunkel-flaechen-{w}-dark.png")
+        m33.append({"w": w, **g})
+    out["m33"] = m33
+    ok33 = lambda x: not x.get("error") and x["areas"] and max(a["lum"] for a in x["areas"]) <= 0.13 and x["labels"]\
+        and all(lb["ratio"] is not None and lb["ratio"] >= 4.5 for lb in x["labels"])
+    check("M33 dark room areas: dark theme without darkMode flag -> every room area <= 0.13 relative luminance, room labels >= 4.5:1 on their area (390/1280)",
+          all(ok33(x) for x in m33), json.dumps(m33)[:1500])
+
+    # M34: map, tool bar and save visible at 390x844 without scrolling.
+    page.set_viewport_size({"width": 390, "height": 844})
+    theme("light")
+    build("editor")
+    title = page.evaluate(edit_open, {"entry": "edit", "steps": []})
+    ruhe()
+    m34 = page.evaluate(M34_JS) or {"map": None, "tools": None, "save": None, "bar": None, "scrollTop": None, "H": 0, "small": []}
+    shot("editor-modus-m34-390x844-light.png")
+    page.evaluate(DIALOGE_ZU)
+    m34["title"] = title
+    out["m34"] = m34
+    report["feinschliff"] = out
+    seen = lambda b: b is not None and b["h"] > 0 and b["t"] >= -0.5 and b["b"] <= m34["H"] + 0.5
+    check("M34 map editor: map, tool bar and save visible at 390x844 without scrolling (sheet not scrolled)",
+          seen(m34["map"]) and seen(m34["tools"]) and seen(m34["save"]) and m34["scrollTop"] == 0 and m34["tools"]["t"] >= m34["map"]["b"] - 1,
+          json.dumps(m34))
+    calls = dienste_leeren(k)
+    check("E7 cases: 0 service calls", not calls, json.dumps(calls))
+
+
+# ── E9: M45, M46, M47 ──────────────────────────────────────────────────────
+FORCED_JS = """() => { const d = window.dialog(), sr = d && d.shadowRoot; if (!sr) return null;
+    const sel = sr.querySelector('[role=tab][aria-selected=true]'), other = sr.querySelector('[role=tab][aria-selected=false]'), a = sr.activeElement;
+    const s = (n) => (n ? { bg: getComputedStyle(n).backgroundColor, color: getComputedStyle(n).color } : null);
+    return { forced: matchMedia('(forced-colors: active)').matches, selected: s(sel), other: s(other),
+             focus: a ? { tab: a.getAttribute('data-tab'), style: getComputedStyle(a).outlineStyle, width: getComputedStyle(a).outlineWidth, visible: a.matches(':focus-visible') } : null }; }"""
+M46_JS = """() => { if (!window.dialog()) return null; const sr = window.dialog().shadowRoot;
+    return { rows: Array.from(sr.querySelectorAll('[data-group]')).map((b) => { const st = b.querySelector('.group-status'), ch = b.querySelector('.group-chevron'), w = b.querySelector('.group-warn');
+      return { group: b.getAttribute('data-group'), status: st ? st.textContent.trim() : '', chevron: !!ch && ch.getBoundingClientRect().width > 0,
+               warn: w && w.getBoundingClientRect().width > 0 ? w.textContent : null }; }),
+      overflowX: sr.querySelector('.sheet').scrollWidth - sr.querySelector('.sheet').clientWidth, small: window.smallTargets(sr) }; }"""
+M47_JS = """() => { const c = window.card(), sr = c.shadowRoot, panel = sr.querySelector('.panel'), slot = sr.querySelector('.history-slot'), ctr = sr.querySelector('.controls');
+    const vis = (n) => !!n && n.getBoundingClientRect().height > 0, top = ctr.getBoundingClientRect().top;
+    const above = Array.from(panel.children).filter((n) => n !== ctr && vis(n) && n.getBoundingClientRect().bottom <= top + 1);
+    const bottom = Math.max(panel.getBoundingClientRect().top, ...above.map((n) => n.getBoundingClientRect().bottom));
+    const note = slot && slot.querySelector('.preview-note');
+    return { width: c.getAttribute('data-width'), gap: Math.round(top - bottom), slot: vis(slot), runs: slot ? slot.querySelectorAll('.history-run').length : 0,
+             empty: slot && slot.querySelector('.history-empty') ? slot.querySelector('.history-empty').textContent : null,
+             error: note ? { kind: note.getAttribute('data-kind'), text: note.textContent } : null,
+             small: window.smallTargets(sr), pageScroll: document.scrollingElement.scrollHeight - innerHeight }; }"""
+
+
+def bereich_anzeige(k):
+    """E9: M45 Forced Colors, M46 Einstellungsübersicht mit Kurzstatus, M47 Verlaufsvorschau im Desktop-Panel."""
+    page, report, check, theme, build, ruhe, shot = k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot
+    out = {}
+    # M45: forced colors: the selected tab in system colours, the keyboard focus with a 2 px ring.
+    page.emulate_media(forced_colors="active")
+    m45 = []
+    try:
+        for w, h in ((1280, 800), (390, 844)):
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": h})
+                theme(th)
+                build("docked")
+                shot(f"forced-colors-karte-{w}-{th}.png")
+                page.evaluate(dock_open, [einstellungen])
+                ruhe()
+                page.evaluate("() => { const t = window.dialog() && window.dialog().shadowRoot.querySelector('[role=tab][aria-selected=true]'); if (t) t.focus(); }")
+                page.keyboard.press("ArrowRight")
+                ruhe()
+                g = page.evaluate(FORCED_JS)
+                shot(f"forced-colors-station-{w}x{h}-{th}.png")
+                page.evaluate("() => { window.closeDialogs(); document.documentElement.style.overflow = ''; try { localStorage.clear(); } catch (e) {} }")
+                m45.append({"w": w, "theme": th, "g": g})
+    finally:
+        page.emulate_media(forced_colors="none")
+    out["m45"] = m45
+    ok45 = lambda x: x["g"] and x["g"]["forced"] and x["g"]["selected"] and x["g"]["other"] and x["g"]["selected"]["bg"] != x["g"]["other"]["bg"]\
+        and x["g"]["focus"] and x["g"]["focus"]["visible"] and x["g"]["focus"]["style"] != "none" and x["g"]["focus"]["width"] == "2px"
+    check("M45 forced colors: the selected tab differs from the others in system colours, the keyboard focus has a 2 px ring (1280/390, light/dark)",
+          all(ok45(x) for x in m45), json.dumps([x for x in m45 if not ok45(x)][:2]))
+
+    # M46: overview with status, chevron and the wear point on Zubehör.
+    page.set_viewport_size({"width": 360, "height": 640})
+    theme("light")
+    build("settings")
+    page.evaluate(settings_open, [])
+    ruhe()
+    m46 = page.evaluate(M46_JS) or {"rows": [], "overflowX": 0, "small": []}
+    shot("einstellungen-uebersicht-verschleiss-360x640-light.png")
+    page.evaluate(DIALOGE_ZU)
+    out["m46"] = m46
+    warn = [r["group"] for r in m46["rows"] if r["warn"]]
+    check("M46 settings overview: every group row with status and chevron, Zubehör (filter 21 %) with the wear point and its word (360x640 light)",
+          bool(m46["rows"]) and all(r["status"] and r["chevron"] for r in m46["rows"]) and warn == ["consumables"] and m46["overflowX"] <= 1 and not m46["small"],
+          json.dumps(m46)[:1500])
+
+    # M47: history preview in the wide panel; at most 120 px empty space above the action bar; empty and error pictured.
+    def fehler_sensor(st):
+        st["sensor.robo_cleaning_history"]["state"] = "unavailable"
+    varianten = (("", k.data["docked"]), ("-leer", k.data["history_empty"]), ("-fehler", daten_mit(k, "docked", fehler_sensor)))
+    m47 = []
+    for w, h in ((1280, 800), (1600, 900)):
+        for th in THEMES:
+            page.set_viewport_size({"width": w, "height": h})
+            theme(th)
+            for suffix, data in varianten:
+                baue_daten(k, data, panel=True)
+                g = page.evaluate(M47_JS)
+                shot(f"panel-verlaufsvorschau{suffix}-{w}x{h}-{th}.png")
+                m47.append({"variante": suffix.strip("-") or "laeufe", "w": w, "theme": th, **g})
+    out["m47"] = m47
+    report["anzeige"] = out
+    main_ = [x for x in m47 if x["variante"] == "laeufe"]
+    check("M47 panel history preview: wide panel shows the 3 newest runs, at most 120 px empty space above the action bar (1280x800, 1600x900, light/dark)",
+          all(x["width"] == "wide" and x["slot"] and x["runs"] == 3 and x["gap"] <= 120 and not x["small"] for x in main_),
+          json.dumps([{kk: x[kk] for kk in ("w", "theme", "width", "slot", "runs", "gap", "small")} for x in main_]))
+    check("M47 panel history preview: empty sensor shows its text, unavailable sensor the error line (R12), no run rows",
+          all(x["empty"] and x["runs"] == 0 for x in m47 if x["variante"] == "leer")
+          and all(x["error"] and x["error"]["kind"] == "error" and x["runs"] == 0 for x in m47 if x["variante"] == "fehler"),
+          json.dumps([{kk: x[kk] for kk in ("variante", "w", "theme", "empty", "error", "runs")} for x in m47 if x["variante"] != "laeufe"][:4]))
+
+
+# ── M19 · Bildabrufe des ganzen Laufs ──────────────────────────────────────
+M19_BILDABRUFE_VORHER = 795  # report.json of the run before M19 (masterplan M19)
+
+
+def bereich_abrufe(k):
+    """M19: camera_proxy-Bildabrufe des ganzen Laufs gegen 795 vorher (mindestens 80 % weniger); nur über alle Bereiche."""
+    report, check = k.report, k.check
+    bilder = [u for u in report["requests"] if "/api/camera_proxy/" in u]
+    daten = [u for u in report["requests"] if "/api/camera_map_data_proxy/" in u]
+    report["abrufe"] = {"bildabrufe": len(bilder), "datenabrufe": len(daten), "vorher": M19_BILDABRUFE_VORHER}
+    name = "M19 picture fetches: camera_proxy requests of the whole run at least 80 % below the 795 before (<= 159)"
+    if all(n in report["bereiche"] for n, _ in BEREICHE):
+        check(name, len(bilder) <= M19_BILDABRUFE_VORHER * 0.2, json.dumps(report["abrufe"]))
+    else:
+        report["nichtGemessen"].append({"name": name, "grund": "--nur " + ",".join(report["bereiche"]), "detail": json.dumps(report["abrufe"])})
+
+# ---------------------------------------------------------------------------
 # Registry (M22): the areas in their run order. A new render case is a function
 # bereich_<name>(k) above and one row here; --nur <name,...> runs only those (in
 # this order). k carries the shared state, see main(); values one area needs from
@@ -2592,6 +3630,19 @@ BEREICHE = [
     ("uebersetzung", bereich_uebersetzung),
     ("zustaende", bereich_zustaende),
     ("regeln", bereich_regeln),
+    # Buschcheck Welle 1 und 2 (#1163): appended, so every earlier picture and check stays as it was.
+    ("rechte", bereich_rechte),
+    ("adressen", bereich_adressen),
+    ("feindlich", bereich_feindlich),
+    ("netz", bereich_netz),
+    ("teilfehler", bereich_teilfehler),
+    ("befehle", bereich_befehle),
+    ("leiste", bereich_leiste),
+    ("oberflaeche", bereich_oberflaeche),
+    ("feinschliff", bereich_feinschliff),
+    ("anzeige", bereich_anzeige),
+    # M19 counts the picture fetches of everything before it: keep it last.
+    ("abrufe", bereich_abrufe),
 ]
 
 # Checks that only mean something over ALL areas: under --nur they are listed as not measured, never as passed.
