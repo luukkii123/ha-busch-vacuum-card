@@ -2,7 +2,7 @@
 // Plan Task 1: Karte registriert sich und rendert mit `entity` einen leeren Rahmen ohne Fehler.
 const test = require('node:test');
 const assert = require('node:assert');
-const { neueUmgebung, neuesHaus, neueKarte } = require('./attrappe.js');
+const { neueUmgebung, neuesHaus, hausAus, neueKarte } = require('./attrappe.js');
 
 test('M5 ein Dienstweg: callService( genau einmal, in callDevice', () => {
   const quelle = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'dist', 'busch-vacuum-card.js'), 'utf8');
@@ -69,4 +69,20 @@ test('Kartengröße und Raster in Vielfachen von 3', () => {
   const raster = karte.getGridOptions();
   assert.equal(raster.columns % 3, 0);
   assert.equal(raster.min_columns % 3, 0);
+});
+
+test('M37 Kartengröße nach Layout: mit Karte 9, ohne Karte 4, Panel 1; Raster mit Zeilen', () => {
+  const u = neueUmgebung();
+  const mit = neueKarte(u, hausAus('voll'));
+  assert.ok(mit.hasAttribute('data-map'), 'Voraussetzung: Kartenkamera');
+  assert.equal(mit.getCardSize(), 9);
+  assert.deepEqual(JSON.parse(JSON.stringify(mit.getGridOptions())), { columns: 12, min_columns: 6, rows: 'auto', min_rows: 8 });
+  const ohne = neueKarte(u, hausAus('ohne-karte'));
+  assert.ok(!ohne.hasAttribute('data-map'), 'Voraussetzung: keine Kartenkamera');
+  assert.equal(ohne.getCardSize(), 4);
+  assert.deepEqual(JSON.parse(JSON.stringify(ohne.getGridOptions())), { columns: 12, min_columns: 6, rows: 'auto', min_rows: 4 });
+  const panel = neueKarte(u, hausAus('voll'));
+  panel.isPanel = true;
+  assert.equal(panel.getCardSize(), 1);
+  assert.equal(panel.getGridOptions().min_rows, 1, 'Panel: kleinste Kachel, HA zeigt die Karte ohnehin ganzseitig');
 });

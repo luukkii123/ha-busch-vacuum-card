@@ -11247,13 +11247,18 @@ class BuschVacuumCard extends HTMLElement {
         rerender(this);
     }
 
+    /** M37: masonry size (50 px units) from the layout: panel 1, with the map 9, without 4. */
     getCardSize() {
-        return 4;
+        return this._panel ? 1 : this.hasAttribute('data-map') ? 9 : 4;
     }
 
-    /** Sections layout: full width by default, half (6 of 12) at the narrowest. */
+    /**
+     * Sections layout: full width by default, half (6 of 12) at the narrowest. M37: the height
+     * grows with the panel (ui-regeln, content with growing height), so rows stay automatic;
+     * min_rows keeps the map (320 px plus head) from being squeezed.
+     */
     getGridOptions() {
-        return { columns: 12, min_columns: 6 };
+        return { columns: 12, min_columns: 6, rows: 'auto', min_rows: this._panel ? 1 : this.hasAttribute('data-map') ? 8 : 4 };
     }
 
     _build() {
