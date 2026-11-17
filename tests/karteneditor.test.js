@@ -2050,3 +2050,45 @@ test('EDI-02 Dirty-Dialog: eine Änderung in der Einzahl (DE/EN)', () => {
   assert.match(d.shadowRoot.textContent, /Es gibt 1 ungespeicherte Änderung\./);
   assert.match(k.I.TEXTE.en.texte.kartenOffenFrageEins, /There is 1 unsaved change\./);
 });
+
+// ── M34: Karteneditor – Werkzeuge vor Räumen, feste Speicherleiste ────────
+const koerper = (k) => $d(k.u, '.body');
+const kinder = (k) => koerper(k).childNodes.map((n) => n.className || n.tagName);
+
+test('M34 Werkzeugleiste direkt unter der Karte, Raumchips erst im Werkzeug „Räume“ und unter der Leiste', () => {
+  const k = aufbau();
+  bearbeiten(k);
+  const reihe = kinder(k);
+  assert.equal(reihe[reihe.indexOf('edit-map') + 1], 'edit-tools', 'Leiste folgt der Karte: ' + reihe.join(' | '));
+  assert.equal($$d(k.u, '.room-chip').length, 0, 'ohne Werkzeug keine Raumliste');
+  assert.equal($d(k.u, '.edit-map').querySelector('.room-chips'), null, 'nie in der Kartenfläche');
+  werkzeug(k, 'rooms').click();
+  const mitRaeumen = kinder(k);
+  assert.equal(mitRaeumen[mitRaeumen.indexOf('edit-tools') + 1], 'edit-rooms', 'Räume unter der Leiste: ' + mitRaeumen.join(' | '));
+  assert.ok($d(k.u, '.edit-rooms').querySelectorAll('.room-chip').length >= 3, 'Raumchips zur Auswahl');
+  assert.equal($d(k.u, '.edit-map').querySelector('.room-chips'), null);
+  raumChip(k, 3).click();
+  assert.equal(raumChip(k, 3).getAttribute('aria-pressed'), 'true', 'Auswahl per Chip geht weiter (R15)');
+  const anderes = $$d(k.u, '[data-tool]').find((b) => b.getAttribute('data-tool') !== 'rooms' && !b.disabled);
+  assert.ok(anderes, 'ein weiteres freies Werkzeug');
+  anderes.click();
+  assert.equal(k.karte._mapEdit.tool, anderes.getAttribute('data-tool'));
+  assert.equal($d(k.u, '.edit-rooms'), null, 'anderes Werkzeug: Raumliste der Räume weg');
+});
+
+test('M34 Speichern/Verwerfen mit Änderungsstand als feste Leiste unten; nach dem Editor Chips zurück im Panel', () => {
+  const k = aufbau();
+  bearbeiten(k);
+  const leiste = koerper(k).childNodes.at(-1);
+  assert.equal(leiste.className, 'edit-bar', 'letztes Element');
+  assert.ok(leiste.querySelector('[data-counter]'), 'Änderungsstand in der Leiste');
+  for (const name of ['save', 'discard-draft', 'done']) assert.ok(leiste.querySelector('[data-action="' + name + '"]'), name);
+  const { DIALOG_STYLES } = k.I;
+  assert.match(DIALOG_STYLES, /\.edit-bar \{[^}]*position: sticky;[^}]*bottom: -16px;/, 'fest am unteren Rand des Blatts');
+  assert.match(DIALOG_STYLES, /\.edit-rooms \.room-chip \{[^}]*border: 1px solid var\(--divider-color, #e0e0e0\);[^}]*border-radius: 22px;/, 'Räume als umrandete Chips, Werkzeuge als gefüllte Knöpfe');
+  $d(k.u, '[data-action="done"]').click();
+  k.u.zurueck();
+  assert.equal(dialogVon(k.u), null);
+  const slot = k.karte.shadowRoot.querySelector('.chip-slot');
+  assert.ok(slot.querySelector('.room-chips'), 'Chips wieder im Panel der Karte');
+});

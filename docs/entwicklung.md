@@ -87,7 +87,8 @@
   mit eigener Höhe 520–780 px. Schmal: Karte 320 px randlos, Panel als Blatt mit
   Griff (16 px über der Karte), Aktionsleiste `position: sticky` unten.
 - Raum-Chips: `MapView.chipHost` = `.chip-slot` im Panel (im Bearbeitungsmodus
-  wieder unter der Karte im Dialog); `chipLimit` klappt sie in der Ansicht auf
+  im Dialog: M34 `MapEditor.chipHost` = `.edit-rooms` unter der
+  Werkzeugleiste, nur im Werkzeug „Räume“); `chipLimit` klappt sie in der Ansicht auf
   drei (Reihenfolge = Reinigungsfolge), „+ N weitere“ öffnet; Tastatur nur über
   sichtbare Chips.
 - Werkzeugleiste: eine Gruppe oben rechts (Zoom +/−, Einpassen | Bearbeiten,
@@ -104,6 +105,13 @@
   „Bereich hinzufügen“, „Ziel in Kartenmitte“, über `_pill`). „+ N weitere“ hat
   keinen Innenabstand links und fluchtet mit dem linken Chiprand. Die
   Wiederholungs-Stepper sind Eingaben, kein dritter Aktionsstil.
+- Karteneditor (M34): Reihenfolge Hinweise, `.edit-map`, Werkzeugleiste
+  `.edit-tools` direkt darunter, im Werkzeug „Räume“ die Raumchips
+  `.edit-rooms` (umrandet, Radius 22 px, anders als die gefüllten Werkzeug-
+  knöpfe), Panel; am Ende `.edit-bar` mit Änderungsstand (`[data-counter]`),
+  Verwerfen/Fertig/Speichern, `position: sticky` am unteren Blattrand.
+  Hinweis für Quelltext-Tests: Kommentare im JS ohne Apostroph schreiben
+  (`tests/karteneditor.test.js` liest Funktionskörper mit einem Zitat-Scanner).
 - Meldungen (M36): `messageParts` teilt den Text am ersten Satzende vor einem
   Großbuchstaben; Titel `.message-title` „<Stufe>: <Problem>“ (16 px fett),
   darunter `.message-step` mit dem Handlungsschritt (14 px, sekundär). Im
