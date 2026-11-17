@@ -301,3 +301,24 @@ test('M2 Umbruch nach Messung: passt die Reihe nicht, data-wrap; passt sie wiede
   setze(1280);
   assert.equal(bar.hasAttribute('data-wrap'), false, 'genug Platz → eine Reihe');
 });
+
+// ── M45 · Forced Colors (F8) ───────────────────────────────────────────────
+test('M45 forced-colors: Karte und Dialog bekommen Systemfarben für aktive Reiter/Schalter und den Fokus, als letzte Regel', () => {
+  const { u, karte: k } = karte();
+  const kartenCss = k.shadowRoot.querySelector('style').textContent;
+  k.shadowRoot.querySelector('.menu-button').click();
+  const dialog = u.document.body.querySelector('busch-vacuum-dialog') || [...u.body.childNodes].find((n) => n.tagName === 'BUSCH-VACUUM-DIALOG');
+  assert.ok(dialog, 'Dialog offen');
+  const dialogCss = dialog.shadowRoot.querySelector('style').textContent;
+  for (const [name, css] of [['Karte', kartenCss], ['Dialog', dialogCss]]) {
+    const start = css.lastIndexOf('@media (forced-colors: active)');
+    assert.ok(start > 0, name + ': Block vorhanden');
+    const block = css.slice(start);
+    assert.ok(!/\n\.[a-z][\w-]*[^\n]*\{/.test(block.slice(block.indexOf('\n}\n') + 3)), name + ': nichts überschreibt den Block danach');
+    for (const zustand of ['[aria-selected=true]', '[aria-checked=true]', '[aria-pressed=true]']) assert.ok(block.includes(zustand), name + ': ' + zustand);
+    assert.match(block, /forced-color-adjust: none;/);
+    assert.match(block, /background: Highlight;/);
+    assert.match(block, /color: HighlightText;/);
+    assert.match(block, /:focus-visible \{[^}]*outline: 2px solid Highlight;/, name + ': Fokusring in Systemfarbe');
+  }
+});

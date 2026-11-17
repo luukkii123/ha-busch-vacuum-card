@@ -547,3 +547,93 @@ test('M12 CSS: Raster mit 40-px-Symbolspalte, keine Einrückung der Gruppe, Chip
   const schmal = DIALOG_STYLES.slice(i, DIALOG_STYLES.indexOf('\n}\n', i));
   assert.match(schmal, /@media \(max-width: 449\.98px\)[^]*\.history-run \{[^}]*grid-template-columns: 40px minmax\(0, 1fr\);[^]*\.run-status \{[^}]*grid-column: 2;/);
 });
+
+// ── M47 · Verlaufsvorschau in der breiten Seitenleiste (W16) ─────────────────
+
+const vorschau = (k) => k.karte.shadowRoot.querySelector('.history-slot');
+/** Karte breit (1280) wie im Panel-Artboard; `states` wie aufbau(). */
+function breit(optionen) {
+  const k = aufbau('voll', optionen);
+  k.karte._setWidth(1280);
+  k.karte._update();
+  return k;
+}
+
+test('M47 Vorschau: im Panel zwischen Aufgaben und Aktionsleiste, einklappbar, die 3 neuesten Läufe; schmal per CSS aus', () => {
+  const k = breit();
+  const slot = vorschau(k);
+  assert.ok(slot, 'Platz in der Seitenleiste');
+  const panel = k.karte.shadowRoot.querySelector('.panel');
+  const kinder = panel.childNodes.map((n) => n.className);
+  assert.ok(kinder.indexOf('history-slot') > kinder.indexOf('task-area') && kinder.indexOf('history-slot') < kinder.indexOf('controls'), kinder.join(' '));
+  assert.equal(slot.hidden, false);
+  const teil = slot.querySelector('details');
+  assert.ok(teil, 'einklappbar (details)');
+  assert.equal(teil.open, true, 'offen, solange niemand zuklappt');
+  assert.match(teil.querySelector('summary').textContent, /Letzte Läufe/);
+  const laeufe = slot.querySelectorAll('.history-run');
+  assert.equal(laeufe.length, 3);
+  const neueste = k.I.historyRuns(k.haus.states[HIST]).slice(0, 3).map((r) => String(r.timestamp));
+  assert.deepEqual(laeufe.map((b) => b.getAttribute('data-run')), neueste);
+  for (const b of laeufe) {
+    assert.equal(b.getAttribute('type'), 'button');
+    assert.ok(b.querySelector('.run-title').textContent.trim(), 'Datum');
+    assert.ok(b.querySelector('.run-status').textContent.trim(), 'Status als Wort (R17)');
+    assert.doesNotMatch(b.querySelector('.run-title').textContent, /·/, 'M12: Titel nur Datum, wie im Dialog');
+  }
+  const css = k.karte.shadowRoot.querySelector('style').textContent;
+  assert.match(css, /:host\(:not\(\[data-width=wide\]\)\) \.history-slot \{[^}]*display: none;/, 'schmal aus');
+  assert.match(css, /\.history-preview \.history-run \{/, 'Zeilenstil in der Karte, nicht nur im Dialog');
+  assert.match(css, /\.history-preview \.run-lead \{\n    display: none;/, 'M12-Symbolspalte ohne Gruppen in der Vorschau ohne Platz');
+});
+
+test('M47 Vorschau: ein Tipp öffnet den Verlauf; Zuklappen bleibt beim nächsten Update', () => {
+  const k = breit();
+  vorschau(k).querySelectorAll('.history-run')[0].click();
+  const d = dialogVon(k.u);
+  assert.ok(d, 'Dialog offen');
+  assert.equal(d._views.at(-1).id, 'history');
+  const teil = vorschau(k).querySelector('details');
+  teil.open = false;
+  teil.dispatchEvent(k.u.neuesEreignis('toggle'));
+  k.karte.hass = k.haus.setze({ [HIST]: sensor({ x: { timestamp: 1900000000, cleaning_time: '9 min', cleaned_area: '5 m²', completed: true } }) });
+  assert.equal(vorschau(k).querySelector('details').open, false, 'Zuklappen gilt, solange die Karte lebt');
+  assert.equal(vorschau(k).querySelectorAll('.history-run').length, 1, 'neuer Sensorstand gezeichnet');
+});
+
+test('M47 Vorschau: fremde Updates bauen sie nicht neu (Knoten bleibt unter dem Finger)', () => {
+  const k = breit();
+  const vorher = vorschau(k).querySelector('details');
+  k.karte.hass = k.haus.setze({ 'vacuum.robo': Object.assign({}, k.haus.states['vacuum.robo'], { attributes: Object.assign({}, k.haus.states['vacuum.robo'].attributes, { battery_level: 55 }) }) });
+  assert.ok(vorschau(k).querySelector('details') === vorher);
+});
+
+test('M47 Vorschau leer (R18): Sensor ohne Läufe → Text statt Liste', () => {
+  const k = breit({ states: () => ({ [HIST]: sensor({}) }) });
+  const slot = vorschau(k);
+  assert.equal(slot.querySelectorAll('.history-run').length, 0);
+  const leer = slot.querySelector('.history-empty');
+  assert.ok(leer && leer.textContent.trim(), 'Leerzustand mit Text');
+  assert.equal(leer.getAttribute('role'), 'status');
+});
+
+test('M47 Vorschau Fehler (R12): Sensor nicht verfügbar → was, Folge, nächster Schritt', () => {
+  const k = breit({ states: () => ({ [HIST]: { entity_id: HIST, state: 'unavailable', attributes: {} } }) });
+  const note = vorschau(k).querySelector('.preview-note');
+  assert.ok(note, 'Fehlerzeile');
+  assert.equal(note.getAttribute('data-kind'), 'error');
+  assert.match(note.textContent, /nicht verfügbar/);
+  assert.match(note.textContent, /Läufe/);
+  assert.match(note.textContent, /Integration/);
+  assert.equal(vorschau(k).querySelectorAll('.history-run').length, 0);
+});
+
+test('M47 Vorschau ohne Verlaufssensor (R18): kein Block', () => {
+  const k = breit({ haus: (h) => {
+    const { [HIST]: _s, ...states } = h.states; h.states = states;
+    const { [HIST]: _e, ...entities } = h.entities; h.entities = entities;
+  } });
+  const slot = vorschau(k);
+  assert.ok(!slot || slot.hidden, 'kein Block');
+  assert.equal(k.karte.shadowRoot.querySelectorAll('.history-slot .history-run').length, 0);
+});

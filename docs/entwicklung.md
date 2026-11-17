@@ -51,6 +51,12 @@
   (höchstens 560 px, Bestätigung 320 px); Kopf sticky; Seite gesperrt;
   Escape/Zurück über eigene Verlaufseinträge; Fokusfalle. Außenklick schließt
   nur das flüchtige Menü (R04).
+- Erzwungene Farben (M45): `FORCED_COLORS_STYLES` hängt als letzte Regel an
+  Karten- und Dialogstil. Unter `@media (forced-colors: active)` bekommen
+  gewählte Reiter, Optionen, Radios, Schalter und gedrückte Knöpfe
+  (`aria-selected`/`aria-checked`/`aria-pressed`) `Highlight`/`HighlightText`
+  mit `forced-color-adjust: none`, der Fokus einen 2-px-Ring in `Highlight`.
+  Neue Zustände tragen das passende ARIA-Attribut, nicht nur eine Füllfarbe.
 - Theme-Haken `--bvc-accent-color`, `--bvc-warning-color`, `--bvc-error-color`,
   `--bvc-success-color`, `--bvc-info-color`: nur gelesen, nie auf `:host`
   gesetzt (sonst würde ein Theme sie nicht erreichen); im HACS-Prüfer als
@@ -97,6 +103,15 @@
   `.map-hint` (`setHint`, ohne Zeiger-Ereignisse) unten links.
 - Kontrast: Reihenfolge als Ring (Zahl in Textfarbe auf Kartenfarbe), Links in
   Textfarbe unterstrichen; Hex nur als Fallback hinter HA-Variablen.
+- Verlaufsvorschau (M47, Entscheidung 17.11.): `.history-slot` im Panel
+  zwischen `.task-area` und `.controls`, nur `wide` (schmal `display: none`).
+  Einklappbarer Abschnitt „Letzte Läufe“ (`BuschUI.section`, offen bis zum
+  Zuklappen, gilt solange die Karte lebt) mit den `HISTORY_PREVIEW_RUNS` (3)
+  neuesten Läufen aus `historyRuns` des Verlaufssensors (kein neuer
+  Datenvertrag, kein Abruf); ein Tipp öffnet den Verlauf. Leer: `verlaufLeer`,
+  Sensor nicht verfügbar: `vorschauFehler` (R12), ohne Sensor kein Block
+  (R18). Neu gezeichnet nur bei neuem Sensorobjekt oder neuer Sprache.
+  Stile in `HISTORY_PREVIEW_STYLES` (an den Kartenstil angehängt).
 
 ## Karte (Modul map-view)
 
@@ -127,6 +142,15 @@
   Kartenbild nur als Absicherung: sofort ohne Datenweg, nach einem
   fehlgeschlagenen Abruf oder wenn schon ein Bild gezeigt wird, sonst erst nach
   600 ms ohne Daten (`MAP_HEDGE_MS`).
+- **Telemetrie (M39):** `MapView.stats` zählt zusätzlich `fetchMs` (Median
+  der letzten 5 Datenabrufe in ms, `null` vor dem ersten), `discarded`
+  (abgebrochene oder überholte Antworten), `retries` (ausgelöste
+  Wiederholungen nach Backoff) und `failures` (Fehlantworten ohne Abbruch).
+  `RemoteSender.rtt` ist der Median der letzten 5 Antwortzeiten der
+  Fahrbefehle; die Fernsteuerung trägt ihn als `data-rtt` und zeigt ab
+  `REMOTE.slowMs` (600 ms) den Hinweis `remoteLangsam`. Tests:
+  `tests/netz.test.js`, `tests/fernsteuerung.test.js` (M39). Die Renderfälle
+  `netz_langsam`/`netz_fehler` prüfen `stats` im Browser.
 - **Lebenszyklus (M17):** `disconnectedCallback` der Karte schließt einen
   offenen Dialog (`_dismiss`, ohne Verlaufsschritt), beendet den optimistischen
   Zustand (`_endPending`) und offene Schreibvorgänge (`settleWrite`), löscht die
@@ -252,6 +276,14 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
   (switch.py#L612–L629).
 - Entwürfe (DnD, Zeitplan, Sprachpaket) liegen in `card._drafts` und überleben
   Verlassen und Dienstfehler.
+
+Übersicht (M46): jede Gruppenzeile (`.settings-group`) zeigt Name und
+Kurzstatus (`groupStatus`: Zubehör = kleinster Rest, Akku = Stand, Geräteinfo
+= Zustand, Zeitplan = Anzahl, Nicht stören = An/Aus, sonst „N von M an“ der
+Schalter), am Ende ein Chevron. Handlungsbedarf (Zubehör unter
+`CONSUMABLE_LOW` 30 %, Akku niedrig) bekommt einen Punkt mit dem Wort
+„Handlungsbedarf“ (R17); Status und Warnung beschreiben den Knopf
+(`aria-describedby`).
 
 ## Station (Modul dock)
 

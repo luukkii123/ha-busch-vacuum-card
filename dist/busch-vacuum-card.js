@@ -508,6 +508,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             remoteGesperrt_connection: 'Gesperrt: keine Verbindung zu Home Assistant.',
             remoteFehler: 'Gestoppt nach einem Fehler: {grund}. Zum Weiterfahren Steuerung neu starten.',
             remoteZeit: 'keine Antwort innerhalb von 2 s',
+            remoteLangsam: 'Verbindung langsam — Bewegung kommt verzögert an.',
             remoteVerbindung: 'Verbindung zu Home Assistant verloren — der Stopp kam vielleicht nicht an. Roboter mit der Taste am Gerät oder in der Dreame-App anhalten; danach Steuerung neu starten.',
             entryMaps: 'Kartenverwaltung',
             entrySettings: 'Geräteeinstellungen',
@@ -900,6 +901,14 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zeitraumLoeschenTitel: 'Zeitraum löschen?',
             zeitraumLoeschenFrage: 'Zeitraum {zeitraum} endgültig löschen?',
             treffer: '{n} Treffer',
+            kurzAn: '{an} von {n} an',
+            kurzEinstellungen: '{n} Einstellungen',
+            kurzEinstellungen1: '1 Einstellung',
+            kurzZeitplaene: '{n} Zeitpläne',
+            kurzZeitplaene1: '1 Zeitplan',
+            kurzZeitplaene0: 'Keine Zeitpläne',
+            kurzKeineTeile: 'Keine Werte',
+            handlungsbedarf: 'Handlungsbedarf',
             keineTreffer: 'Keine Einstellung gefunden. Versuche einen anderen Begriff.',
             dauerMin: '{m} min',
             dauerStdMin: '{h} h {m} min',
@@ -910,6 +919,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             laeufe: '{n} Läufe',
             gruppeTitel: 'Reinigung + Nachreinigung',
             verlaufLeer: 'Kein Verlauf — die Integration lädt ihn nur mit Cloud-Verbindung.',
+            letzteLaeufe: 'Letzte Läufe',
+            vorschauFehler: 'Verlauf nicht verfügbar — die letzten Läufe fehlen. Prüfe die Cloud-Verbindung der Integration.',
             raumNr: 'Raum {id}',
             verlaufDauer: 'Dauer',
             verlaufArt: 'Reinigungsart',
@@ -1222,6 +1233,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             remoteGesperrt_connection: 'Locked: no connection to Home Assistant.',
             remoteFehler: 'Stopped after an error: {grund}. Start control again to go on.',
             remoteZeit: 'no answer within 2 s',
+            remoteLangsam: 'Slow connection — movement arrives late.',
             remoteVerbindung: 'Connection to Home Assistant lost — the stop may not have arrived. Stop the robot with its button or in the Dreame app; then start control again.',
             entryMaps: 'Map management',
             entrySettings: 'Device settings',
@@ -1614,6 +1626,14 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             zeitraumLoeschenTitel: 'Delete period?',
             zeitraumLoeschenFrage: 'Permanently delete period {zeitraum}?',
             treffer: '{n} results',
+            kurzAn: '{an} of {n} on',
+            kurzEinstellungen: '{n} settings',
+            kurzEinstellungen1: '1 setting',
+            kurzZeitplaene: '{n} schedules',
+            kurzZeitplaene1: '1 schedule',
+            kurzZeitplaene0: 'No schedules',
+            kurzKeineTeile: 'No values',
+            handlungsbedarf: 'Needs attention',
             keineTreffer: 'No setting found. Try another term.',
             dauerMin: '{m} min',
             dauerStdMin: '{h} h {m} min',
@@ -1624,6 +1644,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             laeufe: '{n} runs',
             gruppeTitel: 'Cleaning + re-cleaning',
             verlaufLeer: 'No history — the integration loads it only with a cloud connection.',
+            letzteLaeufe: 'Recent runs',
+            vorschauFehler: 'History unavailable — the recent runs are missing. Check the integration\'s cloud connection.',
             raumNr: 'Room {id}',
             verlaufDauer: 'Duration',
             verlaufArt: 'Cleaning type',
@@ -3721,7 +3743,9 @@ class MapView {
         this.card = card;
         this.hass = null;
         this.model = null;
-        this.stats = { images: 0, data: 0, renders: 0, paints: 0, cacheHits: 0 }; // for tests and the performance check
+        // For tests and the performance check; M39: fetchMs (running median), discarded, retries, failures.
+        this.stats = { images: 0, data: 0, renders: 0, paints: 0, cacheHits: 0, fetchMs: null, discarded: 0, retries: 0, failures: 0 };
+        this._fetchTimes = [];
         this._cam = null;
         this._key = null;
         this._imageUrl = null;
@@ -4435,7 +4459,7 @@ class MapView {
         if (f.inflight || f.timer || !want || want.key === f.doneKey || this._background()) return;
         const a = this._attrs();
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        const run = { key: want.key, frame: want.frame, index: want.index, seq: ++f.seq, controller, aborted: false };
+        const run = { key: want.key, frame: want.frame, index: want.index, seq: ++f.seq, controller, aborted: false, t0: Date.now() };
         f.inflight = run;
         const url = '/api/camera_map_data_proxy/' + this._cameraId + '?token=' + encodeURIComponent(a.access_token) + '&v=' + encodeURIComponent(want.frame);
         // M19: another card (or the editor) fetching the same frame shares its request.
@@ -4481,8 +4505,13 @@ class MapView {
     _dataDone(run, raw) {
         const f = this._fetch;
         if (f.inflight === run) f.inflight = null;
-        if (run.aborted) return;
-        if (run.seq > f.shownSeq) {
+        if (run.aborted) {
+            this.stats.discarded++;
+            return;
+        }
+        this._fetchTime(Date.now() - run.t0);
+        if (run.seq <= f.shownSeq) this.stats.discarded++;
+        else {
             f.shownSeq = run.seq;
             f.doneKey = run.key;
             const grid = decodeMapData(raw);
@@ -4505,7 +4534,11 @@ class MapView {
     _dataFailed(run, error) {
         const f = this._fetch;
         if (f.inflight === run) f.inflight = null;
-        if (run.aborted || (error && error.name === 'AbortError')) return this._pumpData();
+        if (run.aborted || (error && error.name === 'AbortError')) {
+            this.stats.discarded++;
+            return this._pumpData();
+        }
+        this.stats.failures++;
         const status = Number(error && error.status);
         // 4xx (but timeout/too many): the proxy has no data for this map – no retry, as before.
         const final = status >= 400 && status < 500 && status !== 408 && status !== 429;
@@ -4522,8 +4555,17 @@ class MapView {
         f.tries++;
         f.timer = setTimeout(() => {
             f.timer = null;
+            this.stats.retries++;
             this._pumpData();
         }, Math.round(ms));
+    }
+
+    /** M39: running median of the last data request durations (ms). */
+    _fetchTime(ms) {
+        const t = this._fetchTimes;
+        t.push(ms);
+        if (t.length > MEDIAN_SAMPLES) t.shift();
+        this.stats.fetchMs = median(t);
     }
 
     /** M6: the last good map stays while a newer one failed; the note says so (R12). */
@@ -5458,9 +5500,10 @@ function settingsView(card) {
                     list.className = 'menu settings-groups';
                     for (const group of SETTING_GROUPS.filter((g) => groupShown(model, g.name))) {
                         const label = translate(hass, 'gruppe_' + group.name);
-                        const item = BuschUI.action({ label, text: label, icon: group.icon, variant: 'quiet', onClick: () => dialog.show(groupView(card, group.name)) });
-                        item.classList.add('menu-item');
+                        const item = BuschUI.action({ label, text: '', icon: group.icon, variant: 'quiet', onClick: () => dialog.show(groupView(card, group.name)) });
+                        item.classList.add('menu-item', 'settings-group');
                         item.setAttribute('data-group', group.name);
+                        groupLine(item, label, groupStatus(model, group.name, hass), group.name, hass);
                         list.appendChild(item);
                     }
                     results.replaceChildren(list);
@@ -5481,6 +5524,73 @@ function settingsView(card) {
             body.append(search, count, results);
         }
     };
+}
+
+/** M46 (W15): consumables below this many percent left need attention (row `low`, overview warning). */
+const CONSUMABLE_LOW = 30;
+
+/**
+ * M46 (W15): the overview's second line per group — a short status and
+ * `warn` when the group needs attention (worn consumables, low battery).
+ * Setting groups count their switches that are on.
+ */
+function groupStatus(model, name, hass) {
+    const t = (key, vars) => translate(hass, key, vars);
+    switch (name) {
+        case 'consumables': {
+            const parts = Object.entries(model.consumables());
+            if (!parts.length) return { text: t('kurzKeineTeile') };
+            const [attribute, left] = parts.reduce((a, b) => (b[1] < a[1] ? b : a));
+            return { text: entityLabel(hass, 'sensor', attribute) + ' ' + Math.round(left) + ' %', warn: left < CONSUMABLE_LOW };
+        }
+        case 'battery': {
+            const battery = batteryInfo(hass, model);
+            if (battery) return { text: battery.text, warn: battery.kind === 'low' };
+            break;
+        }
+        case 'info': return { text: model.state ? formatState(hass, model.state) : '–' };
+        case 'schedule': {
+            const n = scheduleList(model).length;
+            return { text: n === 0 ? t('kurzZeitplaene0') : n === 1 ? t('kurzZeitplaene1') : t('kurzZeitplaene', { n }) };
+        }
+        case 'dnd': return { text: t(dndActive(model) ? 'an' : 'aus') };
+    }
+    const known = groupKeys(name).filter((key) => settingValue(model, key).source !== null);
+    const switches = known.filter((key) => SETTINGS[key].control === 'switch');
+    if (switches.length) return { text: t('kurzAn', { an: switches.filter((key) => settingValue(model, key).value === true).length, n: switches.length }) };
+    return { text: known.length === 1 ? t('kurzEinstellungen1') : t('kurzEinstellungen', { n: known.length }) };
+}
+
+/** M46: name over status, a warning dot with its word (R17) and a chevron; the status describes the button. */
+function groupLine(item, label, status, name, hass) {
+    const text = document.createElement('span');
+    text.className = 'group-text';
+    const caption = document.createElement('span');
+    caption.className = 'group-name';
+    caption.textContent = label;
+    const line = document.createElement('span');
+    line.className = 'group-status';
+    line.id = 'group-status-' + name;
+    line.textContent = status.text;
+    text.append(caption, line);
+    item.appendChild(text);
+    const described = [line.id];
+    if (status.warn) {
+        const warn = document.createElement('span');
+        warn.className = 'group-warn';
+        warn.id = 'group-warn-' + name;
+        const word = document.createElement('span');
+        word.className = 'group-warn-word';
+        word.textContent = translate(hass, 'handlungsbedarf');
+        warn.appendChild(word);
+        item.appendChild(warn);
+        described.push(warn.id);
+    }
+    const chevron = BuschUI.ha.icon('mdi:chevron-right');
+    chevron.classList.add('group-chevron');
+    chevron.setAttribute('aria-hidden', 'true');
+    item.appendChild(chevron);
+    item.setAttribute('aria-describedby', described.join(' '));
 }
 
 function groupView(card, name) {
@@ -5831,7 +5941,7 @@ function consumableParts(card, model, body, hass, dialog) {
         status.className = 'setting-status';
         const note = card._settingNotes.get('reset:' + name);
         status.textContent = card._settingWrites.has('reset:' + name) ? translate(hass, 'speichert') : note || translate(hass, 'rest', { prozent: percent, zeit: time || '–' });
-        row.setAttribute('data-state', note ? 'error' : left < 30 ? 'low' : 'ok');
+        row.setAttribute('data-state', note ? 'error' : left < CONSUMABLE_LOW ? 'low' : 'ok');
         text.append(caption, status);
         const full = left >= 100;
         // At 100 % the integration refuses the reset (ACTION_AVAILABILITY, types.py#L2308).
@@ -7615,6 +7725,9 @@ const RUN_LEVELS = {
 };
 const RUN_LEVEL_ORDER = ['done', 'notice', 'interrupted'];
 
+/** M47: runs in the wide panel's history preview. */
+const HISTORY_PREVIEW_RUNS = 3;
+
 /** A state text of the integration's sensor in HA's words (R26), else the raw text. */
 function integrationState(hass, sensor, raw) {
     if (raw === undefined || raw === null || raw === '') return '';
@@ -8400,6 +8513,112 @@ function historyDetail(card, name, list, ts) {
 }
 
 /** The map's styles: in the card and, while the edit mode holds the map, in the dialog (map-editor). */
+/**
+ * M45 (F8): in forced colours (Windows contrast themes) a state shown only by
+ * its fill would vanish. Appended last to the card and the dialog styles, so
+ * it wins over the normal state rules; system colours only.
+ */
+const FORCED_COLORS_STYLES = `
+@media (forced-colors: active) {
+    [role=tab][aria-selected=true],
+    [role=option][aria-selected=true],
+    [role=radio][aria-checked=true],
+    [role=switch][aria-checked=true],
+    [aria-pressed=true] {
+        forced-color-adjust: none;
+        background: Highlight;
+        color: HighlightText;
+    }
+    :focus-visible {
+        outline: 2px solid Highlight;
+        outline-offset: 2px;
+    }
+}
+`;
+
+/**
+ * M47 (W16): the wide panel's history preview; the rows look like the
+ * history list of the dialog (same classes, fewer rules). Only from "wide".
+ */
+const HISTORY_PREVIEW_STYLES = `
+:host(:not([data-width=wide])) .history-slot {
+    display: none;
+}
+.history-slot .busch-ui-section {
+    border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+}
+.history-slot summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: 500;
+}
+.history-preview .history-run {
+    display: flex;
+    align-items: center;
+    gap: var(--ha-space-3, 12px);
+    width: 100%;
+    min-height: 48px;
+    padding: var(--ha-space-2, 8px) var(--ha-space-1, 4px);
+    border: 0;
+    border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+    background: none;
+    color: var(--primary-text-color, #212121);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+.history-preview .history-run:hover {
+    background: var(--secondary-background-color, #f5f5f5);
+}
+.history-preview .history-run:focus-visible {
+    outline: 2px solid var(--primary-color, #03a9f4);
+    outline-offset: -2px;
+}
+/* M12 symbol column: the preview has no groups, so the empty column takes no space. */
+.history-preview .run-lead {
+    display: none;
+}
+.history-preview .run-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.history-preview .run-title,
+.history-preview .run-meta {
+    overflow-wrap: anywhere;
+}
+.history-preview .run-meta,
+.history-preview .history-empty {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+}
+.history-preview .run-status {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    font-size: var(--ha-font-size-s, 14px);
+    color: var(--bvc-success-color, var(--success-color, #43a047));
+}
+.history-preview .run-status[data-level=notice] {
+    color: var(--bvc-warning-color, var(--warning-color, #ffa600));
+}
+.history-preview .run-status[data-level=interrupted] {
+    color: var(--bvc-error-color, var(--error-color, #db4437));
+}
+.history-preview .run-status span {
+    color: var(--primary-text-color, #212121);
+}
+.history-preview .preview-note {
+    margin: var(--ha-space-2, 8px) 0;
+    color: var(--bvc-error-color, var(--error-color, #db4437));
+    overflow-wrap: anywhere;
+}
+`;
+
 const MAP_STYLES = `
 .map-slot,
 .map-view,
@@ -10154,6 +10373,45 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
     order: -1;
     flex: none;
 }
+/* M46 (W15): settings overview rows — name over a short status, warning dot, chevron at the end. */
+.settings-group .group-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.settings-group .group-name,
+.settings-group .group-status {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.settings-group .group-status {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 12px);
+}
+.settings-group .group-warn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ha-space-1, 4px);
+    flex: none;
+    color: var(--bvc-warning-color, var(--warning-color, #ffa600));
+    font-size: var(--ha-font-size-s, 12px);
+}
+.settings-group .group-warn::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+}
+.settings-group .group-chevron {
+    order: 0;
+    flex: none;
+    color: var(--secondary-text-color, #727272);
+}
+.settings-group:dir(rtl) .group-chevron {
+    transform: scaleX(-1);
+}
 .badge {
     margin-inline-start: auto;
     flex: none;
@@ -11201,7 +11459,7 @@ class BuschVacuumDialog extends HTMLElement {
     _build() {
         const root = this.shadowRoot;
         const style = document.createElement('style');
-        style.textContent = DIALOG_STYLES;
+        style.textContent = DIALOG_STYLES + FORCED_COLORS_STYLES;
         const scrim = document.createElement('div');
         scrim.className = 'scrim';
         scrim.addEventListener('click', () => {
@@ -11533,7 +11791,7 @@ class BuschVacuumCard extends HTMLElement {
         root.innerHTML = '';
         this._seen = null;
         const style = document.createElement('style');
-        style.textContent = CARD_STYLES;
+        style.textContent = CARD_STYLES + HISTORY_PREVIEW_STYLES + FORCED_COLORS_STYLES;
         root.appendChild(style);
         const card = document.createElement('ha-card');
         card.dataset.uiContract = 'Busch HA UI 0.1.0';
@@ -11604,7 +11862,11 @@ class BuschVacuumCard extends HTMLElement {
             this._chipSlot = document.createElement('div');
             this._chipSlot.className = 'chip-slot';
             this._roomsOpen = false; // R21 on purpose: the collapsed room list is a view, not a preference
-            this._panelNode.append(handle, this._messages, this._stationSlot, this._taskArea, this._controls);
+            this._historySlot = document.createElement('div');
+            this._historySlot.className = 'history-slot';
+            this._historySlot.hidden = true;
+            this._historySeen = null;
+            this._panelNode.append(handle, this._messages, this._stationSlot, this._taskArea, this._historySlot, this._controls);
             const layout = document.createElement('div');
             layout.className = 'layout';
             layout.append(lead, this._mapSlot, this._panelNode);
@@ -11712,6 +11974,7 @@ class BuschVacuumCard extends HTMLElement {
         this._progress.replaceChildren(...(percent === null ? [] : [this._progressBar(percent)]));
         this._renderMessages(hass, model);
         this._renderStationHint(hass, model);
+        this._renderHistoryPreview(hass, model);
         const task = this._chosenTask(model);
         const ready = this._renderTasks(hass, model, active, task);
         this._syncTaskMap(model, active, task);
@@ -12847,11 +13110,18 @@ class BuschVacuumCard extends HTMLElement {
      * a task this card started — the newest history entry since the start says
      * completed (the integration loads it at status completed, device.py#L1889).
      * Own stop: never. Without the history sensor: unless the card stopped it.
+     * The start counts from `last_changed` of the first active state (server
+     * time, M38); the browser clock is only the fallback until then.
      */
     _checkEnd(model, active) {
         const run = this._run;
         if (!run) return;
         if (active) {
+            // M38: the end is compared with server stamps, so the start time is the server's, not the browser's.
+            if (!run.seen) {
+                const since = Date.parse(model.state && model.state.last_changed);
+                if (Number.isFinite(since)) run.at = since;
+            }
             run.seen = true;
             return;
         }
@@ -12940,6 +13210,58 @@ class BuschVacuumCard extends HTMLElement {
     }
 
     /** #1002: the station's warning or error as a bar in the panel; a tap opens the station view (DOCK-05). */
+    /**
+     * M47 (W16, decision 7): from "wide" the panel's free space shows the
+     * newest runs of the cleaning history, collapsible (open until closed, R21:
+     * only while the card lives). Data from the sensor the history view reads
+     * (`historyRuns`), no new data contract; a tap opens the history. Redrawn
+     * only for a new sensor object or language (M4: nothing under the finger).
+     */
+    _renderHistoryPreview(hass, model) {
+        const slot = this._historySlot;
+        if (!slot) return;
+        const id = model.can('history') ? model.entity('sensor.cleaning_history') : null;
+        const obj = id ? hass.states[id] || null : null;
+        const lang = localeOf(hass).language;
+        const seen = this._historySeen;
+        if (seen && seen.id === id && seen.obj === obj && seen.lang === lang) return;
+        this._historySeen = { id, obj, lang };
+        slot.hidden = !id;
+        if (!id) return slot.replaceChildren();
+        const content = document.createElement('div');
+        content.className = 'history-preview';
+        if (!obj || UNUSABLE.includes(obj.state)) {
+            const note = document.createElement('p');
+            note.className = 'preview-note';
+            note.setAttribute('data-kind', 'error');
+            note.setAttribute('role', 'status');
+            note.textContent = translate(hass, 'vorschauFehler');
+            content.appendChild(note);
+        } else {
+            const runs = historyRuns(obj).slice(0, HISTORY_PREVIEW_RUNS);
+            if (!runs.length) {
+                const empty = document.createElement('p');
+                empty.className = 'history-empty';
+                empty.setAttribute('role', 'status');
+                empty.textContent = translate(hass, 'verlaufLeer');
+                content.appendChild(empty);
+            }
+            for (const run of runs) {
+                const button = document.createElement('button');
+                button.className = 'history-run';
+                button.setAttribute('type', 'button');
+                button.setAttribute('data-run', String(run.timestamp));
+                button.addEventListener('click', () => this._openDialog(MODULE_VIEWS.history(this)));
+                const status = integrationState(hass, 'status', run.entry.status);
+                // M12: same line as in the dialog: the date is the title, the run type leads the facts.
+                content.appendChild(runLine(button, runDateText(hass, run.timestamp), [status, ...runFacts(hass, run)], runStatus(hass, run.level)));
+            }
+        }
+        const section = BuschUI.section({ title: translate(hass, 'letzteLaeufe'), content, open: this._historyOpen !== false });
+        section.addEventListener('toggle', () => { this._historyOpen = section.open; });
+        slot.replaceChildren(section);
+    }
+
     _renderStationHint(hass, model) {
         const status = model.can('dock') && !this._hidden('dock_status_indicator') ? dockStatus(model) : { level: 'ok' };
         if (status.level !== 'warning' && status.level !== 'error') {
@@ -16766,7 +17088,16 @@ Object.assign(EDIT_LINES, {
  * backward −300 and rotation ±128; backward stays at −100 (no collision
  * guard reversing) until the first live run calibrates (spec open question 1).
  */
-const REMOTE = { forward: 100, backward: -100, rotation: 128, deadzone: 0.15, stepMs: 200, stopRepeatMs: 300, timeoutMs: 2000 };
+const REMOTE = { forward: 100, backward: -100, rotation: 128, deadzone: 0.15, stepMs: 200, stopRepeatMs: 300, timeoutMs: 2000, slowMs: 600 };
+
+/** M39: how many recent answers a running median covers (map data, remote RTT). */
+const MEDIAN_SAMPLES = 5;
+
+function median(values) {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b), mid = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
 
 /** A stick or key value −1…1 → service value: dead zone, linear to the limit; Shift halves speed, Ctrl turning, precision both. */
 function remoteValue(axis, raw, mods = {}) {
@@ -16801,6 +17132,8 @@ class RemoteSender {
         this._seq = 0;
         this._last = -Infinity;
         this._timer = null; // spacing or the stop repeat
+        this.rtt = null; // M39: median answer time of the last calls (ms)
+        this._rtts = [];
     }
 
     set({ v, r }) {
@@ -16860,6 +17193,7 @@ class RemoteSender {
             if (!this._busy || this._busy.seq !== seq) return;
             clearTimeout(this._busy.timer);
             this._busy = null;
+            if (!error) this._measure(Date.now() - at);
             if (error) {
                 this.error = error;
                 this._want = null;
@@ -16888,6 +17222,15 @@ class RemoteSender {
             call = Promise.reject(e);
         }
         call.then(() => done(null), (e) => done(errorText(e)));
+    }
+
+    /** M39: running median of the answer times; a new median repaints the view (`data-rtt`, slow hint). */
+    _measure(ms) {
+        const before = this.rtt;
+        this._rtts.push(ms);
+        if (this._rtts.length > MEDIAN_SAMPLES) this._rtts.shift();
+        this.rtt = median(this._rtts);
+        if (this.rtt !== before) this._onChange(this.state);
     }
 }
 
@@ -17040,6 +17383,11 @@ function remoteView(card) {
         p.blocked.textContent = ctl.block ? text('remoteGesperrt_' + ctl.block) : '';
         p.note.hidden = !ctl.note;
         p.note.textContent = ctl.note || '';
+        // M39: a slow connection is named, so a late movement is no surprise.
+        const rtt = ctl.sender.rtt;
+        if (rtt === null) ctl.root.removeAttribute('data-rtt');
+        else ctl.root.setAttribute('data-rtt', String(rtt));
+        p.slow.hidden = !(rtt !== null && rtt >= REMOTE.slowMs);
         p.arm.hidden = ctl.armed;
         p.arm.disabled = !!ctl.block;
         p.precision.setAttribute('aria-checked', String(ctl.precision));
@@ -17217,6 +17565,9 @@ function remoteView(card) {
         p.blocked = line('remote-blocked form-note', 'status');
         p.note = line('remote-note form-note', 'alert');
         p.note.setAttribute('data-kind', 'error');
+        p.slow = line('remote-slow form-note', 'status');
+        p.slow.setAttribute('data-kind', 'warning');
+        p.slow.textContent = text('remoteLangsam');
         const actions = document.createElement('div');
         actions.className = 'remote-actions';
         p.arm = BuschUI.action({ label: text('remoteStarten'), text: text('remoteStarten'), icon: 'mdi:gamepad-round-outline', variant: 'primary', onClick: () => arm() });
@@ -17246,7 +17597,7 @@ function remoteView(card) {
         const info = document.createElement('div');
         info.className = 'remote-info';
         p.state = line('remote-state');
-        info.append(p.state, p.warning, p.status, p.blocked, p.note);
+        info.append(p.state, p.warning, p.status, p.blocked, p.note, p.slow);
         const wrap = document.createElement('div');
         wrap.className = 'remote-map-wrap';
         p.map = document.createElement('div');

@@ -637,3 +637,56 @@ test('MAP-01 M15 Erstabruf der Kartendaten läuft, noch kein Bild: Ladehinweis s
   assert.ok(!note(), 'Ladehinweis nach den Daten weg');
   assert.equal(k.karte._map.stage.getAttribute('aria-busy'), 'false');
 });
+
+// ── M39 · Netz-Telemetrie (N11) ───────────────────────────────────────────
+
+test('M39 netz_langsam: Latenz 1,5 s, Frames alle 0,5 s → ≥ 2 Frames angewandt, 1 Abruf gleichzeitig, fetchMs = Median, discarded ≤ data', async () => {
+  const k = await datenKarte({ latenz: 1500 });
+  k.u.uhr.vor(1500); await mikro();
+  for (let i = 1; i <= 20; i++) {
+    neuerFrame(k, 1180 + i);
+    await mikro();
+    k.u.uhr.vor(500);
+    await mikro();
+  }
+  k.u.uhr.vor(1500); await mikro();
+  const s = k.karte._map.stats;
+  assert.ok(k.frames.filter((f) => f.mode === 'data').length >= 2, 'angewandt: ' + k.frames.length);
+  assert.equal(k.n.hoechstens, 1, 'höchstens ein Abruf gleichzeitig');
+  assert.equal(s.fetchMs, 1500, 'gleitender Median der Abrufdauer');
+  assert.ok(s.discarded <= s.data, 'discarded ' + s.discarded + ' ≤ data ' + s.data);
+  assert.equal(s.failures, 0);
+  assert.equal(s.retries, 0);
+});
+
+test('M39 netz_fehler: erster Abruf 500 → failures 1, retries ≥ 1, am Ende mode data', async () => {
+  const u = umgebung({ zufall: 0.5 });
+  const n = netz(u, { status: (url, nr) => (nr === 1 ? 500 : 200) });
+  const haus = hausAus('voll');
+  haus.states = Object.assign({}, haus.states, kamera(haus, { frame_id: 1180 }));
+  const karte = neueKarte(u, haus);
+  karte._map.stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 400, bottom: 400, width: 400, height: 400 });
+  await mikro(); await mikro();
+  const s = karte._map.stats;
+  assert.equal(s.failures, 1, 'der 500er zählt als Fehler');
+  assert.equal(s.retries, 0, 'Wiederholung erst nach dem Backoff');
+  u.uhr.vor(2000); await mikro(); await mikro();
+  assert.equal(n.abrufe.length, 2);
+  assert.ok(s.retries >= 1, 'retries ' + s.retries);
+  assert.equal(karte._map.current().mode, 'data');
+  assert.equal(s.failures, 1);
+});
+
+test('M39 discarded: ein durch Kartenwechsel abgebrochener Abruf zählt als verworfen, nicht als Fehler', async () => {
+  const k = await datenKarte({ latenz: 3000 });
+  k.u.uhr.vor(3000); await mikro();
+  neuerFrame(k, 1181);
+  await mikro();
+  neuerFrame(k, 7, { map_index: 2, map_id: 9 });
+  await mikro();
+  k.u.uhr.vor(3000); await mikro();
+  const s = k.karte._map.stats;
+  assert.equal(s.discarded, 1);
+  assert.equal(s.failures, 0);
+  assert.ok(s.discarded <= s.data);
+});
