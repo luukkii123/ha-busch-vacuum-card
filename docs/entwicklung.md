@@ -51,6 +51,10 @@
   `on…` verwirft). `tests/fixtures/feindlich.json` trägt HTML, `javascript:`,
   sehr lange Texte und RTL-Zeichen in Namen; sie müssen wörtlich als Text
   erscheinen.
+- Adressen (M28/M29/M43): Kartenbilder der Konfiguration nur per Positivliste
+  (`PICTURE_URL`); Adressen aus Attributen nur über `ownPath` (`/api/` oder die
+  eigene Instanz); Sprachpaket nur `https://` oder die eigene Instanz, Datei-URL
+  zu einem fremden Host mit zweitem Haken.
 
 ## Layout 0.2 (#1002)
 

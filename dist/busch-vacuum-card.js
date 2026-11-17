@@ -4131,7 +4131,7 @@ class MapView {
         this._applyScheme();
         if (this._showsMap()) {
             // Data mode paints its own map: the integration's picture only until the data is there.
-            if (!this._data) this._loadImage(a.entity_picture);
+            if (!this._data) this._loadImage(ownPath(a.entity_picture, this.hass));
             this._loadData(a);
             this._paint();
         }
@@ -4729,7 +4729,7 @@ class MapView {
                     button.setAttribute('data-map', String(entry.id));
                     if (current) button.setAttribute('aria-current', 'true');
                     const cam = this._floorCamera(entry.index);
-                    const picture = cam && hass.states[cam].attributes.entity_picture;
+                    const picture = cam && ownPath(hass.states[cam].attributes.entity_picture, hass);
                     if (picture) {
                         const img = document.createElement('img');
                         img.className = 'floor-preview';
@@ -7300,6 +7300,19 @@ const historyCamera = (card) => card._model().related.maps.map[0] || null;
 const hassUrl = (hass, path) => (hass && typeof hass.hassUrl === 'function' ? hass.hassUrl(path) : path);
 
 /**
+ * M43 (security S8): an address from an entity attribute only when it stays on
+ * this Home Assistant — a path below /api/ or its own origin —, else null (the
+ * existing empty or failed state). The camera token never goes to another host.
+ */
+function ownPath(url, hass) {
+    if (typeof url !== 'string') return null;
+    const value = url.trim();
+    if (value.startsWith('/api/')) return value;
+    const own = ownOrigin(hass);
+    return own && originOf(value) === own ? value : null;
+}
+
+/**
  * The URL of a run from the camera's current attribute, matched by `v=` (the
  * run's timestamp; the index moves with every new run). `data`: map data
  * (gzip JSON); else the picture without burnt-in text, cleaning or WiFi map.
@@ -7308,7 +7321,7 @@ function historyUrl(camera, run, { kind = 'history', data = false, wifi = false 
     const pictures = camera && camera.attributes && camera.attributes[HISTORY_KINDS[kind].picture];
     if (!pictures || typeof pictures !== 'object') return null;
     const v = String(Math.trunc(run.timestamp));
-    const base = Object.values(pictures).find((url) => typeof url === 'string' && (/[?&]v=(\d+)/.exec(url) || [])[1] === v);
+    const base = Object.values(pictures).find((url) => ownPath(url) && (/[?&]v=(\d+)/.exec(url) || [])[1] === v);
     if (!base) return null;
     if (data) return base + '&data=1';
     return base + '&info=0' + (HISTORY_KINDS[kind].cruising ? '' : wifi ? '&wifi=1' : '&cleaning=1');
@@ -13698,7 +13711,7 @@ function mapRow(card, model, hass, dialog, home, sessions, entry, name, current)
     row.setAttribute('data-map', String(entry.id));
     if (current) row.setAttribute('aria-current', 'true');
     const cam = model.related.maps.saved_map.find((id) => hass.states[id] && hass.states[id].attributes.map_index === entry.index);
-    const picture = cam && hass.states[cam].attributes.entity_picture;
+    const picture = cam && ownPath(hass.states[cam].attributes.entity_picture, hass);
     if (picture) {
         const img = document.createElement('img');
         img.className = 'floor-preview';
@@ -15764,7 +15777,7 @@ function wifiSource(card) {
     const cur = m.current();
     const cams = card._model().related.maps.wifi_map.map((id) => hass.states[id]).filter(Boolean);
     const cam = cams.find((c) => String(c.attributes.map_id) === String(cur.mapId)) || null;
-    const url = (cam && cam.attributes.entity_picture) || cur.objects.wifi_map_picture || null;
+    const url = ownPath((cam && cam.attributes.entity_picture) || cur.objects.wifi_map_picture, hass);
     if (!url) return null;
     return { url, matrix: affineFrom((cam && cam.attributes.calibration_points) || cur.objects.calibration_points) };
 }
@@ -16468,6 +16481,7 @@ function recoveryEntries(hass, model, mapId) {
     const byNumber = (attr) => {
         const found = {};
         for (const [key, url] of Object.entries(keyed[attr] || {})) {
+            if (!ownPath(url, hass)) continue;
             const m = RECOVERY_KEY.exec(key);
             const k = m ? Number(m[2]) : Number((/[?&]index=(\d+)/.exec(String(url)) || [])[1]);
             if (k) found[k] = { url, when: m ? m[1] : '', typeText: m ? m[3] : '' };
@@ -16675,7 +16689,7 @@ function backupRow(card, model, hass, dialog, home, map, entry, position) {
 /** The current picture of a map (its saved-map camera, for the active map else camera.*_map), as the first entry to compare. */
 function currentPicture(hass, model, mapId) {
     for (const id of recoveryCameras(hass, model, mapId)) {
-        const picture = hass.states[id].attributes.entity_picture;
+        const picture = ownPath(hass.states[id].attributes.entity_picture, hass);
         if (picture) return picture;
     }
     return null;

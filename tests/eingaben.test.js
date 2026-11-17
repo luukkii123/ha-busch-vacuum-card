@@ -166,3 +166,55 @@ test('M28 Editor: fremder Bildserver steht im Hinweis des URL-Felds mit Host; ei
   assert.match(hinweis('https://bilder.invalid/plan.png'), /fremden Server.*bilder\.invalid.*jeden Aufruf/);
   for (const url of ['/local/plan.png', EIGEN + '/local/plan.png', 'data:image/png;base64,iVBORw0KGgo=']) assert.doesNotMatch(hinweis(url), /fremden Server/, url);
 });
+
+// ── M43 Adressen aus Attributen nur auf die eigene Instanz ──────────────────
+
+const FREMD = 'https://evil.invalid';
+/** Fixture voll; `ersetze` biegt jede /api/-Adresse der Attribute auf einen anderen Ursprung. */
+function attributAufbau(ersetze) {
+  const u = neueUmgebung(), haus = hausAus('voll', { basis: EIGEN });
+  const abrufe = require('./attrappe.js').verlaufsAbruf(u);
+  if (ersetze) haus.states = JSON.parse(JSON.stringify(haus.states).replace(/"\/api\//g, '"' + ersetze + '/api/'));
+  const karte = neueKarte(u, haus);
+  return { u, haus, karte, abrufe };
+}
+/** Alle src/href in Karte und offenem Dialog nach Kartenverwaltung und Sicherungsliste. */
+function adressen(k) {
+  const sammle = (wurzel) => wurzel.all().flatMap((n) => ['src', 'href'].map((a) => n.attributes && n.attributes[a]).filter(Boolean));
+  const liste = sammle(k.karte.shadowRoot);
+  menuePunkt(k, 'maps');
+  liste.push(...sammle(dialogVon(k.u).shadowRoot));
+  $d(k.u, '[data-map="3"]').querySelectorAll('[data-action="backups"]')[0].click();
+  liste.push(...sammle(dialogVon(k.u).shadowRoot));
+  return liste.concat(k.abrufe.map((a) => a.url));
+}
+
+test('M43 historyUrl: nur /api/-Adressen der Kamera; fremde, //host- und javascript:-Basen ergeben null', () => {
+  const I = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  const kamera = (url) => ({ attributes: { cleaning_history_picture: { a: url } } });
+  const lauf = { timestamp: 1794228429 };
+  assert.match(I.historyUrl(kamera('/api/camera_history_map_proxy/camera.robo_map?token=t&index=1&v=1794228429'), lauf), /^\/api\//);
+  for (const url of ['https://evil.invalid/api/x?token=t&v=1794228429', '//evil.invalid/api/x?v=1794228429', 'javascript:alert(1)//?v=1794228429']) {
+    assert.equal(I.historyUrl(kamera(url), lauf), null, url);
+    assert.equal(I.historyUrl(kamera(url), lauf, { data: true }), null, url + ' (Daten)');
+  }
+});
+
+test('M43 Fremdadresse in Kameraattributen: kein src, kein href, kein fetch dorthin (Karte, Kartenverwaltung, Sicherungen)', async () => {
+  const echt = attributAufbau(null);
+  await mikro();
+  const normal = adressen(echt);
+  assert.ok(normal.some((a) => /camera_proxy/.test(a)), 'Gegenprobe: Kartenbild aus entity_picture');
+  assert.ok(normal.some((a) => /camera_recovery_map_proxy.*file=1/.test(a)), 'Gegenprobe: Download-Link');
+  const boese = attributAufbau(FREMD);
+  await mikro();
+  assert.deepEqual(adressen(boese).filter((a) => a.includes('evil.invalid')), []);
+  assert.deepEqual(boese.u.fehler, []);
+});
+
+test('M43 eigene volle Adresse (hass.hassUrl) bleibt erlaubt', async () => {
+  const k = attributAufbau(EIGEN);
+  await mikro();
+  const liste = adressen(k);
+  assert.ok(liste.some((a) => a.startsWith(EIGEN + '/api/camera_recovery_map_proxy/')), 'Sicherungsbilder der eigenen Instanz');
+});

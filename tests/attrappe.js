@@ -196,7 +196,7 @@ function neuesHaus({ states, entities = {}, services = {}, devices, sprache = 'd
     formatEntityState: (s, zustand = s.state) => (ZUSTAND[zustand] || zustand) + (s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : ''),
     callService: (domain, service, data) => { haus.rufe.push({ domain, service, data }); return haus.antwort(domain, service, data); },
     // `basis` (M29): hass.hassUrl wie im Frontend; Vorgabe ohne, dann bleiben Pfade relativ wie bisher.
-    ...(haus.basis ? { hassUrl: (pfad = '') => haus.basis + pfad } : {}),
+    ...(haus.basis ? { hassUrl: (pfad = '') => (/^https?:\/\//i.test(pfad) ? pfad : haus.basis + pfad) } : {}),
   });
   haus.states = states;
   /** Neuer Zustand wie von HA: neues states-Objekt, nur die genannten Einträge ersetzt. */
