@@ -13,7 +13,7 @@ test('M5 ein Dienstweg: callService( genau einmal, in callDevice', () => {
 });
 
 // M9: Zähler, die nur sinken dürfen. KOPF_GRENZE = Funktionsköpfe mit mehr als 4 Parametern in Karteneditor und Sicherung.
-const KOPF_GRENZE = 39;
+const KOPF_GRENZE = 0;
 /** Zeilen [von, bis) einer Klasse: vom Kopf bis zur ersten Zeile „}“ am Zeilenanfang. */
 function klassenZeilen(zeilen, kopf) {
   const von = zeilen.findIndex((z) => z.startsWith(kopf));

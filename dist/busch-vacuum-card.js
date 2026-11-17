@@ -14517,7 +14517,7 @@ class MapEditSession {
 
     /** vacuum_backup_map, then wait for map_backup_status Running → Success/Idle (state updates, 60 s). */
     backup(grant, mapId = this.mapId) {
-        return this._awaitStatus(grant, 'map_backup_status', 'vacuum_backup_map', { map_id: mapId }, BACKUP_TIMEOUT_MS, 'kartenSicherungZeit');
+        return this._awaitStatus(grant, { attr: 'map_backup_status', service: 'vacuum_backup_map', data: { map_id: mapId }, timeoutMs: BACKUP_TIMEOUT_MS, timeoutKey: 'kartenSicherungZeit' });
     }
 
     /**
@@ -14525,7 +14525,8 @@ class MapEditSession {
      * (backup: map_backup_status, restore: map_recovery_status): send, then
      * wait Running → Success/Idle from state updates (no polling) or time out.
      */
-    _awaitStatus(grant, attr, service, data, timeoutMs, timeoutKey) {
+    _awaitStatus(grant, job) {
+        const { attr, service, data, timeoutMs, timeoutKey } = job;
         return new Promise((resolve, reject) => {
             // A stale "Success"/"Failed" of an earlier run counts only once the status moved.
             // M20: a changed list of stored states is a second signal once the service answered (Running may fall between two polls).
@@ -14596,7 +14597,7 @@ class MapEditSession {
                     // map-backup: a restore ends in map_recovery_status, not in the service's answer.
                     this.busy = call.busy || 'save';
                     rerender(this.card);
-                    await this._awaitStatus(grant, call.wait, call.service, call.data, call.timeout || BACKUP_TIMEOUT_MS, call.timeoutKey || 'kartenSicherungZeit');
+                    await this._awaitStatus(grant, { attr: call.wait, service: call.service, data: call.data, timeoutMs: call.timeout || BACKUP_TIMEOUT_MS, timeoutKey: call.timeoutKey || 'kartenSicherungZeit' });
                 } else await mapWrite(this.card, grant, call.service, call.data);
                 written++;
             }
@@ -15205,13 +15206,14 @@ function mapsView(card) {
                 note.appendChild(undo);
                 body.appendChild(note);
             }
-            if (temporary) body.appendChild(temporaryBlock(card, model, hass, dialog, view, sessions, entries));
+            const ctx = { card, model, hass, dialog, home: view, sessions };
+            if (temporary) body.appendChild(temporaryBlock(ctx, entries));
             if (!entries.length || model.attr('has_saved_map') === false) body.appendChild(noteLine(translate(hass, 'keineKarte')));
             const list = document.createElement('div');
             list.className = 'settings-list maps-list';
-            for (const { entry, name, active: current } of entries) list.appendChild(mapRow(card, model, hass, dialog, view, sessions, entry, name, current));
+            for (const { entry, name, active: current } of entries) list.appendChild(mapRow(ctx, entry, name, current));
             if (entries.length) body.appendChild(list);
-            const fresh = viewSection(hass, 'kartenNeu', newMapActions(card, model, hass, dialog, view, sessions, active));
+            const fresh = viewSection(hass, 'kartenNeu', newMapActions(ctx, active));
             if (fresh) {
                 fresh.classList.add('map-new');
                 body.appendChild(fresh);
@@ -15222,7 +15224,8 @@ function mapsView(card) {
 }
 
 /** One stored map: preview, name, active mark (not colour alone, R17), select / rename / delete. */
-function mapRow(card, model, hass, dialog, home, sessions, entry, name, current) {
+function mapRow(ctx, entry, name, current) {
+    const { card, model, hass, dialog, home, sessions } = ctx;
     const row = document.createElement('div');
     row.className = 'setting map-entry';
     row.setAttribute('data-map', String(entry.id));
@@ -15271,7 +15274,7 @@ function mapRow(card, model, hass, dialog, home, sessions, entry, name, current)
     }
     if (model.can('dreame_vacuum.vacuum_delete_map')) {
         const remove = BuschUI.action({ label: translate(hass, 'loeschen') + ': ' + name, icon: 'mdi:delete-outline', variant: 'icon-only', disabled: temporary || busy,
-            onClick: () => dialog.show(deleteMapConfirm(card, home, mapSessionFor(card, sessions, entry), entry, model)) });
+            onClick: () => dialog.show(deleteMapConfirm(ctx, mapSessionFor(card, sessions, entry), entry)) });
         remove.setAttribute('data-action', 'delete');
         group.appendChild(remove);
     }
@@ -15282,7 +15285,8 @@ function mapRow(card, model, hass, dialog, home, sessions, entry, name, current)
 }
 
 /** Delete (D#L6896): names the map; without multi-floor the device deletes every map (comment D#L6915). */
-function deleteMapConfirm(card, home, session, entry, model) {
+function deleteMapConfirm(ctx, session, entry) {
+    const { card, home, model } = ctx;
     const hass = card.hass;
     const lines = [translate(hass, 'kartenLoeschenZeile', { karte: mapEntryName(entry) })];
     if (model.attr('multi_floor_map') !== true) lines.push(translate(hass, 'kartenLoeschtAlle'));
@@ -15380,7 +15384,8 @@ function renameMapView(card, home, session, entry) {
  * mapping through device-settings' callAction — after a confirmation whose click
  * first backs up the active stored map (Sicherheitsrahmen 2), never before.
  */
-function newMapActions(card, model, hass, dialog, home, sessions, active) {
+function newMapActions(ctx, active) {
+    const { card, model, hass, dialog, home, sessions } = ctx;
     const nodes = [];
     if (model.can('dreame_vacuum.vacuum_call_action')) {
         for (const key of ['start_mapping', 'start_fast_mapping']) {
@@ -15422,27 +15427,28 @@ function newMapActions(card, model, hass, dialog, home, sessions, active) {
 }
 
 /** Temporary map (ALL-13): save, discard, replace a stored one — each confirmed, none undoable. */
-function temporaryBlock(card, model, hass, dialog, home, sessions, entries) {
+function temporaryBlock(ctx, entries) {
+    const { card, model, hass, dialog, home, sessions } = ctx;
     const box = document.createElement('div');
     box.className = 'temporary-map';
     box.appendChild(noteLine(translate(hass, 'temporaerText'), 'warning'));
     const session = mapSessionFor(card, sessions, null);
-    const ask = (title, line, service, data, destructive) => dialog.show(mapConfirm(card, session, {
+    const ask = (title, line, { service, data }, destructive) => dialog.show(mapConfirm(card, session, {
         title, lines: [line], action: title, destructive, irreversible: true, calls: [{ service, data }], done: (d) => d.backTo(home)
     }));
     const actions = document.createElement('div');
     actions.className = 'actions';
-    const add = (action, key, service, onClick, variant) => {
+    const add = (action, key, service, { onClick, variant }) => {
         if (!model.can('dreame_vacuum.' + service)) return;
         const label = translate(hass, key);
         const button = BuschUI.action({ label, text: label, variant, onClick });
         button.setAttribute('data-action', action);
         actions.appendChild(button);
     };
-    add('save_temporary', 'temporaerSpeichern', 'vacuum_save_temporary_map', () => ask(translate(hass, 'temporaerSpeichern'), translate(hass, 'temporaerSpeichernZeile'), 'vacuum_save_temporary_map', {}, false), 'primary');
-    add('discard_temporary', 'temporaerVerwerfen', 'vacuum_discard_temporary_map', () => ask(translate(hass, 'temporaerVerwerfen'), translate(hass, 'temporaerVerwerfenZeile'), 'vacuum_discard_temporary_map', {}, true), 'destructive');
+    add('save_temporary', 'temporaerSpeichern', 'vacuum_save_temporary_map', { onClick: () => ask(translate(hass, 'temporaerSpeichern'), translate(hass, 'temporaerSpeichernZeile'), { service: 'vacuum_save_temporary_map', data: {} }, false), variant: 'primary' });
+    add('discard_temporary', 'temporaerVerwerfen', 'vacuum_discard_temporary_map', { onClick: () => ask(translate(hass, 'temporaerVerwerfen'), translate(hass, 'temporaerVerwerfenZeile'), { service: 'vacuum_discard_temporary_map', data: {} }, true), variant: 'destructive' });
     if (entries.length) {
-        add('replace_temporary', 'temporaerErsetzen', 'vacuum_replace_temporary_map', () => dialog.show({
+        add('replace_temporary', 'temporaerErsetzen', 'vacuum_replace_temporary_map', { onClick: () => dialog.show({
             title: translate(hass, 'temporaerErsetzen'),
             id: 'map-temporary',
             kind: 'editor',
@@ -15451,14 +15457,14 @@ function temporaryBlock(card, model, hass, dialog, home, sessions, entries) {
                 const list = document.createElement('div');
                 list.className = 'menu floors';
                 for (const { entry, name } of entries) {
-                    const button = BuschUI.action({ label: name, text: name, variant: 'quiet', onClick: () => ask(translate(h, 'temporaerErsetzen'), translate(h, 'temporaerErsetzenZeile', { karte: name }), 'vacuum_replace_temporary_map', { map_id: entry.id }, true) });
+                    const button = BuschUI.action({ label: name, text: name, variant: 'quiet', onClick: () => ask(translate(h, 'temporaerErsetzen'), translate(h, 'temporaerErsetzenZeile', { karte: name }), { service: 'vacuum_replace_temporary_map', data: { map_id: entry.id } }, true) });
                     button.classList.add('menu-item');
                     button.setAttribute('data-replace', String(entry.id));
                     list.appendChild(button);
                 }
                 body.appendChild(list);
             }
-        }));
+        }) });
     }
     box.appendChild(actions);
     if (session.error) box.appendChild(noteLine(session.error.text, 'error'));
@@ -15818,7 +15824,7 @@ function mapEditView(card, mapId, quick = null) {
                 editor.quick = quick;
                 editor.enter();
             }
-            editRender(card, editor, body, hass, dialog);
+            editRender({ card, editor, hass }, body, dialog);
         }
     };
     return view;
@@ -15857,7 +15863,8 @@ function quickPick(card, editor, found) {
     if (!pick) editor.quickNote = 'blaseNichtGefunden';
 }
 
-function editRender(card, editor, body, hass, dialog) {
+function editRender(ed, body, dialog) {
+    const { card, editor, hass } = ed;
     const m = card.map;
     if (editor.quickNote) body.appendChild(noteLine(translate(hass, editor.quickNote), 'locked'));
     if (card.locked) body.appendChild(noteLine(translate(hass, 'kartenSperreAufgehoben')));
@@ -16039,8 +16046,8 @@ function roomsPanel(card, editor, body, hass) {
         }
         body.appendChild(list);
     }
-    if (editor.split) return splitPanel(card, editor, body, hass, rooms);
-    if (editor.merge) return mergePanel(card, editor, body, hass, rooms);
+    if (editor.split) return splitPanel({ card, editor, hass }, body, rooms);
+    if (editor.merge) return mergePanel({ card, editor, hass }, body, rooms);
     const room = rooms.find((r) => r.id === editor.room);
     if (!room) {
         body.appendChild(noteLine(translate(hass, 'raumWaehlenHinweis')));
@@ -16121,7 +16128,7 @@ function roomsPanel(card, editor, body, hass) {
         }
     }
     body.appendChild(form);
-    roomActions(card, editor, body, hass, id);
+    roomActions({ card, editor, hass }, body, id);
 }
 
 // ── Split and merge (map-editor Task 6: EDI-03) — not undoable: own confirmation at once ──
@@ -16130,28 +16137,29 @@ function roomsPanel(card, editor, body, hass) {
 const splitLimit = (model) => (model.can('map_v2') ? 29 : 49);
 
 /** Split and merge under the form; both wait for a clean draft (they change the rooms at once, the draft's ids would be stale). */
-function roomActions(card, editor, body, hass, id) {
+function roomActions(ed, body, id) {
+    const { card, editor, hass } = ed;
     const model = card.model();
     const dirty = editor.dirty();
     const actions = document.createElement('div');
     actions.className = 'actions';
-    const add = (service, key, name, icon, onClick) => {
+    const add = (service, key, name, { icon, onClick }) => {
         if (!model.can('dreame_vacuum.' + service)) return;
         const label = translate(hass, key);
         const button = BuschUI.action({ label, text: label, icon, variant: 'secondary', disabled: dirty, onClick });
         button.setAttribute('data-action', name);
         actions.appendChild(button);
     };
-    add('vacuum_split_segments', 'raumTeilen', 'room-split', 'mdi:call-split', () => {
+    add('vacuum_split_segments', 'raumTeilen', 'room-split', { icon: 'mdi:call-split', onClick: () => {
         editor.split = { room: id, line: { x0: null, y0: null, x1: null, y1: null } };
         EDIT_TOOLS.rooms.enter(card, editor);
         editor.changed();
-    });
-    add('vacuum_merge_segments', 'raumZusammen', 'room-merge', 'mdi:call-merge', () => {
+    } });
+    add('vacuum_merge_segments', 'raumZusammen', 'room-merge', { icon: 'mdi:call-merge', onClick: () => {
         editor.merge = [id];
         EDIT_TOOLS.rooms.enter(card, editor);
         editor.changed();
-    });
+    } });
     if (!actions.childNodes.length) return;
     body.appendChild(actions);
     if (dirty) body.appendChild(noteLine(translate(hass, 'raumOffenZuerst'), 'locked'));
@@ -16204,7 +16212,8 @@ function setSplitLine(card, editor, line) {
 /** Line keys (R15): arrows 50 mm, with Shift 10 mm, along the screen's axes as dragging. */
 const splitKeyStep = (event) => (event.shiftKey ? 10 : 50);
 
-function splitPanel(card, editor, body, hass, rooms) {
+function splitPanel(ed, body, rooms) {
+    const { card, editor, hass } = ed;
     const room = rooms.find((r) => r.id === editor.split.room);
     const label = room ? room.label : String(editor.split.room);
     body.appendChild(noteLine(translate(hass, 'raumGewaehltZeile', { raum: label })));
@@ -16271,7 +16280,8 @@ function splitPanel(card, editor, body, hass, rooms) {
     body.appendChild(actions);
 }
 
-function mergePanel(card, editor, body, hass, rooms) {
+function mergePanel(ed, body, rooms) {
+    const { card, editor, hass } = ed;
     const name = (id) => {
         const room = rooms.find((r) => r.id === id);
         return room ? room.label : String(id);
@@ -16472,7 +16482,7 @@ const centreShapeAt = (p) => ({ x0: p.x - 400, y0: p.y - 400, x1: p.x + 400, y1:
 /** An object tool's registry entry (EDIT_TOOLS): the same panel, map, layer and hit for every kind it edits. */
 function objectTool(tool) {
     return {
-        panel: (card, editor, body, hass) => objectsPanel(card, editor, body, hass, tool),
+        panel: (card, editor, body, hass) => objectsPanel({ card, editor, hass }, body, tool),
         enter: (card, editor) => {
             editor.pick = null;
             editor.objDrag = null;
@@ -16480,7 +16490,7 @@ function objectTool(tool) {
             card.map.setMode('draw-rect');
         },
         onMap: (card, editor, e) => objectsOnMap(card, editor, e, tool),
-        draw: (card, editor, group, ctx) => objectsDraw(card, editor, group, ctx, tool),
+        draw: (card, editor, group, ctx) => objectsDraw({ card, editor, tool }, group, ctx),
         hit: (card, editor, point) => {
             const h = objectsHit(card, editor, point, tool);
             return h ? { id: [h.list, h.i, h.part || 'body', h.j === undefined ? '' : h.j].join(':'), object: h } : null;
@@ -16536,7 +16546,8 @@ function objectRefused(card, editor, kind, shape) {
     return !!key;
 }
 
-function setObject(card, editor, list, i, shape) {
+function setObject(card, editor, at, shape) {
+    const { list, i } = at;
     const kind = EDIT_KINDS[list];
     const fitted = kind.fit(shape, editMin(card));
     if (objectRefused(card, editor, kind, fitted)) return;
@@ -16546,7 +16557,8 @@ function setObject(card, editor, list, i, shape) {
 }
 
 /** A new object; `template` = the entry it starts from (furniture: id −1 and the chosen type). */
-function addObject(card, editor, list, shape, template = null) {
+function addObject(card, editor, at, shape) {
+    const { list, template = null } = at;
     const kind = EDIT_KINDS[list];
     const fitted = kind.fit(shape, editMin(card));
     if (kind.max && (editor.lists()[list] || []).length >= kind.max) {
@@ -16604,9 +16616,11 @@ function objectName(hass, list, n, entry) {
 const objectKeyStep = (event) => (event.shiftKey ? 10 : 50);
 
 /** Panel of an object tool: what to add, the objects per kind with their state, the chosen one's form. */
-function objectsPanel(card, editor, body, hass, tool) {
+function objectsPanel(base, body, tool) {
+    const { card, editor, hass } = base;
     const kinds = toolKinds(editor, tool);
     const lock = objectsLock(editor, tool);
+    const ed = { card, editor, hass, lock };
     const hooks = OBJECT_HOOKS[tool] || {};
     if (lock) body.appendChild(noteLine(translate(hass, lock), 'locked'));
     if (editor.objError) body.appendChild(noteLine(translate(hass, editor.objError), 'error'));
@@ -16616,19 +16630,21 @@ function objectsPanel(card, editor, body, hass, tool) {
     // Fixed kinds (walls, doors) have no public way to add or delete: no "Hinzufügen", the hint says so.
     const fixed = kinds.length > 0 && kinds.every((list) => EDIT_KINDS[list].fixed);
     if (fixed) {
-        if (hooks.addRow) hooks.addRow(card, editor, add, hass, lock);
+        if (hooks.addRow) hooks.addRow(ed, add);
         if (add.childNodes.length) body.appendChild(add);
         body.appendChild(noteLine(translate(hass, 'kartenObjHinweis_' + tool)));
-    } else objectsAdd(card, editor, body, hass, tool, kinds, lock, hooks, add);
-    for (const list of kinds) body.appendChild(objectList(card, editor, hass, list, lock, hooks.show));
+    } else objectsAdd(ed, body, tool, { kinds, hooks, add });
+    for (const list of kinds) body.appendChild(objectList(ed, list, hooks.show));
     const pick = editor.pick;
     const entry = pick && (editor.lists()[pick.list] || [])[pick.i];
-    if (entry && kinds.includes(pick.list)) objectForm(card, editor, body, hass, tool, pick, entry, lock);
-    if (hooks.panel) hooks.panel(card, editor, body, hass, lock);
+    if (entry && kinds.includes(pick.list)) objectForm(ed, body, tool, { pick, entry });
+    if (hooks.panel) hooks.panel(ed, body);
 }
 
 /** The add row of an object tool: kind, tool extras, "Hinzufügen" (+ in the middle of the view), the limit, the hint. */
-function objectsAdd(card, editor, body, hass, tool, kinds, lock, hooks, add) {
+function objectsAdd(ed, body, tool, more) {
+    const { card, editor, hass, lock } = ed;
+    const { kinds, hooks, add } = more;
     if (kinds.length > 1) {
         const select = document.createElement('select');
         for (const list of kinds) {
@@ -16644,13 +16660,13 @@ function objectsAdd(card, editor, body, hass, tool, kinds, lock, hooks, add) {
         });
         add.appendChild(formField('edit-kind', translate(hass, 'kartenArt'), select, '').wrap);
     }
-    if (hooks.addRow) hooks.addRow(card, editor, add, hass, lock);
+    if (hooks.addRow) hooks.addRow(ed, add);
     const addKind = EDIT_KINDS[editor.addKinds[tool]];
     const full = !!addKind.max && (editor.lists()[editor.addKinds[tool]] || []).length >= addKind.max;
     const label = translate(hass, 'kartenHinzufuegen', { art: translate(hass, 'kartenEins_' + editor.addKinds[tool]) });
     const plus = BuschUI.action({ label, text: label, icon: 'mdi:plus-box-outline', variant: 'secondary', disabled: !!lock || full || !card.mapCentre(), onClick: () => {
         const shape = centreShape(card, editor.addKinds[tool]);
-        if (shape) addObject(card, editor, editor.addKinds[tool], shape, hooks.template ? hooks.template(card, editor) : null);
+        if (shape) addObject(card, editor, { list: editor.addKinds[tool], template: hooks.template ? hooks.template(card, editor) : null }, shape);
     } });
     plus.setAttribute('data-action', 'edit-add');
     add.appendChild(plus);
@@ -16660,7 +16676,8 @@ function objectsAdd(card, editor, body, hass, tool, kinds, lock, hooks, add) {
 }
 
 /** The objects of one kind: a button per object (state as text, R17), removed ones with "Zurückholen". */
-function objectList(card, editor, hass, list, lock, show = null) {
+function objectList(ed, list, show = null) {
+    const { editor, hass, lock } = ed;
     const art = editListLabel(hass, list);
     const box = document.createElement('div');
     box.className = 'edit-list';
@@ -16702,14 +16719,16 @@ function objectList(card, editor, hass, list, lock, show = null) {
             button.setAttribute('data-state', row.state);
             button.setAttribute('data-state-text', words);
         }
-        button.addEventListener('keydown', (event) => objectKey(card, editor, event, list, row.i, lock));
+        button.addEventListener('keydown', (event) => objectKey(ed, event, { list, i: row.i }));
         box.appendChild(button);
     }
     return box;
 }
 
 /** Keys on an object's entry (R03/R15): arrows move it 50 mm (Shift 10 mm) along the screen, Delete removes it. */
-function objectKey(card, editor, event, list, i, lock) {
+function objectKey(ed, event, at) {
+    const { card, editor, lock } = ed;
+    const { list, i } = at;
     if (lock) return;
     const dir = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[event.key];
     const entry = (editor.lists()[list] || [])[i];
@@ -16717,7 +16736,7 @@ function objectKey(card, editor, event, list, i, lock) {
     if (dir) {
         event.preventDefault();
         editor.pick = { list, i };
-        setObject(card, editor, list, i, shapeMove(EDIT_KINDS[list].toShape(entry), shapeStep(card.map, dir, objectKeyStep(event))));
+        setObject(card, editor, { list, i }, shapeMove(EDIT_KINDS[list].toShape(entry), shapeStep(card.map, dir, objectKeyStep(event))));
     } else if ((event.key === 'Delete' || event.key === 'Backspace') && !EDIT_KINDS[list].fixed) {
         event.preventDefault();
         removeObject(editor, list, i);
@@ -16725,7 +16744,9 @@ function objectKey(card, editor, event, list, i, lock) {
 }
 
 /** Form of the chosen object: coordinates in robot mm (R15, number fields ±50 mm, Shift 10 mm), smallest size, remove. */
-function objectForm(card, editor, body, hass, tool, pick, entry, lock) {
+function objectForm(ed, body, tool, sel) {
+    const { card, editor, hass, lock } = ed;
+    const { pick, entry } = sel;
     const kind = EDIT_KINDS[pick.list];
     const shape = kind.toShape(entry);
     const { name } = objectName(hass, pick.list, pick.i + 1, entry);
@@ -16750,13 +16771,13 @@ function objectForm(card, editor, body, hass, tool, pick, entry, lock) {
         input.addEventListener('change', () => {
             const v = Number(input.value);
             if (input.value === '' || !Number.isFinite(v)) return rerender(card); // keeps the old value (R10)
-            return setObject(card, editor, pick.list, pick.i, shapeWith(key, v));
+            return setObject(card, editor, pick, shapeWith(key, v));
         });
         input.addEventListener('keydown', (event) => {
             const sign = { ArrowUp: 1, ArrowDown: -1 }[event.key];
             if (!sign || lock) return;
             event.preventDefault();
-            setObject(card, editor, pick.list, pick.i, shapeWith(key, value(key) + sign * objectKeyStep(event)));
+            setObject(card, editor, pick, shapeWith(key, value(key) + sign * objectKeyStep(event)));
         });
         fields.appendChild(field.wrap);
     }
@@ -16764,7 +16785,7 @@ function objectForm(card, editor, body, hass, tool, pick, entry, lock) {
     if (kind.shape !== 'point') form.appendChild(noteLine(translate(hass, 'kartenMindest', { mm: editMin(card) })));
     form.appendChild(noteLine(translate(hass, pick.list === 'router' ? 'routerTasten' : kind.fixed ? 'waendeTasten' : 'kartenObjTasten')));
     const hooks = OBJECT_HOOKS[tool];
-    if (hooks && hooks.form) hooks.form(card, editor, form, hass, pick, entry, lock);
+    if (hooks && hooks.form) hooks.form(ed, form, sel);
     if (editor.objError) form.appendChild(noteLine(translate(hass, editor.objError), 'error'));
     if (!kind.fixed) {
         const actions = document.createElement('div');
@@ -16853,16 +16874,17 @@ function objectsOnMap(card, editor, e, tool) {
     if (d.phase === 'end') {
         editor.objDrag = null;
         const hooks = OBJECT_HOOKS[tool];
-        return g.i === null ? addObject(card, editor, g.list, g.shape, hooks && hooks.template ? hooks.template(card, editor) : null) : setObject(card, editor, g.list, g.i, g.shape);
+        return g.i === null ? addObject(card, editor, { list: g.list, template: hooks && hooks.template ? hooks.template(card, editor) : null }, g.shape) : setObject(card, editor, g, g.shape);
     }
     card.map.refresh('editor'); // R20: only the own layer while dragging
     return undefined;
 }
 
 /** The tool's objects on the layer editor: state as pattern (data-state, R17), removed ones faint, handles of the chosen one. */
-function objectsDraw(card, editor, group, ctx, tool) {
+function objectsDraw(ed, group, ctx) {
+    const { card, editor, tool } = ed;
     const g = editor.objDrag, pick = editor.pick;
-    const node = (list, shape, attrs, entry, n) => {
+    const node = (list, shape, attrs, { entry, n }) => {
         const kind = EDIT_KINDS[list];
         if (kind.shape === 'point') {
             delete attrs.round;
@@ -16897,9 +16919,9 @@ function objectsDraw(card, editor, group, ctx, tool) {
             const shape = dragged ? g.shape : EDIT_KINDS[list].toShape(row.entry);
             const chosen = !!pick && pick.list === list && pick.i === row.i;
             node(list, shape, { 'data-edit': list, 'data-item': row.i === null ? 'removed:' + row.origin : row.i, 'data-state': row.state || 'same', 'data-chosen': String(chosen),
-                round: !!EDIT_KINDS[list].round && EDIT_KINDS[list].round(row.entry) }, row.entry, (row.i === null ? row.origin : row.i) + 1);
+                round: !!EDIT_KINDS[list].round && EDIT_KINDS[list].round(row.entry) }, { entry: row.entry, n: (row.i === null ? row.origin : row.i) + 1 });
         }
-        if (g && g.i === null && g.list === list) node(list, g.shape, { 'data-edit': list, 'data-state': 'new', 'data-chosen': 'true' }, null, '+');
+        if (g && g.i === null && g.list === list) node(list, g.shape, { 'data-edit': list, 'data-state': 'new', 'data-chosen': 'true' }, { entry: null, n: '+' });
     }
     const chosen = pick && (editor.lists()[pick.list] || [])[pick.i];
     if (!chosen || EDIT_KINDS[pick.list].handles === false) return;
@@ -16945,7 +16967,8 @@ const detectedName = (hass, editor, id) => translate(hass, 'teppichErkannt', { n
 const ownCarpetName = (hass, editor, id) => translate(hass, 'kartenEins_carpets') + ' ' + ((editor.base.carpets || []).findIndex((e) => e[4] === id) + 1);
 
 /** A labelled select of the editor (R10): `data-field` = name. */
-function editSelect(name, label, value, options, disabled, onChange) {
+function editSelect(name, label, value, opts) {
+    const { options, disabled, onChange } = opts;
     const select = document.createElement('select');
     for (const [v, text] of options) {
         const option = document.createElement('option');
@@ -16960,7 +16983,8 @@ function editSelect(name, label, value, options, disabled, onChange) {
 }
 
 /** Cleaning of one carpet (existing id): select plus the preferences of carpet_cleanset_v3. */
-function carpetCleaningFields(card, editor, box, hass, key, lock) {
+function carpetCleaningFields(ed, box, key) {
+    const { card, editor, hass, lock } = ed;
     const features = editor.toolCaps.carpets.features;
     if (!features.cleaning) return;
     const entry = (editor.lists().carpet_cleanings || []).find((e) => e[0] === key);
@@ -16968,7 +16992,7 @@ function carpetCleaningFields(card, editor, box, hass, key, lock) {
     const [, id, type, cleaning, bits] = entry;
     const set = (next) => setRoomEntry(editor, 'carpet_cleaning', 'carpet_cleanings', next);
     const options = carpetCleaningCodes(card).map((c) => [c, carpetCleaningLabel(hass, c)]);
-    box.appendChild(editSelect('carpet-cleaning', translate(hass, 'teppichReinigung'), cleaning, options, !!lock, (v) => set([key, id, type, Number(v), bits])));
+    box.appendChild(editSelect('carpet-cleaning', translate(hass, 'teppichReinigung'), cleaning, { options, disabled: !!lock, onChange: (v) => set([key, id, type, Number(v), bits]) }));
     if (!features.preferences || cleaning === -1) return;
     const model = card.model();
     for (const [bit, name, cap] of CARPET_PREFS) {
@@ -16997,21 +17021,24 @@ function setCarpetHidden(editor, rect, hidden) {
 }
 
 /** Own carpet form: shape (square/round), type in the 7th value, cleaning once it has an id. */
-function carpetForm(card, editor, form, hass, pick, entry, lock) {
+function carpetForm(ed, form, sel) {
+    const { editor, hass, lock } = ed;
+    const { pick, entry } = sel;
     if (pick.list !== 'carpets') return;
     const features = editor.toolCaps.carpets.features;
     const set = (index, value) => changeObjects(editor, 'carpets', (entries) => {
         entries[pick.i] = entries[pick.i].slice();
         entries[pick.i][index] = value;
     });
-    if (features.shape) form.appendChild(editSelect('edit-ellipse', translate(hass, 'teppichForm'), entry[5] ? 1 : 0, [[0, translate(hass, 'teppichEckig')], [1, translate(hass, 'teppichRund')]], !!lock, (v) => set(5, Number(v))));
-    if (features.type) form.appendChild(editSelect('carpet-type', translate(hass, 'teppichTyp'), entry[6], carpetTypeCodes(editor).map((c) => [c, translate(hass, 'boden_' + c)]), !!lock, (v) => set(6, Number(v))));
-    if (entry[4] >= 0) carpetCleaningFields(card, editor, form, hass, '1:' + entry[4], lock);
+    if (features.shape) form.appendChild(editSelect('edit-ellipse', translate(hass, 'teppichForm'), entry[5] ? 1 : 0, { options: [[0, translate(hass, 'teppichEckig')], [1, translate(hass, 'teppichRund')]], disabled: !!lock, onChange: (v) => set(5, Number(v)) }));
+    if (features.type) form.appendChild(editSelect('carpet-type', translate(hass, 'teppichTyp'), entry[6], { options: carpetTypeCodes(editor).map((c) => [c, translate(hass, 'boden_' + c)]), disabled: !!lock, onChange: (v) => set(6, Number(v)) }));
+    if (entry[4] >= 0) carpetCleaningFields(ed, form, '1:' + entry[4]);
     else if (features.cleaning) form.appendChild(noteLine(translate(hass, 'teppichReinigungSpaeter')));
 }
 
 /** Below the own carpets: detected ones (type, cleaning, hide — their shape belongs to the device) and the deleted areas. */
-function carpetsPanelEnd(card, editor, body, hass, lock) {
+function carpetsPanelEnd(ed, body) {
+    const { editor, hass, lock } = ed;
     const data = editor.data;
     const lists = editor.lists();
     const detected = (data && data.detectedCarpets) || [];
@@ -17047,9 +17074,9 @@ function carpetsPanelEnd(card, editor, body, hass, lock) {
             form.setAttribute('role', 'group');
             form.setAttribute('aria-label', translate(hass, 'kartenObjBearbeiten', { name }));
             const type = (lists.carpet_types || []).find((e) => e[0] === c.id);
-            if (features.type && type) form.appendChild(editSelect('carpet-type', translate(hass, 'teppichTyp'), type[1], carpetTypeCodes(editor).map((t) => [t, translate(hass, 'boden_' + t)]), !!lock,
-                (v) => setRoomEntry(editor, 'carpet_type', 'carpet_types', [c.id, Number(v)])));
-            carpetCleaningFields(card, editor, form, hass, '0:' + c.id, lock);
+            if (features.type && type) form.appendChild(editSelect('carpet-type', translate(hass, 'teppichTyp'), type[1], { options: carpetTypeCodes(editor).map((t) => [t, translate(hass, 'boden_' + t)]), disabled: !!lock,
+                onChange: (v) => setRoomEntry(editor, 'carpet_type', 'carpet_types', [c.id, Number(v)]) }));
+            carpetCleaningFields(ed, form, '0:' + c.id);
             const label = translate(hass, hidden ? 'teppichEinblenden' : 'teppichAusblenden');
             const toggle = BuschUI.action({ label: label + ': ' + name, text: label, icon: hidden ? 'mdi:eye-outline' : 'mdi:eye-off-outline', variant: 'secondary', disabled: !!lock,
                 onClick: () => setCarpetHidden(editor, c.rect, !hidden) });
@@ -17171,7 +17198,9 @@ const FURNITURE_ENUM = { 1: 'single_bed', 2: 'double_bed', 3: 'arm_chair', 4: 't
 const furnitureTypeOptions = (hass, types) => types.map((t) => [t, translate(hass, 'moebel_' + t)]);
 
 /** Furniture form: type (allowed ones), turn in 15° steps, size ±10 % around the centre, the room by roomAt. */
-function furnitureForm(card, editor, form, hass, pick, entry, lock) {
+function furnitureForm(ed, form, sel) {
+    const { card, editor, hass, lock } = ed;
+    const { pick, entry } = sel;
     const types = furnitureTypes(card.model());
     const change = (fn) => changeObjects(editor, 'furnitures', (entries) => {
         const e = entries[pick.i].slice();
@@ -17179,8 +17208,8 @@ function furnitureForm(card, editor, form, hass, pick, entry, lock) {
         e[10] = 1;
         entries[pick.i] = e;
     });
-    form.appendChild(editSelect('furniture-type', translate(hass, 'moebelTyp'), entry[1], furnitureTypeOptions(hass, types.includes(entry[1]) ? types : types.concat([entry[1]])), !!lock,
-        (v) => change((e) => { e[1] = Number(v); })));
+    form.appendChild(editSelect('furniture-type', translate(hass, 'moebelTyp'), entry[1], { options: furnitureTypeOptions(hass, types.includes(entry[1]) ? types : types.concat([entry[1]])), disabled: !!lock,
+        onChange: (v) => change((e) => { e[1] = Number(v); }) }));
     const room = entry[2] === null || entry[2] === undefined ? null : entry[2];
     form.appendChild(noteLine(room === null ? translate(hass, 'moebelOhneRaum') : translate(hass, 'moebelRaum', { raum: roomLabel(editor, room) })));
     form.appendChild(noteLine(translate(hass, 'moebelWinkel', { grad: entry[7] || 0 })));
@@ -17193,7 +17222,7 @@ function furnitureForm(card, editor, form, hass, pick, entry, lock) {
         actions.appendChild(b);
     };
     const turn = (deg) => change((e) => { e[7] = (((Number(e[7]) || 0) + deg) % 360 + 360) % 360; });
-    const scale = (f) => setObject(card, editor, 'furnitures', pick.i, EDIT_KINDS.furnitures.withField(Object.assign(entry.slice(), { 3: Math.round(entry[3] * f) }), 'height', Math.round(entry[4] * f)));
+    const scale = (f) => setObject(card, editor, { list: 'furnitures', i: pick.i }, EDIT_KINDS.furnitures.withField(Object.assign(entry.slice(), { 3: Math.round(entry[3] * f) }), 'height', Math.round(entry[4] * f)));
     button('moebelLinks', 'furniture-rotate-left', 'mdi:rotate-left', () => turn(-15));
     button('moebelRechts', 'furniture-rotate-right', 'mdi:rotate-right', () => turn(15));
     button('moebelKleiner', 'furniture-smaller', 'mdi:arrow-collapse-all', () => scale(1 / 1.1));
@@ -17202,19 +17231,20 @@ function furnitureForm(card, editor, form, hass, pick, entry, lock) {
 }
 
 /** Before "Hinzufügen": the type of the next piece of furniture (only allowed types). */
-function furnitureAddRow(card, editor, row, hass, lock) {
+function furnitureAddRow(ed, row) {
+    const { card, editor, hass, lock } = ed;
     const types = furnitureTypes(card.model());
     if (!types.includes(editor.furnitureType)) editor.furnitureType = types[0];
-    row.appendChild(editSelect('furniture-new-type', translate(hass, 'moebelNeuTyp'), editor.furnitureType, furnitureTypeOptions(hass, types), !!lock, (v) => {
+    row.appendChild(editSelect('furniture-new-type', translate(hass, 'moebelNeuTyp'), editor.furnitureType, { options: furnitureTypeOptions(hass, types), disabled: !!lock, onChange: (v) => {
         editor.furnitureType = Number(v);
         rerender(card);
-    }));
+    } }));
 }
 
 Object.assign(OBJECT_HOOKS, {
     furniture: { form: furnitureForm, addRow: furnitureAddRow, template: (card, editor) => [-1, editor.furnitureType || furnitureTypes(card.model())[0], null, 0, 0, 0, 0, 0, 1, 0, 1] },
     // A tap on free floor sets a point there (addObject checks floor and limit).
-    points: { tapEmpty: (card, editor, d) => addObject(card, editor, 'predefined_points', { x0: d.robot.x, y0: d.robot.y, x1: d.robot.x, y1: d.robot.y }) }
+    points: { tapEmpty: (card, editor, d) => addObject(card, editor, { list: 'predefined_points' }, { x0: d.robot.x, y0: d.robot.y, x1: d.robot.x, y1: d.robot.y }) }
 });
 
 // ── Walls and doors (map-editor Task 10: EDI-04) ────────────────────────────
@@ -17237,7 +17267,8 @@ function resetObjects(editor, list, which) {
 const WALLS_ALL_MAX = 12;
 
 /** Before the lists: the room whose walls are listed (doors always); all up to WALLS_ALL_MAX walls, else the first room. */
-function wallsAddRow(card, editor, row, hass) {
+function wallsAddRow(ed, row) {
+    const { card, editor, hass } = ed;
     const walls = editor.lists().walls || [];
     const rooms = [...new Set(walls.map((e) => e[0]))].sort((x, y) => Number(x) - Number(y));
     // A long list (live 56 walls in 7 rooms) starts with one room; a wall chosen on the map shows its room once.
@@ -17247,14 +17278,16 @@ function wallsAddRow(card, editor, row, hass) {
     if (pick && seen !== editor.wallPickSeen && editor.wallRoom !== '') editor.wallRoom = pick[0];
     editor.wallPickSeen = seen;
     if (editor.wallRoom !== '' && !rooms.includes(editor.wallRoom)) editor.wallRoom = '';
-    row.appendChild(editSelect('wall-room', translate(hass, 'waendeRaum'), editor.wallRoom, [['', translate(hass, 'waendeAlle')]].concat(rooms.map((r) => [r, roomLabel(editor, r)])), false, (v) => {
+    row.appendChild(editSelect('wall-room', translate(hass, 'waendeRaum'), editor.wallRoom, { options: [['', translate(hass, 'waendeAlle')]].concat(rooms.map((r) => [r, roomLabel(editor, r)])), disabled: false, onChange: (v) => {
         editor.wallRoom = v;
         rerender(card);
-    }));
+    } }));
 }
 
 /** In the form of a wall or door: back to its original position. */
-function wallForm(card, editor, form, hass, pick, entry, lock) {
+function wallForm(ed, form, sel) {
+    const { editor, hass, lock } = ed;
+    const { pick, entry } = sel;
     const label = translate(hass, 'waendeZuruecksetzen');
     const reset = BuschUI.action({ label, text: label, icon: 'mdi:backup-restore', variant: 'secondary', disabled: !!lock || !canReset(pick.list, entry),
         onClick: () => resetObjects(editor, pick.list, (e, i) => i === pick.i) });
@@ -17266,7 +17299,8 @@ function wallForm(card, editor, form, hass, pick, entry, lock) {
 }
 
 /** Below the lists: reset the chosen room's walls or everything; the count rule when it is broken. */
-function wallsPanelEnd(card, editor, body, hass, lock) {
+function wallsPanelEnd(ed, body) {
+    const { editor, hass, lock } = ed;
     const blocked = editor.blocked();
     if (blocked) body.appendChild(noteLine(translate(hass, blocked), 'error'));
     const lists = editor.lists();
@@ -17351,7 +17385,8 @@ function loadWifiImage(card, editor, url) {
 const wifiView = (card, editor) => (editor.wifiView || (wifiSource(card) ? 'wifi' : 'cleaning'));
 
 /** Switch cleaning map / WiFi map (only with a WiFi picture). */
-function wifiTabs(card, editor, row, hass) {
+function wifiTabs(ed, row) {
+    const { card, editor, hass } = ed;
     const src = wifiSource(card);
     if (!src) {
         row.appendChild(noteLine(translate(hass, 'wlanKeinBild')));
@@ -17375,7 +17410,8 @@ function wifiTabs(card, editor, row, hass) {
 }
 
 /** Below the router: no position known, the WiFi picture's state, the legend of the signal levels (R17: name, not only colour). */
-function wifiPanelEnd(card, editor, body, hass) {
+function wifiPanelEnd(ed, body) {
+    const { card, editor, hass } = ed;
     if (!(editor.lists().router || []).length) body.appendChild(noteLine(translate(hass, 'routerUnbekannt'), 'locked'));
     if (wifiView(card, editor) !== 'wifi') return;
     const src = wifiSource(card);
@@ -17425,7 +17461,7 @@ Object.assign(OBJECT_HOOKS, {
     wifi: { addRow: wifiTabs, panel: wifiPanelEnd, draw: wifiDraw, tapEmpty: (card, editor, d) => {
         if (!(editor.lists().router || []).length) return undefined;
         editor.pick = { list: 'router', i: 0 };
-        return setObject(card, editor, 'router', 0, { x0: d.robot.x, y0: d.robot.y, x1: d.robot.x, y1: d.robot.y });
+        return setObject(card, editor, { list: 'router', i: 0 }, { x0: d.robot.x, y0: d.robot.y, x1: d.robot.x, y1: d.robot.y });
     } }
 });
 
@@ -18209,8 +18245,9 @@ function backupsView(card, mapId) {
             body.appendChild(noteLine(translate(hass, 'kartenKarte', { karte: map.name })));
             body.append(...backupStatusLines(hass, model));
             if (!model.can('map_recovery') && !model.restricted) body.appendChild(noteLine(translate(hass, 'sicherungNurAnsehen')));
+            const ctx = { card, model, hass, dialog };
             for (const part of BACKUP_PARTS) {
-                const node = part(card, model, hass, dialog, view, map);
+                const node = part(ctx, view, map);
                 if (node) body.appendChild(node);
             }
             const entries = recoveryEntries(hass, model, map.entry.id);
@@ -18221,7 +18258,8 @@ function backupsView(card, mapId) {
             const list = document.createElement('ul');
             list.className = 'backup-list';
             list.setAttribute('role', 'list');
-            entries.forEach((entry, i) => list.appendChild(backupRow(card, model, hass, dialog, view, map, entry, i + 1)));
+            const rowCtx = Object.assign({ home: view, map }, ctx);
+            entries.forEach((entry, i) => list.appendChild(backupRow(rowCtx, entry, i + 1)));
             body.appendChild(list);
         }
     };
@@ -18233,7 +18271,8 @@ const BACKUP_PARTS = [];
 /** Actions of one state (list and full view): view, then restore/download of later tasks. */
 const BACKUP_ACTIONS = [];
 
-function backupRow(card, model, hass, dialog, home, map, entry, position) {
+function backupRow(ctx, entry, position) {
+    const { card, hass, dialog, home, map } = ctx;
     const row = document.createElement('li');
     row.className = 'backup-entry';
     row.setAttribute('role', 'listitem');
@@ -18255,7 +18294,7 @@ function backupRow(card, model, hass, dialog, home, map, entry, position) {
     show.setAttribute('data-action', 'view');
     actions.appendChild(show);
     for (const action of BACKUP_ACTIONS) {
-        const node = action(card, model, hass, dialog, home, map, entry, 'list');
+        const node = action(ctx, entry, 'list');
         if (node) actions.appendChild(node);
     }
     row.append(icon, text, actions);
@@ -18465,22 +18504,22 @@ function backupImageView(card, mapId, start = 1, home = null) {
             }
             const tools = document.createElement('div');
             tools.className = 'backup-tools';
-            const tool = (action, icon, labelKey, onClick, disabled) => {
+            const tool = (action, icon, labelKey, { onClick, disabled }) => {
                 const button = BuschUI.action({ label: translate(hass, labelKey), icon, variant: 'icon-only', disabled, onClick });
                 button.setAttribute('data-action', action);
                 tools.appendChild(button);
             };
-            tool('previous', 'mdi:chevron-left', 'sicherungZurueck', () => go(-1), index === 0);
-            tool('next', 'mdi:chevron-right', 'sicherungVor', () => go(1), index === items.length - 1);
-            tool('zoom-out', 'mdi:minus', 'zoomOut', () => zoomer.zoomAt(zoom.zoom / MAP_ZOOM.step));
-            tool('zoom-in', 'mdi:plus', 'zoomIn', () => zoomer.zoomAt(zoom.zoom * MAP_ZOOM.step));
-            tool('fit', 'mdi:fit-to-screen-outline', 'zoomFit', () => zoomer.set(1, 0, 0, true));
+            tool('previous', 'mdi:chevron-left', 'sicherungZurueck', { onClick: () => go(-1), disabled: index === 0 });
+            tool('next', 'mdi:chevron-right', 'sicherungVor', { onClick: () => go(1), disabled: index === items.length - 1 });
+            tool('zoom-out', 'mdi:minus', 'zoomOut', { onClick: () => zoomer.zoomAt(zoom.zoom / MAP_ZOOM.step) });
+            tool('zoom-in', 'mdi:plus', 'zoomIn', { onClick: () => zoomer.zoomAt(zoom.zoom * MAP_ZOOM.step) });
+            tool('fit', 'mdi:fit-to-screen-outline', 'zoomFit', { onClick: () => zoomer.set(1, 0, 0, true) });
             if (!item.current && map) {
                 const spacer = document.createElement('span');
                 spacer.className = 'backup-spacer';
                 tools.appendChild(spacer);
                 for (const action of BACKUP_ACTIONS) {
-                    const node = action(card, model, hass, dialog, home || view, map, item, 'full');
+                    const node = action({ card, model, hass, dialog, home: home || view, map }, item, 'full');
                     if (node) tools.appendChild(node);
                 }
             }
@@ -18549,7 +18588,8 @@ function backupNowLock(card, session, model, map) {
  * confirmation of the card (mapConfirm, the only grant) — with the note on a
  * Backup it may replace.
  */
-function backupNowPart(card, model, hass, dialog, view, map) {
+function backupNowPart(ctx, view, map) {
+    const { card, model, hass, dialog } = ctx;
     if (!model.can('backup_map') || !model.can('dreame_vacuum.vacuum_backup_map')) return null;
     const session = backupSession(card, view, map);
     const box = document.createElement('div');
@@ -18679,7 +18719,8 @@ const recoveryFrom = (hass, entry) => recoveryLabel(hass, entry) + ' ' + (locale
  * map_recovery_status (Running → Success, 120 s).
  * `source`: { entry } of the list or { url, done } of the file form.
  */
-function restoreConfirm(card, session, home, map, source) {
+function restoreConfirm(card, session, at, source) {
+    const { home, map } = at;
     const hass = card.hass;
     const model = card.model();
     const entry = source.entry || null;
@@ -18765,19 +18806,21 @@ function restoreConfirm(card, session, home, map, source) {
 }
 
 /** "Wiederherstellen" of one state (list and full view): only can('map_recovery'), the active map, no lock. */
-function restoreAction(card, model, hass, dialog, home, map, entry) {
+function restoreAction(ctx, entry) {
+    const { card, model, hass, dialog, home, map } = ctx;
     if (!model.can('map_recovery')) return null;
     const lock = map.active ? restoreLock(card, model) : 'sicherungNurAktiv';
     const label = translate(hass, 'wiederherstellenKnopf');
     const button = BuschUI.action({ label: label + ': ' + recoveryText(hass, entry), text: label, icon: 'mdi:backup-restore', disabled: !!lock,
-        onClick: () => dialog.show(restoreConfirm(card, backupSession(card, home, map), home, map, { entry })) });
+        onClick: () => dialog.show(restoreConfirm(card, backupSession(card, home, map), { home, map }, { entry })) });
     button.setAttribute('data-action', 'restore');
     return button;
 }
 BACKUP_ACTIONS.push(restoreAction);
 
 /** Locks of backup and restore, each reason once (R17), and the switch to a map that is not active (CORE-20). */
-function backupLockPart(card, model, hass, dialog, view, map) {
+function backupLockPart(ctx, view, map) {
+    const { card, model, hass } = ctx;
     const reasons = new Set();
     if (model.can('backup_map') && model.can('dreame_vacuum.vacuum_backup_map')) reasons.add(backupNowLock(card, backupSession(card, view, map), model, map));
     if (model.can('map_recovery')) reasons.add(map.active ? restoreLock(card, model) : 'sicherungNurAktiv');
@@ -18799,7 +18842,8 @@ function backupLockPart(card, model, hass, dialog, view, map) {
 BACKUP_PARTS.push(backupLockPart);
 
 /** After a restore: state and time, and "wird neu geladen" until the map camera brings a new frame_id. */
-function restoreNotePart(card, model, hass, dialog, view, map) {
+function restoreNotePart(ctx, view, map) {
+    const { card, model, hass, dialog } = ctx;
     const note = card.restoreNote;
     if (!note || String(note.mapId) !== String(map.entry.id)) return null;
     const wrap = document.createElement('div');
@@ -18924,7 +18968,8 @@ for (const language of Object.keys(BACKUP_FILE_TEXTS)) Object.assign(TEXTE_BUSCH
  * attachment .mb.tbz2), read from the attribute at render and again on click
  * (token current). A read of the cloud, no write.
  */
-function downloadAction(card, model, hass, dialog, home, map, entry) {
+function downloadAction(ctx, entry) {
+    const { card, model, hass, map } = ctx;
     if (!entry.file || !model.can('map_download')) return null;
     const fresh = () => {
         const now = recoveryEntries(card.hass, card.model(), map.entry.id).find((e) => e.k === entry.k);
@@ -18950,7 +18995,8 @@ function downloadAction(card, model, hass, dialog, home, map, entry) {
 BACKUP_ACTIONS.push(downloadAction);
 
 /** The floor-plan note once per list (spec Inhalt 5), when any state can be downloaded. */
-function downloadNotePart(card, model, hass, dialog, view, map) {
+function downloadNotePart(ctx, view, map) {
+    const { model, hass } = ctx;
     return model.can('map_download') && recoveryEntries(hass, model, map.entry.id).some((e) => e.file) ? noteLine(translate(hass, 'sicherungGrundriss'), 'warning') : null;
 }
 BACKUP_PARTS.push(downloadNotePart);
@@ -18961,7 +19007,8 @@ const fileUrl = (hass, url) => ownAddress(hass, url) || String(url || '').trim()
 const fileUrlError = (url, hass) => { const v = fileUrl(hass, url); return /^https?:\/\/[^\s"'<>]+$/i.test(v) && !v.endsWith('/') ? '' : 'fehlerDateiUrl'; };
 
 /** "Aus Datei-URL wiederherstellen" under "Erweitert" (only with the service). */
-function restoreFilePart(card, model, hass, dialog, view, map) {
+function restoreFilePart(ctx, view, map) {
+    const { card, model, hass, dialog } = ctx;
     if (!model.can('map_recovery') || !model.can('dreame_vacuum.vacuum_restore_map_from_file')) return null;
     const label = translate(hass, 'dateiTitel');
     const button = BuschUI.action({ label, text: label, icon: 'mdi:file-restore-outline', onClick: () => dialog.show(restoreFileView(card, view, map)) });
@@ -19001,7 +19048,7 @@ function restoreFileView(card, home, start) {
         const map = backupMap(card.model(), draft.mapId);
         if (fileUrlError(draft.url, card.hass) || !map || !map.active) return dialog.render();
         // A finished restore ends the draft; a cancelled one keeps it (R10).
-        dialog.show(restoreConfirm(card, sessionFor(map), home, map, { url: fileUrl(card.hass, draft.url), done: () => card.drafts.delete(key) }));
+        dialog.show(restoreConfirm(card, sessionFor(map), { home, map }, { url: fileUrl(card.hass, draft.url), done: () => card.drafts.delete(key) }));
         return undefined;
     };
     const view = {
