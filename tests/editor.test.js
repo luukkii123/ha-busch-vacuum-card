@@ -29,7 +29,7 @@ function editor(config = { type: 'custom:busch-vacuum-card', entity: 'vacuum.rob
   return { u, ed, form, aenderungen, aendere };
 }
 
-const OPTIONEN = ['entity', 'title', 'scripts', 'locked', 'touch_lock', 'disable_haptic', 'left_handed', 'full_height', 'aspect_ratio', 'max_height_offset', 'hidden_card_objects',
+const OPTIONEN = ['entity', 'title', 'scripts', 'locked', 'touch_lock', 'disable_haptic', 'admin_actions', 'left_handed', 'full_height', 'aspect_ratio', 'max_height_offset', 'hidden_card_objects',
   'map_display', 'color_scheme', 'icon_set', 'hidden_objects'];
 // override_colors (hell und dunkel) und map_config sind eigene, nicht flache Abschnitte.
 const FARBEN = ['floor', 'wall', 'room', 'carpet', 'no_go', 'no_mop', 'virtual_wall', 'path', 'robot', 'charger'];

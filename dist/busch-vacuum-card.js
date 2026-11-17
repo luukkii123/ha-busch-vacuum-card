@@ -251,6 +251,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             locked: 'Karten-Sperre',
             touch_lock: 'Haltezeit zum Entsperren',
             disable_haptic: 'Vibration aus',
+            admin_actions: 'Gerätefunktionen für',
             display_section: 'Anzeige',
             hidden_card_objects: 'Ausgeblendete Teile',
             map_section: 'Karte',
@@ -299,10 +300,11 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             aspect_ratio: 'Feste Form der Karte wie 16:9, 4/3 oder 1.5; gilt nicht mit voller Höhe und nicht im Panel. Vorgabe leer.',
             max_height_offset: 'So viele Pixel zieht die Karte von ihrer größten Höhe ab, etwa für eigene Kopfzeilen. Vorgabe 0.',
             left_handed: 'Legt die Aktionsknöpfe nach links und die Stationsanzeige nach rechts. Vorgabe aus.',
-            operation_section: 'Sperre gegen versehentliches Verschieben der Karte und Vibration am Handy.',
+            operation_section: 'Sperre gegen versehentliches Verschieben der Karte, Vibration am Handy und wer folgenreiche Gerätefunktionen sieht.',
             locked: 'Wann die Karte gesperrt startet; Automatisch sperrt am Touchgerät außerhalb einer Panel-Ansicht. Vorgabe Automatisch.',
             touch_lock: 'So lange hältst du das Schloss, um die Sperre umzuschalten, 100 bis 400 Millisekunden. Vorgabe 200.',
             disable_haptic: 'Schaltet die kurze Vibration beim Tippen am Handy ab. Vorgabe aus.',
+            admin_actions: 'Wer Sprachpaket, Wiederherstellen aus Datei, Karten löschen, wiederherstellen und bearbeiten, Shortcuts verwalten, Verbrauchsteile zurücksetzen und Kartendateien herunterladen sieht. Home Assistant selbst prüft keine Rechte je Dienst. Vorgabe Nur Admins.',
             display_section: 'Welche Teile die Karte zeigt.',
             hidden_card_objects: 'Gewählte Teile zeigt die Karte nicht; ohne „Bestätigung beim Kartenwechsel“ wechselt sie die Karte ohne Rückfrage. „Kartenbearbeitung“ blendet Stift und Kartenverwaltung aus (z. B. für Wanddisplays); Kartenänderungen werden immer bestätigt. Vorgabe keine.',
             map_section: 'Darstellung der Live-Karte: Ansicht, Farben, Symbole und was sie zeigt.',
@@ -512,6 +514,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             lock_only_touch: 'Nur am Touchgerät',
             lock_never: 'Nie',
             lock_always: 'Immer',
+            admin_admins: 'Nur Admins',
+            admin_all: 'Alle Nutzer',
             obj_title: 'Titel',
             obj_state: 'Statuszeile',
             obj_menu: 'Menü',
@@ -889,6 +893,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             locked: 'Map lock',
             touch_lock: 'Hold time to unlock',
             disable_haptic: 'Vibration off',
+            admin_actions: 'Device functions for',
             display_section: 'Display',
             hidden_card_objects: 'Hidden parts',
             map_section: 'Map',
@@ -937,10 +942,11 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             aspect_ratio: 'Fixed shape such as 16:9, 4/3 or 1.5; ignored with full height and in a panel. Default empty.',
             max_height_offset: 'Pixels taken off the largest card height, for example for custom headers. Default 0.',
             left_handed: 'Puts the action buttons on the left and the station status on the right. Default off.',
-            operation_section: 'Lock against moving the map by accident, and vibration on phones.',
+            operation_section: 'Lock against moving the map by accident, vibration on phones and who sees consequential device functions.',
             locked: 'When the map starts locked; Automatic locks on touch devices outside a panel view. Default Automatic.',
             touch_lock: 'How long you hold the lock to toggle it, 100 to 400 milliseconds. Default 200.',
             disable_haptic: 'Turns off the short vibration on taps on phones. Default off.',
+            admin_actions: 'Who sees voice pack, restore from file, deleting, restoring and editing maps, managing shortcuts, resetting consumables and downloading map files. Home Assistant itself checks no rights per service. Default Admins only.',
             display_section: 'Which parts the card shows.',
             hidden_card_objects: 'The card does not show the chosen parts; without “Map change confirmation” it changes maps without asking. “Map editing” hides the pen and map management (e.g. for wall displays); map changes are always confirmed. Default none.',
             map_section: 'How the live map looks: view, colours, icons and what it shows.',
@@ -1150,6 +1156,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             lock_only_touch: 'Touch devices only',
             lock_never: 'Never',
             lock_always: 'Always',
+            admin_admins: 'Admins only',
+            admin_all: 'All users',
             obj_title: 'Title',
             obj_state: 'Status line',
             obj_menu: 'Menu',
@@ -1546,6 +1554,8 @@ class ConfigError extends Error {
 // ---------------------------------------------------------------------------
 
 const LOCK_MODES = ['auto', 'only_touch', 'never', 'always'];
+/** M8: who sees the consequential device functions (VacuumModel ADMIN_ONLY). */
+const ADMIN_ACTIONS = ['admins', 'all'];
 const TOUCH_LOCK_MS = { min: 100, max: 400, standard: 200 };
 
 /** Parts `hidden_card_objects` can hide (inventory CORE-18); shortcuts takes effect with its module. */
@@ -1673,7 +1683,8 @@ const SCHEMA_BUSCH_VACUUM_CARD = [
     { name: 'operation_section', type: 'expandable', flatten: true, icon: 'mdi:lock-outline', schema: [
         { name: 'locked', selector: { select: { mode: 'dropdown', options: LOCK_MODES } } },
         { name: 'touch_lock', selector: { number: { min: TOUCH_LOCK_MS.min, max: TOUCH_LOCK_MS.max, step: 10, mode: 'slider', unit_of_measurement: 'ms' } } },
-        { name: 'disable_haptic', selector: { boolean: {} } }
+        { name: 'disable_haptic', selector: { boolean: {} } },
+        { name: 'admin_actions', selector: { select: { mode: 'dropdown', options: ADMIN_ACTIONS } } }
     ] },
     { name: 'display_section', type: 'expandable', flatten: true, icon: 'mdi:eye-off-outline', schema: [
         { name: 'hidden_card_objects', selector: { select: { multiple: true, mode: 'list', options: HIDDEN_OBJECTS } } }
@@ -1695,7 +1706,7 @@ const SCHEMA_BUSCH_VACUUM_CARD = [
 /** What the editor shows for an unset option; equal values are never written. */
 const EDITOR_DEFAULTS = {
     title: '', scripts: [], full_height: false, aspect_ratio: '', max_height_offset: 0, left_handed: false,
-    locked: 'auto', touch_lock: TOUCH_LOCK_MS.standard, disable_haptic: false, hidden_card_objects: [],
+    locked: 'auto', touch_lock: TOUCH_LOCK_MS.standard, disable_haptic: false, admin_actions: 'admins', hidden_card_objects: [],
     map_display: 'standard', color_scheme: 'auto', icon_set: 'busch', hidden_objects: [], override_colors: {}, map_config: {}
 };
 
@@ -1766,6 +1777,7 @@ function normalizeConfig(raw) {
         locked: LOCK_MODES.includes(raw.locked) ? raw.locked : 'auto',
         touch_lock: Number.isFinite(hold) ? Math.min(TOUCH_LOCK_MS.max, Math.max(TOUCH_LOCK_MS.min, hold)) : TOUCH_LOCK_MS.standard,
         disable_haptic: raw.disable_haptic === true,
+        admin_actions: ADMIN_ACTIONS.includes(raw.admin_actions) ? raw.admin_actions : 'admins',
         hidden_objects: Array.isArray(raw.hidden_objects) ? raw.hidden_objects.filter((name) => MAP_OBJECTS.includes(name)) : [],
         map_display: MAP_DISPLAYS.includes(raw.map_display) ? raw.map_display : 'standard',
         color_scheme: COLOR_SCHEMES.includes(raw.color_scheme) ? raw.color_scheme : 'auto',
@@ -1904,14 +1916,28 @@ const CONSUMABLES = {
     roller_mop_filter_dirty: 'roller_mop_filter', water_outlet_filter_dirty: 'water_outlet_filter', track_cleaning: null
 };
 
+/** M8: `hass.user.is_admin`; without `hass.user` no admin. */
+const isAdmin = (hass) => !!(hass && hass.user && hass.user.is_admin === true);
+
+/**
+ * M8 (security S1): consequential functions only admins see — voice pack, restore
+ * from file, delete/restore/edit maps, manage shortcuts, reset consumables, raw map
+ * file. Not a security boundary (HA lets every user call services), a guard
+ * against mistakes; `admin_actions: all` shows them to everyone.
+ */
+const ADMIN_ONLY = new Set(['dreame_vacuum.vacuum_install_voice_pack', 'dreame_vacuum.vacuum_restore_map_from_file', 'dreame_vacuum.vacuum_delete_map',
+    'map_recovery', 'map_edit', 'shortcut_manage', 'consumable_reset', 'map_download']);
+
 /**
  * What the device can do. `can()` is the ONE place every part of the card
  * asks (spec: Boundaries) — from the vacuum's `capabilities`, its feature
  * bits, the entities found and the services Home Assistant offers.
  */
 class VacuumModel {
-    constructor(hass, entityId, related) {
+    constructor(hass, entityId, related, adminActions = 'admins') {
         this.hass = hass;
+        // M8: without admin rights (and `admin_actions: admins`) the ADMIN_ONLY functions are hidden.
+        this.restricted = adminActions !== 'all' && !isAdmin(hass);
         this.entityId = entityId;
         this.state = (hass && hass.states && hass.states[entityId]) || null;
         this.related = related || findRelated(hass, entityId);
@@ -1941,6 +1967,7 @@ class VacuumModel {
     }
 
     can(name) {
+        if (this.restricted && ADMIN_ONLY.has(name)) return false;
         if (name.includes('.')) {
             const [domain, service] = name.split('.');
             const services = (this.hass && this.hass.services) || {};
@@ -1968,6 +1995,9 @@ class VacuumModel {
             // CORE-10: the button is what v2.0.3 offers; the documented service only if present.
             case 'clear_warning': return !!this.entity('button.clear_warning') || this.can('dreame_vacuum.vacuum_clear_warning');
             case 'consumables': return Object.keys(this.consumables()).length > 0;
+            case 'consumable_reset': return this.can('consumables');
+            // BAK-02: the raw file needs no service, only the attribute (downloadAction).
+            case 'map_download': return true;
             case 'remote': return this.can('dreame_vacuum.vacuum_remote_control_move_step');
             case 'settings': return this.can('dreame_vacuum.vacuum_set_property');
             case 'shortcuts': return this.caps.has('shortcuts') && this.can('dreame_vacuum.vacuum_start_shortcut');
@@ -5324,7 +5354,8 @@ function consumableParts(card, model, body, hass, dialog) {
         const reset = BuschUI.action({ label: translate(hass, 'zuruecksetzenVon', { name: label }), text: translate(hass, 'zuruecksetzen'), disabled: full || card._settingWrites.has('reset:' + name), onClick: () => dialog.show(resetConfirm(card, name, label, percent)) });
         reset.setAttribute('data-action', 'reset');
         if (full) reset.title = translate(hass, 'schonVoll');
-        row.append(text, reset);
+        row.appendChild(text);
+        if (model.can('consumable_reset')) row.appendChild(reset);
         list.appendChild(row);
     }
     body.appendChild(list);
@@ -10809,7 +10840,7 @@ class BuschVacuumCard extends HTMLElement {
             this._related = findRelated(hass, this._opts.entity);
             this._relatedFrom = hass.entities;
         }
-        return new VacuumModel(hass, this._opts.entity, this._related);
+        return new VacuumModel(hass, this._opts.entity, this._related, this._opts.admin_actions);
     }
 
     _update() {
@@ -12175,7 +12206,7 @@ class BuschVacuumCard extends HTMLElement {
 const EDITOR_STYLES = BuschUI.editorStyles;
 
 /** The schema with the select options named in the user's language. */
-const OPTION_PREFIX = { locked: 'lock_', hidden_card_objects: 'obj_', map_display: 'display_', color_scheme: 'scheme_', icon_set: 'icons_', hidden_objects: 'mapobj_' };
+const OPTION_PREFIX = { locked: 'lock_', admin_actions: 'admin_', hidden_card_objects: 'obj_', map_display: 'display_', color_scheme: 'scheme_', icon_set: 'icons_', hidden_objects: 'mapobj_' };
 
 function localSchema(hass, schema = SCHEMA_BUSCH_VACUUM_CARD) {
     return schema.map((field) => {
@@ -16524,7 +16555,7 @@ function backupsView(card, mapId) {
             }
             body.appendChild(noteLine(translate(hass, 'kartenKarte', { karte: map.name })));
             body.append(...backupStatusLines(hass, model));
-            if (!model.can('map_recovery')) body.appendChild(noteLine(translate(hass, 'sicherungNurAnsehen')));
+            if (!model.can('map_recovery') && !model.restricted) body.appendChild(noteLine(translate(hass, 'sicherungNurAnsehen')));
             for (const part of BACKUP_PARTS) {
                 const node = part(card, model, hass, dialog, view, map);
                 if (node) body.appendChild(node);
@@ -17217,7 +17248,7 @@ for (const language of Object.keys(BACKUP_FILE_TEXTS)) Object.assign(TEXTE_BUSCH
  * (token current). A read of the cloud, no write.
  */
 function downloadAction(card, model, hass, dialog, home, map, entry) {
-    if (!entry.file) return null;
+    if (!entry.file || !model.can('map_download')) return null;
     const fresh = () => {
         const now = recoveryEntries(card._hass, card._model(), map.entry.id).find((e) => e.k === entry.k);
         const url = (now && now.file) || entry.file;
@@ -17243,7 +17274,7 @@ BACKUP_ACTIONS.push(downloadAction);
 
 /** The floor-plan note once per list (spec Inhalt 5), when any state can be downloaded. */
 function downloadNotePart(card, model, hass, dialog, view, map) {
-    return recoveryEntries(hass, model, map.entry.id).some((e) => e.file) ? noteLine(translate(hass, 'sicherungGrundriss'), 'warning') : null;
+    return model.can('map_download') && recoveryEntries(hass, model, map.entry.id).some((e) => e.file) ? noteLine(translate(hass, 'sicherungGrundriss'), 'warning') : null;
 }
 BACKUP_PARTS.push(downloadNotePart);
 

@@ -103,9 +103,20 @@ entity: vacuum.my_robot
 | `locked` | `auto` | When the map starts locked: `auto` (touch devices outside a panel), `only_touch`, `never`, `always`. |
 | `touch_lock` | `200` | Hold time in ms (100–400) to toggle the lock. |
 | `disable_haptic` | `false` | No vibration on taps. |
+| `admin_actions` | `admins` | Who sees the consequential device functions (see *Rights*): `admins` or `all`. |
 | `hidden_card_objects` | none | Parts to hide: `title`, `state`, `menu`, `status`, `task_type`, `controls`, `action_buttons`, `animations`, `shortcuts`, `cruising_history`, `error_message`, `warning_message`, `info_message`, `low_water_message`, `map_change_confirmation`, `progress_bar`, `dock_status_indicator`, `map_editor`. |
 
 Hiding `map_change_confirmation` changes maps without asking first.
+
+### Rights
+
+With the default `admin_actions: admins`, users without admin rights in Home
+Assistant do not see these functions: installing a voice pack, restoring a map
+from a file URL, deleting, restoring and editing maps, managing device
+shortcuts, resetting consumables and downloading the raw map file. Everything
+else stays as it is. `admin_actions: all` shows them to every user, as in earlier releases.
+This guards against mistakes; it is no security boundary, because
+Home Assistant itself does not check rights per service call.
 
 ### Map
 

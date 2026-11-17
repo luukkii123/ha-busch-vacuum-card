@@ -15,6 +15,11 @@
   `hass.locale`), Gerätemodell (`findRelated`, `VacuumModel.can()` — die
   einzige Stelle, die Fähigkeiten abfragt), Status/Steuerung, Aufgabenwahl,
   Meldungen, Menü, Stile, Dialog `busch-vacuum-dialog`, Karte, Editor.
+- Rechte (M8): `ADMIN_ONLY` in `VacuumModel.can()` blendet für Nutzer ohne
+  `hass.user.is_admin` Sprachpaket, Datei-Wiederherstellung, Karten löschen/
+  wiederherstellen/bearbeiten, Shortcuts verwalten, Verbrauchsteile
+  zurücksetzen und den Rohdatei-Download aus; `admin_actions: all` zeigt sie
+  allen. Neue folgenreiche Funktionen fragen `can()` und kommen in die Liste.
 - Erkennung: über `hass.entities` (Register im Frontend) alle Entitäten mit
   der `device_id` des Saugers, abgelegt nach `<domain>.<translation_key>`,
   je Raum und je Kartenkamera. Ohne Register Rückfall über das Präfix der
