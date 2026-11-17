@@ -50,6 +50,7 @@ real 404. The harness HTML is written into the output directory, which must
 therefore lie inside the served repository (a copy of it is fine).
 
 Symbols (M14): ha-icon draws glyphs from docs/render/mdi-pfade.json (docs/render/mdi-pfade.py, @mdi/js).
+Translation (M21): area "uebersetzung" renders with localize (tests/fixtures/uebersetzung-de.json) and without.
 
 Usage:
     render.py <path/dist/busch-vacuum-card.js> <output-dir> [--nur <bereich>[,<bereich>...]]
@@ -151,7 +152,7 @@ RENDER_IDS = [
     ("remote keyboard", ["REM-02"]), ("remote", ["REM-01", "REM-03"]), ("clean settings", ["SET-02", "SET-04", "SET-05"]),
     ("map editor", ["EDI-01", "EDI-02"]), ("map backup", ["BAK-01", "BAK-02"]), ("views:", ["CORE-12"]),
     ("layout:", ["CORE-13", "CORE-08"]), ("ha panel:", ["CORE-13"]), ("station warning:", ["CORE-08", "DOCK-05"]),
-    ("selection tools:", ["TASK-02"]), ("symbols:", ["CORE-08", "CORE-12"]),
+    ("selection tools:", ["TASK-02"]), ("symbols:", ["CORE-08", "CORE-12"]), ("translation:", ["CORE-16"]),
 ]
 
 WIDTHS = (320, 390, 480, 960, 1280)
@@ -457,15 +458,17 @@ PAGE = """<!doctype html>
           idle: 'Idle', error: 'Error', unavailable: 'Unavailable' }
   };
   window.__serviceCalls = [];
-  window.makeHass = (data, lang) => ({
+  // M21: `texte` (id -> text, tests/fixtures/uebersetzung-de.json) gives hass a localize like HA's
+  // ('' for an unknown key); without it there is no localize, as before.
+  window.makeHass = (data, lang, texte) => Object.assign({
     language: lang, locale: { language: lang, time_format: '24', first_weekday: 'monday' }, themes: {},
     states: data.states, entities: data.entities, services: data.services,
     formatEntityState: (s, state = s.state) => (WORDS[lang][state] || state)
       + (s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : ''),
     callService: (domain, service, payload) => { window.__serviceCalls.push({ domain, service, payload, at: performance.now() }); return Promise.resolve(); }
-  });
+  }, texte ? { localize: (id) => (Object.hasOwn(texte, id) ? texte[id] : ''), loadBackendTranslation: () => Promise.resolve() } : {});
   window.closeDialogs = () => document.querySelectorAll('busch-vacuum-dialog').forEach((d) => d.remove());
-  window.buildCard = ({ data, lang = 'de', config = {}, panel = false }) => {
+  window.buildCard = ({ data, lang = 'de', config = {}, panel = false, texte = null }) => {
     window.closeDialogs();
     const stage = document.getElementById('stage');
     stage.className = panel ? 'panel' : '';
@@ -476,7 +479,7 @@ PAGE = """<!doctype html>
     card.setConfig(Object.assign({ type: 'custom:busch-vacuum-card', entity: 'vacuum.robo' }, config));
     if (panel) card.isPanel = true;
     stage.appendChild(card);
-    card.hass = window.makeHass(data, lang);
+    card.hass = window.makeHass(data, lang, texte);
     return true;
   };
   window.card = () => document.querySelector('busch-vacuum-card');
@@ -1657,6 +1660,53 @@ def bereich_verlauf(k):
           json.dumps({"first": first, "second": second, "back": back}))
 
 
+# M21: English option/run words that must not stand in a German UI (raw values of tests/fixtures/voll.json).
+ENGLISCHE_WOERTER = ("Mopping after sweeping", "Sweeping", "Turbo", "Wetness level", "Moist", "Room cleaning", "Default mode")
+UEB_TEXT_JS = """() => { const t = (r) => (r ? r.innerText || r.textContent || '' : ''); const c = window.card(), d = window.dialog();
+    const s = c.shadowRoot.querySelector('.settings-summary');
+    return { summary: s ? s.textContent : null, card: t(c.shadowRoot.querySelector('ha-card')), dialog: d ? t(d.shadowRoot.querySelector('.sheet')) : '' }; }"""
+
+
+def bereich_uebersetzung(k):
+    """M21 (harness part): the card with and without HA's translation (localize), German UI.
+
+    "mit": localize answers from the SYNTHETIC tests/fixtures/uebersetzung-de.json; "ohne": HA without the
+    integration's texts (localize gives ''). Panel 1280x900, history list and cleaning settings at 390x844,
+    light/dark. "ohne" is recorded (report.uebersetzungOhne), the German fallback words follow in E6 (M21 Wörter)."""
+    page, report, check, theme, build, ruhe, shot = k.page, k.report, k.check, k.theme, k.build, k.ruhe, k.shot
+    rows = []
+    for variant, texte in (("mit", k.texte_de), ("ohne", {})):
+        for th in THEMES:
+            theme(th)
+            page.set_viewport_size({"width": 1280, "height": 900})
+            build("docked", panel=True, texte=texte)
+            panel = page.evaluate(UEB_TEXT_JS)
+            shot(f"uebersetzung-{variant}-panel-1280-{th}.png")
+            page.set_viewport_size({"width": 390, "height": 844})
+            build("docked", texte=texte)
+            page.evaluate(hist_open, {"entry": "history", "steps": []})
+            ruhe(wann_ansicht("history"))
+            verlauf = page.evaluate(UEB_TEXT_JS)
+            shot(f"uebersetzung-{variant}-verlauf-390x844-{th}.png")
+            build("docked", texte=texte)
+            page.evaluate(clean_open, [])
+            ruhe(wann_ansicht("clean-settings"))
+            reinigung = page.evaluate(UEB_TEXT_JS)
+            shot(f"uebersetzung-{variant}-reinigung-390x844-{th}.png")
+            page.evaluate("() => window.closeDialogs()")
+            alles = panel["card"] + "\n" + verlauf["dialog"] + "\n" + reinigung["dialog"]
+            rows.append({"variant": variant, "theme": th, "summary": panel["summary"],
+                         "englisch": [w for w in ENGLISCHE_WOERTER if w in alles],
+                         "raumreinigung": "Raumreinigung" in verlauf["dialog"]})
+    report["uebersetzung"] = rows
+    report["uebersetzungOhne"] = [r for r in rows if r["variant"] == "ohne"]
+    mit = [r for r in rows if r["variant"] == "mit"]
+    check("translation: with localize the summary row shows HA's words (panel 1280, light/dark)",
+          all(r["summary"] == "Wischen nach dem Saugen · Maximal · Feuchtigkeitsstufe 26" for r in mit), json.dumps(mit))
+    check("translation: with localize no English option or run word in panel, history and cleaning settings",
+          all(not r["englisch"] and r["raumreinigung"] for r in mit), json.dumps(mit))
+
+
 def bereich_fernsteuerung(k):
     """3i. Fernsteuerung."""
     page, browser, data, report, check, out_dir, theme, build, ruhe, frames, beobachte, shot, camera_route, port, harness, repo_root = (
@@ -2400,6 +2450,8 @@ BEREICHE = [
     ("reinigung", bereich_reinigung),
     ("editor", bereich_editor),
     ("sicherung", bereich_sicherung),
+    # E2 (M21, M15): set their own size and theme; "regeln" sets its state again at its start.
+    ("uebersetzung", bereich_uebersetzung),
     ("regeln", bereich_regeln),
 ]
 
@@ -2564,9 +2616,9 @@ def main():
         def theme(name):
             page.evaluate("(t) => { document.documentElement.dataset.theme = t; document.documentElement.style.colorScheme = t; }", name)
 
-        def build(state="docked", lang="de", config=None, panel=False):
+        def build(state="docked", lang="de", config=None, panel=False, texte=None):
             page.evaluate("(a) => window.buildCard(a)",
-                          {"data": data[state], "lang": lang, "config": config or {}, "panel": panel})
+                          {"data": data[state], "lang": lang, "config": config or {}, "panel": panel, "texte": texte})
             ruhe()
 
         def open_menu():
@@ -2604,7 +2656,8 @@ def main():
                             open_placeholder=open_placeholder, open_confirm=open_confirm, shot=shot, map_eval=map_eval,
                             open_obstacle=open_obstacle, open_info=open_info, open_floors=open_floors, cam=cam, grid=grid,
                             svg_size=svg_size, routing=routing, camera_route=camera_route, port=port, harness=harness,
-                            repo_root=repo_root)
+                            repo_root=repo_root,
+                            texte_de=json.loads((repo_root / "tests" / "fixtures" / "uebersetzung-de.json").read_text(encoding="utf-8"))["texte"])
         for name, bereich in laufen:
             t0 = time.monotonic()
             bereich(k)

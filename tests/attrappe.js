@@ -179,22 +179,34 @@ function einfacherSauger(zustand = 'docked', attribute = {}) {
 
 const ZUSTAND = { docked: 'Angedockt', cleaning: 'Reinigt', paused: 'Pausiert', returning: 'Kehrt zurück', idle: 'Untätig', error: 'Fehler', unavailable: 'Nicht verfügbar' };
 
+/** M21: Texte der synthetischen Übersetzung tests/fixtures/uebersetzung-de.json (id → Text). */
+function uebersetzungDe() {
+  return JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'uebersetzung-de.json'), 'utf8')).texte;
+}
+
 /**
  * `states` (und optional `entities`/`services`) wie in HA. `rufe` sammelt jeden
  * callService-Aufruf; `antwort` bestimmt, was callService zurückgibt (Vorgabe:
  * offenes Versprechen wie ein langsamer Roboter).
+ * M21: `uebersetzung` (Vorgabe: keine) gibt hass ein `localize` wie HA: Text der Tabelle
+ * (id → Text) oder '' für unbekannte Schlüssel; `{}` = HA ohne geladene Integrationstexte.
+ * `loadBackendTranslation` löst dann sofort auf und zählt in `haus.uebersetzungGeladen`.
  */
-function neuesHaus({ states, entities = {}, services = {}, devices, sprache = 'de' } = {}) {
+function neuesHaus({ states, entities = {}, services = {}, devices, sprache = 'de', uebersetzung } = {}) {
   states = Object.assign({ 'vacuum.robo': einfacherSauger() }, states);
   for (let i = 0; i < 50; i++) states['sensor.fremd_' + i] = { entity_id: 'sensor.fremd_' + i, state: String(i), attributes: {} };
-  const haus = { rufe: [], antwort: () => new Promise(() => {}), sprache, entities, services, devices };
-  haus.hass = () => ({
+  const haus = { rufe: [], antwort: () => new Promise(() => {}), sprache, entities, services, devices, uebersetzung, uebersetzungGeladen: [] };
+  const texte = () => (haus.uebersetzung ? {
+    localize: (id) => (Object.hasOwn(haus.uebersetzung, id) ? haus.uebersetzung[id] : ''),
+    loadBackendTranslation: (kategorie, integration) => { haus.uebersetzungGeladen.push([kategorie, integration]); return Promise.resolve(); },
+  } : {});
+  haus.hass = () => Object.assign({
     states: haus.states, entities: haus.entities, services: haus.services, devices: haus.devices,
     language: haus.sprache, locale: { language: haus.sprache }, themes: {}, config: { unit_system: { length: 'km' } },
     // Wie HAs Formatierer: Zustände übersetzt, Zahl mit der Einheit der Entität.
     formatEntityState: (s, zustand = s.state) => (ZUSTAND[zustand] || zustand) + (s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : ''),
     callService: (domain, service, data) => { haus.rufe.push({ domain, service, data }); return haus.antwort(domain, service, data); },
-  });
+  }, texte());
   haus.states = states;
   /** Neuer Zustand wie von HA: neues states-Objekt, nur die genannten Einträge ersetzt. */
   haus.setze = (aenderungen) => { haus.states = Object.assign({}, haus.states, aenderungen); return haus.hass(); };
@@ -244,4 +256,4 @@ function verlaufsAbruf(umgebung, antwort = () => ({ status: 404 })) {
 /** Alle Mikrotasks (Promise-Ketten) abarbeiten. */
 const mikro = () => new Promise((r) => setImmediate(r));
 
-module.exports = { neueUhr, neueUmgebung, neuesHaus, hausAus, neueKarte, einfacherSauger, mikro, verlaufsAbruf };
+module.exports = { neueUhr, neueUmgebung, neuesHaus, hausAus, neueKarte, einfacherSauger, mikro, verlaufsAbruf, uebersetzungDe };
