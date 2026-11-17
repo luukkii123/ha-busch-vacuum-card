@@ -22,6 +22,16 @@
   Attributen des Saugers.
 - Neubau nur, wenn sich eine beobachtete Entität, die Sprache oder das
   Register ändert (`watchSnapshot`); fremde Updates zeichnen nichts neu.
+- Kein Neuaufbau unter Finger oder Tastatur (M4): Knöpfe der Aktionsleiste
+  bleiben je `data-action` dieselben Knoten (`BuschUI.action({ node })`), eine
+  neue Knopfmenge wartet auf das Ende einer Geste auf `.controls`. Der Dialog
+  verschiebt Neuaufbauten aus `hass`, solange ein Feld (`input`, `select`,
+  `textarea`) den Fokus hat, eine Geste oder IME-Komposition läuft; der Fokus
+  kommt über einen stabilen Schlüssel (`focusKey`) samt Cursor zurück,
+  `dialog.stats.renders` zählt. `settingsWatch` beobachtet nur Sauger und
+  Einstellungs-Entitäten (Sensoren nur bei Zubehör/Geräteinfo, die Kamera nur
+  bei Raumansichten). Umbenennen (Shortcut, Karte) und Hindernis-Details
+  beobachten nichts und aktualisieren sich über `update` an Ort und Stelle.
 - Dialog nach Lightcards 0.11.0: unter 450 × 500 px Vollbild, sonst zentriert
   (höchstens 560 px, Bestätigung 320 px); Kopf sticky; Seite gesperrt;
   Escape/Zurück über eigene Verlaufseinträge; Fokusfalle. Außenklick schließt

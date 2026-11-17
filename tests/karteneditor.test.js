@@ -411,6 +411,23 @@ test('EDI-01 Wählen nur über MapView.selectMap mit der Bestätigung von core (
   assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_select_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
 });
 
+test('M4 Kartenumbenennung: Sauger-Update während der Eingabe – dasselbe input, Wert, selectionStart und Fokus', () => {
+  const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
+  const d = verwaltung(k);
+  knopfIn(karteZeile(k, 7), 'rename').click();
+  const feld = $d(k.u, '[data-field="map_name"]');
+  feld.focus();
+  feld.value = 'Keller';
+  feld.dispatchEvent(k.u.neuesEreignis('input'));
+  feld.selectionStart = feld.selectionEnd = 3;
+  const vac = k.haus.states['vacuum.robo'];
+  for (let i = 0; i < 3; i++) k.karte.hass = k.haus.setze({ 'vacuum.robo': Object.assign({}, vac, { attributes: Object.assign({}, vac.attributes, { battery_level: 40 + i }) }) });
+  assert.ok($d(k.u, '[data-field="map_name"]') === feld);
+  assert.equal(feld.value, 'Keller');
+  assert.equal(feld.selectionStart, 3);
+  assert.ok(d.shadowRoot.activeElement === feld);
+});
+
 test('EDI-01 Umbenennen → vacuum_rename_map { map_id, map_name } nach Bestätigung, leer = Standardname; Formular mit Dirty-Schutz', async () => {
   const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
   const d = verwaltung(k);

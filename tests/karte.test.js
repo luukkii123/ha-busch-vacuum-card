@@ -1117,6 +1117,20 @@ test('MAP-04 Ignorieren/Rückgängig: genau vacuum_set_obstacle_ignore { x, y, o
   assert.equal(ebene(r.karte, 'obstacles').querySelector('[data-object="2"]').getAttribute('data-ignored'), 'true', 'ignoriert sichtbar blass');
 });
 
+test('M4 Hindernis-Details: Roboterposition baut nicht neu, derselbe Knopf; Änderung des Hindernisses schon', async () => {
+  const r = await hindernisKarte();
+  oeffneDetails(r);
+  const d = dialogVon(r.u);
+  const knopf = $d(r.u, '[data-action="obstacle-ignore"]');
+  const vorher = d.stats.renders;
+  for (let i = 0; i < 5; i++) r.karte.hass = r.haus.setze(kamera(r.haus, { vacuum_position: { x: 100 + i, y: 100, a: 0 } }));
+  assert.equal(d.stats.renders, vorher);
+  assert.ok($d(r.u, '[data-action="obstacle-ignore"]') === knopf);
+  const o = r.obstacles['2'];
+  r.karte.hass = r.haus.setze(kamera(r.haus, { obstacles: Object.assign({}, r.obstacles, { 2: Object.assign({}, o, { ignore_status: 'Manually Ignored' }) }) }));
+  assert.equal($d(r.u, '[data-action="obstacle-ignore"]').textContent, 'Nicht mehr ignorieren');
+});
+
 test('M5 Ignorieren abgelehnt oder ohne Bestätigung: Hinweis in den Details statt still', async () => {
   const r = await hindernisKarte();
   r.haus.antwort = () => Promise.reject(new Error('Gerät offline'));

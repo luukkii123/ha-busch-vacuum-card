@@ -4602,12 +4602,24 @@ class MapView {
 
     /** Details: facts, photo only when there is one, download, ignore/undo, actions of other modules. */
     _obstacleView(id) {
+        // M4: the camera changes with every robot position; the details redraw only when what they show changes.
+        let shown = null;
+        let owner = null;
+        const what = () => {
+            const model = this.card._model();
+            const cam = this.hass.states[this._cameraId];
+            const item = cam && cam.attributes.obstacles && cam.attributes.obstacles[id];
+            return JSON.stringify([item || null, taskActive(model, model.state ? model.state.state : 'unavailable'), model.can('dreame_vacuum.vacuum_set_obstacle_ignore')]);
+        };
         return {
             title: translate(this.hass, 'hindernis'),
             id: 'obstacle',
             kind: 'menu',
-            watch: () => [this._cameraId, this.card._opts.entity],
-            render: (body, hass) => {
+            watch: () => [],
+            update: () => { if (owner && what() !== shown) owner._render(); },
+            render: (body, hass, dialog) => {
+                owner = dialog;
+                shown = what();
                 const model = this.card._model();
                 const cam = hass.states[this._cameraId];
                 const item = cam && cam.attributes.obstacles && cam.attributes.obstacles[id];
@@ -4963,10 +4975,15 @@ function loadSettingTexts(card) {
     card._settingTexts = Promise.resolve(hass.loadBackendTranslation('entity', 'dreame_vacuum')).then(() => rerender(card), () => {});
 }
 
-/** A settings view redraws when the vacuum or any entity of its device changes. */
-const settingsWatch = (card) => {
+/**
+ * What a settings view redraws for (M4): the vacuum and the device's setting
+ * entities. Running sensors only where the view shows them (`sensors`:
+ * consumables, device info), the map camera only for views about rooms.
+ */
+const settingsWatch = (card, { sensors = false, camera = false } = {}) => {
     const model = card._model();
-    return [card._opts.entity, ...Object.values(model.related.device), ...model.related.maps.map.slice(0, 1)];
+    const device = Object.values(model.related.device).filter((id) => sensors || !/^(sensor|binary_sensor|camera)\./.test(id));
+    return [card._opts.entity, ...device, ...(camera ? model.related.maps.map.slice(0, 1) : [])];
 };
 
 /** Menu entries filled by a module; the others keep core's placeholder until theirs arrives. */
@@ -5056,7 +5073,7 @@ function groupView(card, name) {
         title: translate(card._hass, 'gruppe_' + name),
         id: 'settings-group',
         kind: 'editor',
-        watch: () => settingsWatch(card),
+        watch: () => settingsWatch(card, { sensors: ['consumables', 'info'].includes(name) }),
         render: (body, hass, dialog) => {
             const model = card._model();
             if (group.module) {
@@ -6104,7 +6121,7 @@ function roomsView(card) {
         title: translate(card._hass, 'raeumeEinstellen'),
         id: 'rooms',
         kind: 'editor',
-        watch: () => settingsWatch(card),
+        watch: () => settingsWatch(card, { camera: true }),
         render: (body, hass, dialog) => {
             const model = card._model();
             const rooms = roomsOf(model);
@@ -6135,7 +6152,7 @@ function roomView(card, id) {
         title: roomName(roomsOf(model0)[id], id),
         id: 'room',
         kind: 'editor',
-        watch: () => settingsWatch(card),
+        watch: () => settingsWatch(card, { camera: true }),
         render: (body, hass, dialog) => {
             const model = card._model();
             const room = roomsOf(model)[id];
@@ -6300,7 +6317,7 @@ function sequenceView(card) {
         title: translate(card._hass, 'entrySequence'),
         id: 'sequence',
         kind: 'editor',
-        watch: () => settingsWatch(card),
+        watch: () => settingsWatch(card, { camera: true }),
         render: (body, hass, dialog) => {
             const model = card._model();
             const rooms = roomsOf(model);
@@ -6956,20 +6973,28 @@ function shortcutRenameView(card, entry) {
     const track = 'rename:' + entry.id;
     if (!card._drafts.has(key)) card._drafts.set(key, entry.name);
     let checked = false;
+    let refresh = null;
+    const isLocked = () => {
+        const model = card._model();
+        return taskActive(model, model.state ? model.state.state : 'unavailable');
+    };
     return {
         title: translate(card._hass, 'umbenennen') + ': ' + entry.name,
         id: 'shortcut-rename',
         kind: 'editor',
-        watch: () => [card._opts.entity],
+        // M4: the vacuum's lock updates in place (update); the field is never rebuilt under the keyboard.
+        watch: () => [],
+        update: () => { if (refresh) refresh(); },
         render: (body, hass, dialog) => {
-            const model = card._model();
-            const locked = taskActive(model, model.state ? model.state.state : 'unavailable');
+            let locked = isLocked();
             const busy = card._settingWrites.has(track);
             const error = () => (checked && !card._drafts.get(key).trim() ? translate(hass, 'nameFehlt') : '');
             if (card._drafts.get(key) !== entry.name) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
-            if (locked) body.appendChild(noteLine(translate(hass, 'sperre_idle')));
+            const lockNote = noteLine(translate(hass, 'sperre_idle'));
+            if (locked) body.appendChild(lockNote);
             const failed = card._settingNotes.get(track);
-            if (failed) body.appendChild(noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error'));
+            const failNote = failed ? noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error') : null;
+            if (failNote) body.appendChild(failNote);
             const input = document.createElement('input');
             input.setAttribute('type', 'text');
             input.setAttribute('aria-required', 'true');
@@ -6992,6 +7017,12 @@ function shortcutRenameView(card, entry) {
             save.setAttribute('data-action', 'save');
             const able = () => { save.disabled = locked || busy || card._drafts.get(key) === entry.name; };
             able();
+            refresh = () => {
+                locked = isLocked();
+                if (locked && !lockNote.parentNode) body.insertBefore(lockNote, failNote || field.wrap);
+                else if (!locked && lockNote.parentNode) lockNote.remove();
+                able();
+            };
             if (busy) save.setAttribute('aria-busy', 'true');
             input.addEventListener('input', () => {
                 card._drafts.set(key, input.value);
@@ -10347,6 +10378,18 @@ a.backup-download:focus-visible { outline: 2px solid var(--primary-color, #03a9f
  * returns to the one below. Only a transient `menu` closes from outside;
  * views and editors never do (R04).
  */
+/** M4: a control's stable name across redraws: its own key attribute, else the nearest owner's plus its tag. */
+const FOCUS_KEYS = ['data-action', 'data-field', 'data-setting', 'data-group', 'data-entry', 'data-map', 'data-room', 'name', 'id'];
+function focusKey(node) {
+    for (let w = node, own = true; w && w.getAttribute; w = w.parentNode, own = false) {
+        for (const name of FOCUS_KEYS) {
+            const value = w.getAttribute(name);
+            if (value) return (own ? '' : node.tagName + '<') + name + '=' + value;
+        }
+    }
+    return '';
+}
+
 class BuschVacuumDialog extends HTMLElement {
     constructor() {
         super();
@@ -10359,6 +10402,19 @@ class BuschVacuumDialog extends HTMLElement {
         this._closed = false;
         this._returnFocus = null;
         this._seen = null;
+        // M4: a redraw from hass waits while a field has the focus, a gesture or an IME composition runs.
+        this.stats = { renders: 0 };
+        this._deferred = false;
+        this._gesture = false;
+        this._composing = false;
+        const flush = () => setTimeout(() => {
+            if (this._deferred && !this._holding()) this._render();
+        }, 0);
+        this.shadowRoot.addEventListener('pointerdown', () => { this._gesture = true; });
+        for (const type of ['pointerup', 'pointercancel']) this.shadowRoot.addEventListener(type, () => { this._gesture = false; flush(); });
+        this.shadowRoot.addEventListener('compositionstart', () => { this._composing = true; });
+        this.shadowRoot.addEventListener('compositionend', () => { this._composing = false; flush(); });
+        for (const type of ['focusout', 'change']) this.shadowRoot.addEventListener(type, flush);
         this._onKey = (event) => {
             if (event.key === 'Tab') {
                 const controls = this._focusable();
@@ -10407,7 +10463,8 @@ class BuschVacuumDialog extends HTMLElement {
     set hass(hass) {
         const unchanged = snapshotUnchanged(this._seen, hass);
         this._hass = hass;
-        if (!unchanged) this._render();
+        if (!unchanged && this._holding()) this._deferred = true;
+        else if (!unchanged) this._render();
         // A view with `update` (remote) repaints itself in place on every hass.
         const view = this._views[this._views.length - 1];
         if (view && view.update && this._sheet) view.update(hass);
@@ -10559,6 +10616,13 @@ class BuschVacuumDialog extends HTMLElement {
             .filter((node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
     }
 
+    /** M4: a field with the focus (not a button), a gesture or a composition holds redraws from hass. */
+    _holding() {
+        const active = this.shadowRoot.activeElement;
+        const field = !!active && (/^(SELECT|TEXTAREA)$/.test(active.tagName) || (active.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset)$/i.test(active.getAttribute('type') || '')));
+        return this._gesture || this._composing || field;
+    }
+
     _focusFirst() {
         if (!this._sheet || !this.isConnected) return;
         (this._focusable()[0] || this._sheet).focus();
@@ -10569,8 +10633,14 @@ class BuschVacuumDialog extends HTMLElement {
         const view = this._views[this._views.length - 1];
         if (!hass || !view) return;
         if (!this._sheet) this._build();
+        this.stats.renders++;
+        this._deferred = false;
         this._seen = watchSnapshot(hass, view.watch ? view.watch() : []);
-        const focused = this._focusable().indexOf(this.shadowRoot.activeElement);
+        // M4: focus comes back by a stable key (data-action, data-setting, …), the caret with it; the index only as fallback.
+        const active = this.shadowRoot.activeElement;
+        const focused = this._focusable().indexOf(active);
+        const key = focusKey(active);
+        const caret = active && typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
         const scrollTop = this._sheet.scrollTop;
         this._sheet.setAttribute('data-kind', view.kind);
         // Task 2 (release): every view names itself; render.py records it with each picture.
@@ -10596,7 +10666,11 @@ class BuschVacuumDialog extends HTMLElement {
         this._sheet.scrollTop = scrollTop;
         if (focused >= 0) {
             const controls = this._focusable();
-            (controls[Math.min(focused, controls.length - 1)] || this._sheet).focus();
+            const again = (key && controls.find((node) => focusKey(node) === key)) || controls[Math.min(focused, controls.length - 1)] || this._sheet;
+            again.focus();
+            if (caret && again !== active && typeof again.setSelectionRange === 'function') {
+                try { again.setSelectionRange(caret[0], caret[1]); } catch (_) { /* types without a caret (number) */ }
+            }
         }
     }
 
@@ -10830,6 +10904,19 @@ class BuschVacuumCard extends HTMLElement {
             this._stats.className = 'stats';
             this._controls = document.createElement('div');
             this._controls.className = 'controls';
+            // M4: while a finger or the mouse holds a button, a new set of buttons waits for the end of the gesture.
+            this._controls.addEventListener('pointerdown', () => {
+                if (this._controlsHeld) return;
+                this._controlsHeld = true;
+                const release = () => {
+                    document.removeEventListener('pointerup', release, true);
+                    document.removeEventListener('pointercancel', release, true);
+                    this._controlsHeld = false;
+                    if (this._controlsStale) { this._controlsStale = false; this._update(); }
+                };
+                document.addEventListener('pointerup', release, true);
+                document.addEventListener('pointercancel', release, true);
+            });
             this._progress = document.createElement('div');
             this._progress.className = 'progress-slot';
             this._messages = document.createElement('div');
@@ -10963,32 +11050,38 @@ class BuschVacuumCard extends HTMLElement {
         // CORE-08: Go-To has no action buttons; its target bubble is the one start.
         const names = this._hidden('action_buttons') || (!active && task === 'goto') ? [] : controlsFor(model, shown);
         const outside = names[0] === 'return'; // idle outside the dock (controlsFor)
+        // M4: buttons are kept by data-action and updated in place; a tap never lands on a replaced node.
+        const kept = new Map(this._controls.childNodes.map((node) => [node.getAttribute('data-action'), node]));
         const buttons = names.map((name) => {
             // #1002: the primary start says what it cleans (CORE-07).
             const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
             const blocked = name === 'start' && !ready.ok;
             const variant = outside ? (name === 'return' ? 'primary' : 'secondary') : CONTROLS[name].variant || 'secondary';
-            const button = BuschUI.action({ label, icon: CONTROLS[name].icon, variant, disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
+            const old = kept.get(name);
+            const button = BuschUI.action({ node: old, label, icon: CONTROLS[name].icon, variant, disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
             // #1002: the words in their own box, so a narrow bar shortens them instead of cutting the symbol.
-            const words = document.createElement('span');
+            const words = old ? old.querySelector('.ctl-text') : document.createElement('span');
             words.className = 'ctl-text';
             words.textContent = label;
-            button.appendChild(words);
+            if (!old) button.appendChild(words);
             if (blocked) button.setAttribute('aria-describedby', 'task-hint');
+            else button.removeAttribute('aria-describedby');
             button.classList.add('ctl');
             button.setAttribute('data-action', name);
             return button;
         });
         if (!this._hidden('shortcuts') && shortcutEntries(hass, model, this._opts.scripts).length) {
             const label = translate(hass, 'shortcuts');
-            const button = BuschUI.action({ label, text: label, icon: 'mdi:star-four-points-outline', onClick: () => this._openDialog(shortcutMenu(this)) });
+            const button = BuschUI.action({ node: kept.get('shortcuts'), label, text: label, icon: 'mdi:star-four-points-outline', onClick: () => this._openDialog(shortcutMenu(this)) });
             button.classList.add('ctl');
             button.setAttribute('data-action', 'shortcuts');
             button.setAttribute('aria-haspopup', 'menu');
             buttons.push(button);
         }
-        if (model.can('dock') && !this._hidden('dock_status_indicator')) buttons.push(this._dock(hass, model));
-        this._controls.replaceChildren(...buttons);
+        if (model.can('dock') && !this._hidden('dock_status_indicator')) buttons.push(this._dock(hass, model, kept.get('dock')));
+        const same = buttons.length === this._controls.childNodes.length && buttons.every((node, i) => this._controls.childNodes[i] === node);
+        if (!same && this._controlsHeld) this._controlsStale = true;
+        else if (!same) this._controls.replaceChildren(...buttons);
         // #1002: with three or more buttons the station shrinks to its symbol (name stays in aria-label).
         if (buttons.length > 2) this._controls.setAttribute('data-many', '');
         else this._controls.removeAttribute('data-many');
@@ -12219,19 +12312,20 @@ class BuschVacuumCard extends HTMLElement {
      * "Dock" (wide) or the symbol (phone); a warning's words stand in the panel's hint bar
      * (_renderStationHint, R17 colour AND text) and stay in the button's name.
      */
-    _dock(hass, model) {
+    _dock(hass, model, old) {
         const status = dockStatus(model);
         const name = translate(hass, 'station') + (status.key ? ' · ' + translate(hass, status.key) : '');
         const words = translate(hass, 'dock');
-        const node = BuschUI.action({ label: name, icon: status.level === 'ok' ? 'mdi:home-variant-outline' : 'mdi:home-alert-outline', variant: 'secondary',
+        const node = BuschUI.action({ node: old, label: name, icon: status.level === 'ok' ? 'mdi:home-variant-outline' : 'mdi:home-alert-outline', variant: 'secondary',
             onClick: () => this._openDialog(stationMenu(this)) });
         node.classList.add('dock');
         node.setAttribute('aria-haspopup', 'menu');
         node.setAttribute('data-action', 'dock');
         node.setAttribute('data-dock', status.level);
-        const text = document.createElement('span');
+        const text = old ? old.querySelector('.dock-text') : document.createElement('span');
+        text.className = 'dock-text';
         text.textContent = words;
-        node.appendChild(text);
+        if (!old) node.appendChild(text);
         return node;
     }
 
@@ -13799,11 +13893,13 @@ function renameMapView(card, home, session, entry) {
         }));
     };
     const dirty = () => card._drafts.has(key) && card._drafts.get(key) !== original;
+    let refresh = null;
     const view = {
         title: translate(hass, 'kartenUmbenennenTitel'),
         id: 'map-rename',
         kind: 'editor',
-        watch: () => [card._opts.entity],
+        watch: () => [],
+        update: () => { if (refresh) refresh(); },
         guard: (dialog) => {
             if (!dirty()) return false;
             dialog.show(dirtyChoice(card, {
@@ -13817,10 +13913,10 @@ function renameMapView(card, home, session, entry) {
             return true;
         },
         render: (body, h, dialog) => {
-            const model = card._model();
-            const lock = session.lock('vacuum_rename_map', model);
+            let lock = session.lock('vacuum_rename_map', card._model());
             if (dirty()) body.appendChild(noteLine(translate(h, 'ungespeichert'), 'dirty'));
-            if (lock) body.appendChild(noteLine(translate(h, lock), 'locked'));
+            let lockNote = lock ? noteLine(translate(h, lock), 'locked') : null;
+            if (lockNote) body.appendChild(lockNote);
             const input = document.createElement('input');
             input.setAttribute('type', 'text');
             input.setAttribute('autocomplete', 'off');
@@ -13834,6 +13930,16 @@ function renameMapView(card, home, session, entry) {
             save.setAttribute('data-action', 'save');
             const able = () => { save.disabled = !!lock || !dirty(); };
             able();
+            // M4: the lock follows the vacuum in place; the field stays under the keyboard.
+            refresh = () => {
+                const now = session.lock('vacuum_rename_map', card._model());
+                if (now === lock) return;
+                lock = now;
+                if (lockNote) lockNote.remove();
+                lockNote = lock ? noteLine(translate(h, lock), 'locked') : null;
+                if (lockNote) body.insertBefore(lockNote, field.wrap);
+                able();
+            };
             input.addEventListener('input', () => {
                 card._drafts.set(key, input.value);
                 able();

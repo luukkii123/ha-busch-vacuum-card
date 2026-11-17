@@ -204,6 +204,38 @@ test('M3 hängender Dienst: Vorschau endet am Deckel von 15 s', () => {
   assert.equal($(karte, '.state').textContent, 'Angedockt');
 });
 
+/** Neue Roboterposition auf der Kartenkamera (wie während einer Reinigung). */
+function position(haus, x) {
+  const cam = haus.states['camera.robo_map'];
+  return haus.setze({ 'camera.robo_map': Object.assign({}, cam, { attributes: Object.assign({}, cam.attributes, { vacuum_position: { x, y: 100, a: 0 } }) }) });
+}
+
+test('M4 Aktionsleiste: pointerdown, Kamera-Update, click → derselbe Knoten und genau ein vacuum.pause', () => {
+  const { karte, u, haus } = karteMit('voll', 'cleaning', { started: true });
+  const pause = knopf(karte, 'pause');
+  $(karte, '.controls').dispatchEvent(u.neuesEreignis('pointerdown'));
+  karte.hass = position(haus, 1234);
+  karte.hass = position(haus, 1250);
+  assert.ok(knopf(karte, 'pause') === pause, 'derselbe Knoten');
+  u.document.dispatchEvent(u.neuesEreignis('pointerup'));
+  karte.hass = position(haus, 1300);
+  assert.ok(knopf(karte, 'pause') === pause, 'auch ohne Geste an Ort und Stelle');
+  pause.click();
+  assert.deepEqual(haus.rufe.map((r) => r.domain + '.' + r.service), ['vacuum.pause']);
+});
+
+test('M4 Aktionsleiste: neue Knopfmenge wartet auf das Ende der Geste', () => {
+  const { karte, u, haus } = karteMit('voll', 'cleaning', { started: true });
+  const vorher = aktionen(karte);
+  $(karte, '.controls').dispatchEvent(u.neuesEreignis('pointerdown'));
+  karte.hass = haus.setze(sauger(haus, 'paused', { started: true }));
+  assert.deepEqual(aktionen(karte), vorher, 'während der Geste unverändert');
+  assert.equal($(karte, '.state').textContent, 'Pausiert', 'der Zustandstext folgt sofort');
+  u.document.dispatchEvent(u.neuesEreignis('pointerup'));
+  assert.notDeepEqual(aktionen(karte), vorher, 'danach die neue Leiste');
+  assert.ok(aktionen(karte).includes('resume'));
+});
+
 test('Fehler von callService setzt sofort auf den echten Zustand zurück', async () => {
   const { karte, haus } = karteMit('voll');
   haus.antwort = () => Promise.reject(new Error('Gerät antwortet nicht'));

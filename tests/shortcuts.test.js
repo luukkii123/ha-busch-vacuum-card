@@ -94,13 +94,16 @@ test('Snapshot beobachtet die Script-Entitäten: Zustandswechsel zeichnet neu, f
   const k = aufbau('minimal', { states: SKRIPT('script.bibliothek', 'Bibliothek'), config: { scripts: ['script.bibliothek'] } });
   menue(k);
   assert.doesNotMatch(eintrag(k, 'script:script.bibliothek').textContent, /läuft/);
-  const vorher = knopf(k);
+  // M4: die Leiste bleibt an Ort und Stelle; gezählt wird der Neuaufbau der Karte.
+  let neuaufbau = 0;
+  const echt = k.karte._update.bind(k.karte);
+  k.karte._update = () => { neuaufbau++; echt(); };
   k.karte.hass = k.haus.fremd();
-  assert.equal(knopf(k), vorher, 'fremdes Update baut nichts neu');
+  assert.equal(neuaufbau, 0, 'fremdes Update baut nichts neu');
   const neu = k.haus.setze(SKRIPT('script.bibliothek', 'Bibliothek', 'on'));
   k.karte.hass = neu;
   dialogVon(k.u).hass = neu;
-  assert.notEqual(knopf(k), vorher);
+  assert.equal(neuaufbau, 1);
   assert.match(eintrag(k, 'script:script.bibliothek').textContent, /läuft/);
 });
 
@@ -222,6 +225,28 @@ test('SHO-02 Umbenennen: Pflichtfeld, unverändert = Speichern aus, Hinweis auf 
   $d(k.u, '[data-action="save"]').click();
   $d(k.u, '[data-action="save"]').click();
   assert.deepEqual(aufrufe(k), [umbenennen(30, 'Galerie Süd ✨')]);
+});
+
+test('M4 Umbenennen: Sauger-Update während der Eingabe – dasselbe input, Wert, selectionStart und Fokus; Sperre an Ort und Stelle', () => {
+  const k = verwaltung();
+  darin(zeile(k, 30), '[data-action="rename"]').click();
+  const feld = $d(k.u, '[data-field="shortcut_name"]');
+  feld.focus();
+  feld.value = 'Galerie Nord';
+  feld.dispatchEvent(k.u.neuesEreignis('input'));
+  feld.selectionStart = feld.selectionEnd = 7;
+  for (let i = 0; i < 3; i++) k.karte.hass = k.haus.setze(sauger(k.haus, { battery_level: 50 + i }));
+  assert.ok($d(k.u, '[data-field="shortcut_name"]') === feld);
+  assert.equal(feld.value, 'Galerie Nord');
+  assert.equal(feld.selectionStart, 7);
+  assert.ok(dialogVon(k.u).shadowRoot.activeElement === feld);
+  k.karte.hass = k.haus.setze(sauger(k.haus, { started: true }, 'cleaning'));
+  assert.ok($d(k.u, '[data-field="shortcut_name"]') === feld, 'auch beim Sperren');
+  assert.match($d(k.u, '.body').textContent, /Während einer Aufgabe/);
+  assert.equal($d(k.u, '[data-action="save"]').disabled, true);
+  k.karte.hass = k.haus.setze(sauger(k.haus, { started: false }, 'docked'));
+  assert.doesNotMatch($d(k.u, '.body').textContent, /Während einer Aufgabe/);
+  assert.equal($d(k.u, '[data-action="save"]').disabled, false);
 });
 
 test('SHO-02 Umbenennen gesperrt während einer Aufgabe; Eingabe bleibt beim Verlassen und nach Dienstfehler (R04/R12)', async () => {

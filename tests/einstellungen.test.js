@@ -202,6 +202,42 @@ test('M3 hängender Dienst: belegt bis zum Deckel von 15 s, dann Hinweis', () =>
   assert.match(zeile(k, 'resume_cleaning').querySelector('.setting-status').textContent, /noch nicht bestätigt/);
 });
 
+/** Laufender Sensor (Reinigungszeit) mit neuem Wert, wie im Sekundentakt bei einer Reinigung. */
+function sensorTakt(k, wert) {
+  const id = 'sensor.robo_cleaning_time', alt = k.haus.states[id];
+  k.karte.hass = k.haus.setze({ [id]: Object.assign({}, alt, { state: String(wert), last_updated: String(wert) }) });
+}
+
+test('M4 offene Einstellungen: 10 Sensor-Updates lassen renders nicht steigen', () => {
+  for (const offen of [(k) => k, (k) => { gruppe(k, 'carpet').click(); return k; }]) {
+    const k = offen(einstellungen());
+    const d = dialogVon(k.u);
+    const vorher = d.stats.renders;
+    for (let i = 0; i < 10; i++) sensorTakt(k, 30 + i);
+    assert.equal(d.stats.renders, vorher);
+    neu(k, { child_lock: true });
+    assert.equal(d.stats.renders, vorher + 1, 'eine eigene Entität zeichnet weiter neu');
+  }
+});
+
+test('M4 Fokus in einer Auswahl: Sauger-Update wartet, Knoten und Fokus bleiben; danach genau ein Neuaufbau', async () => {
+  const k = einstellungen();
+  gruppe(k, 'carpet').click();
+  const d = dialogVon(k.u);
+  const auswahl = d.shadowRoot.querySelector('select');
+  auswahl.focus();
+  const vorher = d.stats.renders;
+  neu(k, { child_lock: true });
+  neu(k, { child_lock: false });
+  assert.equal(d.stats.renders, vorher, 'aufgeschoben');
+  assert.ok(d.shadowRoot.activeElement === auswahl);
+  assert.ok(d.shadowRoot.all().includes(auswahl), 'derselbe Knoten im Dialog');
+  d.shadowRoot.querySelector('.sheet').focus(); // Fokus wandert aus der Auswahl
+  d.shadowRoot.dispatchEvent(k.u.neuesEreignis('focusout'));
+  k.u.uhr.vor(0);
+  assert.equal(d.stats.renders, vorher + 1, 'nach dem Fokuswechsel einmal');
+});
+
 test('Dienstfehler: R12-Text mit Grund, Folge und nächstem Schritt; Wert zurück', async () => {
   const k = aufbau();
   k.haus.antwort = () => Promise.reject(new Error('Gerät offline'));
