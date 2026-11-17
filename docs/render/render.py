@@ -949,8 +949,9 @@ def bereich_layout(k):
           json.dumps([(x["width"], x["panel"], x["map"]) for x in layout][:2]))
     check("layout: tool bar top right of the map; phone shows the tools button, two columns do not",
           not lbad(lambda x: x["tools"]["t"] - x["map"]["t"] <= 12 and x["map"]["r"] - x["tools"]["r"] <= 12 and x["more"] == (not wide(x))), "")
-    check("layout: room chips in the panel, none below the map; Gesamt 3 + more, Raum all 7",
-          not lbad(lambda x: x["chipsInPanel"] and not x["chipsUnderMap"] and x["visibleChips"] == (3 if x["task"] == "all" else 7)),
+    # #1241 (user 17.11.2026): the wide side panel shows every chip in Gesamt; narrow keeps 3 + "+ N weitere".
+    check("layout: room chips in the panel, none below the map; Gesamt narrow 3 + more, wide all 7 (#1241), Raum all 7",
+          not lbad(lambda x: x["chipsInPanel"] and not x["chipsUnderMap"] and x["visibleChips"] == (3 if x["task"] == "all" and not wide(x) else 7)),
           json.dumps([(x["width"], x["task"], x["visibleChips"]) for x in layout][:6]))
     check("layout: primary label names the task (Alles reinigen / 2 Räume reinigen)",
           not lbad(lambda x: x["start"] == ("Alles reinigen" if x["task"] == "all" else "2 Räume reinigen")), "")
@@ -3458,10 +3459,12 @@ def bereich_feinschliff(k):
     zone = page.evaluate(M31_JS)
     shot("zweitaktionen-aufgabe-zone-390-light.png")
     out["m31"] = {"panel": m31, "zone": zone}
-    ok31 = lambda x: x["moreLeft"] is not None and x["chipLeft"] is not None and abs(x["moreLeft"] - x["chipLeft"]) <= 1 and "text-action" in (x["moreClass"] or "")\
-        and x["moreDecoration"] == "none" and x["moreColor"] == x["chipColor"] and not x["small"] and x["pageOverflow"] <= 0
+    # #1241: at 1280 the wide panel shows every chip, so there is no "+ N weitere" to measure, and there must be none.
+    ok31 = lambda x: (x["moreLeft"] is None and x["chipLeft"] is not None if x["w"] >= 900 else
+                      x["moreLeft"] is not None and x["chipLeft"] is not None and abs(x["moreLeft"] - x["chipLeft"]) <= 1 and "text-action" in (x["moreClass"] or "")
+                      and x["moreDecoration"] == "none" and x["moreColor"] == x["chipColor"]) and not x["small"] and x["pageOverflow"] <= 0
     pill_ok = bool(zone["pills"]) and all(p["radius"] == "22px" and p["border"] != "0px" and p["h"] >= 44 and p["icon"] and p["text"] for p in zone["pills"])
-    check("M31 second actions: '+ N weitere' a text button in text colour without underline, flush with the chips (<= 1 px, panel 390/1280); zone task with the pill "
+    check("M31 second actions: '+ N weitere' a text button in text colour without underline, flush with the chips (<= 1 px, panel 390; none at 1280, #1241); zone task with the pill "
           "(radius 22 px, border, symbol and words, 44 px)",
           all(ok31(x) for x in m31) and pill_ok, json.dumps(out["m31"])[:1500])
 
