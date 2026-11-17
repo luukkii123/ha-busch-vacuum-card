@@ -720,6 +720,11 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             raeumeEinstellen: 'Räume einstellen',
             keineRaeume: 'Keine Räume auf der aktiven Karte.',
             durchgaenge: 'Durchgänge',
+            raumWertSaugstufe: 'Saugstufe {wert}',
+            raumWertWasser: 'Wasser {wert}',
+            raumWertFeuchte: 'Feuchte {wert}',
+            raumWertDurchgang: '1 Durchgang',
+            raumWertDurchgaenge: '{n} Durchgänge',
             raumUnvollstaendig: 'Ein Wert dieses Raums ist unbekannt; die Karte sendet nichts, statt zu raten.',
             aufAlleTitel: 'Auf alle Räume übertragen',
             aufAlleFrage: 'Die Werte von {raum} ersetzen die Werte dieser Räume: {raeume}.',
@@ -1429,6 +1434,11 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             raeumeEinstellen: 'Room settings',
             keineRaeume: 'No rooms on the active map.',
             durchgaenge: 'Passes',
+            raumWertSaugstufe: 'Suction {wert}',
+            raumWertWasser: 'Water {wert}',
+            raumWertFeuchte: 'Humidity {wert}',
+            raumWertDurchgang: '1 pass',
+            raumWertDurchgaenge: '{n} passes',
             raumUnvollstaendig: 'A value of this room is unknown; the card sends nothing instead of guessing.',
             aufAlleTitel: 'Apply to all rooms',
             aufAlleFrage: 'The values of {raum} replace those of these rooms: {raeume}.',
@@ -6482,6 +6492,19 @@ function roomValueText(hass, model, key, code) {
 const roomShort = (hass, model, room) => ['suction_level', model.can('wetness_level') ? 'wetness_level' : 'water_volume', 'cleaning_times']
     .map((key) => roomValueText(hass, model, key, roomCode(key, room[key]))).join(' · ');
 
+/** M13: the room's values with their names: "Saugstufe Turbo · Wasser 16 · 2 Durchgänge" (no number without a label). */
+function roomLine(hass, model, room) {
+    const water = model.can('wetness_level') ? 'wetness_level' : 'water_volume';
+    const value = (key) => roomValueText(hass, model, key, roomCode(key, room[key]));
+    const passes = roomCode('cleaning_times', room.cleaning_times);
+    return [
+        translate(hass, 'raumWertSaugstufe', { wert: value('suction_level') }),
+        translate(hass, water === 'water_volume' && model.can('self_wash_base') ? 'raumWertFeuchte' : 'raumWertWasser', { wert: value(water) }),
+        passes === undefined ? translate(hass, 'durchgaenge') + ' ' + translate(hass, 'wertUnbekannt')
+            : translate(hass, passes === 1 ? 'raumWertDurchgang' : 'raumWertDurchgaenge', { n: passes })
+    ].join(' · ');
+}
+
 /** One room write until the camera shows it (R17), else back with a note (pattern writeSetting). */
 function writeRoom(card, id, change) {
     const model = card._model();
@@ -6576,8 +6599,22 @@ function roomsView(card) {
             const list = document.createElement('div');
             list.className = 'menu room-list';
             for (const id of ids) {
-                const text = roomName(rooms[id], id) + ' · ' + roomShort(hass, model, rooms[id]);
-                const item = BuschUI.action({ label: text, text, icon: rooms[id].icon || 'mdi:floor-plan', variant: 'quiet', onClick: () => dialog.show(roomView(card, id)) });
+                // M13: the name bold, its labelled values below, a chevron: the row opens the room.
+                const name = roomName(rooms[id], id), values = roomLine(hass, model, rooms[id]);
+                const item = BuschUI.action({ label: name + ': ' + values, icon: rooms[id].icon || 'mdi:floor-plan', variant: 'quiet', onClick: () => dialog.show(roomView(card, id)) });
+                const words = document.createElement('span');
+                words.className = 'room-words';
+                const title = document.createElement('span');
+                title.className = 'room-name';
+                title.textContent = name;
+                const line = document.createElement('span');
+                line.className = 'room-values';
+                line.textContent = values;
+                words.append(title, line);
+                const chevron = BuschUI.ha.icon('mdi:chevron-right');
+                chevron.setAttribute('aria-hidden', 'true');
+                chevron.classList.add('room-chevron');
+                item.append(words, chevron);
                 item.classList.add('menu-item');
                 item.setAttribute('data-room', id);
                 list.appendChild(item);
@@ -10333,6 +10370,27 @@ const DIALOG_STYLES = BuschUI.cardStyles + MAP_STYLES + `
 .menu-item[data-room] {
     white-space: normal;
     overflow-wrap: anywhere;
+}
+/* M13 (Buschcheck): room name bold, the labelled values below, a chevron at the end, a pressed state. */
+.room-words {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.room-name {
+    font-weight: var(--ha-font-weight-medium, 500);
+}
+.room-values {
+    color: var(--secondary-text-color, #727272);
+    font-size: var(--ha-font-size-s, 14px);
+}
+.menu-item[data-room] .room-chevron {
+    order: 1;
+    margin-inline-start: auto;
+    color: var(--secondary-text-color, #727272);
+}
+.menu-item[data-room]:active {
+    background: var(--secondary-background-color, #f5f5f5);
 }
 .manage-start {
     flex: 1 1 10em;

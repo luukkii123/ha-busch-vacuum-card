@@ -239,7 +239,7 @@ test('SET-04 Räume einstellen: Liste in Reihenfolge mit Kurzwerten; Schalter Cu
   const liste = $$d(k.u, '[data-room]');
   const folge = k.haus.states['vacuum.robo'].attributes.cleaning_sequence.map(String);
   assert.deepEqual(liste.map((b) => b.getAttribute('data-room')), folge);
-  assert.match(liste[0].textContent, /Salon.*Turbo · 16 · 2×/);
+  assert.match(liste[0].textContent, /Salon.*Saugstufe Turbo · Wasser 16 · 2 Durchgänge/, 'M13: Werte mit Label');
 });
 
 test('SET-04 Raumseite: Wert ändern sendet den Raum mit allen Werten; optimistisch bis Kamera bestätigt', async () => {
@@ -480,4 +480,35 @@ test('Fremde Updates bauen die Reihenfolge nicht neu (R20)', () => {
   const vorher = zeileR(k, '3');
   k.karte.hass = k.haus.fremd();
   assert.equal(zeileR(k, '3'), vorher);
+});
+
+// ── M13 (Buschcheck 17.11.2026, W4): „Räume einstellen“ mit beschrifteten Werten ──
+test('M13 SET-04 Räume einstellen: Name fett, darunter jede Zahl mit Label, Chevron, Name komplett im aria-label', () => {
+  const k = einstellungen();
+  $d(k.u, '[data-action="rooms"]').click();
+  const liste = $$d(k.u, '[data-room]');
+  assert.ok(liste.length > 3);
+  for (const z of liste) {
+    const name = z.querySelector('.room-name'), werte = z.querySelector('.room-values');
+    assert.ok(name && name.textContent, 'Raumname eigene Zeile');
+    for (const teil of werte.textContent.split(' · ')) {
+      assert.match(teil, /[A-Za-zÄÖÜäöüß]{3,}/, 'keine Zahl ohne Label: „' + teil + '“');
+    }
+    const chevron = z.querySelectorAll('ha-icon').find((i) => i.getAttribute('icon') === 'mdi:chevron-right');
+    assert.ok(chevron, 'Chevron sichtbar');
+    assert.equal(chevron.getAttribute('aria-hidden'), 'true');
+    assert.equal(z.getAttribute('aria-label'), name.textContent + ': ' + werte.textContent);
+  }
+  const salon = liste[0];
+  assert.equal(salon.querySelector('.room-name').textContent, 'Salon');
+  assert.equal(salon.querySelector('.room-values').textContent, 'Saugstufe Turbo · Wasser 16 · 2 Durchgänge');
+});
+
+test('M13 CSS: Raumname fett, Werte sekundär, Chevron am Ende, gedrückter Zustand', () => {
+  const { DIALOG_STYLES } = aufbau().I;
+  const regel = (sel) => { const i = DIALOG_STYLES.indexOf('\n' + sel + ' {'); return i < 0 ? null : DIALOG_STYLES.slice(i, DIALOG_STYLES.indexOf('}', i)); };
+  assert.match(regel('.room-name'), /font-weight: var\(--ha-font-weight-medium, 500\);/);
+  assert.match(regel('.room-values'), /color: var\(--secondary-text-color/);
+  assert.match(regel('.menu-item[data-room] .room-chevron'), /margin-inline-start: auto;/);
+  assert.match(regel('.menu-item[data-room]:active'), /background: var\(--secondary-background-color/);
 });
