@@ -470,6 +470,8 @@ PAGE = """<!doctype html>
   window.makeHass = (data, lang, texte) => Object.assign({
     language: lang, locale: { language: lang, time_format: '24', first_weekday: 'monday' }, themes: {},
     states: data.states, entities: data.entities, services: data.services,
+    // Wie echtes HA (M8/M29): angemeldeter Admin, hassUrl auf die eigene Instanz.
+    user: { id: 'test', name: 'Test', is_admin: true }, hassUrl: (p = '') => location.origin + p,
     formatEntityState: (s, state = s.state) => (WORDS[lang][state] || state)
       + (s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : ''),
     callService: (domain, service, payload) => { window.__serviceCalls.push({ domain, service, payload, at: performance.now() }); return Promise.resolve(); }
