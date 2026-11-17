@@ -113,7 +113,7 @@ const KNOEPFE = {
   paused: ['resume', 'stop', 'return'],
   returning: ['pause', 'stop'],
   error: ['start', 'return'],
-  unavailable: [],
+  unavailable: ['start'], // M15: gesperrt mit Grund (tests/zustaende.test.js)
 };
 for (const [zustand, erwartet] of Object.entries(KNOEPFE)) {
   test(`CORE-07 Knöpfe im Zustand ${zustand}: ${erwartet.join(', ') || 'keine'}`, () => {

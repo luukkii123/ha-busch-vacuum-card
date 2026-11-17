@@ -51,6 +51,7 @@ therefore lie inside the served repository (a copy of it is fine).
 
 Symbols (M14): ha-icon draws glyphs from docs/render/mdi-pfade.json (docs/render/mdi-pfade.py, @mdi/js).
 Translation (M21): area "uebersetzung" renders with localize (tests/fixtures/uebersetzung-de.json) and without.
+States (M15): area "zustaende" pictures karte-<roboter-weg|kamera-weg|laedt|abruf-fehler|konfig-fehler|keine-raeume>-<320|390|1280>-<theme>.png.
 
 Usage:
     render.py <path/dist/busch-vacuum-card.js> <output-dir> [--nur <bereich>[,<bereich>...]]
@@ -152,7 +153,7 @@ RENDER_IDS = [
     ("remote keyboard", ["REM-02"]), ("remote", ["REM-01", "REM-03"]), ("clean settings", ["SET-02", "SET-04", "SET-05"]),
     ("map editor", ["EDI-01", "EDI-02"]), ("map backup", ["BAK-01", "BAK-02"]), ("views:", ["CORE-12"]),
     ("layout:", ["CORE-13", "CORE-08"]), ("ha panel:", ["CORE-13"]), ("station warning:", ["CORE-08", "DOCK-05"]),
-    ("selection tools:", ["TASK-02"]), ("symbols:", ["CORE-08", "CORE-12"]), ("translation:", ["CORE-16"]),
+    ("selection tools:", ["TASK-02"]), ("symbols:", ["CORE-08", "CORE-12"]), ("translation:", ["CORE-16"]), ("states:", ["CORE-10", "CORE-07"]),
 ]
 
 WIDTHS = (320, 390, 480, 960, 1280)
@@ -496,6 +497,11 @@ PAGE = """<!doctype html>
 """
 
 
+# M15: the missing states (F4) as scenarios; map frames marked for the routes of bereich_zustaende.
+ZUSTAND_SZENARIEN = ("roboter_weg", "kamera_weg", "laedt", "abruf_fehler", "keine_raeume")
+ZUSTAND_FRAMES = {"laedt": 990101, "abruf_fehler": 990102}
+
+
 def scenario(fixture, name):
     """docked as captured; cleaning and error derived from it (synthetic)."""
     data = json.loads(json.dumps({k: fixture[k] for k in ("states", "entities", "services")}))
@@ -571,6 +577,25 @@ def scenario(fixture, name):
         # history: the sensor without runs (no cloud connection), R18.
         sensor = states["sensor.robo_cleaning_history"]
         sensor["attributes"] = {k: v for k, v in sensor["attributes"].items() if not isinstance(v, dict)}
+    elif name == "roboter_weg":
+        # M15: the robot entity is unavailable (HA keeps the attributes of the last report).
+        vac["state"] = "unavailable"
+    elif name == "kamera_weg":
+        # M15: the map camera is unavailable.
+        for cam_id in ("camera.robo_map", "camera.robo_map_1"):
+            states[cam_id]["state"] = "unavailable"
+    elif name in ("laedt", "abruf_fehler"):
+        # M15: map picture and map data with a marked frame; bereich_zustaende holds (laedt) or spoils
+        # (abruf_fehler) exactly these answers (ZUSTAND_FRAMES).
+        frame = ZUSTAND_FRAMES[name]
+        for cam_id in ("camera.robo_map", "camera.robo_map_1"):
+            a = states[cam_id]["attributes"]
+            a["frame_id"] = frame
+            a["entity_picture"] = "/api/camera_proxy/%s?token=testtoken&v=%d" % (cam_id, frame)
+    elif name == "keine_raeume":
+        # M15: a map without rooms (empty room list).
+        for cam_id in ("camera.robo_map", "camera.robo_map_1"):
+            states[cam_id]["attributes"]["rooms"] = {}
     elif name == "error":
         vac["state"] = "error"
         vac["attributes"].update({"has_error": True, "error": "Wheel stuck", "charging": False})
@@ -1660,6 +1685,94 @@ def bereich_verlauf(k):
           json.dumps({"first": first, "second": second, "back": back}))
 
 
+# M15: per state group (picture name, scenario, config, task to choose) at 320/390/1280, light/dark.
+ZUSTAENDE = (("roboter-weg", "roboter_weg", None, None), ("kamera-weg", "kamera_weg", None, None),
+             ("laedt", "laedt", None, None), ("abruf-fehler", "abruf_fehler", None, None),
+             ("konfig-fehler", "docked", {"entity": "light.robo"}, None), ("keine-raeume", "keine_raeume", None, "room"))
+ZUSTAND_BREITEN = (320, 390, 1280)
+ZUSTAND_JS = """() => { const c = window.card(), sr = c.shadowRoot, vis = (n) => !!n && n.getBoundingClientRect().height > 0;
+    const start = sr.querySelector('.ctl[data-action=start]'), offline = sr.querySelector('.message[data-kind=offline]');
+    const err = sr.querySelector('.error');
+    return { startDisabled: start ? start.disabled : null, startDescribed: start ? start.getAttribute('aria-describedby') : null,
+      enabledDrive: Array.from(sr.querySelectorAll('.ctl')).filter((b) => !b.disabled && ['start', 'pause', 'stop', 'return', 'resume'].includes(b.getAttribute('data-action'))).length,
+      offline: offline && vis(offline) ? { id: offline.id, role: offline.getAttribute('role'), text: offline.textContent } : null,
+      notes: Array.from(sr.querySelectorAll('.map-note')).filter(vis).map((n) => ({ kind: n.dataset.kind, role: n.getAttribute('role'), text: n.textContent })),
+      retry: vis(sr.querySelector('[data-action=map-retry]')), busy: sr.querySelector('.map-stage') ? sr.querySelector('.map-stage').getAttribute('aria-busy') : null,
+      error: err && vis(err) ? err.textContent : null, chips: sr.querySelectorAll('.room-chip').length,
+      pageOverflow: document.documentElement.scrollWidth - innerWidth, small: window.smallTargets(sr) }; }"""
+ZUSTAND_SOLL = {
+    "roboter-weg": lambda z: bool(z["offline"]) and z["offline"]["role"] == "alert" and z["startDisabled"] is True
+    and z["startDescribed"] == z["offline"]["id"] and z["enabledDrive"] == 0,
+    "kamera-weg": lambda z: any(n["kind"] == "unavailable" and n["role"] == "alert" for n in z["notes"]),
+    "laedt": lambda z: any(n["kind"] == "loading" for n in z["notes"]) and z["busy"] == "true",
+    "abruf-fehler": lambda z: any(n["kind"] == "error" and n["role"] == "alert" for n in z["notes"]) and z["retry"],
+    "konfig-fehler": lambda z: bool(z["error"] and z["error"].strip()),
+    "keine-raeume": lambda z: z["chips"] == 0 and z["startDisabled"] is True,
+}
+
+
+def zustand_route_fuer(held):
+    """M15 route (registered after camera_route, so it goes first): holds the answers of the "laedt" frame in
+    `held` (let go by zustand_freigeben) and spoils those of the "abruf_fehler" frame; everything else falls back."""
+    def zustand_route(route):
+        url = route.request.url
+        if "v=%d" % ZUSTAND_FRAMES["laedt"] in url:
+            held.append(route)
+            return None
+        if "v=%d" % ZUSTAND_FRAMES["abruf_fehler"] in url:
+            # An unusable answer: the card takes the same path as for an HTTP error (data: res.json() fails ->
+            # image mode; picture: decode fails -> error note), without a 5xx among the run's bad responses.
+            if "/api/camera_map_data_proxy/" in url:
+                return route.fulfill(status=200, content_type="application/json", body="{")
+            return route.fulfill(status=200, content_type="image/svg+xml", body="kein Bild")
+        return route.fallback()
+    return zustand_route
+
+
+def zustand_freigeben(k):
+    """Answers every held "laedt" request normally (camera_route), so none fails or stays open."""
+    while k.held:
+        k.camera_route(k.held.pop())
+
+
+def zustand_aufbauen(k, szenario, config, task):
+    """Builds one M15 state. Held answers of an earlier "laedt" go first; for "laedt" itself the wait is for the
+    loading note, not for rest (its requests are held on purpose)."""
+    zustand_freigeben(k)
+    k.build(szenario, config=config, warten=szenario != "laedt")
+    if task:
+        k.page.evaluate("(t) => window.card().shadowRoot.querySelector('.task[data-task=' + t + ']').click()", task)
+    if szenario == "laedt":
+        k.page.wait_for_function("() => !!window.card().shadowRoot.querySelector('.map-note[data-kind=loading]')", timeout=8000)
+        k.frames(2)
+    else:
+        k.ruhe()
+
+
+def bereich_zustaende(k):
+    """M15: robot gone, camera gone, map loading, map fetch failed, config error, no rooms."""
+    page, report, check, theme, shot = k.page, k.report, k.check, k.theme, k.shot
+    rows = []
+    for label, szenario, config, task in ZUSTAENDE:
+        for w in ZUSTAND_BREITEN:
+            for th in THEMES:
+                page.set_viewport_size({"width": w, "height": 900})
+                theme(th)
+                zustand_aufbauen(k, szenario, config, task)
+                z = page.evaluate(ZUSTAND_JS)
+                shot(f"karte-{label}-{w}-{th}.png")
+                rows.append(dict(z, label=label, w=w, theme=th))
+    zustand_freigeben(k)
+    report["zustaende"] = rows
+    for label, _, _, _ in ZUSTAENDE:
+        mine = [r for r in rows if r["label"] == label]
+        check(f"states: {label} shows its hint in the card (320/390/1280, light/dark)",
+              all(ZUSTAND_SOLL[label](r) for r in mine), json.dumps([r for r in mine if not ZUSTAND_SOLL[label](r)][:3]))
+    check("states: no horizontal overflow, every visible button >= 44 px (6 groups)",
+          all(r["pageOverflow"] <= 0 and not r["small"] for r in rows),
+          json.dumps([(r["label"], r["w"], r["pageOverflow"], r["small"]) for r in rows if r["pageOverflow"] > 0 or r["small"]][:6]))
+
+
 # M21: English option/run words that must not stand in a German UI (raw values of tests/fixtures/voll.json).
 ENGLISCHE_WOERTER = ("Mopping after sweeping", "Sweeping", "Turbo", "Wetness level", "Moist", "Room cleaning", "Default mode")
 UEB_TEXT_JS = """() => { const t = (r) => (r ? r.innerText || r.textContent || '' : ''); const c = window.card(), d = window.dialog();
@@ -2425,6 +2538,12 @@ def bereich_regeln(k):
             r["regel1_karte_aufgabe_" + t] = lauf_breiten(
                 page, breiten=WIDTHS, hoehe=2000, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
                 vor_messung=lambda pg, t=t: (build("docked"), page.evaluate(task_prepare, t), ruhe()))
+        # M15: rule 1 for the six state groups.
+        for label, szenario, config, task in ZUSTAENDE:
+            r["regel1_zustand_" + label.replace("-", "_")] = lauf_breiten(
+                page, breiten=WIDTHS, messung=lambda pg: messe_text(pg, "busch-vacuum-card"),
+                vor_messung=lambda pg, s=szenario, c=config, t=task: zustand_aufbauen(k, s, c, t))
+        zustand_freigeben(k)
         r["zaehlung"] = zaehle(r)
         report["uiRegelnVerstoesse"] = bewerte(r)
 
@@ -2452,6 +2571,7 @@ BEREICHE = [
     ("sicherung", bereich_sicherung),
     # E2 (M21, M15): set their own size and theme; "regeln" sets its state again at its start.
     ("uebersetzung", bereich_uebersetzung),
+    ("zustaende", bereich_zustaende),
     ("regeln", bereich_regeln),
 ]
 
@@ -2501,7 +2621,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     repo_root = card_file.parent.parent
     fixture = json.loads((repo_root / "tests" / "fixtures" / "voll.json").read_text(encoding="utf-8"))
-    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty", "editor", "backup", "backup_running", "temporary", "station_low")}
+    data = {name: scenario(fixture, name) for name in STATES + ("floors", "settings", "shortcuts", "cleangenius", "customized", "nonstrict", "history_empty", "editor", "backup", "backup_running", "temporary", "station_low") + ZUSTAND_SZENARIEN}
     cam = fixture["states"]["camera.robo_map"]["attributes"]
     grid = synthetic_map_data(cam["rooms"], frame_id=cam["frame_id"])
     svg, svg_size = synthetic_map_svg(cam, grid)
@@ -2605,6 +2725,8 @@ def main():
                 return route.fulfill(status=200, content_type="image/svg+xml", body=wifi_svg)
             return route.fulfill(status=200, content_type="image/svg+xml", body=svg)
         page.route("**/api/camera_*proxy/**", camera_route)
+        held = []  # M15: requests of the "laedt" state, answered by zustand_freigeben
+        page.route("**/api/camera_*proxy/**", zustand_route_fuer(held))
 
         mdi = json.loads((HERE / "mdi-pfade.json").read_text(encoding="utf-8"))["pfade"]
         html = PAGE.replace("__SRC__", f"/dist/{card_file.name}").replace("__THEMA__", THEMA_CSS).replace("__MDI__", json.dumps(mdi))
@@ -2616,10 +2738,11 @@ def main():
         def theme(name):
             page.evaluate("(t) => { document.documentElement.dataset.theme = t; document.documentElement.style.colorScheme = t; }", name)
 
-        def build(state="docked", lang="de", config=None, panel=False, texte=None):
+        def build(state="docked", lang="de", config=None, panel=False, texte=None, warten=True):
             page.evaluate("(a) => window.buildCard(a)",
                           {"data": data[state], "lang": lang, "config": config or {}, "panel": panel, "texte": texte})
-            ruhe()
+            if warten:
+                ruhe()
 
         def open_menu():
             page.evaluate("() => { window.closeDialogs(); window.card().shadowRoot.querySelector('.menu-button').click(); }")
@@ -2656,12 +2779,13 @@ def main():
                             open_placeholder=open_placeholder, open_confirm=open_confirm, shot=shot, map_eval=map_eval,
                             open_obstacle=open_obstacle, open_info=open_info, open_floors=open_floors, cam=cam, grid=grid,
                             svg_size=svg_size, routing=routing, camera_route=camera_route, port=port, harness=harness,
-                            repo_root=repo_root,
+                            repo_root=repo_root, held=held,
                             texte_de=json.loads((repo_root / "tests" / "fixtures" / "uebersetzung-de.json").read_text(encoding="utf-8"))["texte"])
         for name, bereich in laufen:
             t0 = time.monotonic()
             bereich(k)
             report["bereichSekunden"][name] = round(time.monotonic() - t0, 1)
+        zustand_freigeben(k)
 
         report["serviceCalls"] = page.evaluate("() => window.__serviceCalls")
         build("docked")

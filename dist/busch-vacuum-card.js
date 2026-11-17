@@ -457,6 +457,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             stufeWarning: 'Warnung',
             stufeInfo: 'Hinweis',
             stufeLowWater: 'Wassermangel',
+            stufeOffline: 'Nicht erreichbar',
+            roboterWeg: 'Der Roboter ist nicht erreichbar. Befehle sind gesperrt, bis er sich wieder meldet.',
             infoPausiert: 'Reinigung unterbrochen: lädt und setzt danach fort.',
             warnungLoeschen: 'Warnung löschen',
             ausblenden: 'Ausblenden',
@@ -1095,6 +1097,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             stufeWarning: 'Warning',
             stufeInfo: 'Info',
             stufeLowWater: 'Low water',
+            stufeOffline: 'Unreachable',
+            roboterWeg: 'The robot is unreachable. Commands are locked until it reports back.',
             infoPausiert: 'Cleaning interrupted: charging, then it resumes.',
             warnungLoeschen: 'Clear warning',
             ausblenden: 'Dismiss',
@@ -2683,7 +2687,10 @@ const CONTROLS_BY_STATE = {
     cleaning: ['pause', 'stop', 'return'],
     paused: ['resume', 'stop', 'return'],
     returning: ['pause', 'stop'],
-    error: ['start', 'return']
+    error: ['start', 'return'],
+    // M15: a locked start with its reason instead of an empty bar (robotOffline).
+    unavailable: ['start'],
+    unknown: ['start']
 };
 
 function controlsFor(model, state) {
@@ -3023,12 +3030,14 @@ const MESSAGE_LOOK = {
     error: { word: 'stufeError', icon: 'mdi:alert-circle-outline' },
     warning: { word: 'stufeWarning', icon: 'mdi:alert-outline' },
     low_water: { word: 'stufeLowWater', icon: 'mdi:water-alert-outline' },
-    info: { word: 'stufeInfo', icon: 'mdi:information-outline' }
+    info: { word: 'stufeInfo', icon: 'mdi:information-outline' },
+    offline: { word: 'stufeOffline', icon: 'mdi:robot-vacuum-off' } // M15: the start's lock reason
 };
 
 /** Current messages [{ kind, text }]: error or warning (one code), low water, info. */
 function messagesFor(hass, model) {
     const list = [];
+    if (robotOffline(model)) list.push({ kind: 'offline', text: translate(hass, 'roboterWeg') });
     const id = model.entity('sensor.error');
     const sensor = id && hass.states[id];
     // The sensor carries HA's translated description; the attribute only English.
@@ -3042,6 +3051,9 @@ function messagesFor(hass, model) {
     if (model.attr('cleaning_paused')) list.push({ kind: 'info', text: translate(hass, 'infoPausiert') });
     return list;
 }
+
+/** M15: the robot reports no usable state (unavailable, unknown or missing): commands stay locked. */
+const robotOffline = (model) => !model.state || UNUSABLE.includes(model.state.state);
 
 /** Cleaning progress in percent from the sensor (else the attribute), or null. */
 function progressOf(hass, model) {
@@ -8607,7 +8619,8 @@ ha-card {
     background: var(--secondary-background-color, #eeeeee);
     min-width: 0;
 }
-.message[data-kind=error] {
+.message[data-kind=error],
+.message[data-kind=offline] {
     border-color: var(--bvc-error-color, var(--error-color, #db4437));
 }
 .message[data-kind=warning],
@@ -8617,7 +8630,8 @@ ha-card {
 .message > ha-icon {
     flex: none;
 }
-.message[data-kind=error] > ha-icon {
+.message[data-kind=error] > ha-icon,
+.message[data-kind=offline] > ha-icon {
     color: var(--bvc-error-color, var(--error-color, #db4437));
 }
 .message[data-kind=warning] > ha-icon,
@@ -10886,7 +10900,8 @@ class BuschVacuumCard extends HTMLElement {
         const buttons = names.map((name) => {
             // #1002: the primary start says what it cleans (CORE-07).
             const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
-            const blocked = name === 'start' && !ready.ok;
+            const offline = robotOffline(model);
+            const blocked = name === 'start' && (!ready.ok || offline);
             const variant = outside ? (name === 'return' ? 'primary' : 'secondary') : CONTROLS[name].variant || 'secondary';
             const button = BuschUI.action({ label, icon: CONTROLS[name].icon, variant, disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
             // #1002: the words in their own box, so a narrow bar shortens them instead of cutting the symbol.
@@ -10894,7 +10909,7 @@ class BuschVacuumCard extends HTMLElement {
             words.className = 'ctl-text';
             words.textContent = label;
             button.appendChild(words);
-            if (blocked) button.setAttribute('aria-describedby', 'task-hint');
+            if (blocked) button.setAttribute('aria-describedby', offline ? 'robot-offline' : 'task-hint');
             button.classList.add('ctl');
             button.setAttribute('data-action', name);
             return button;
@@ -12035,7 +12050,8 @@ class BuschVacuumCard extends HTMLElement {
             const node = document.createElement('div');
             node.className = 'message';
             node.setAttribute('data-kind', m.kind);
-            node.setAttribute('role', m.kind === 'error' ? 'alert' : 'status');
+            node.setAttribute('role', ['error', 'offline'].includes(m.kind) ? 'alert' : 'status');
+            if (m.kind === 'offline') node.id = 'robot-offline';
             const symbol = BuschUI.ha.icon(look.icon);
             symbol.setAttribute('aria-hidden', 'true');
             const body = document.createElement('div');
@@ -12051,6 +12067,8 @@ class BuschVacuumCard extends HTMLElement {
                 clear.setAttribute('data-action', 'clear');
                 node.appendChild(clear);
             }
+            // M15: the lock reason stays while the lock does.
+            if (m.kind === 'offline') return node;
             const dismiss = BuschUI.action({ label: translate(hass, 'ausblenden'), icon: 'mdi:close', variant: 'quiet', onClick: () => { this._dismissed.set(m.kind, m.text); this._update(); } });
             dismiss.setAttribute('data-action', 'dismiss');
             node.appendChild(dismiss);
