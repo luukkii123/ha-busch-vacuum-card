@@ -856,6 +856,32 @@ test('CORE-20 ohne Bestätigung (hidden_card_objects) sofortiger Wechsel', async
   assert.deepEqual(JSON.parse(JSON.stringify(haus.rufe)), [{ domain: 'dreame_vacuum', service: 'vacuum_select_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
 });
 
+test('M5 Kartenwechsel: Doppeltipp während des Wechsels ergibt einen Aufruf; Wahl zeigt „Wird gewechselt …“; Fehler mit R12-Text', async () => {
+  const { u, haus, karte } = await stockwerkKarte({ config: { hidden_card_objects: ['map_change_confirmation'] } });
+  let antworte;
+  haus.antwort = () => new Promise((ok) => { antworte = ok; });
+  assert.equal(karte._map.selectMap(7), true);
+  assert.equal(karte._map.selectMap(7), false, 'läuft schon');
+  antworte();
+  await mikro();
+  assert.equal(karte._map.selectMap(7), false, 'wartet auf die Kamera');
+  werkzeug(karte, 'floors').click();
+  const ziel = dialogVon(u).shadowRoot.querySelectorAll('.floor').find((e) => e.getAttribute('data-map') === '7');
+  assert.match(ziel.textContent, /Wird gewechselt/);
+  assert.equal(ziel.getAttribute('aria-busy'), 'true');
+  ziel.click();
+  assert.equal(haus.rufe.filter((r) => r.service === 'vacuum_select_map').length, 1);
+  karte.hass = haus.setze(kamera(haus, { map_index: 2, map_id: 7 }));
+  const b = await stockwerkKarte({ config: { hidden_card_objects: ['map_change_confirmation'] } });
+  b.haus.antwort = () => Promise.reject(new Error('Karte gesperrt'));
+  b.karte._map.selectMap(7);
+  await mikro();
+  const m = b.karte.shadowRoot.querySelectorAll('.message').find((n) => n.getAttribute('data-kind') === 'error');
+  assert.ok(m, 'R12-Text in der Karte');
+  assert.match(m.textContent, /Karte gesperrt/);
+  assert.equal(b.karte._map.selectMap(7), true, 'nach dem Fehler wieder wählbar');
+});
+
 test('MAP-07 Stockwerkswahl gesperrt bei laufender Aufgabe, Grund sichtbar', async () => {
   const { haus, karte } = await stockwerkKarte({ vacuum: { started: true }, zustand: 'cleaning' });
   const knopf = werkzeug(karte, 'floors');
@@ -1089,6 +1115,37 @@ test('MAP-04 Ignorieren/Rückgängig: genau vacuum_set_obstacle_ignore { x, y, o
   knopf().click();
   assert.deepEqual(r.haus.rufe[1].data, { entity_id: 'vacuum.robo', x: o.x, y: o.y, obstacle_ignored: false });
   assert.equal(ebene(r.karte, 'obstacles').querySelector('[data-object="2"]').getAttribute('data-ignored'), 'true', 'ignoriert sichtbar blass');
+});
+
+test('M4 Hindernis-Details: Roboterposition baut nicht neu, derselbe Knopf; Änderung des Hindernisses schon', async () => {
+  const r = await hindernisKarte();
+  oeffneDetails(r);
+  const d = dialogVon(r.u);
+  const knopf = $d(r.u, '[data-action="obstacle-ignore"]');
+  const vorher = d.stats.renders;
+  for (let i = 0; i < 5; i++) r.karte.hass = r.haus.setze(kamera(r.haus, { vacuum_position: { x: 100 + i, y: 100, a: 0 } }));
+  assert.equal(d.stats.renders, vorher);
+  assert.ok($d(r.u, '[data-action="obstacle-ignore"]') === knopf);
+  const o = r.obstacles['2'];
+  r.karte.hass = r.haus.setze(kamera(r.haus, { obstacles: Object.assign({}, r.obstacles, { 2: Object.assign({}, o, { ignore_status: 'Manually Ignored' }) }) }));
+  assert.equal($d(r.u, '[data-action="obstacle-ignore"]').textContent, 'Nicht mehr ignorieren');
+});
+
+test('M5 Ignorieren abgelehnt oder ohne Bestätigung: Hinweis in den Details statt still', async () => {
+  const r = await hindernisKarte();
+  r.haus.antwort = () => Promise.reject(new Error('Gerät offline'));
+  oeffneDetails(r);
+  $d(r.u, '[data-action="obstacle-ignore"]').click();
+  await mikro();
+  assert.match($d(r.u, '.obstacle-note').textContent, /Gerät offline/);
+  assert.equal($d(r.u, '[data-action="obstacle-ignore"]').disabled, false, 'wieder bedienbar');
+  const s = await hindernisKarte();
+  s.haus.antwort = () => Promise.resolve();
+  oeffneDetails(s);
+  $d(s.u, '[data-action="obstacle-ignore"]').click();
+  await mikro();
+  s.u.uhr.vor(10000);
+  assert.match($d(s.u, '.obstacle-note').textContent, /noch nicht bestätigt/);
 });
 
 test('MAP-04 Ignorieren gesperrt bei laufender Aufgabe und bei Selbst-Ignoriert, mit Grund; ohne Dienst kein Knopf', async () => {

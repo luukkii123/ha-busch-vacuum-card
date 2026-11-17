@@ -55,6 +55,35 @@ test('CORE-05/DEV-09 Zubehör: Hinweis bei Verbrauch unter 30 %, mit Text', () =
   assert.equal(eintrag(offen().u, 'consumables').querySelector('.badge'), null);
 });
 
+/** Sammelt unbehandelte Ablehnungen während `fn` (M5). */
+async function ohneUnbehandelte(fn) {
+  const liste = [];
+  const fang = (e) => liste.push(e);
+  process.on('unhandledRejection', fang);
+  try { await fn(); await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r)); } finally { process.off('unhandledRejection', fang); }
+  return liste;
+}
+
+test('M5 Orten abgelehnt: R12-Text in der Karte, keine unbehandelte Ablehnung, keine HA-Doppelmeldung', async () => {
+  let k;
+  const unbehandelt = await ohneUnbehandelte(async () => {
+    k = offen();
+    k.haus.antwort = () => Promise.reject(new Error('Roboter offline'));
+    eintrag(k.u, 'locate').click();
+    await new Promise((r) => setImmediate(r));
+  });
+  assert.deepEqual(unbehandelt, []);
+  assert.equal(k.haus.zusatz[0][1], false, 'notifyOnError = false: die Karte meldet selbst');
+  const m = k.karte.shadowRoot.querySelectorAll('.message').find((n) => n.getAttribute('data-kind') === 'error');
+  assert.ok(m, 'Fehlermeldung in der Karte');
+  assert.equal(m.getAttribute('role'), 'alert');
+  assert.match(m.textContent, /Orten/);
+  assert.match(m.textContent, /Roboter offline/);
+  assert.match(m.textContent, /erneut/);
+  m.querySelector('[data-action="dismiss"]').click();
+  assert.equal(k.karte.shadowRoot.querySelectorAll('.message').find((n) => n.getAttribute('data-kind') === 'error'), undefined, 'ausblendbar');
+});
+
 test('Orten ruft genau vacuum.locate und schließt das Menü', () => {
   const { u, haus } = offen();
   eintrag(u, 'locate').click();

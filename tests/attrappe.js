@@ -187,13 +187,14 @@ const ZUSTAND = { docked: 'Angedockt', cleaning: 'Reinigt', paused: 'Pausiert', 
 function neuesHaus({ states, entities = {}, services = {}, devices, sprache = 'de' } = {}) {
   states = Object.assign({ 'vacuum.robo': einfacherSauger() }, states);
   for (let i = 0; i < 50; i++) states['sensor.fremd_' + i] = { entity_id: 'sensor.fremd_' + i, state: String(i), attributes: {} };
-  const haus = { rufe: [], antwort: () => new Promise(() => {}), sprache, entities, services, devices };
+  // `zusatz` sammelt je Aufruf die Argumente nach `data` (target, notifyOnError, …), M5.
+  const haus = { rufe: [], zusatz: [], antwort: () => new Promise(() => {}), sprache, entities, services, devices };
   haus.hass = () => ({
     states: haus.states, entities: haus.entities, services: haus.services, devices: haus.devices,
     language: haus.sprache, locale: { language: haus.sprache }, themes: {}, config: { unit_system: { length: 'km' } },
     // Wie HAs Formatierer: Zustände übersetzt, Zahl mit der Einheit der Entität.
     formatEntityState: (s, zustand = s.state) => (ZUSTAND[zustand] || zustand) + (s.attributes.unit_of_measurement ? ' ' + s.attributes.unit_of_measurement : ''),
-    callService: (domain, service, data) => { haus.rufe.push({ domain, service, data }); return haus.antwort(domain, service, data); },
+    callService: (domain, service, data, ...rest) => { haus.rufe.push({ domain, service, data }); haus.zusatz.push(rest); return haus.antwort(domain, service, data); },
   });
   haus.states = states;
   /** Neuer Zustand wie von HA: neues states-Objekt, nur die genannten Einträge ersetzt. */

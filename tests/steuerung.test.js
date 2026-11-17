@@ -159,14 +159,81 @@ test('CORE-07 Sofortanzeige: Zielzustand sofort, bleibt bei fremden Updates', ()
   assert.equal($(karte, '.state').textContent, 'Reinigt');
 });
 
-test('Sofortanzeige endet nach 5 s ohne Antwort des Geräts', () => {
-  const { karte, u } = karteMit('voll');
+test('Sofortanzeige endet 5 s nach der Dienstantwort ohne Antwort des Geräts', async () => {
+  const { karte, u, haus } = karteMit('voll');
+  haus.antwort = () => Promise.resolve();
   knopf(karte, 'start').click();
+  await mikro();
   u.uhr.vor(4900);
   assert.equal($(karte, '.state').textContent, 'Reinigt');
   u.uhr.vor(200);
   assert.equal($(karte, '.state').textContent, 'Angedockt');
   assert.deepEqual(aktionen(karte), ['start']);
+});
+
+test('M3 Start mit hängendem Dienst (7 s): Vorschau bleibt, ein zweiter Start sendet nichts', async () => {
+  const { karte, u, haus } = karteMit('voll');
+  const start = knopf(karte, 'start');
+  start.click();
+  u.uhr.vor(7000);
+  await mikro();
+  assert.equal($(karte, '.state').textContent, 'Reinigt', 'noch beim Senden');
+  start.click();
+  if (knopf(karte, 'start')) knopf(karte, 'start').click();
+  assert.equal(haus.rufe.length, 1);
+});
+
+test('M3 Fenster ab Dienstantwort: Dienst nach 4 s hält die Vorschau bis 5 s danach', async () => {
+  const { karte, u, haus } = karteMit('voll');
+  haus.antwort = () => new Promise((ok) => u.uhr.setTimeout(ok, 4000));
+  knopf(karte, 'start').click();
+  u.uhr.vor(4000);
+  await mikro();
+  u.uhr.vor(4900);
+  assert.equal($(karte, '.state').textContent, 'Reinigt');
+  u.uhr.vor(200);
+  assert.equal($(karte, '.state').textContent, 'Angedockt');
+});
+
+test('M3 hängender Dienst: Vorschau endet am Deckel von 15 s', () => {
+  const { karte, u } = karteMit('voll');
+  knopf(karte, 'start').click();
+  u.uhr.vor(14900);
+  assert.equal($(karte, '.state').textContent, 'Reinigt');
+  u.uhr.vor(200);
+  assert.equal($(karte, '.state').textContent, 'Angedockt');
+});
+
+/** Neue Roboterposition auf der Kartenkamera (wie während einer Reinigung). */
+function position(haus, x) {
+  const cam = haus.states['camera.robo_map'];
+  return haus.setze({ 'camera.robo_map': Object.assign({}, cam, { attributes: Object.assign({}, cam.attributes, { vacuum_position: { x, y: 100, a: 0 } }) }) });
+}
+
+test('M4 Aktionsleiste: pointerdown, Kamera-Update, click → derselbe Knoten und genau ein vacuum.pause', () => {
+  const { karte, u, haus } = karteMit('voll', 'cleaning', { started: true });
+  const pause = knopf(karte, 'pause');
+  $(karte, '.controls').dispatchEvent(u.neuesEreignis('pointerdown'));
+  karte.hass = position(haus, 1234);
+  karte.hass = position(haus, 1250);
+  assert.ok(knopf(karte, 'pause') === pause, 'derselbe Knoten');
+  u.document.dispatchEvent(u.neuesEreignis('pointerup'));
+  karte.hass = position(haus, 1300);
+  assert.ok(knopf(karte, 'pause') === pause, 'auch ohne Geste an Ort und Stelle');
+  pause.click();
+  assert.deepEqual(haus.rufe.map((r) => r.domain + '.' + r.service), ['vacuum.pause']);
+});
+
+test('M4 Aktionsleiste: neue Knopfmenge wartet auf das Ende der Geste', () => {
+  const { karte, u, haus } = karteMit('voll', 'cleaning', { started: true });
+  const vorher = aktionen(karte);
+  $(karte, '.controls').dispatchEvent(u.neuesEreignis('pointerdown'));
+  karte.hass = haus.setze(sauger(haus, 'paused', { started: true }));
+  assert.deepEqual(aktionen(karte), vorher, 'während der Geste unverändert');
+  assert.equal($(karte, '.state').textContent, 'Pausiert', 'der Zustandstext folgt sofort');
+  u.document.dispatchEvent(u.neuesEreignis('pointerup'));
+  assert.notDeepEqual(aktionen(karte), vorher, 'danach die neue Leiste');
+  assert.ok(aktionen(karte).includes('resume'));
 });
 
 test('Fehler von callService setzt sofort auf den echten Zustand zurück', async () => {

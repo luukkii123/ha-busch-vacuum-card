@@ -4,6 +4,14 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { neueUmgebung, neuesHaus, neueKarte } = require('./attrappe.js');
 
+test('M5 ein Dienstweg: callService( genau einmal, in callDevice', () => {
+  const quelle = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'dist', 'busch-vacuum-card.js'), 'utf8');
+  const stellen = Array.from(quelle.matchAll(/callService\(/g), (m) => m.index);
+  assert.equal(stellen.length, 1, 'callService( nur in callDevice');
+  const anfang = quelle.indexOf('function callDevice(');
+  assert.ok(anfang >= 0 && stellen[0] > anfang && stellen[0] < quelle.indexOf('\n}\n', anfang), 'in callDevice');
+});
+
 test('Karte, Editor und Picker-Eintrag sind registriert', () => {
   const u = neueUmgebung();
   assert.ok(u.registry.get('busch-vacuum-card'), 'Karte definiert');

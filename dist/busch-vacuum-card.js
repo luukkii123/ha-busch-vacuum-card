@@ -626,7 +626,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             speichert: 'Speichert …',
             wertUnbekannt: 'Wert unbekannt',
             aenderung: 'Änderung',
-            nichtUebernommen: '{name}: Das Gerät hat die Änderung nicht übernommen. Der bisherige Wert gilt weiter. Versuche es erneut.',
+            nichtUebernommen: '{name}: Das Gerät hat die Änderung noch nicht bestätigt. Angezeigt ist der zuletzt gemeldete Wert.',
             schreibFehler: '{name} wurde nicht geändert ({grund}). Der bisherige Wert gilt weiter. Versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
             bereich: 'Erlaubt sind Werte von {min} bis {max}.',
             sperre_idle: 'Während einer Aufgabe nicht änderbar.',
@@ -658,6 +658,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             starten: 'Starten',
             wirdGestartet: 'Wird gestartet …',
             aktionFehler: '{name} wurde nicht gestartet ({grund}). An der Station hat sich nichts geändert. Prüfe Station und Roboter und versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
+            befehlFehler: '{name} hat nicht geklappt ({grund}). Prüfe, ob der Roboter erreichbar ist, und versuche es erneut; hilft das nicht, prüfe die Integration dreame_vacuum.',
+            wirdGewechselt: 'Wird gewechselt …',
             stationEinstellungen: 'Station-Einstellungen',
             shortcuts: 'Shortcuts',
             skripte: 'Skripte',
@@ -1264,7 +1266,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             speichert: 'Saving …',
             wertUnbekannt: 'Value unknown',
             aenderung: 'Change',
-            nichtUebernommen: '{name}: The device did not take the change. The previous value still applies. Try again.',
+            nichtUebernommen: '{name}: The device has not confirmed the change yet. Shown is the last reported value.',
             schreibFehler: '{name} was not changed ({grund}). The previous value still applies. Try again; if that does not help, check the dreame_vacuum integration.',
             bereich: 'Allowed values are {min} to {max}.',
             sperre_idle: 'Cannot change during a task.',
@@ -1296,6 +1298,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             starten: 'Start',
             wirdGestartet: 'Starting …',
             aktionFehler: '{name} did not start ({grund}). Nothing changed at the station. Check station and robot and try again; if that does not help, check the dreame_vacuum integration.',
+            befehlFehler: '{name} did not work ({grund}). Check that the robot is reachable and try again; if that does not help, check the dreame_vacuum integration.',
+            wirdGewechselt: 'Changing …',
             stationEinstellungen: 'Station settings',
             shortcuts: 'Shortcuts',
             skripte: 'Scripts',
@@ -2226,6 +2230,12 @@ function settingState(card, model, key) {
     const entity = entityId ? hass.states[entityId] : null;
     const pending = card._settingWrites.get(key);
     if (pending && pending.check(model)) settleWrite(card, key);
+    // M3: a confirmation after the note (cloud latency) clears it; the device has the wanted value.
+    const late = card._settingLate.get(key);
+    if (!pending && late && late(model)) {
+        card._settingLate.delete(key);
+        card._settingNotes.delete(key);
+    }
     const busy = card._settingWrites.get(key);
     const list = model.attr(key + '_list');
     let options = def.options || (Array.isArray(list) ? list : entity && Array.isArray(entity.attributes.options) ? entity.attributes.options : null);
@@ -2291,34 +2301,79 @@ function settleWrite(card, key) {
     card._settingWrites.delete(key);
 }
 
+/**
+ * M5: the card's one way to a HA service. Always a promise, also when hass
+ * throws; HA's own error toast is off (notifyOnError = false) because the card
+ * shows its R12 text itself.
+ */
+function callDevice(hass, domain, service, data) {
+    try {
+        return Promise.resolve(hass.callService(domain, service, data, undefined, false));
+    } catch (error) {
+        return Promise.reject(error);
+    }
+}
+
+/** M5: writes of the card itself (not of a dialog row); their R12 text stands in the card's messages. */
+const CARD_WRITES = ['card:locate', 'card:clear_warning', 'card:select_map'];
+
+/** M5: the one map change behind CORE-20; busy until the map camera shows the target, one call per tap. */
+function changeMap(card, entry, call) {
+    return trackWrite(card, 'card:select_map', { want: entry.id, label: translate(card._hass, 'kartenWechselTitel'), failKey: 'befehlFehler', call,
+        check: (model) => {
+            const camera = model.related.maps.map[0];
+            const state = camera && model.hass.states[camera];
+            return !!state && state.attributes.map_index === entry.index;
+        } });
+}
+
 /** Why a service failed, for the R12 text: HA's message, else the code. */
 const errorText = (error) => String((error && (error.message || error.code)) || error || '?');
 
 /**
  * Tracks one write until the device confirms it (`check`), or reports why not:
- * a service error at once, no confirmation after OPTIMISTIC_HOLD_MS (some
- * setters end silently). Without `check` (actions) the service's answer is the
- * confirmation; `done` runs then. A second tap while one runs is ignored (R11).
+ * a service error at once, no confirmation OPTIMISTIC_HOLD_MS after the
+ * service answered (M3: `sending` until the answer, capped at SENDING_CAP_MS,
+ * then `confirming`; some setters end silently). A confirmation after the note
+ * clears it (settingState). Without `check` (actions) the service's answer is
+ * the confirmation; `done` runs then. A second tap while one runs is ignored (R11).
  */
 function trackWrite(card, key, { want, check, call, label, done, failKey = 'schreibFehler' }) {
     if (card._settingWrites.has(key)) return false;
     card._settingNotes.delete(key);
-    const pending = { want, check: check || (() => false), timer: null };
+    card._settingLate.delete(key);
+    const pending = { want, check: check || (() => false), timer: null, phase: 'sending' };
     const name = label || (SETTINGS[key] ? settingLabel(card._hass, key) : translate(card._hass, 'aenderung'));
+    const redraw = () => {
+        rerender(card);
+        if (CARD_WRITES.includes(key)) card._update();
+    };
     const fail = (text) => {
         if (card._settingWrites.get(key) !== pending) return;
         settleWrite(card, key);
         if (text) card._settingNotes.set(key, text);
-        rerender(card);
+        redraw();
     };
-    if (check) pending.timer = setTimeout(() => fail(check(card._model()) ? '' : translate(card._hass, 'nichtUebernommen', { name })), OPTIMISTIC_HOLD_MS);
+    const unconfirmed = () => {
+        if (card._settingWrites.get(key) !== pending) return;
+        if (check(card._model())) return fail('');
+        card._settingLate.set(key, check);
+        fail(translate(card._hass, 'nichtUebernommen', { name }));
+    };
+    if (check) pending.timer = setTimeout(unconfirmed, SENDING_CAP_MS);
     card._settingWrites.set(key, pending);
     Promise.resolve(call()).then(() => {
-        if (check || card._settingWrites.get(key) !== pending) return;
+        if (card._settingWrites.get(key) !== pending) return;
+        if (check) {
+            pending.phase = 'confirming';
+            clearTimeout(pending.timer);
+            pending.timer = setTimeout(unconfirmed, OPTIMISTIC_HOLD_MS);
+            return;
+        }
         if (done) done();
         fail('');
     }, (error) => fail(translate(card._hass, failKey, { name, grund: errorText(error) })));
-    rerender(card);
+    redraw();
     return true;
 }
 
@@ -2332,7 +2387,7 @@ function writeSetting(card, key, value, params) {
     return trackWrite(card, key, {
         want,
         check: (model) => sameSetting(def.control, settingValue(model, key).value, want),
-        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_property', data)
+        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_property', data)
     });
 }
 
@@ -2340,14 +2395,14 @@ function writeSetting(card, key, value, params) {
 function callAction(card, key, value, { track = key, label, done, failKey } = {}) {
     const data = { entity_id: card._opts.entity, key };
     if (value !== undefined) data.value = String(value);
-    return trackWrite(card, track, { label, done, failKey, call: () => card._hass.callService('dreame_vacuum', 'vacuum_call_action', data) });
+    return trackWrite(card, track, { label, done, failKey, call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_call_action', data) });
 }
 
 function pickMap(card, model, name) {
     const entry = (model.attr('maps') || []).find((m) => (m.custom_name || m.name || String(m.id)) === name);
     if (!entry) return false;
     if (card._map) return card._map.selectMap(entry.id);
-    card._confirmMapChange(name, () => card._hass.callService('dreame_vacuum', 'vacuum_select_map', { entity_id: card._opts.entity, map_id: entry.id }));
+    card._confirmMapChange(name, () => changeMap(card, entry, () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_select_map', { entity_id: card._opts.entity, map_id: entry.id })));
     return true;
 }
 
@@ -2663,7 +2718,12 @@ function viewMatrix({ width, height, stageWidth, stageHeight, rotation = 0, scal
 // ---------------------------------------------------------------------------
 
 /** How long a tapped target state is shown before the device has to confirm it. */
+/** An obstacle the device ignores (manually or automatically). */
+const obstacleIgnored = (item) => /ignored/i.test(String(item.ignore_status || '')) && !/not/i.test(String(item.ignore_status || ''));
+
 const OPTIMISTIC_HOLD_MS = 5000;
+// M3: longest wait for the service's answer before the confirmation window gives up.
+const SENDING_CAP_MS = 15000;
 /** #1002: two columns from this card width (px); back to narrow only below WIDE_MIN - WIDE_SLACK. */
 const WIDE_MIN = 900;
 const WIDE_SLACK = 20;
@@ -4542,12 +4602,24 @@ class MapView {
 
     /** Details: facts, photo only when there is one, download, ignore/undo, actions of other modules. */
     _obstacleView(id) {
+        // M4: the camera changes with every robot position; the details redraw only when what they show changes.
+        let shown = null;
+        let owner = null;
+        const what = () => {
+            const model = this.card._model();
+            const cam = this.hass.states[this._cameraId];
+            const item = cam && cam.attributes.obstacles && cam.attributes.obstacles[id];
+            return JSON.stringify([item || null, taskActive(model, model.state ? model.state.state : 'unavailable'), model.can('dreame_vacuum.vacuum_set_obstacle_ignore')]);
+        };
         return {
             title: translate(this.hass, 'hindernis'),
             id: 'obstacle',
             kind: 'menu',
-            watch: () => [this._cameraId, this.card._opts.entity],
-            render: (body, hass) => {
+            watch: () => [],
+            update: () => { if (owner && what() !== shown) owner._render(); },
+            render: (body, hass, dialog) => {
+                owner = dialog;
+                shown = what();
                 const model = this.card._model();
                 const cam = hass.states[this._cameraId];
                 const item = cam && cam.attributes.obstacles && cam.attributes.obstacles[id];
@@ -4564,7 +4636,7 @@ class MapView {
                     return;
                 }
                 const status = String(item.ignore_status || '');
-                const ignored = /ignored/i.test(status) && !/not/i.test(status);
+                const ignored = obstacleIgnored(item);
                 const auto = /automatic/i.test(status);
                 const facts = document.createElement('dl');
                 facts.className = 'obstacle-facts';
@@ -4599,6 +4671,12 @@ class MapView {
                     const pending = this._ignorePending && this._ignorePending.id === id && this._ignorePending.wanted !== ignored;
                     if (busy) note('ignorierenGesperrt');
                     if (auto) note('autoIgnoriert');
+                    if (this._ignoreNote && this._ignoreNote.id === id && !pending) {
+                        const p = document.createElement('p');
+                        p.setAttribute('role', 'alert');
+                        p.textContent = this._ignoreNote.text;
+                        notes.appendChild(p);
+                    }
                     const label = translate(hass, ignored ? 'nichtIgnorieren' : 'ignorieren');
                     const button = BuschUI.action({ label, text: label, variant: 'secondary', disabled: busy || auto || pending, onClick: () => this._setIgnore(id, item, !ignored) });
                     button.setAttribute('data-action', 'obstacle-ignore');
@@ -4620,15 +4698,24 @@ class MapView {
     _setIgnore(id, item, wanted) {
         if (this._ignorePending && this._ignorePending.id === id) return;
         const pending = { id, wanted, timer: null };
-        const done = () => {
+        const name = translate(this.hass, wanted ? 'ignorieren' : 'nichtIgnorieren');
+        this._ignoreNote = null;
+        // M5: a failure or no confirmation stands in the details as a note, never silent.
+        const done = (text) => {
             if (this._ignorePending !== pending) return;
             clearTimeout(pending.timer);
             this._ignorePending = null;
+            if (text) this._ignoreNote = { id, text };
             if (this.card._dialog) this.card._dialog._render();
         };
-        pending.timer = setTimeout(done, OPTIMISTIC_HOLD_MS * 2);
+        pending.timer = setTimeout(() => {
+            const cam = this.hass.states[this._cameraId];
+            const now = cam && cam.attributes.obstacles && cam.attributes.obstacles[id];
+            done(now && obstacleIgnored(now) === wanted ? '' : translate(this.hass, 'nichtUebernommen', { name }));
+        }, OPTIMISTIC_HOLD_MS * 2);
         this._ignorePending = pending;
-        Promise.resolve(this.hass.callService('dreame_vacuum', 'vacuum_set_obstacle_ignore', { entity_id: this.card._opts.entity, x: item.x, y: item.y, obstacle_ignored: wanted })).catch(done);
+        callDevice(this.hass, 'dreame_vacuum', 'vacuum_set_obstacle_ignore', { entity_id: this.card._opts.entity, x: item.x, y: item.y, obstacle_ignored: wanted })
+            .catch((error) => done(translate(this.hass, 'befehlFehler', { name, grund: errorText(error) })));
         if (this.card._dialog) this.card._dialog._render();
     }
 
@@ -4651,9 +4738,10 @@ class MapView {
     /** Contract: change the floor, only through core's confirmation (CORE-20); false when refused. */
     selectMap(mapId) {
         const entry = this._maps().find((m) => String(m.id) === String(mapId));
-        if (!entry || this._busy() || entry.id === this._activeMapId()) return false;
+        // M5: one change at a time, until the camera shows the target (changeMap).
+        if (!entry || this._busy() || entry.id === this._activeMapId() || this.card._settingWrites.has('card:select_map')) return false;
         const name = entry.custom_name || entry.name || String(entry.id);
-        this.card._confirmMapChange(name, () => this.hass.callService('dreame_vacuum', 'vacuum_select_map', { entity_id: this.card._opts.entity, map_id: entry.id }));
+        this.card._confirmMapChange(name, () => changeMap(this.card, entry, () => callDevice(this.hass, 'dreame_vacuum', 'vacuum_select_map', { entity_id: this.card._opts.entity, map_id: entry.id })));
         return true;
     }
 
@@ -4673,10 +4761,12 @@ class MapView {
                 const list = document.createElement('div');
                 list.className = 'menu floors';
                 const active = this._activeMapId();
+                const changing = this.card._settingWrites.get('card:select_map'); // M5
                 for (const entry of this._maps()) {
                     const name = entry.custom_name || entry.name || String(entry.id);
                     const current = entry.id === active;
-                    const button = BuschUI.action({ label: current ? name + ' · ' + translate(hass, 'aktiveKarte') : name, variant: 'quiet', disabled: this._busy() && !current, onClick: () => {
+                    const target = !!changing && changing.want === entry.id;
+                    const button = BuschUI.action({ label: current ? name + ' · ' + translate(hass, 'aktiveKarte') : target ? name + ' · ' + translate(hass, 'wirdGewechselt') : name, variant: 'quiet', disabled: (this._busy() || !!changing) && !current, onClick: () => {
                         if (current) dialog.close();
                         else this.selectMap(entry.id);
                     } });
@@ -4695,7 +4785,8 @@ class MapView {
                     }
                     const text = document.createElement('span');
                     text.className = 'floor-name';
-                    text.textContent = current ? name + ' · ' + translate(hass, 'aktiveKarte') : name;
+                    text.textContent = current ? name + ' · ' + translate(hass, 'aktiveKarte') : target ? name + ' · ' + translate(hass, 'wirdGewechselt') : name;
+                    if (target) button.setAttribute('aria-busy', 'true');
                     button.appendChild(text);
                     list.appendChild(button);
                 }
@@ -4884,10 +4975,15 @@ function loadSettingTexts(card) {
     card._settingTexts = Promise.resolve(hass.loadBackendTranslation('entity', 'dreame_vacuum')).then(() => rerender(card), () => {});
 }
 
-/** A settings view redraws when the vacuum or any entity of its device changes. */
-const settingsWatch = (card) => {
+/**
+ * What a settings view redraws for (M4): the vacuum and the device's setting
+ * entities. Running sensors only where the view shows them (`sensors`:
+ * consumables, device info), the map camera only for views about rooms.
+ */
+const settingsWatch = (card, { sensors = false, camera = false } = {}) => {
     const model = card._model();
-    return [card._opts.entity, ...Object.values(model.related.device), ...model.related.maps.map.slice(0, 1)];
+    const device = Object.values(model.related.device).filter((id) => sensors || !/^(sensor|binary_sensor|camera)\./.test(id));
+    return [card._opts.entity, ...device, ...(camera ? model.related.maps.map.slice(0, 1) : [])];
 };
 
 /** Menu entries filled by a module; the others keep core's placeholder until theirs arrives. */
@@ -4977,7 +5073,7 @@ function groupView(card, name) {
         title: translate(card._hass, 'gruppe_' + name),
         id: 'settings-group',
         kind: 'editor',
-        watch: () => settingsWatch(card),
+        watch: () => settingsWatch(card, { sensors: ['consumables', 'info'].includes(name) }),
         render: (body, hass, dialog) => {
             const model = card._model();
             if (group.module) {
@@ -5079,7 +5175,7 @@ function writeDnd(card, model, list) {
     return trackWrite(card, 'dnd_task', {
         label: translate(card._hass, 'gruppe_dnd'),
         check: (m) => dndJson(dndTasks(m)) === value,
-        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_property', { entity_id: card._opts.entity, key: 'dnd_task', value })
+        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_property', { entity_id: card._opts.entity, key: 'dnd_task', value })
     });
 }
 
@@ -5360,7 +5456,7 @@ function resetConfirm(card, name, label, percent) {
             const go = BuschUI.action({ label: translate(hass, 'zuruecksetzen'), text: translate(hass, 'zuruecksetzen'), variant: 'destructive', onClick: () => {
                 const consumable = CONSUMABLES[name];
                 if (consumable === null) callAction(card, 'reset_track_cleaning', undefined, { track: 'reset:' + name, label });
-                else trackWrite(card, 'reset:' + name, { label, call: () => card._hass.callService('dreame_vacuum', 'vacuum_reset_consumable', { entity_id: card._opts.entity, consumable }) });
+                else trackWrite(card, 'reset:' + name, { label, call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_reset_consumable', { entity_id: card._opts.entity, consumable }) });
                 dialog._goBack();
             } });
             go.setAttribute('data-action', 'confirm');
@@ -5446,7 +5542,7 @@ function writeSchedule(card, list) {
     return trackWrite(card, 'schedule', {
         label: translate(card._hass, 'gruppe_schedule'),
         check: (m) => scheduleValue(scheduleList(m)) === value,
-        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_property', { entity_id: card._opts.entity, key: 'schedule', value })
+        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_property', { entity_id: card._opts.entity, key: 'schedule', value })
     });
 }
 
@@ -5730,7 +5826,7 @@ function voicePackConfirm(card, draft) {
             const go = BuschUI.action({ label: translate(hass, 'installieren'), text: translate(hass, busy ? 'speichert' : 'installieren'), variant: 'primary', disabled: busy, onClick: () => {
                 trackWrite(card, 'voice_pack', {
                     label: translate(hass, 'sprachpaket'),
-                    call: () => card._hass.callService('dreame_vacuum', 'vacuum_install_voice_pack', data),
+                    call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_install_voice_pack', data),
                     done: () => {
                         card._drafts.delete('voice');
                         card._settingDone.set('voice_pack', translate(hass, 'sprachpaketGesendet', { id: data.lang_id }));
@@ -5956,7 +6052,7 @@ function writeRoom(card, id, change) {
         want: change,
         label: roomName(roomsOf(model)[id], id),
         check: (m) => Object.keys(change).every((key) => roomCode(key, (roomsOf(m)[id] || {})[key]) === roomCode(key, change[key])),
-        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, data))
+        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, data))
     });
 }
 
@@ -5966,7 +6062,7 @@ function writeMopType(card, id, type) {
         want: type,
         label: roomName(roomsOf(card._model())[id], id),
         check: (m) => String((roomsOf(m)[id] || {}).mop_type || '').toUpperCase() === type,
-        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_mop_type', { entity_id: card._opts.entity, mop_type: { [id]: type } })
+        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_mop_type', { entity_id: card._opts.entity, mop_type: { [id]: type } })
     });
 }
 
@@ -6025,7 +6121,7 @@ function roomsView(card) {
         title: translate(card._hass, 'raeumeEinstellen'),
         id: 'rooms',
         kind: 'editor',
-        watch: () => settingsWatch(card),
+        watch: () => settingsWatch(card, { camera: true }),
         render: (body, hass, dialog) => {
             const model = card._model();
             const rooms = roomsOf(model);
@@ -6056,7 +6152,7 @@ function roomView(card, id) {
         title: roomName(roomsOf(model0)[id], id),
         id: 'room',
         kind: 'editor',
-        watch: () => settingsWatch(card),
+        watch: () => settingsWatch(card, { camera: true }),
         render: (body, hass, dialog) => {
             const model = card._model();
             const room = roomsOf(model)[id];
@@ -6164,7 +6260,7 @@ function applyAllView(card, sourceId) {
                         if (!data) { run.error = translate(hass, 'raumUnvollstaendig'); break; }
                         dialog._render();
                         try {
-                            await card._hass.callService('dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, data));
+                            await callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, data));
                             run.done.push(id);
                         } catch (error) {
                             run.error = errorText(error);
@@ -6221,7 +6317,7 @@ function sequenceView(card) {
         title: translate(card._hass, 'entrySequence'),
         id: 'sequence',
         kind: 'editor',
-        watch: () => settingsWatch(card),
+        watch: () => settingsWatch(card, { camera: true }),
         render: (body, hass, dialog) => {
             const model = card._model();
             const rooms = roomsOf(model);
@@ -6445,7 +6541,7 @@ function sequenceView(card) {
                     const same = (m) => JSON.stringify((m.attr('cleaning_sequence') || []).map(Number)) === JSON.stringify(ids);
                     undo = null;
                     trackWrite(card, 'sequence', { want: ids, label: translate(hass, 'entrySequence'), check: same,
-                        call: () => card._hass.callService('dreame_vacuum', 'vacuum_set_cleaning_sequence', { entity_id: card._opts.entity, cleaning_sequence: ids }) });
+                        call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_cleaning_sequence', { entity_id: card._opts.entity, cleaning_sequence: ids }) });
                 } });
             save.setAttribute('data-action', 'save');
             if (busy) save.setAttribute('aria-busy', 'true');
@@ -6754,8 +6850,8 @@ function shortcutText(hass, model, entry) {
  */
 function startShortcut(card, entry, done) {
     const call = entry.kind === 'device'
-        ? () => card._hass.callService('dreame_vacuum', 'vacuum_start_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id })
-        : () => card._hass.callService('script', 'turn_on', { entity_id: entry.id });
+        ? () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_start_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id })
+        : () => callDevice(card._hass, 'script', 'turn_on', { entity_id: entry.id });
     return trackWrite(card, 'shortcut:' + entry.kind + ':' + entry.id, { label: entry.name, failKey: 'shortcutFehler', call, done });
 }
 
@@ -6877,20 +6973,28 @@ function shortcutRenameView(card, entry) {
     const track = 'rename:' + entry.id;
     if (!card._drafts.has(key)) card._drafts.set(key, entry.name);
     let checked = false;
+    let refresh = null;
+    const isLocked = () => {
+        const model = card._model();
+        return taskActive(model, model.state ? model.state.state : 'unavailable');
+    };
     return {
         title: translate(card._hass, 'umbenennen') + ': ' + entry.name,
         id: 'shortcut-rename',
         kind: 'editor',
-        watch: () => [card._opts.entity],
+        // M4: the vacuum's lock updates in place (update); the field is never rebuilt under the keyboard.
+        watch: () => [],
+        update: () => { if (refresh) refresh(); },
         render: (body, hass, dialog) => {
-            const model = card._model();
-            const locked = taskActive(model, model.state ? model.state.state : 'unavailable');
+            let locked = isLocked();
             const busy = card._settingWrites.has(track);
             const error = () => (checked && !card._drafts.get(key).trim() ? translate(hass, 'nameFehlt') : '');
             if (card._drafts.get(key) !== entry.name) body.appendChild(noteLine(translate(hass, 'ungespeichert'), 'dirty'));
-            if (locked) body.appendChild(noteLine(translate(hass, 'sperre_idle')));
+            const lockNote = noteLine(translate(hass, 'sperre_idle'));
+            if (locked) body.appendChild(lockNote);
             const failed = card._settingNotes.get(track);
-            if (failed) body.appendChild(noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error'));
+            const failNote = failed ? noteLine(failed + ' ' + translate(hass, 'eingabenBleiben'), 'error') : null;
+            if (failNote) body.appendChild(failNote);
             const input = document.createElement('input');
             input.setAttribute('type', 'text');
             input.setAttribute('aria-required', 'true');
@@ -6906,13 +7010,19 @@ function shortcutRenameView(card, entry) {
                 if (!name) { field.update(error()); return; }
                 trackWrite(card, track, {
                     label: entry.name,
-                    call: () => card._hass.callService('dreame_vacuum', 'vacuum_rename_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id, shortcut_name: name }),
+                    call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_rename_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id, shortcut_name: name }),
                     done: () => { card._drafts.delete(key); dialog._goBack(); }
                 });
             } });
             save.setAttribute('data-action', 'save');
             const able = () => { save.disabled = locked || busy || card._drafts.get(key) === entry.name; };
             able();
+            refresh = () => {
+                locked = isLocked();
+                if (locked && !lockNote.parentNode) body.insertBefore(lockNote, failNote || field.wrap);
+                else if (!locked && lockNote.parentNode) lockNote.remove();
+                able();
+            };
             if (busy) save.setAttribute('aria-busy', 'true');
             input.addEventListener('input', () => {
                 card._drafts.set(key, input.value);
@@ -6940,7 +7050,7 @@ function shortcutDeleteView(card, entry) {
             const go = BuschUI.action({ label: translate(hass, 'loeschen'), text: translate(hass, 'loeschen'), variant: 'primary', onClick: () => {
                 trackWrite(card, 'delete:' + entry.id, {
                     label: entry.name,
-                    call: () => card._hass.callService('dreame_vacuum', 'vacuum_delete_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id })
+                    call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_delete_shortcut', { entity_id: card._opts.entity, shortcut_id: entry.id })
                 });
                 dialog._goBack();
             } });
@@ -7588,7 +7698,7 @@ function runReclean(card, rooms, all) {
     const payload = taskPayload(card._model(), 'room', { rooms: rooms.map(Number), zones: [], spots: [], goto: null }, 1);
     return trackWrite(card, 'reclean:rooms', {
         label: translate(card._hass, 'aktNachreinigen'), failKey: 'aktionFehler',
-        call: () => card._hass.callService(payload.domain, payload.service, Object.assign({ entity_id: card._opts.entity }, payload.data))
+        call: () => callDevice(card._hass, payload.domain, payload.service, Object.assign({ entity_id: card._opts.entity }, payload.data))
     });
 }
 
@@ -10268,6 +10378,18 @@ a.backup-download:focus-visible { outline: 2px solid var(--primary-color, #03a9f
  * returns to the one below. Only a transient `menu` closes from outside;
  * views and editors never do (R04).
  */
+/** M4: a control's stable name across redraws: its own key attribute, else the nearest owner's plus its tag. */
+const FOCUS_KEYS = ['data-action', 'data-field', 'data-setting', 'data-group', 'data-entry', 'data-map', 'data-room', 'name', 'id'];
+function focusKey(node) {
+    for (let w = node, own = true; w && w.getAttribute; w = w.parentNode, own = false) {
+        for (const name of FOCUS_KEYS) {
+            const value = w.getAttribute(name);
+            if (value) return (own ? '' : node.tagName + '<') + name + '=' + value;
+        }
+    }
+    return '';
+}
+
 class BuschVacuumDialog extends HTMLElement {
     constructor() {
         super();
@@ -10280,6 +10402,19 @@ class BuschVacuumDialog extends HTMLElement {
         this._closed = false;
         this._returnFocus = null;
         this._seen = null;
+        // M4: a redraw from hass waits while a field has the focus, a gesture or an IME composition runs.
+        this.stats = { renders: 0 };
+        this._deferred = false;
+        this._gesture = false;
+        this._composing = false;
+        const flush = () => setTimeout(() => {
+            if (this._deferred && !this._holding()) this._render();
+        }, 0);
+        this.shadowRoot.addEventListener('pointerdown', () => { this._gesture = true; });
+        for (const type of ['pointerup', 'pointercancel']) this.shadowRoot.addEventListener(type, () => { this._gesture = false; flush(); });
+        this.shadowRoot.addEventListener('compositionstart', () => { this._composing = true; });
+        this.shadowRoot.addEventListener('compositionend', () => { this._composing = false; flush(); });
+        for (const type of ['focusout', 'change']) this.shadowRoot.addEventListener(type, flush);
         this._onKey = (event) => {
             if (event.key === 'Tab') {
                 const controls = this._focusable();
@@ -10328,7 +10463,8 @@ class BuschVacuumDialog extends HTMLElement {
     set hass(hass) {
         const unchanged = snapshotUnchanged(this._seen, hass);
         this._hass = hass;
-        if (!unchanged) this._render();
+        if (!unchanged && this._holding()) this._deferred = true;
+        else if (!unchanged) this._render();
         // A view with `update` (remote) repaints itself in place on every hass.
         const view = this._views[this._views.length - 1];
         if (view && view.update && this._sheet) view.update(hass);
@@ -10480,6 +10616,13 @@ class BuschVacuumDialog extends HTMLElement {
             .filter((node) => !node.disabled && node.tabIndex >= 0 && node.getClientRects().length);
     }
 
+    /** M4: a field with the focus (not a button), a gesture or a composition holds redraws from hass. */
+    _holding() {
+        const active = this.shadowRoot.activeElement;
+        const field = !!active && (/^(SELECT|TEXTAREA)$/.test(active.tagName) || (active.tagName === 'INPUT' && !/^(button|checkbox|radio|submit|reset)$/i.test(active.getAttribute('type') || '')));
+        return this._gesture || this._composing || field;
+    }
+
     _focusFirst() {
         if (!this._sheet || !this.isConnected) return;
         (this._focusable()[0] || this._sheet).focus();
@@ -10490,8 +10633,14 @@ class BuschVacuumDialog extends HTMLElement {
         const view = this._views[this._views.length - 1];
         if (!hass || !view) return;
         if (!this._sheet) this._build();
+        this.stats.renders++;
+        this._deferred = false;
         this._seen = watchSnapshot(hass, view.watch ? view.watch() : []);
-        const focused = this._focusable().indexOf(this.shadowRoot.activeElement);
+        // M4: focus comes back by a stable key (data-action, data-setting, …), the caret with it; the index only as fallback.
+        const active = this.shadowRoot.activeElement;
+        const focused = this._focusable().indexOf(active);
+        const key = focusKey(active);
+        const caret = active && typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd] : null;
         const scrollTop = this._sheet.scrollTop;
         this._sheet.setAttribute('data-kind', view.kind);
         // Task 2 (release): every view names itself; render.py records it with each picture.
@@ -10517,7 +10666,11 @@ class BuschVacuumDialog extends HTMLElement {
         this._sheet.scrollTop = scrollTop;
         if (focused >= 0) {
             const controls = this._focusable();
-            (controls[Math.min(focused, controls.length - 1)] || this._sheet).focus();
+            const again = (key && controls.find((node) => focusKey(node) === key)) || controls[Math.min(focused, controls.length - 1)] || this._sheet;
+            again.focus();
+            if (caret && again !== active && typeof again.setSelectionRange === 'function') {
+                try { again.setSelectionRange(caret[0], caret[1]); } catch (_) { /* types without a caret (number) */ }
+            }
         }
     }
 
@@ -10557,6 +10710,7 @@ class BuschVacuumCard extends HTMLElement {
         this._lockHeld = false;
         this._settingWrites = new Map(); // setting key → write waiting for the device (writeSetting)
         this._settingNotes = new Map(); // setting key → why the last write failed (R12)
+        this._settingLate = new Map(); // setting key → check of a write that timed out; a late confirmation clears the note (M3)
         this._settingDone = new Map(); // action → what it achieved, shown once in its group (R11)
         this._drafts = new Map(); // form → unsaved input, kept when the form is left (R10)
         this._settingTexts = null;
@@ -10750,6 +10904,19 @@ class BuschVacuumCard extends HTMLElement {
             this._stats.className = 'stats';
             this._controls = document.createElement('div');
             this._controls.className = 'controls';
+            // M4: while a finger or the mouse holds a button, a new set of buttons waits for the end of the gesture.
+            this._controls.addEventListener('pointerdown', () => {
+                if (this._controlsHeld) return;
+                this._controlsHeld = true;
+                const release = () => {
+                    document.removeEventListener('pointerup', release, true);
+                    document.removeEventListener('pointercancel', release, true);
+                    this._controlsHeld = false;
+                    if (this._controlsStale) { this._controlsStale = false; this._update(); }
+                };
+                document.addEventListener('pointerup', release, true);
+                document.addEventListener('pointercancel', release, true);
+            });
             this._progress = document.createElement('div');
             this._progress.className = 'progress-slot';
             this._messages = document.createElement('div');
@@ -10883,32 +11050,38 @@ class BuschVacuumCard extends HTMLElement {
         // CORE-08: Go-To has no action buttons; its target bubble is the one start.
         const names = this._hidden('action_buttons') || (!active && task === 'goto') ? [] : controlsFor(model, shown);
         const outside = names[0] === 'return'; // idle outside the dock (controlsFor)
+        // M4: buttons are kept by data-action and updated in place; a tap never lands on a replaced node.
+        const kept = new Map(this._controls.childNodes.map((node) => [node.getAttribute('data-action'), node]));
         const buttons = names.map((name) => {
             // #1002: the primary start says what it cleans (CORE-07).
             const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
             const blocked = name === 'start' && !ready.ok;
             const variant = outside ? (name === 'return' ? 'primary' : 'secondary') : CONTROLS[name].variant || 'secondary';
-            const button = BuschUI.action({ label, icon: CONTROLS[name].icon, variant, disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
+            const old = kept.get(name);
+            const button = BuschUI.action({ node: old, label, icon: CONTROLS[name].icon, variant, disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
             // #1002: the words in their own box, so a narrow bar shortens them instead of cutting the symbol.
-            const words = document.createElement('span');
+            const words = old ? old.querySelector('.ctl-text') : document.createElement('span');
             words.className = 'ctl-text';
             words.textContent = label;
-            button.appendChild(words);
+            if (!old) button.appendChild(words);
             if (blocked) button.setAttribute('aria-describedby', 'task-hint');
+            else button.removeAttribute('aria-describedby');
             button.classList.add('ctl');
             button.setAttribute('data-action', name);
             return button;
         });
         if (!this._hidden('shortcuts') && shortcutEntries(hass, model, this._opts.scripts).length) {
             const label = translate(hass, 'shortcuts');
-            const button = BuschUI.action({ label, text: label, icon: 'mdi:star-four-points-outline', onClick: () => this._openDialog(shortcutMenu(this)) });
+            const button = BuschUI.action({ node: kept.get('shortcuts'), label, text: label, icon: 'mdi:star-four-points-outline', onClick: () => this._openDialog(shortcutMenu(this)) });
             button.classList.add('ctl');
             button.setAttribute('data-action', 'shortcuts');
             button.setAttribute('aria-haspopup', 'menu');
             buttons.push(button);
         }
-        if (model.can('dock') && !this._hidden('dock_status_indicator')) buttons.push(this._dock(hass, model));
-        this._controls.replaceChildren(...buttons);
+        if (model.can('dock') && !this._hidden('dock_status_indicator')) buttons.push(this._dock(hass, model, kept.get('dock')));
+        const same = buttons.length === this._controls.childNodes.length && buttons.every((node, i) => this._controls.childNodes[i] === node);
+        if (!same && this._controlsHeld) this._controlsStale = true;
+        else if (!same) this._controls.replaceChildren(...buttons);
         // #1002: with three or more buttons the station shrinks to its symbol (name stays in aria-label).
         if (buttons.length > 2) this._controls.setAttribute('data-many', '');
         else this._controls.removeAttribute('data-many');
@@ -10942,7 +11115,8 @@ class BuschVacuumCard extends HTMLElement {
                     const lowText = low ? translate(hass, 'zubehoerNiedrig', { n: low }) : '';
                     const item = BuschUI.action({ label: lowText ? text + ' · ' + lowText : text, text, icon: entry.icon, variant: 'quiet', onClick: () => {
                         if (entry.name === 'locate') {
-                            hass.callService('vacuum', 'locate', { entity_id: this._opts.entity });
+                            // M5: R12 text in the card's messages; the menu closes at once.
+                            trackWrite(this, 'card:locate', { label: text, failKey: 'befehlFehler', call: () => callDevice(hass, 'vacuum', 'locate', { entity_id: this._opts.entity }) });
                             dialog.close();
                         } else dialog.show(MODULE_VIEWS[entry.name](this));
                     } });
@@ -12030,7 +12204,19 @@ class BuschVacuumCard extends HTMLElement {
     _renderMessages(hass, model) {
         const list = messagesFor(hass, model).filter((m) => !this._hidden(m.kind + '_message'));
         for (const [kind, text] of this._dismissed) if (!list.some((m) => m.kind === kind && m.text === text)) this._dismissed.delete(kind);
-        const nodes = list.filter((m) => this._dismissed.get(m.kind) !== m.text).map((m) => {
+        const shown = list.filter((m) => this._dismissed.get(m.kind) !== m.text);
+        // M5: R12 texts of the card's own writes; a confirmed or late-confirmed map change ends here.
+        for (const key of CARD_WRITES) {
+            const pending = this._settingWrites.get(key);
+            if (pending && pending.check(model)) settleWrite(this, key);
+            const late = this._settingLate.get(key);
+            if (!pending && late && late(model)) {
+                this._settingLate.delete(key);
+                this._settingNotes.delete(key);
+            }
+            if (this._settingNotes.get(key)) shown.push({ kind: 'error', text: this._settingNotes.get(key), note: key });
+        }
+        const nodes = shown.map((m) => {
             const look = MESSAGE_LOOK[m.kind];
             const node = document.createElement('div');
             node.className = 'message';
@@ -12051,7 +12237,11 @@ class BuschVacuumCard extends HTMLElement {
                 clear.setAttribute('data-action', 'clear');
                 node.appendChild(clear);
             }
-            const dismiss = BuschUI.action({ label: translate(hass, 'ausblenden'), icon: 'mdi:close', variant: 'quiet', onClick: () => { this._dismissed.set(m.kind, m.text); this._update(); } });
+            const dismiss = BuschUI.action({ label: translate(hass, 'ausblenden'), icon: 'mdi:close', variant: 'quiet', onClick: () => {
+                if (m.note) this._settingNotes.delete(m.note);
+                else this._dismissed.set(m.kind, m.text);
+                this._update();
+            } });
             dismiss.setAttribute('data-action', 'dismiss');
             node.appendChild(dismiss);
             return node;
@@ -12101,10 +12291,11 @@ class BuschVacuumCard extends HTMLElement {
         return parts.join(' · ');
     }
 
+    /** M5: one call per tap until the service answers; a failure stands in the messages (R12). */
     _clearWarning(model) {
         const button = model.entity('button.clear_warning');
-        if (button) this._hass.callService('button', 'press', { entity_id: button });
-        else this._hass.callService('dreame_vacuum', 'vacuum_clear_warning', { entity_id: this._opts.entity });
+        trackWrite(this, 'card:clear_warning', { label: translate(this._hass, 'warnungLoeschen'), failKey: 'befehlFehler',
+            call: () => (button ? callDevice(this._hass, 'button', 'press', { entity_id: button }) : callDevice(this._hass, 'dreame_vacuum', 'vacuum_clear_warning', { entity_id: this._opts.entity })) });
     }
 
     _metric(name, labelKey, value, icon) {
@@ -12121,19 +12312,20 @@ class BuschVacuumCard extends HTMLElement {
      * "Dock" (wide) or the symbol (phone); a warning's words stand in the panel's hint bar
      * (_renderStationHint, R17 colour AND text) and stay in the button's name.
      */
-    _dock(hass, model) {
+    _dock(hass, model, old) {
         const status = dockStatus(model);
         const name = translate(hass, 'station') + (status.key ? ' · ' + translate(hass, status.key) : '');
         const words = translate(hass, 'dock');
-        const node = BuschUI.action({ label: name, icon: status.level === 'ok' ? 'mdi:home-variant-outline' : 'mdi:home-alert-outline', variant: 'secondary',
+        const node = BuschUI.action({ node: old, label: name, icon: status.level === 'ok' ? 'mdi:home-variant-outline' : 'mdi:home-alert-outline', variant: 'secondary',
             onClick: () => this._openDialog(stationMenu(this)) });
         node.classList.add('dock');
         node.setAttribute('aria-haspopup', 'menu');
         node.setAttribute('data-action', 'dock');
         node.setAttribute('data-dock', status.level);
-        const text = document.createElement('span');
+        const text = old ? old.querySelector('.dock-text') : document.createElement('span');
+        text.className = 'dock-text';
         text.textContent = words;
-        node.appendChild(text);
+        if (!old) node.appendChild(text);
         return node;
     }
 
@@ -12143,13 +12335,21 @@ class BuschVacuumCard extends HTMLElement {
         this._haptic();
         this._endPending();
         if ((name === 'stop' || name === 'return') && this._run) this._run.stopped = true;
-        const pending = { state: control.target, from: real ? real.state : null, timer: null };
-        pending.timer = setTimeout(() => {
+        // M3: `sending` until the service answers (capped), then OPTIMISTIC_HOLD_MS for the device.
+        const pending = { state: control.target, from: real ? real.state : null, timer: null, sending: true };
+        const expire = () => {
             if (this._pending === pending) { this._pending = null; this._update(); }
-        }, OPTIMISTIC_HOLD_MS);
+        };
+        pending.timer = setTimeout(expire, SENDING_CAP_MS);
         this._pending = pending;
         const data = Object.assign({ entity_id: this._opts.entity }, call ? call.data : {});
-        Promise.resolve(this._hass.callService(call ? call.domain : 'vacuum', call ? call.service : control.service, data)).catch((error) => {
+        callDevice(this._hass, call ? call.domain : 'vacuum', call ? call.service : control.service, data).then(() => {
+            if (this._pending !== pending) return;
+            pending.sending = false;
+            clearTimeout(pending.timer);
+            pending.timer = setTimeout(expire, OPTIMISTIC_HOLD_MS);
+            this._update();
+        }, (error) => {
             if (call) {
                 // R12: what failed and why; the selection stays for the next try.
                 this._run = null;
@@ -12888,7 +13088,7 @@ const EDIT_TEMPORARY_OK = new Set(['vacuum_save_temporary_map', 'vacuum_discard_
  */
 function mapWrite(card, grant, service, data) {
     if (!grant || grant.card !== card || !grant.confirmed) throw new Error('map write without confirmation: ' + service);
-    return Promise.resolve(card._hass.callService('dreame_vacuum', service, Object.assign({ entity_id: card._opts.entity }, data)));
+    return Promise.resolve(callDevice(card._hass, 'dreame_vacuum', service, Object.assign({ entity_id: card._opts.entity }, data)));
 }
 
 /** A confirmation click: the only source of a grant for mapWrite. */
@@ -13548,7 +13748,7 @@ function mapSessionFor(card, sessions, entry) {
  */
 function requestMap(card) {
     const label = translate(card._hass, 'karteAnfordern');
-    return trackWrite(card, 'request_map', { label, call: () => card._hass.callService('dreame_vacuum', 'vacuum_request_map', { entity_id: card._opts.entity }) });
+    return trackWrite(card, 'request_map', { label, call: () => callDevice(card._hass, 'dreame_vacuum', 'vacuum_request_map', { entity_id: card._opts.entity }) });
 }
 
 /** The way to the maps view shared by the menu entry and the map tool (R08). */
@@ -13693,11 +13893,13 @@ function renameMapView(card, home, session, entry) {
         }));
     };
     const dirty = () => card._drafts.has(key) && card._drafts.get(key) !== original;
+    let refresh = null;
     const view = {
         title: translate(hass, 'kartenUmbenennenTitel'),
         id: 'map-rename',
         kind: 'editor',
-        watch: () => [card._opts.entity],
+        watch: () => [],
+        update: () => { if (refresh) refresh(); },
         guard: (dialog) => {
             if (!dirty()) return false;
             dialog.show(dirtyChoice(card, {
@@ -13711,10 +13913,10 @@ function renameMapView(card, home, session, entry) {
             return true;
         },
         render: (body, h, dialog) => {
-            const model = card._model();
-            const lock = session.lock('vacuum_rename_map', model);
+            let lock = session.lock('vacuum_rename_map', card._model());
             if (dirty()) body.appendChild(noteLine(translate(h, 'ungespeichert'), 'dirty'));
-            if (lock) body.appendChild(noteLine(translate(h, lock), 'locked'));
+            let lockNote = lock ? noteLine(translate(h, lock), 'locked') : null;
+            if (lockNote) body.appendChild(lockNote);
             const input = document.createElement('input');
             input.setAttribute('type', 'text');
             input.setAttribute('autocomplete', 'off');
@@ -13728,6 +13930,16 @@ function renameMapView(card, home, session, entry) {
             save.setAttribute('data-action', 'save');
             const able = () => { save.disabled = !!lock || !dirty(); };
             able();
+            // M4: the lock follows the vacuum in place; the field stays under the keyboard.
+            refresh = () => {
+                const now = session.lock('vacuum_rename_map', card._model());
+                if (now === lock) return;
+                lock = now;
+                if (lockNote) lockNote.remove();
+                lockNote = lock ? noteLine(translate(h, lock), 'locked') : null;
+                if (lockNote) body.insertBefore(lockNote, field.wrap);
+                able();
+            };
             input.addEventListener('input', () => {
                 card._drafts.set(key, input.value);
                 able();
@@ -15905,7 +16117,7 @@ class RemoteSender {
         this._busy = { seq, timer: setTimeout(() => done('timeout'), REMOTE.timeoutMs) };
         let call;
         try {
-            call = Promise.resolve(this._hass().callService('dreame_vacuum', 'vacuum_remote_control_move_step', { entity_id: this._entity, velocity: v, rotation: r }));
+            call = Promise.resolve(callDevice(this._hass(), 'dreame_vacuum', 'vacuum_remote_control_move_step', { entity_id: this._entity, velocity: v, rotation: r }));
         } catch (e) {
             call = Promise.reject(e);
         }
@@ -17166,7 +17378,7 @@ function roomRestoreView(card, note) {
                     dialog._render();
                     for (const r of rest) {
                         try {
-                            await card._hass.callService('dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, r.data));
+                            await callDevice(card._hass, 'dreame_vacuum', 'vacuum_set_custom_cleaning', Object.assign({ entity_id: card._opts.entity }, r.data));
                             run.done.push(r.id);
                         } catch (error) {
                             run.error = errorText(error);

@@ -411,6 +411,23 @@ test('EDI-01 Wählen nur über MapView.selectMap mit der Bestätigung von core (
   assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_select_map', data: { entity_id: 'vacuum.robo', map_id: 7 } }]);
 });
 
+test('M4 Kartenumbenennung: Sauger-Update während der Eingabe – dasselbe input, Wert, selectionStart und Fokus', () => {
+  const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
+  const d = verwaltung(k);
+  knopfIn(karteZeile(k, 7), 'rename').click();
+  const feld = $d(k.u, '[data-field="map_name"]');
+  feld.focus();
+  feld.value = 'Keller';
+  feld.dispatchEvent(k.u.neuesEreignis('input'));
+  feld.selectionStart = feld.selectionEnd = 3;
+  const vac = k.haus.states['vacuum.robo'];
+  for (let i = 0; i < 3; i++) k.karte.hass = k.haus.setze({ 'vacuum.robo': Object.assign({}, vac, { attributes: Object.assign({}, vac.attributes, { battery_level: 40 + i }) }) });
+  assert.ok($d(k.u, '[data-field="map_name"]') === feld);
+  assert.equal(feld.value, 'Keller');
+  assert.equal(feld.selectionStart, 3);
+  assert.ok(d.shadowRoot.activeElement === feld);
+});
+
 test('EDI-01 Umbenennen → vacuum_rename_map { map_id, map_name } nach Bestätigung, leer = Standardname; Formular mit Dirty-Schutz', async () => {
   const k = aufbau({ vac: { maps: ZWEI_KARTEN, map_count: 2, multi_floor_map: true } });
   const d = verwaltung(k);
@@ -1156,8 +1173,8 @@ test('EDI-02 Checkpoint B: alle Aufrufer von mapWrite/confirmGrant gegen die Bes
   assert.equal(schreiber.length, 2);
   for (const i of schreiber) assert.ok(drin(i, session), 'mapWrite nur in MapEditSession');
   assert.deepEqual(fundstellen(quelle, /\.commit\(/g).filter((i) => !drin(i, confirm)), [], 'commit nur aus mapConfirm');
-  // 3. Jeder callService: Kartendienste nur über mapWrite oder die eigenen Wege.
-  const aufrufe = Array.from(quelle.matchAll(/callService\(\s*([^,]+?),\s*([^,]+?),/g), (m) => ({ i: m.index, dienst: m[2].trim() }));
+  // 3. Jeder Dienstaufruf (M5: alle über callDevice(hass, domain, service, data)): Kartendienste nur über mapWrite oder die eigenen Wege.
+  const aufrufe = Array.from(quelle.matchAll(/(?<!function )callDevice\(\s*[^,]+?,\s*([^,]+?),\s*([^,]+?),/g), (m) => ({ i: m.index, dienst: m[2].trim() }));
   const dynamisch = aufrufe.filter((a) => !/^'[^']*'$/.test(a.dienst));
   assert.deepEqual(dynamisch.map((a) => a.dienst).sort(), ['call ? call.service : control.service', 'payload.service', 'service'], 'nur bekannte Sender mit variablem Dienst');
   assert.ok(drin(dynamisch.find((a) => a.dienst === 'service').i, spanne(quelle, 'function mapWrite(')), 'variabler Kartendienst nur in mapWrite');
@@ -1166,7 +1183,7 @@ test('EDI-02 Checkpoint B: alle Aufrufer von mapWrite/confirmGrant gegen die Bes
   for (const d of KARTENDIENSTE) assert.ok(!aufgaben.includes("'" + d + "'"), 'Aufgabendienste sind keine Kartendienste: ' + d);
   for (const a of aufrufe.filter((x) => KARTENDIENSTE.includes(x.dienst.slice(1, -1)))) {
     const dienst = a.dienst.slice(1, -1);
-    assert.ok(EIGENE_WEGE[dienst], dienst + ' direkt über callService statt mapWrite');
+    assert.ok(EIGENE_WEGE[dienst], dienst + ' direkt über callDevice statt mapWrite');
     const zeile = quelle.slice(quelle.lastIndexOf('\n', a.i), a.i);
     if (dienst === 'vacuum_select_map') assert.match(zeile, /_confirmMapChange\(/, 'Kartenwahl nur hinter CORE-20');
     if (dienst === 'vacuum_request_map') assert.ok(drin(a.i, request), 'request_map nur in requestMap');
