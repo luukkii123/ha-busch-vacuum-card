@@ -216,22 +216,22 @@ const BuschUI = (() => {
  *   Tasks .................................. 3159
  *   Map view ............................... 3447
  *   class MapView .......................... 3829
- *   Settings views ......................... 5666
- *   Cleaning settings ...................... 6668
- *   Station ................................ 7423
- *   Shortcuts .............................. 7676
- *   History ................................ 7935
- *   Styles ................................. 8797
- *   class BuschVacuumDialog ................ 11635
- *   class BuschVacuumCard .................. 11995
- *   Card editor ............................ 14041
- *   Map editor ............................. 14177
- *   class MapEditSession ................... 14783
- *   class MapEditor ........................ 15831
- *   Remote control ......................... 17779
- *   Map backup ............................. 18336
- *   class ImageZoom ........................ 18622
- *   Registration ........................... 19425
+ *   Settings views ......................... 5667
+ *   Cleaning settings ...................... 6669
+ *   Station ................................ 7424
+ *   Shortcuts .............................. 7677
+ *   History ................................ 7936
+ *   Styles ................................. 8798
+ *   class BuschVacuumDialog ................ 11636
+ *   class BuschVacuumCard .................. 11996
+ *   Card editor ............................ 14042
+ *   Map editor ............................. 14178
+ *   class MapEditSession ................... 14784
+ *   class MapEditor ........................ 15832
+ *   Remote control ......................... 17780
+ *   Map backup ............................. 18337
+ *   class ImageZoom ........................ 18623
+ *   Registration ........................... 19426
  */
 
 /*
@@ -5552,9 +5552,10 @@ class MapView {
             // The station mark sits 14 units up right of the charger (MAP_DRAW.station).
             if (p) markers.push({ g, p, b: box(p, half(g), half(g), name === 'station_status' ? 14 : 0, name === 'station_status' ? -14 : 0) });
         }
-        // Markers keep their place unless they would leave the stage.
+        // Markers keep their place unless they would leave the stage itself (edge is inset by gap, so shrink the box by gap).
+        const shrink = (b) => ({ x0: b.x0 + gap, x1: b.x1 - gap, y0: b.y0 + gap, y1: b.y1 - gap });
         for (const marker of markers) {
-            const v = inside(marker.p) ? clamp(marker.b) : { x: 0, y: 0 };
+            const v = inside(marker.p) ? clamp(shrink(marker.b)) : { x: 0, y: 0 };
             move(marker.g, v);
             marker.b = shift(marker.b, v);
         }

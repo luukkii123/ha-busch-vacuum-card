@@ -736,6 +736,8 @@ test('M10 Rand-Clamping: Etikett und Marker am Bühnenrand bleiben in der Bühne
   assert.ok(e.name.y0 >= -0.5 && e.nummer.y0 >= -0.5, 'Etikett unter dem oberen Rand: ' + JSON.stringify([e.name, e.nummer, size]));
   const r = marke(karte, 'robot');
   assert.ok(r.kasten.y0 >= -0.5, 'Roboter ganz sichtbar: ' + JSON.stringify(r.kasten));
+  // Marker nur bis an die Bühne, nicht um MAP_PLACE.gap weiter: ein Marker am Rand bleibt auf seinem Ort (Render „robot symbol on its position“).
+  assert.ok(r.kasten.y0 <= 0.5, 'Roboter liegt am Rand an, nicht gap tiefer: ' + JSON.stringify(r.kasten));
   assert.match(r.g.style.transform, /translate\(/, 'transform bleibt der Ort (R20)');
   // Außerhalb der Bühne (verschoben) wird nichts herangezogen.
   rooms['1'].y = 4000;
