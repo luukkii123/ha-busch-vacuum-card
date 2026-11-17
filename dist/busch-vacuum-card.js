@@ -4751,10 +4751,10 @@ class MapView {
 
     // ── Layers (MAP-03) ───────────────────────────────────────────────────
 
-    /** An SVG element with attributes; layers draw with it. */
+    /** An SVG element with attributes; layers draw with it. Never an event attribute (on…, M27). */
     svgNode(tag, attrs) {
         const node = document.createElementNS(SVG_NS, tag);
-        for (const [key, value] of Object.entries(attrs || {})) if (value !== undefined && value !== null) node.setAttribute(key, String(value));
+        for (const [key, value] of Object.entries(attrs || {})) if (value !== undefined && value !== null && !/^on/i.test(key)) node.setAttribute(key, String(value));
         return node;
     }
 

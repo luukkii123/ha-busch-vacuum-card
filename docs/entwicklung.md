@@ -45,6 +45,12 @@
   Sperrliste außerhalb des Repos (`BVC_SPERRLISTE`, HMAC-SHA-256). Ohne Variable
   werden diese Fälle sichtbar übersprungen (GitHub, fremde Klone); ist sie gesetzt
   und die Datei fehlt, ist der Lauf rot.
+- XSS (M27): `tests/senken.test.js` sperrt HTML-/Code-Senken in der Quelle
+  (`innerHTML` nur zum Leeren, kein `outerHTML`, `insertAdjacentHTML`, `eval`,
+  `on…=`, kein `setAttribute` mit berechnetem Namen außer `svgNode`, das
+  `on…` verwirft). `tests/fixtures/feindlich.json` trägt HTML, `javascript:`,
+  sehr lange Texte und RTL-Zeichen in Namen; sie müssen wörtlich als Text
+  erscheinen.
 
 ## Layout 0.2 (#1002)
 

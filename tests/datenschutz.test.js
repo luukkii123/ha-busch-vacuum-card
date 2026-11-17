@@ -11,7 +11,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const ORDNER = path.join(__dirname, 'fixtures');
-const ERWARTET = ['integration-schluessel.json', 'minimal.json', 'ohne-dock.json', 'ohne-karte.json', 'voll.json'];
+const ERWARTET = ['feindlich.json', 'integration-schluessel.json', 'minimal.json', 'ohne-dock.json', 'ohne-karte.json', 'voll.json'];
 const SPERRLISTE = process.env.BVC_SPERRLISTE ? JSON.parse(fs.readFileSync(process.env.BVC_SPERRLISTE, 'utf8')) : null;
 const OHNE_LISTE = SPERRLISTE ? false : 'BVC_SPERRLISTE fehlt: private Sperrliste übersprungen';
 const gleich = (v) => v;
@@ -52,7 +52,7 @@ function privateFunde(text, woerter = VERBOTENE_WOERTER, domain = DOMAIN, pruef 
   return funde;
 }
 
-test('alle Fixture-Dateien liegen vor (vier Varianten und die Schlüsselliste)', () => {
+test('alle Fixture-Dateien liegen vor (vier Varianten, feindlich (M27) und die Schlüsselliste)', () => {
   assert.deepEqual(fs.readdirSync(ORDNER).filter((f) => f.endsWith('.json')).sort(), ERWARTET);
 });
 
