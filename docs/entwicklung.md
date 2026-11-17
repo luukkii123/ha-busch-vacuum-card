@@ -78,9 +78,15 @@
   `--bvc-success-color`, `--bvc-info-color`: nur gelesen, nie auf `:host`
   gesetzt (sonst würde ein Theme sie nicht erreichen); im HACS-Prüfer als
   `THEME_HAKEN` eingetragen.
-- Für Tests exportiert `BuschVacuumCard.__internals` Wörterbuch, Schema,
-  `normalizeConfig`, `findRelated`, `VacuumModel`, Stile, `clockText`,
-  `firstWeekday`.
+- Testvertrag (M41): `BuschVacuumCard.__internals` ist die dokumentierte
+  Testschnittstelle (ohne Bundler der einzige Weg an reine Funktionen), kein
+  Teil der öffentlichen Karten-API. Er enthält nur, was ein Test nutzt
+  (Wörterbuch, Schema, `normalizeConfig`, `VacuumModel`, Stile, `clockText`,
+  `firstWeekday`, reine Funktionen der Module …). Neue Tests bevorzugt über das
+  DOM; ein Eintrag ohne Testnutzer fällt. Regeltest „M41 kein toter Code“ in
+  `tests/geruest.test.js`: jede Funktion außerhalb des Shared-UI-Blocks hat
+  einen Aufrufer (Kommentare und `__internals` zählen nicht), jeder Eintrag
+  einen Testnutzer.
 - Fixtures `tests/fixtures/*.json` sind aus dem echten Gerät abgeleitet und
   anonymisiert (Namen, Seriennummer, Netzwerk, Grundriss ersetzt);
   `tests/datenschutz.test.js` prüft das bei jedem Lauf. Muster (IP, MAC, Token)

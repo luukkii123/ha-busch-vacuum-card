@@ -63,6 +63,26 @@ test('M9 Kopplung: außerhalb des Dialogs kein dialog._x, außerhalb der Karte k
   assert.equal(koepfe.length, KOPF_GRENZE, 'weniger lange Köpfe: KOPF_GRENZE auf ' + koepfe.length + ' senken');
 });
 
+// M41: __internals ist die Testschnittstelle (docs/entwicklung.md); kein Eintrag ohne Testnutzer, keine Funktion ohne Aufrufer.
+test('M41 kein toter Code: jede Funktion außerhalb des Shared-UI-Blocks hat einen Aufrufer, jeder __internals-Eintrag einen Testnutzer', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  // Kommentare zählen nicht als Aufruf (Blockkommentare und reine Kommentarzeilen).
+  const quelle = fs.readFileSync(path.join(__dirname, '..', 'dist', 'busch-vacuum-card.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, '');
+  const a = quelle.indexOf('\nBuschVacuumCard.__internals = {'), b = quelle.indexOf('\n};', a);
+  assert.ok(a > 0 && b > a, '__internals-Block gefunden');
+  const eigen = quelle.slice(quelle.indexOf('\nconst TEXTE_BUSCH_VACUUM_CARD'));
+  const ohneBlock = eigen.slice(0, eigen.indexOf('\nBuschVacuumCard.__internals = {')) + quelle.slice(b);
+  // Aufruf = der Name ohne Punkt davor (obj.name ist ein anderer Name), Spread ...name zählt.
+  const zaehle = (text, name, vor = '(?<![\\w$])(?<![^.]\\.)') => (text.match(new RegExp(vor + name.replace(/\$/g, '\\$') + '(?![\\w$])', 'g')) || []).length;
+  const namen = Array.from(eigen.matchAll(/^(?:async\s+)?(?:function\s*\*?\s*([\w$]+)\s*\(|(?:const|let)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[\w$]+)\s*=>)/gm), (m) => m[1] || m[2]);
+  assert.ok(namen.length > 100, 'Funktionen gefunden: ' + namen.length);
+  assert.deepEqual(namen.filter((n) => zaehle(ohneBlock, n) < 2), [], 'Funktionen ohne Aufrufer (nur Kopf, höchstens __internals)');
+  const eintraege = Array.from(quelle.slice(a, b).matchAll(/^\s+([\w$]+)\s*[:,]/gm), (m) => m[1]);
+  assert.ok(eintraege.length > 50, '__internals-Einträge: ' + eintraege.length);
+  const tests = fs.readdirSync(__dirname).filter((f) => f.endsWith('.js')).map((f) => fs.readFileSync(path.join(__dirname, f), 'utf8')).join('\n');
+  assert.deepEqual(eintraege.filter((n) => zaehle(tests, n, '(?<![\\w$])') === 0), [], '__internals-Einträge ohne Testnutzer');
+});
+
 test('Karte, Editor und Picker-Eintrag sind registriert', () => {
   const u = neueUmgebung();
   assert.ok(u.registry.get('busch-vacuum-card'), 'Karte definiert');
