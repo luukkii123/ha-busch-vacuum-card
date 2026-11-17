@@ -569,6 +569,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             karte: 'Karte',
             karteAlt: 'Karte „{karte}“ des Saugroboters',
             karteLaedt: 'Karte lädt …',
+            karteVeraltet: 'Karte nicht aktuell: Der letzte Abruf ist fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand; die Karte versucht es selbst erneut.',
             karteLeer: 'Noch keine gespeicherte Karte. Sobald der Roboter eine Karte erstellt hat, erscheint sie hier; bis dahin geht die Reinigung „Gesamt“.',
             kameraWeg: 'Die Kartenkamera ist nicht verfügbar, deshalb fehlt die Karte. Steuerung und Status gehen weiter. Prüfe die Integration dreame_vacuum oder warte, bis die Kamera wieder da ist.',
             bildFehler: 'Das Kartenbild ließ sich nicht laden. Steuerung und Status gehen weiter. Versuche es erneut.',
@@ -1207,6 +1208,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             karte: 'Map',
             karteAlt: 'Map “{karte}” of the robot vacuum',
             karteLaedt: 'Map loading …',
+            karteVeraltet: 'Map not up to date: the last update failed. The last loaded map is shown; the card tries again by itself.',
             karteLeer: 'No saved map yet. Once the robot has created a map it shows here; until then cleaning “All” works.',
             kameraWeg: 'The map camera is unavailable, so the map is missing. Controls and status keep working. Check the dreame_vacuum integration or wait until the camera is back.',
             bildFehler: 'The map image could not be loaded. Controls and status keep working. Try again.',
@@ -3413,6 +3415,10 @@ const MAP_DRAW = {
  * unless the active map camera or a map attribute of the vacuum changed. The
  * image is fetched only for a new `entity_picture` and swapped after decode().
  */
+/** M6: retries of a failed map data request (ms), each spread by ±20 %. */
+const MAP_RETRY_MS = [2000, 5000, 15000, 60000];
+const MAP_RETRY_JITTER = 0.2;
+
 class MapView {
     constructor(card) {
         this.card = card;
@@ -3424,6 +3430,9 @@ class MapView {
         this._imageUrl = null;
         this._image = null;
         this._imageState = 'loading';
+        this._imgLoad = { seq: 0, shown: 0, pending: [] }; // M6: image requests by order; a newer decoded one is shown
+        // M6: one map data request at a time; `wanted` is the newest frame, `doneKey` the last one settled.
+        this._fetch = { seq: 0, shownSeq: 0, inflight: null, wanted: null, doneKey: null, tries: 0, timer: null, stale: false };
         this._matrix = null; // robot mm → image px
         this._size = { width: 0, height: 0 };
         // R21: zoom and pan are never remembered; every map starts fitted.
@@ -4098,28 +4107,102 @@ class MapView {
     /**
      * Data mode (spec: Entscheidung Spike): the map data of the active camera,
      * only for a new frame_id; `&v=` because the answer is cached as immutable.
-     * Without fetch, on failure or for an empty map the card stays in image mode.
+     * M6: one request at a time (single flight). A new frame only becomes
+     * `wanted`; an answer newer than the shown one is applied, then the newest
+     * wanted frame follows. Another floor aborts the running request. A failed
+     * request keeps the last good map (`data-stale`) and is retried with
+     * backoff; without a map, on a final answer (4xx) or for an empty map the
+     * card stays in image mode.
      */
     _loadData(a) {
         const frame = a.frame_id;
-        if (frame === undefined || frame === this._dataFrame || typeof fetch !== 'function' || !a.access_token) return;
-        this._dataFrame = frame;
+        if (frame === undefined || typeof fetch !== 'function' || !a.access_token) return;
+        const f = this._fetch;
+        const key = a.map_index + ':' + frame;
+        if (f.inflight && f.inflight.index !== a.map_index) this._abortData();
+        if (f.wanted && f.wanted.key === key) return;
+        f.wanted = { key, frame, index: a.map_index };
+        // A new frame starts the backoff again.
+        clearTimeout(f.timer);
+        f.timer = null;
+        f.tries = 0;
+        this._pumpData();
+    }
+
+    /** Starts the wanted frame unless one runs, a retry waits or it is settled already. */
+    _pumpData() {
+        const f = this._fetch, want = f.wanted;
+        if (f.inflight || f.timer || !want || want.key === f.doneKey) return;
+        const a = this._attrs();
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        const run = { key: want.key, frame: want.frame, index: want.index, seq: ++f.seq, controller, aborted: false };
+        f.inflight = run;
         this.stats.data++;
-        const url = '/api/camera_map_data_proxy/' + this._cameraId + '?token=' + encodeURIComponent(a.access_token) + '&v=' + encodeURIComponent(frame);
-        Promise.resolve().then(() => fetch(this._url(url))).then((res) => (res && res.ok ? res.json() : null)).then((raw) => {
-            if (this._dataFrame !== frame) return;
+        const url = '/api/camera_map_data_proxy/' + this._cameraId + '?token=' + encodeURIComponent(a.access_token) + '&v=' + encodeURIComponent(want.frame);
+        Promise.resolve().then(() => fetch(this._url(url), controller ? { signal: controller.signal } : undefined)).then((res) => {
+            if (!res || !res.ok) throw Object.assign(new Error('HTTP ' + (res && res.status)), { status: res && res.status });
+            return res.json();
+        }).then((raw) => this._dataDone(run, raw), (error) => this._dataFailed(run, error));
+    }
+
+    _abortData() {
+        const run = this._fetch.inflight;
+        if (!run) return;
+        run.aborted = true;
+        this._fetch.inflight = null;
+        if (run.controller) run.controller.abort();
+    }
+
+    _dataDone(run, raw) {
+        const f = this._fetch;
+        if (f.inflight === run) f.inflight = null;
+        if (run.aborted) return;
+        if (run.seq > f.shownSeq) {
+            f.shownSeq = run.seq;
+            f.doneKey = run.key;
             const grid = decodeMapData(raw);
             this._data = grid ? { raw, grid } : null;
+            this._dataFrame = run.frame;
+            this._setStale(false);
             if (this._data) {
                 this._matrix = gridAffine(grid).matrix;
                 this._paint();
-                this._render();
-            }
-            this._emit('map-frame', { frameId: frame, mode: this._data ? 'data' : 'image' });
+            } else this._loadImage(this._attrs().entity_picture);
+            this._render();
+            this._emit('map-frame', { frameId: run.frame, mode: this._data ? 'data' : 'image' });
             this._renderLayers();
-        }).catch(() => {
-            if (this._dataFrame === frame) this._data = null;
-        });
+        }
+        this._pumpData();
+    }
+
+    _dataFailed(run, error) {
+        const f = this._fetch;
+        if (f.inflight === run) f.inflight = null;
+        if (run.aborted || (error && error.name === 'AbortError')) return this._pumpData();
+        const status = Number(error && error.status);
+        // 4xx (but timeout/too many): the proxy has no data for this map – no retry, as before.
+        const final = status >= 400 && status < 500 && status !== 408 && status !== 429;
+        if (final) f.doneKey = run.key;
+        if (this._data) this._setStale(true);
+        else {
+            this._loadImage(this._attrs().entity_picture);
+            if (final) this._emit('map-frame', { frameId: run.frame, mode: 'image' });
+        }
+        this._render();
+        if (f.wanted && f.wanted.key !== run.key) return this._pumpData(); // a newer frame waits: that one instead
+        if (final) return;
+        const ms = MAP_RETRY_MS[Math.min(f.tries, MAP_RETRY_MS.length - 1)] * (1 - MAP_RETRY_JITTER + Math.random() * 2 * MAP_RETRY_JITTER);
+        f.tries++;
+        f.timer = setTimeout(() => {
+            f.timer = null;
+            this._pumpData();
+        }, Math.round(ms));
+    }
+
+    /** M6: the last good map stays while a newer one failed; the note says so (R12). */
+    _setStale(on) {
+        this._fetch.stale = on;
+        this.el.toggleAttribute('data-stale', on);
     }
 
     _emit(type, detail) {
@@ -4151,23 +4234,33 @@ class MapView {
         this._imageUrl = url;
         this._imageState = 'loading';
         this.stats.images++;
+        const load = this._imgLoad, seq = ++load.seq;
         const img = document.createElement('img');
         img.className = 'map-base';
         img.setAttribute('decoding', 'async');
         img.setAttribute('src', this._url(url));
+        const entry = { seq, img };
+        load.pending.push(entry);
+        const settled = () => { load.pending = load.pending.filter((p) => p !== entry); };
         // Swapped only once decoded: the old image stays until then, no flicker.
+        // M6: any decoded image newer than the shown one is shown; older ones still loading stop (src '').
         Promise.resolve(typeof img.decode === 'function' ? img.decode() : undefined).then(() => {
-            if (this._imageUrl !== url) return;
+            settled();
+            if (seq <= load.shown) return;
+            load.shown = seq;
+            for (const p of load.pending) if (p.seq < seq) p.img.setAttribute('src', '');
+            load.pending = load.pending.filter((p) => p.seq > seq);
             img.setAttribute('alt', translate(this.hass, 'karteAlt', { karte: this._mapName() }));
             if (this._image) this._image.remove();
             this._image = img;
             this._size = { width: img.naturalWidth || 0, height: img.naturalHeight || 0 };
             this.pan.insertBefore(img, this._pictures.overlay || this.svg);
-            this._imageState = 'ready';
+            this._imageState = seq === load.seq ? 'ready' : 'loading';
             this._render();
             this._renderLayers();
         }, () => {
-            if (this._imageUrl !== url) return;
+            settled();
+            if (seq <= load.shown || seq !== load.seq) return;
             this._imageState = 'error';
             this._render();
         });
@@ -4182,6 +4275,7 @@ class MapView {
         else {
             if (this._imageState === 'loading') notes.push(['loading', 'mdi:progress-clock', 'karteLaedt']);
             if (this._imageState === 'error') notes.push(['error', 'mdi:image-broken-variant', 'bildFehler']);
+            if (this._fetch.stale && this._data) notes.push(['stale', 'mdi:sync-alert', 'karteVeraltet']);
             if (this.model.attr('has_temporary_map')) notes.push(['temporary', 'mdi:map-clock-outline', 'temporaereKarte']);
             if (this.model.attr('mapping')) notes.push(['mapping', 'mdi:map-plus', 'kartierungLaeuft']);
             if (!this._matrix && this._imageState === 'ready') notes.push(['uncalibrated', 'mdi:crosshairs-question', 'ohneKalibrierung']);
@@ -4250,6 +4344,10 @@ class MapView {
         if (ctx && typeof ImageData === 'function') ctx.putImageData(new ImageData(picture.data, picture.width, picture.height), 0, 0);
         this._imageUrl = null;
         this._imageState = 'ready';
+        // M6: image requests from before the canvas are overtaken; they stop loading.
+        this._imgLoad.shown = this._imgLoad.seq;
+        for (const p of this._imgLoad.pending) p.img.setAttribute('src', '');
+        this._imgLoad.pending = [];
         this._size = { width: picture.width, height: picture.height };
     }
 
@@ -4881,7 +4979,12 @@ function groupShown(model, name) {
 function loadSettingTexts(card) {
     const hass = card._hass;
     if (card._settingTexts || !hass || typeof hass.loadBackendTranslation !== 'function') return;
-    card._settingTexts = Promise.resolve(hass.loadBackendTranslation('entity', 'dreame_vacuum')).then(() => rerender(card), () => {});
+    // M6: a failed load is not kept; the next view tries again.
+    const loading = Promise.resolve(hass.loadBackendTranslation('entity', 'dreame_vacuum')).then(() => rerender(card), () => {
+        if (card._settingTexts === loading) card._settingTexts = null;
+        return false;
+    });
+    card._settingTexts = loading;
 }
 
 /** A settings view redraws when the vacuum or any entity of its device changes. */
@@ -11094,7 +11197,7 @@ class BuschVacuumCard extends HTMLElement {
             settingsRow.append(symbol, words, chevron);
             // Option names in the integration's words (R26), loaded once; the row redraws when they arrive.
             loadSettingTexts(this);
-            if (this._settingTexts && !this._summaryTexts) this._summaryTexts = this._settingTexts.then(() => this._update());
+            if (this._settingTexts && !this._summaryTexts) this._summaryTexts = this._settingTexts.then((ok) => { if (ok === false) this._summaryTexts = null; else this._update(); });
         }
         if (head.childNodes.length) nodes.push(head);
         if (active) {
@@ -13475,7 +13578,8 @@ function editCaps(model, data, attrs) {
  * cached as immutable; a stored map reads `&saved=1&index=` (walls only come
  * with the stored map, map.py#L8629). When map-view already holds the data of
  * the same frame with walls, it is reused — 0 extra requests (R20).
- * Resolves to editData(raw) or null (request failed: three tools stay locked).
+ * Resolves to editData(raw) or null (request failed: three tools stay locked
+ * until the next call fetches again, M6).
  */
 function loadEditData(card) {
     const m = card._map;
@@ -13491,6 +13595,8 @@ function loadEditData(card) {
     const settle = (raw) => {
         entry.data = editData(raw);
         entry.failed = !entry.data;
+        // M6: a failure is not kept; the next call of the same frame fetches again.
+        if (entry.failed && card._editData === entry) card._editData = null;
         return entry.data;
     };
     if (own && (!saved || (own.walls !== undefined && own.walls !== null) || !model.can('walls'))) {

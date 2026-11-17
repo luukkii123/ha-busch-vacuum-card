@@ -71,6 +71,19 @@
   (`decodeMapData`, `roomAtGrid`, `passableGrid`). Rückfall Bildmodus
   (`entity_picture`, `roomAtRects`: Rechteck + nächster Mittelpunkt).
   Raum-Chips sind in beiden Modi die Grundlösung.
+- **Abrufzustand (M6, Buschcheck 17.11.2026):** höchstens ein Datenabruf je
+  Karte gleichzeitig (Single-Flight); ein neuer Frame wird nur `wanted`, eine
+  Antwort neuer als die angezeigte wird angewandt, danach folgt der neueste
+  gewünschte Frame. `map-frame` feuert genau einmal je angewandtem Frame. Ein
+  Stockwerkwechsel bricht den laufenden Abruf per `AbortController` ab. Ein
+  Fehler lässt den letzten guten Stand stehen (`data-stale` an `.map-view`,
+  Hinweis `karteVeraltet`) und wiederholt denselben Frame nach 2/5/15/60 s
+  (±20 %); ein neuer Frame setzt den Backoff zurück. 4xx außer 408/429 gilt
+  als endgültig (der Proxy hat für diese Karte keine Daten): kein Wiederholen,
+  ohne Stand Bildmodus wie bisher. Bildmodus: jedes dekodierte Bild, das
+  neuer ist als das angezeigte, erscheint; überholte `<img>` bekommen
+  `src=''`. Fehlgeschlagene `loadEditData`/`loadSettingTexts` werden nicht
+  gemerkt. Tests: `tests/netz.test.js`.
 - Testdaten nur synthetisch (`tests/kartendaten.js` aus den verfremdeten
   Raumrechtecken); echte Kartendaten schließt `tests/datenschutz.test.js` aus.
 

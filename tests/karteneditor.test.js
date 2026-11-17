@@ -360,7 +360,7 @@ test('EDI-02 Bearbeitungsdaten: MapView-Daten desselben frame mit Wänden werden
   const k2 = aufbau({ abruf: (url) => (/saved=1/.test(url) ? { status: 500 } : { status: 404 }) });
   await mikro(); await mikro();
   assert.equal(await k2.I.loadEditData(k2.karte), null);
-  assert.equal(k2.karte._editData.failed, true);
+  assert.equal(k2.karte._editData, null, 'M6: ein Fehler wird nicht gemerkt (der nächste Aufruf holt neu, tests/netz.test.js)');
 });
 
 // ── Task 3: Kartenverwaltung (EDI-01, ALL-13, ALL-10) ───────────────────────
