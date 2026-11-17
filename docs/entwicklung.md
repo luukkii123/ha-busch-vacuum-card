@@ -179,9 +179,16 @@
   (`paintMapPixels`, ein Pixel je Gitterzelle, `image-rendering: pixelated`),
   nur bei neuem Frame, anderem Farbschema oder `map_display`;
   `map_display: floor_plan` = alle Räume ein Ton mit Konturen.
-  `color_scheme` `auto` (folgt `hass.themes.darkMode`), `light`, `dark`,
+  `color_scheme` `auto` (folgt `hass.themes.darkMode`, M33 zusätzlich einem
+  dunklen Kartenhintergrund: `darkBackground`, relative Leuchtdichte von
+  `--ha-card-background`/`--card-background-color` unter 0,2, für Themen nur
+  in Dunkel ohne Modus-Flag), `light`, `dark`,
   `grey`; `override_colors` (auch `dark: {…}`) setzt `--bvc-map-*` inline an
   `.map-view`. `icon_set` `busch` (eigene SVG-Formen) oder `material` (`mdi:`).
+- Zielwert dunkles Schema (M33): jede Raumfläche höchstens 0,13 relative
+  Leuchtdichte (Pastell hell ≈ 0,5–0,7), Etiketten (`--primary-text-color`,
+  dunkel `#e1e1e1`, hell `#212121`, Kontur in Kartenhintergrund) auf jeder
+  Raumfläche aller Schemata mindestens 4,5:1 (`tests/karte.test.js`, M33).
 - **R24-Ausnahme Bildmodus** (nur Rückfall, wenn die Kartendaten fehlen):
   Grund: das Bild rendert die Integration; Räume, Wände und eingebrannte
   Objekte (Pfad, Hindernisse, Teppiche des Bilds) lassen sich darin weder

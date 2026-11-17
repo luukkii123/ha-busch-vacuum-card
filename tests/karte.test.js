@@ -1244,3 +1244,42 @@ test('CORE-19 Koordinate wählen: Tipp → Roboter-mm und Objekt darunter, Kopie
 });
 
 module.exports = { intern, raeume };
+
+// ── M33: Raumflächen im dunklen Thema ──────────────────────────────────────
+/** Relative Leuchtdichte (WCAG 2.2) und Kontrast zweier Hexfarben. */
+const leuchte = (hex) => {
+  const [r, g, b] = hex.replace('#', '').match(/../g).map((x) => parseInt(x, 16) / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const kontrast = (a, b) => { const [h, d] = [leuchte(a), leuchte(b)].sort((x, y) => y - x); return (h + 0.05) / (d + 0.05); };
+
+test('M33 Zielwert: Raumflächen im dunklen Schema höchstens 0,13 Leuchtdichte, Etiketten ≥ 4,5:1 in allen Schemata', async () => {
+  const farbe = (k, name) => k._map.el.style['--bvc-map-' + name];
+  // Etikettenfarbe = --primary-text-color von HA (hell #212121, dunkel #e1e1e1).
+  for (const [schema, text, grenze] of [['dark', '#e1e1e1', 0.13], ['light', '#212121', null], ['grey', '#212121', null]]) {
+    const { karte } = await kartenKarte('voll', { color_scheme: schema });
+    for (let i = 0; i < 4; i++) {
+      const raum = farbe(karte, 'room-' + i);
+      if (grenze !== null) assert.ok(leuchte(raum) <= grenze, schema + ' Raum ' + i + ' ' + raum + ': ' + leuchte(raum).toFixed(3));
+      assert.ok(kontrast(text, raum) >= 4.5, schema + ' Etikett auf Raum ' + i + ' ' + raum + ': ' + kontrast(text, raum).toFixed(2));
+    }
+  }
+});
+
+test('M33 Automatisch: dunkler Kartenhintergrund ohne darkMode-Flag wählt das dunkle Schema', async () => {
+  const mit = async (hintergrund) => {
+    const u = bildUmgebung();
+    u.kontext.getComputedStyle = () => ({ getPropertyValue: (k) => (k === '--card-background-color' ? hintergrund : '') });
+    const karte = neueKarte(u, hausAus('voll'));
+    await mikro();
+    return karte._map.el.getAttribute('data-scheme');
+  };
+  assert.equal(await mit(' #1c1c1c'), 'dark', 'dunkles Thema ohne Hell/Dunkel-Modus');
+  assert.equal(await mit('rgb(255, 255, 255)'), 'light');
+  assert.equal(await mit(''), 'light', 'unbekannter Hintergrund: wie bisher');
+  const u = bildUmgebung();
+  u.kontext.getComputedStyle = () => ({ getPropertyValue: (k) => (k === '--card-background-color' ? '#1c1c1c' : '') });
+  const fest = neueKarte(u, hausAus('voll'), { color_scheme: 'light' });
+  await mikro();
+  assert.equal(fest._map.el.getAttribute('data-scheme'), 'light', 'ein gewähltes Schema bleibt');
+});

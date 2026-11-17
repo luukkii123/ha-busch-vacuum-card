@@ -3279,6 +3279,22 @@ const MAP_SCHEMES = {
     grey: { floor: '#e3e3e3', wall: '#5e5e5e', room: ['#c2c2c2', '#d0d0d0', '#b0b0b0', '#dadada'], carpet: 'rgba(0, 0, 0, 0.14)', path: '#5e5e5e' }
 };
 
+/**
+ * M33: a dark card background also means dark rooms when HA's darkMode flag is off (a dark-only
+ * theme): pastel rooms on near black glare. Relative luminance (WCAG) of the card's background
+ * below 0.2 counts as dark; an unknown or transparent background changes nothing.
+ */
+function darkBackground(el) {
+    if (!el || typeof getComputedStyle !== 'function') return false;
+    const style = getComputedStyle(el);
+    const value = String(style.getPropertyValue('--ha-card-background') || style.getPropertyValue('--card-background-color') || '').trim();
+    if (!value) return false;
+    const [r, g, b, a] = parseColor(value, [255, 255, 255, 0]);
+    if (!a) return false;
+    const lin = (v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) < 0.2;
+}
+
 /** A CSS colour as [r, g, b, a] (0–255); hex and rgb()/rgba() here, other forms through a 1-px canvas. */
 function parseColor(value, fallback = [0, 0, 0, 0]) {
     const text = String(value || '').trim();
@@ -4544,7 +4560,7 @@ class MapView {
     /** MAP-05/09: scheme colours (auto follows HA's dark mode) with override_colors, as --bvc-map-* on the view. */
     _applyScheme() {
         const opts = this.card._opts || {};
-        const scheme = opts.color_scheme === 'auto' || !opts.color_scheme ? (darkMode(this.hass) ? 'dark' : 'light') : opts.color_scheme;
+        const scheme = opts.color_scheme === 'auto' || !opts.color_scheme ? (darkMode(this.hass) || darkBackground(this.el) ? 'dark' : 'light') : opts.color_scheme;
         const own = Object.assign({}, opts.override_colors || {});
         const dark = own.dark || {};
         delete own.dark;
