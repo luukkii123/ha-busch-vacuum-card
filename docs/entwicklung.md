@@ -117,6 +117,15 @@
   Kartenbild nur als Absicherung: sofort ohne Datenweg, nach einem
   fehlgeschlagenen Abruf oder wenn schon ein Bild gezeigt wird, sonst erst nach
   600 ms ohne Daten (`MAP_HEDGE_MS`).
+- **Telemetrie (M39):** `MapView.stats` zählt zusätzlich `fetchMs` (Median
+  der letzten 5 Datenabrufe in ms, `null` vor dem ersten), `discarded`
+  (abgebrochene oder überholte Antworten), `retries` (ausgelöste
+  Wiederholungen nach Backoff) und `failures` (Fehlantworten ohne Abbruch).
+  `RemoteSender.rtt` ist der Median der letzten 5 Antwortzeiten der
+  Fahrbefehle; die Fernsteuerung trägt ihn als `data-rtt` und zeigt ab
+  `REMOTE.slowMs` (600 ms) den Hinweis `remoteLangsam`. Tests:
+  `tests/netz.test.js`, `tests/fernsteuerung.test.js` (M39). Die Renderfälle
+  `netz_langsam`/`netz_fehler` prüfen `stats` im Browser.
 - **Lebenszyklus (M17):** `disconnectedCallback` der Karte schließt einen
   offenen Dialog (`_dismiss`, ohne Verlaufsschritt), beendet den optimistischen
   Zustand (`_endPending`) und offene Schreibvorgänge (`settleWrite`), löscht die

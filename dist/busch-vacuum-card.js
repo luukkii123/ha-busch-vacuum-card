@@ -507,6 +507,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             remoteGesperrt_connection: 'Gesperrt: keine Verbindung zu Home Assistant.',
             remoteFehler: 'Gestoppt nach einem Fehler: {grund}. Zum Weiterfahren Steuerung neu starten.',
             remoteZeit: 'keine Antwort innerhalb von 2 s',
+            remoteLangsam: 'Verbindung langsam — Bewegung kommt verzögert an.',
             remoteVerbindung: 'Verbindung zu Home Assistant verloren — der Stopp kam vielleicht nicht an. Roboter mit der Taste am Gerät oder in der Dreame-App anhalten; danach Steuerung neu starten.',
             entryMaps: 'Kartenverwaltung',
             entrySettings: 'Geräteeinstellungen',
@@ -1160,6 +1161,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             remoteGesperrt_connection: 'Locked: no connection to Home Assistant.',
             remoteFehler: 'Stopped after an error: {grund}. Start control again to go on.',
             remoteZeit: 'no answer within 2 s',
+            remoteLangsam: 'Slow connection — movement arrives late.',
             remoteVerbindung: 'Connection to Home Assistant lost — the stop may not have arrived. Stop the robot with its button or in the Dreame app; then start control again.',
             entryMaps: 'Map management',
             entrySettings: 'Device settings',
@@ -3588,7 +3590,9 @@ class MapView {
         this.card = card;
         this.hass = null;
         this.model = null;
-        this.stats = { images: 0, data: 0, renders: 0, paints: 0, cacheHits: 0 }; // for tests and the performance check
+        // For tests and the performance check; M39: fetchMs (running median), discarded, retries, failures.
+        this.stats = { images: 0, data: 0, renders: 0, paints: 0, cacheHits: 0, fetchMs: null, discarded: 0, retries: 0, failures: 0 };
+        this._fetchTimes = [];
         this._cam = null;
         this._key = null;
         this._imageUrl = null;
@@ -4302,7 +4306,7 @@ class MapView {
         if (f.inflight || f.timer || !want || want.key === f.doneKey || this._background()) return;
         const a = this._attrs();
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        const run = { key: want.key, frame: want.frame, index: want.index, seq: ++f.seq, controller, aborted: false };
+        const run = { key: want.key, frame: want.frame, index: want.index, seq: ++f.seq, controller, aborted: false, t0: Date.now() };
         f.inflight = run;
         const url = '/api/camera_map_data_proxy/' + this._cameraId + '?token=' + encodeURIComponent(a.access_token) + '&v=' + encodeURIComponent(want.frame);
         // M19: another card (or the editor) fetching the same frame shares its request.
@@ -4348,8 +4352,13 @@ class MapView {
     _dataDone(run, raw) {
         const f = this._fetch;
         if (f.inflight === run) f.inflight = null;
-        if (run.aborted) return;
-        if (run.seq > f.shownSeq) {
+        if (run.aborted) {
+            this.stats.discarded++;
+            return;
+        }
+        this._fetchTime(Date.now() - run.t0);
+        if (run.seq <= f.shownSeq) this.stats.discarded++;
+        else {
             f.shownSeq = run.seq;
             f.doneKey = run.key;
             const grid = decodeMapData(raw);
@@ -4372,7 +4381,11 @@ class MapView {
     _dataFailed(run, error) {
         const f = this._fetch;
         if (f.inflight === run) f.inflight = null;
-        if (run.aborted || (error && error.name === 'AbortError')) return this._pumpData();
+        if (run.aborted || (error && error.name === 'AbortError')) {
+            this.stats.discarded++;
+            return this._pumpData();
+        }
+        this.stats.failures++;
         const status = Number(error && error.status);
         // 4xx (but timeout/too many): the proxy has no data for this map – no retry, as before.
         const final = status >= 400 && status < 500 && status !== 408 && status !== 429;
@@ -4389,8 +4402,17 @@ class MapView {
         f.tries++;
         f.timer = setTimeout(() => {
             f.timer = null;
+            this.stats.retries++;
             this._pumpData();
         }, Math.round(ms));
+    }
+
+    /** M39: running median of the last data request durations (ms). */
+    _fetchTime(ms) {
+        const t = this._fetchTimes;
+        t.push(ms);
+        if (t.length > MEDIAN_SAMPLES) t.shift();
+        this.stats.fetchMs = median(t);
     }
 
     /** M6: the last good map stays while a newer one failed; the note says so (R12). */
@@ -16482,7 +16504,16 @@ Object.assign(EDIT_LINES, {
  * backward −300 and rotation ±128; backward stays at −100 (no collision
  * guard reversing) until the first live run calibrates (spec open question 1).
  */
-const REMOTE = { forward: 100, backward: -100, rotation: 128, deadzone: 0.15, stepMs: 200, stopRepeatMs: 300, timeoutMs: 2000 };
+const REMOTE = { forward: 100, backward: -100, rotation: 128, deadzone: 0.15, stepMs: 200, stopRepeatMs: 300, timeoutMs: 2000, slowMs: 600 };
+
+/** M39: how many recent answers a running median covers (map data, remote RTT). */
+const MEDIAN_SAMPLES = 5;
+
+function median(values) {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b), mid = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
 
 /** A stick or key value −1…1 → service value: dead zone, linear to the limit; Shift halves speed, Ctrl turning, precision both. */
 function remoteValue(axis, raw, mods = {}) {
@@ -16517,6 +16548,8 @@ class RemoteSender {
         this._seq = 0;
         this._last = -Infinity;
         this._timer = null; // spacing or the stop repeat
+        this.rtt = null; // M39: median answer time of the last calls (ms)
+        this._rtts = [];
     }
 
     set({ v, r }) {
@@ -16576,6 +16609,7 @@ class RemoteSender {
             if (!this._busy || this._busy.seq !== seq) return;
             clearTimeout(this._busy.timer);
             this._busy = null;
+            if (!error) this._measure(Date.now() - at);
             if (error) {
                 this.error = error;
                 this._want = null;
@@ -16604,6 +16638,15 @@ class RemoteSender {
             call = Promise.reject(e);
         }
         call.then(() => done(null), (e) => done(errorText(e)));
+    }
+
+    /** M39: running median of the answer times; a new median repaints the view (`data-rtt`, slow hint). */
+    _measure(ms) {
+        const before = this.rtt;
+        this._rtts.push(ms);
+        if (this._rtts.length > MEDIAN_SAMPLES) this._rtts.shift();
+        this.rtt = median(this._rtts);
+        if (this.rtt !== before) this._onChange(this.state);
     }
 }
 
@@ -16756,6 +16799,11 @@ function remoteView(card) {
         p.blocked.textContent = ctl.block ? text('remoteGesperrt_' + ctl.block) : '';
         p.note.hidden = !ctl.note;
         p.note.textContent = ctl.note || '';
+        // M39: a slow connection is named, so a late movement is no surprise.
+        const rtt = ctl.sender.rtt;
+        if (rtt === null) ctl.root.removeAttribute('data-rtt');
+        else ctl.root.setAttribute('data-rtt', String(rtt));
+        p.slow.hidden = !(rtt !== null && rtt >= REMOTE.slowMs);
         p.arm.hidden = ctl.armed;
         p.arm.disabled = !!ctl.block;
         p.precision.setAttribute('aria-checked', String(ctl.precision));
@@ -16933,6 +16981,9 @@ function remoteView(card) {
         p.blocked = line('remote-blocked form-note', 'status');
         p.note = line('remote-note form-note', 'alert');
         p.note.setAttribute('data-kind', 'error');
+        p.slow = line('remote-slow form-note', 'status');
+        p.slow.setAttribute('data-kind', 'warning');
+        p.slow.textContent = text('remoteLangsam');
         const actions = document.createElement('div');
         actions.className = 'remote-actions';
         p.arm = BuschUI.action({ label: text('remoteStarten'), text: text('remoteStarten'), icon: 'mdi:gamepad-round-outline', variant: 'primary', onClick: () => arm() });
@@ -16962,7 +17013,7 @@ function remoteView(card) {
         const info = document.createElement('div');
         info.className = 'remote-info';
         p.state = line('remote-state');
-        info.append(p.state, p.warning, p.status, p.blocked, p.note);
+        info.append(p.state, p.warning, p.status, p.blocked, p.note, p.slow);
         const wrap = document.createElement('div');
         wrap.className = 'remote-map-wrap';
         p.map = document.createElement('div');

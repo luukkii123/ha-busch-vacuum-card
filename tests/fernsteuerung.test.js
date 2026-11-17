@@ -882,3 +882,41 @@ test('Dialog-Element entfernt (ohne Schließen): Stopp und keine Tasten-/Fokus-Z
   k.u.uhr.vor(1000);
   assert.equal(k.haus.rufe.length, vorher, 'eine abgehängte Ansicht reagiert nicht mehr');
 });
+
+// ── M39 · Antwortzeit (N11) ─────────────────────────────────────────────────
+
+test('M39 RemoteSender: rtt ist der Median der letzten Antwortzeiten', async () => {
+  const { u, s, offen, antworte } = sender();
+  assert.equal(s.rtt, null, 'vor der ersten Antwort keine RTT');
+  s.set({ v: 50, r: 0 });
+  // Jede Antwort ≥ 200 ms: der nächste Schritt geht sofort mit der Antwort raus.
+  for (const ms of [300, 900, 500]) {
+    assert.equal(offen.length, 1, 'genau ein Aufruf unterwegs');
+    u.uhr.vor(ms);
+    await antworte();
+  }
+  assert.equal(s.rtt, 500, 'Median von 300, 900, 500');
+});
+
+test('M39 Fernsteuerung: simulierte RTT 800 ms → data-rtt und Hinweis „Verbindung langsam“; 200 ms → kein Hinweis', async () => {
+  const k = ansicht();
+  const langsam = () => $d(k.u, '.remote-slow');
+  assert.ok(langsam(), 'Hinweisknoten vorhanden');
+  assert.equal(langsam().hidden, true, 'ohne Messung kein Hinweis');
+  k.starten();
+  k.ctl().input('probe', { v: 1, t: 0 });
+  k.u.uhr.vor(800);
+  await k.antworte();
+  const root = $d(k.u, '.remote');
+  assert.equal(root.getAttribute('data-rtt'), '800');
+  assert.equal(langsam().hidden, false);
+  assert.match(langsam().textContent, /Verbindung langsam/);
+  assert.match(langsam().textContent, /verzögert/);
+  const k2 = ansicht();
+  k2.starten();
+  k2.ctl().input('probe', { v: 1, t: 0 });
+  k2.u.uhr.vor(200);
+  await k2.antworte();
+  assert.equal($d(k2.u, '.remote').getAttribute('data-rtt'), '200');
+  assert.equal($d(k2.u, '.remote-slow').hidden, true);
+});
