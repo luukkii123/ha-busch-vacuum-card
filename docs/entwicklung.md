@@ -81,6 +81,45 @@
   (`decodeMapData`, `roomAtGrid`, `passableGrid`). Rückfall Bildmodus
   (`entity_picture`, `roomAtRects`: Rechteck + nächster Mittelpunkt).
   Raum-Chips sind in beiden Modi die Grundlösung.
+- **Abrufzustand (M6, Buschcheck 17.11.2026):** höchstens ein Datenabruf je
+  Karte gleichzeitig (Single-Flight); ein neuer Frame wird nur `wanted`, eine
+  Antwort neuer als die angezeigte wird angewandt, danach folgt der neueste
+  gewünschte Frame. `map-frame` feuert genau einmal je angewandtem Frame. Ein
+  Stockwerkwechsel bricht den laufenden Abruf per `AbortController` ab. Ein
+  Fehler lässt den letzten guten Stand stehen (`data-stale` an `.map-view`,
+  Hinweis `karteVeraltet`) und wiederholt denselben Frame nach 2/5/15/60 s
+  (±20 %); ein neuer Frame setzt den Backoff zurück. 4xx außer 408/429 gilt
+  als endgültig (der Proxy hat für diese Karte keine Daten): kein Wiederholen,
+  ohne Stand Bildmodus wie bisher. Bildmodus: jedes dekodierte Bild, das
+  neuer ist als das angezeigte, erscheint; überholte `<img>` bekommen
+  `src=''`. Fehlgeschlagene `loadEditData`/`loadSettingTexts` werden nicht
+  gemerkt. Tests: `tests/netz.test.js`.
+- **Frame-Cache (M19):** `FRAME_CACHE` auf Modulebene, je Kamera höchstens 2
+  Frames, Schlüssel `<map_index>:<frame_id>` (ohne Token); alle Karten der
+  Seite und `loadEditData` (aktive, nicht gespeicherte Karte) teilen einen
+  laufenden Abruf, ein Fehler verlässt den Cache sofort. `stats.data` zählt
+  gestartete Abrufe, `stats.cacheHits` geteilte. Im Datenmodus kommt das
+  Kartenbild nur als Absicherung: sofort ohne Datenweg, nach einem
+  fehlgeschlagenen Abruf oder wenn schon ein Bild gezeigt wird, sonst erst nach
+  600 ms ohne Daten (`MAP_HEDGE_MS`).
+- **Verbindung (M18):** bei `hass.connected === false` trägt der Host
+  `data-offline`, die Meldungen zeigen `offlineHinweis` (`id="offline-hint"`),
+  die Aktionsknöpfe sind mit `aria-describedby="offline-hint"` gesperrt, und
+  `trackWrite`, `_call` und `_startTask` schreiben nichts (kein optimistischer
+  Zustand). Zentral sperrt `callDevice` jeden Dienst offline (Ablehnung mit
+  `code: 'offline'`, R12-Text des Aufrufers), damit auch Wege ohne eigenen
+  Guard (Hindernis ignorieren, Reinigungsfolgen, Shortcuts) nichts senden;
+  einzige Ausnahme ist der Stopp-Schritt der Fernsteuerung (`stopAttempt`). Zurück online: offene Einstellungen, die das Gerät inzwischen
+  meldet, gelten als bestätigt; ein wartender Kartenabruf läuft sofort
+  (`MapView.retryNow`). Grund: HAs WebSocket-Bibliothek lehnt
+  `sendMessagePromise` bei getrennter Verbindung sofort ab (`sendMessage`
+  wirft `ERR_CONNECTION_LOST`) und bricht laufende Befehle beim Trennen ab —
+  **außer** nach einem `suspend()` (Tab im Hintergrund): beim ersten
+  Wiederverbinden danach stellt sie Nachrichten in `_queuedMessages` und sendet
+  sie verspätet. Quelle: home-assistant-js-websocket `lib/connection.ts`
+  (`sendMessage`, `sendMessagePromise`, `_handleClose`, `_setSocket`), gelesen
+  am 17.11.2026. Ohne Sperre käme ein Start also im ungünstigsten Fall erst
+  nach der Rückkehr an.
 - Testdaten nur synthetisch (`tests/kartendaten.js` aus den verfremdeten
   Raumrechtecken); echte Kartendaten schließt `tests/datenschutz.test.js` aus.
 
@@ -492,6 +531,21 @@ Eine Tabelle, eine Zeile, ein Schreibweg — auch für `dock` und
   wiederherstellen“ (`roomRestoreView`): ein `vacuum_set_custom_cleaning` je
   Raum nacheinander, Halt beim ersten Fehler, „Erneut versuchen“ nur für den
   Rest, gesperrt über `roomLock`. Die Werte leben nur im Speicher der Seite.
+- **Netz und Rennen (M20, Buschcheck 17.11.2026):** `_awaitStatus` nimmt als
+  zweites Signal eine geänderte Liste der Stände (`recoveryEntries`: Nummer,
+  Typ, Datum, Bild-URL mit `v=`): ist der Dienst beantwortet, der Status
+  unverändert „Success“ und die Liste anders als beim Start, ist der Lauf
+  fertig (sonst wie bisher bis zum Zeitlimit). Die Karte füttert wartende
+  Sitzungen auch bei Updates nur gespeicherter Kameras (`_feedWaits`).
+  Teilfehler: `commit` zählt geschriebene Aufrufe; mit `undo.groups`
+  (`saveConfirm` je Gruppe `{ count, calls }`) meldet `kartenTeilFehler`
+  „{n} von {m} Gruppen gespeichert …“ und das Undo nimmt die geschriebenen
+  Gruppen zurück. Eigener Frame: statt „der nächste Frame ist unserer“ merkt
+  `saveConfirm` die geänderten Listen mit ihrem alten Stand (`expect`); ein
+  neuer Frame, in dem alle noch alt sind, gilt als fremd (`foreign`), der
+  erste, in dem eine davon den alten Stand verlassen hat, als eigener
+  (tolerant gegen Normalisierung durch das Gerät). Rückgängig sowie Teilen und
+  Zusammenlegen von Räumen behalten `ownSave`. Tests: `tests/netz.test.js`.
 - **Grenzen:** kein Hochladen aus dem Browser (kein Dienst; daher Datei-URL);
   wie viele Backup-Stände das Gerät hält, ist offen.
 

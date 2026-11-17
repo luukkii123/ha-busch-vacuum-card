@@ -360,7 +360,7 @@ test('EDI-02 Bearbeitungsdaten: MapView-Daten desselben frame mit Wänden werden
   const k2 = aufbau({ abruf: (url) => (/saved=1/.test(url) ? { status: 500 } : { status: 404 }) });
   await mikro(); await mikro();
   assert.equal(await k2.I.loadEditData(k2.karte), null);
-  assert.equal(k2.karte._editData.failed, true);
+  assert.equal(k2.karte._editData, null, 'M6: ein Fehler wird nicht gemerkt (der nächste Aufruf holt neu, tests/netz.test.js)');
 });
 
 // ── Task 3: Kartenverwaltung (EDI-01, ALL-13, ALL-10) ───────────────────────
@@ -772,7 +772,8 @@ test('EDI-02 Bearbeitungsdaten beim Betreten; fremdes neues frame_id → Hinweis
   await k.sicherungFertig();
   assert.deepEqual(roh(k.haus.rufe.at(-1).data), { entity_id: 'vacuum.robo', walls: [[777, -7926, 794, -6336]], zones: [[100, 100, 600, 600]], no_mops: [[0, 0, 300, 300]] }, 'fremde Wischverbotszone bleibt erhalten');
   k.u.zurueck();
-  k.kamera({ frame_id: 1182 });
+  // M20: der eigene Frame trägt die gespeicherte Zone (ein Frame mit der alten Liste wäre fremd, tests/netz.test.js).
+  k.kamera({ frame_id: 1182, no_go_areas: [{ x0: 100, y0: 100, x1: 600, y1: 100, x2: 600, y2: 600, x3: 100, y3: 600, angle: null }] });
   await mikro(); await mikro(); await mikro();
   assert.equal(gespeichert(), 3, 'nach eigener Speicherung neu geladen');
   assert.doesNotMatch(dialogVon(k.u).shadowRoot.textContent, /Karte hat sich auf dem Gerät geändert/, 'eigene Speicherung: kein Hinweis');

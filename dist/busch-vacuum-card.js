@@ -456,6 +456,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             stufeError: 'Fehler',
             stufeWarning: 'Warnung',
             stufeInfo: 'Hinweis',
+            stufeOffline: 'Keine Verbindung',
+            offlineHinweis: 'Keine Verbindung zu Home Assistant — Werte können veraltet sein. Befehle sind gesperrt, bis die Verbindung zurück ist.',
             stufeLowWater: 'Wassermangel',
             infoPausiert: 'Reinigung unterbrochen: lädt und setzt danach fort.',
             warnungLoeschen: 'Warnung löschen',
@@ -569,6 +571,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             karte: 'Karte',
             karteAlt: 'Karte „{karte}“ des Saugroboters',
             karteLaedt: 'Karte lädt …',
+            karteVeraltet: 'Karte nicht aktuell: Der letzte Abruf ist fehlgeschlagen. Angezeigt wird der zuletzt geladene Stand; die Karte versucht es selbst erneut.',
             karteLeer: 'Noch keine gespeicherte Karte. Sobald der Roboter eine Karte erstellt hat, erscheint sie hier; bis dahin geht die Reinigung „Gesamt“.',
             kameraWeg: 'Die Kartenkamera ist nicht verfügbar, deshalb fehlt die Karte. Steuerung und Status gehen weiter. Prüfe die Integration dreame_vacuum oder warte, bis die Kamera wieder da ist.',
             bildFehler: 'Das Kartenbild ließ sich nicht laden. Steuerung und Status gehen weiter. Versuche es erneut.',
@@ -1096,6 +1099,8 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             stufeError: 'Error',
             stufeWarning: 'Warning',
             stufeInfo: 'Info',
+            stufeOffline: 'No connection',
+            offlineHinweis: 'No connection to Home Assistant — values may be out of date. Commands are locked until the connection is back.',
             stufeLowWater: 'Low water',
             infoPausiert: 'Cleaning interrupted: charging, then it resumes.',
             warnungLoeschen: 'Clear warning',
@@ -1209,6 +1214,7 @@ const TEXTE_BUSCH_VACUUM_CARD = {
             karte: 'Map',
             karteAlt: 'Map “{karte}” of the robot vacuum',
             karteLaedt: 'Map loading …',
+            karteVeraltet: 'Map not up to date: the last update failed. The last loaded map is shown; the card tries again by itself.',
             karteLeer: 'No saved map yet. Once the robot has created a map it shows here; until then cleaning “All” works.',
             kameraWeg: 'The map camera is unavailable, so the map is missing. Controls and status keep working. Check the dreame_vacuum integration or wait until the camera is back.',
             bildFehler: 'The map image could not be loaded. Controls and status keep working. Try again.',
@@ -2305,8 +2311,20 @@ function settleWrite(card, key) {
  * M5: the card's one way to a HA service. Always a promise, also when hass
  * throws; HA's own error toast is off (notifyOnError = false) because the card
  * shows its R12 text itself.
+ * M18: offline (hass.connected === false) nothing goes out; the promise is
+ * rejected with code 'offline' so every caller (locate, clear warning, map
+ * change, shortcuts, …) shows its R12 text with the reason; the card's
+ * offline hint says why commands are locked. Only a remote-control stop
+ * (`stopAttempt`) is still tried, never a motion.
  */
-function callDevice(hass, domain, service, data) {
+function callDevice(hass, domain, service, data, { stopAttempt = false } = {}) {
+    // The one exception: the remote control's stop step (velocity 0) is a safety
+    // attempt (REM auto-stop on connection loss) and always tries to go out.
+    if (hass && hass.connected === false && !stopAttempt) {
+        const error = new Error(translate(hass, 'stufeOffline'));
+        error.code = 'offline';
+        return Promise.reject(error);
+    }
     try {
         return Promise.resolve(hass.callService(domain, service, data, undefined, false));
     } catch (error) {
@@ -2340,6 +2358,7 @@ const errorText = (error) => String((error && (error.message || error.code)) || 
  */
 function trackWrite(card, key, { want, check, call, label, done, failKey = 'schreibFehler' }) {
     if (card._settingWrites.has(key)) return false;
+    if (card._hass && card._hass.connected === false) return false; // M18: offline nothing is written
     card._settingNotes.delete(key);
     card._settingLate.delete(key);
     const pending = { want, check: check || (() => false), timer: null, phase: 'sending' };
@@ -3083,12 +3102,15 @@ const MESSAGE_LOOK = {
     error: { word: 'stufeError', icon: 'mdi:alert-circle-outline' },
     warning: { word: 'stufeWarning', icon: 'mdi:alert-outline' },
     low_water: { word: 'stufeLowWater', icon: 'mdi:water-alert-outline' },
-    info: { word: 'stufeInfo', icon: 'mdi:information-outline' }
+    info: { word: 'stufeInfo', icon: 'mdi:information-outline' },
+    offline: { word: 'stufeOffline', icon: 'mdi:lan-disconnect' }
 };
 
 /** Current messages [{ kind, text }]: error or warning (one code), low water, info. */
 function messagesFor(hass, model) {
     const list = [];
+    // M18: without the connection every value may be old and nothing is written.
+    if (hass.connected === false) list.push({ kind: 'offline', text: translate(hass, 'offlineHinweis') });
     const id = model.entity('sensor.error');
     const sensor = id && hass.states[id];
     // The sensor carries HA's translated description; the attribute only English.
@@ -3473,17 +3495,49 @@ const MAP_DRAW = {
  * unless the active map camera or a map attribute of the vacuum changed. The
  * image is fetched only for a new `entity_picture` and swapped after decode().
  */
+/** M6: retries of a failed map data request (ms), each spread by ±20 %. */
+const MAP_RETRY_MS = [2000, 5000, 15000, 60000];
+const MAP_RETRY_JITTER = 0.2;
+/** M19: in data mode the integration's picture is fetched only when the data is not there after this long. */
+const MAP_HEDGE_MS = 600;
+
+/**
+ * M19: map data shared by every card of the page, per camera at most
+ * FRAME_CACHE_SIZE frames `{ key: '<map_index>:<frame_id>', promise }` (the
+ * token stays out of the key). A failed request leaves it at once.
+ */
+const FRAME_CACHE = new Map();
+const FRAME_CACHE_SIZE = 2;
+const cachedFrame = (camera, key) => {
+    const entry = (FRAME_CACHE.get(camera) || []).find((e) => e.key === key);
+    return entry ? entry.promise : null;
+};
+function cacheFrame(camera, key, promise) {
+    const list = (FRAME_CACHE.get(camera) || []).filter((e) => e.key !== key);
+    const entry = { key, promise };
+    list.push(entry);
+    FRAME_CACHE.set(camera, list.slice(-FRAME_CACHE_SIZE));
+    promise.catch(() => {
+        const now = FRAME_CACHE.get(camera);
+        if (now) FRAME_CACHE.set(camera, now.filter((e) => e !== entry));
+    });
+    return promise;
+}
+
 class MapView {
     constructor(card) {
         this.card = card;
         this.hass = null;
         this.model = null;
-        this.stats = { images: 0, data: 0, renders: 0, paints: 0 }; // for tests and the performance check
+        this.stats = { images: 0, data: 0, renders: 0, paints: 0, cacheHits: 0 }; // for tests and the performance check
         this._cam = null;
         this._key = null;
         this._imageUrl = null;
         this._image = null;
         this._imageState = 'loading';
+        this._imgLoad = { seq: 0, shown: 0, pending: [] }; // M6: image requests by order; a newer decoded one is shown
+        // M6: one map data request at a time; `wanted` is the newest frame, `doneKey` the last one settled.
+        this._fetch = { seq: 0, shownSeq: 0, inflight: null, wanted: null, doneKey: null, tries: 0, timer: null, stale: false };
         this._matrix = null; // robot mm → image px
         this._size = { width: 0, height: 0 };
         // R21: zoom and pan are never remembered; every map starts fitted.
@@ -4146,8 +4200,8 @@ class MapView {
         this._applyScheme();
         if (this._showsMap()) {
             // Data mode paints its own map: the integration's picture only until the data is there.
-            if (!this._data) this._loadImage(a.entity_picture);
             this._loadData(a);
+            if (!this._data) this._hedgeImage(a);
             this._paint();
         }
         this._render();
@@ -4158,28 +4212,138 @@ class MapView {
     /**
      * Data mode (spec: Entscheidung Spike): the map data of the active camera,
      * only for a new frame_id; `&v=` because the answer is cached as immutable.
-     * Without fetch, on failure or for an empty map the card stays in image mode.
+     * M6: one request at a time (single flight). A new frame only becomes
+     * `wanted`; an answer newer than the shown one is applied, then the newest
+     * wanted frame follows. Another floor aborts the running request. A failed
+     * request keeps the last good map (`data-stale`) and is retried with
+     * backoff; without a map, on a final answer (4xx) or for an empty map the
+     * card stays in image mode.
      */
     _loadData(a) {
         const frame = a.frame_id;
-        if (frame === undefined || frame === this._dataFrame || typeof fetch !== 'function' || !a.access_token) return;
-        this._dataFrame = frame;
-        this.stats.data++;
-        const url = '/api/camera_map_data_proxy/' + this._cameraId + '?token=' + encodeURIComponent(a.access_token) + '&v=' + encodeURIComponent(frame);
-        Promise.resolve().then(() => fetch(this._url(url))).then((res) => (res && res.ok ? res.json() : null)).then((raw) => {
-            if (this._dataFrame !== frame) return;
+        if (frame === undefined || typeof fetch !== 'function' || !a.access_token) return;
+        const f = this._fetch;
+        const key = a.map_index + ':' + frame;
+        if (f.inflight && f.inflight.index !== a.map_index) this._abortData();
+        if (f.wanted && f.wanted.key === key) return;
+        f.wanted = { key, frame, index: a.map_index };
+        // A new frame starts the backoff again.
+        clearTimeout(f.timer);
+        f.timer = null;
+        f.tries = 0;
+        this._pumpData();
+    }
+
+    /** Starts the wanted frame unless one runs, a retry waits or it is settled already. */
+    _pumpData() {
+        const f = this._fetch, want = f.wanted;
+        if (f.inflight || f.timer || !want || want.key === f.doneKey) return;
+        const a = this._attrs();
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        const run = { key: want.key, frame: want.frame, index: want.index, seq: ++f.seq, controller, aborted: false };
+        f.inflight = run;
+        const url = '/api/camera_map_data_proxy/' + this._cameraId + '?token=' + encodeURIComponent(a.access_token) + '&v=' + encodeURIComponent(want.frame);
+        // M19: another card (or the editor) fetching the same frame shares its request.
+        let request = cachedFrame(this._cameraId, want.key);
+        if (request) this.stats.cacheHits++;
+        else {
+            this.stats.data++;
+            request = cacheFrame(this._cameraId, want.key, Promise.resolve().then(() => fetch(this._url(url), controller ? { signal: controller.signal } : undefined)).then((res) => {
+                if (!res || !res.ok) throw Object.assign(new Error('HTTP ' + (res && res.status)), { status: res && res.status });
+                return res.json();
+            }));
+        }
+        request.then((raw) => this._dataDone(run, raw), (error) => this._dataFailed(run, error));
+    }
+
+    /**
+     * M19: the integration's picture is the costlier request; in data mode it
+     * is only a fallback – at once without a data way, after a failed one or
+     * while the picture is shown already, else after MAP_HEDGE_MS.
+     */
+    _hedgeImage(a) {
+        const dataWay = a.frame_id !== undefined && typeof fetch === 'function' && !!a.access_token;
+        if (!dataWay || this._imageUrl) {
+            this._loadImage(a.entity_picture);
+            return;
+        }
+        if (this._hedgeTimer) return;
+        this._hedgeTimer = setTimeout(() => {
+            this._hedgeTimer = null;
+            if (!this._data) this._loadImage(this._attrs().entity_picture);
+        }, MAP_HEDGE_MS);
+    }
+
+    _abortData() {
+        const run = this._fetch.inflight;
+        if (!run) return;
+        run.aborted = true;
+        this._fetch.inflight = null;
+        if (run.controller) run.controller.abort();
+    }
+
+    _dataDone(run, raw) {
+        const f = this._fetch;
+        if (f.inflight === run) f.inflight = null;
+        if (run.aborted) return;
+        if (run.seq > f.shownSeq) {
+            f.shownSeq = run.seq;
+            f.doneKey = run.key;
             const grid = decodeMapData(raw);
             this._data = grid ? { raw, grid } : null;
+            this._dataFrame = run.frame;
+            this._setStale(false);
+            clearTimeout(this._hedgeTimer);
+            this._hedgeTimer = null;
             if (this._data) {
                 this._matrix = gridAffine(grid).matrix;
                 this._paint();
-                this._render();
-            }
-            this._emit('map-frame', { frameId: frame, mode: this._data ? 'data' : 'image' });
+            } else this._loadImage(this._attrs().entity_picture);
+            this._render();
+            this._emit('map-frame', { frameId: run.frame, mode: this._data ? 'data' : 'image' });
             this._renderLayers();
-        }).catch(() => {
-            if (this._dataFrame === frame) this._data = null;
-        });
+        }
+        this._pumpData();
+    }
+
+    _dataFailed(run, error) {
+        const f = this._fetch;
+        if (f.inflight === run) f.inflight = null;
+        if (run.aborted || (error && error.name === 'AbortError')) return this._pumpData();
+        const status = Number(error && error.status);
+        // 4xx (but timeout/too many): the proxy has no data for this map – no retry, as before.
+        const final = status >= 400 && status < 500 && status !== 408 && status !== 429;
+        if (final) f.doneKey = run.key;
+        if (this._data) this._setStale(true);
+        else {
+            this._loadImage(this._attrs().entity_picture);
+            if (final) this._emit('map-frame', { frameId: run.frame, mode: 'image' });
+        }
+        this._render();
+        if (f.wanted && f.wanted.key !== run.key) return this._pumpData(); // a newer frame waits: that one instead
+        if (final) return;
+        const ms = MAP_RETRY_MS[Math.min(f.tries, MAP_RETRY_MS.length - 1)] * (1 - MAP_RETRY_JITTER + Math.random() * 2 * MAP_RETRY_JITTER);
+        f.tries++;
+        f.timer = setTimeout(() => {
+            f.timer = null;
+            this._pumpData();
+        }, Math.round(ms));
+    }
+
+    /** M6: the last good map stays while a newer one failed; the note says so (R12). */
+    _setStale(on) {
+        this._fetch.stale = on;
+        this.el.toggleAttribute('data-stale', on);
+    }
+
+    /** M18: after the connection returns a waiting retry runs at once (no backoff). */
+    retryNow() {
+        const f = this._fetch;
+        if (!f.timer) return;
+        clearTimeout(f.timer);
+        f.timer = null;
+        f.tries = 0;
+        this._pumpData();
     }
 
     _emit(type, detail) {
@@ -4211,23 +4375,33 @@ class MapView {
         this._imageUrl = url;
         this._imageState = 'loading';
         this.stats.images++;
+        const load = this._imgLoad, seq = ++load.seq;
         const img = document.createElement('img');
         img.className = 'map-base';
         img.setAttribute('decoding', 'async');
         img.setAttribute('src', this._url(url));
+        const entry = { seq, img };
+        load.pending.push(entry);
+        const settled = () => { load.pending = load.pending.filter((p) => p !== entry); };
         // Swapped only once decoded: the old image stays until then, no flicker.
+        // M6: any decoded image newer than the shown one is shown; older ones still loading stop (src '').
         Promise.resolve(typeof img.decode === 'function' ? img.decode() : undefined).then(() => {
-            if (this._imageUrl !== url) return;
+            settled();
+            if (seq <= load.shown) return;
+            load.shown = seq;
+            for (const p of load.pending) if (p.seq < seq) p.img.setAttribute('src', '');
+            load.pending = load.pending.filter((p) => p.seq > seq);
             img.setAttribute('alt', translate(this.hass, 'karteAlt', { karte: this._mapName() }));
             if (this._image) this._image.remove();
             this._image = img;
             this._size = { width: img.naturalWidth || 0, height: img.naturalHeight || 0 };
             this.pan.insertBefore(img, this._pictures.overlay || this.svg);
-            this._imageState = 'ready';
+            this._imageState = seq === load.seq ? 'ready' : 'loading';
             this._render();
             this._renderLayers();
         }, () => {
-            if (this._imageUrl !== url) return;
+            settled();
+            if (seq <= load.shown || seq !== load.seq) return;
             this._imageState = 'error';
             this._render();
         });
@@ -4242,6 +4416,7 @@ class MapView {
         else {
             if (this._imageState === 'loading') notes.push(['loading', 'mdi:progress-clock', 'karteLaedt']);
             if (this._imageState === 'error') notes.push(['error', 'mdi:image-broken-variant', 'bildFehler']);
+            if (this._fetch.stale && this._data) notes.push(['stale', 'mdi:sync-alert', 'karteVeraltet']);
             if (this.model.attr('has_temporary_map')) notes.push(['temporary', 'mdi:map-clock-outline', 'temporaereKarte']);
             if (this.model.attr('mapping')) notes.push(['mapping', 'mdi:map-plus', 'kartierungLaeuft']);
             if (!this._matrix && this._imageState === 'ready') notes.push(['uncalibrated', 'mdi:crosshairs-question', 'ohneKalibrierung']);
@@ -4310,6 +4485,10 @@ class MapView {
         if (ctx && typeof ImageData === 'function') ctx.putImageData(new ImageData(picture.data, picture.width, picture.height), 0, 0);
         this._imageUrl = null;
         this._imageState = 'ready';
+        // M6: image requests from before the canvas are overtaken; they stop loading.
+        this._imgLoad.shown = this._imgLoad.seq;
+        for (const p of this._imgLoad.pending) p.img.setAttribute('src', '');
+        this._imgLoad.pending = [];
         this._size = { width: picture.width, height: picture.height };
     }
 
@@ -4972,7 +5151,12 @@ function groupShown(model, name) {
 function loadSettingTexts(card) {
     const hass = card._hass;
     if (card._settingTexts || !hass || typeof hass.loadBackendTranslation !== 'function') return;
-    card._settingTexts = Promise.resolve(hass.loadBackendTranslation('entity', 'dreame_vacuum')).then(() => rerender(card), () => {});
+    // M6: a failed load is not kept; the next view tries again.
+    const loading = Promise.resolve(hass.loadBackendTranslation('entity', 'dreame_vacuum')).then(() => rerender(card), () => {
+        if (card._settingTexts === loading) card._settingTexts = null;
+        return false;
+    });
+    card._settingTexts = loading;
 }
 
 /**
@@ -10846,15 +11030,42 @@ class BuschVacuumCard extends HTMLElement {
     set hass(hass) {
         // Home Assistant hands every card a new hass on every state change in
         // the house. Only the vacuum and the few sensors shown redraw.
-        const unchanged = snapshotUnchanged(this._seen, hass) && (!hass || hass.entities === this._relatedFrom);
+        // M18: the connection state redraws too; on its return open writes and the map are checked again.
+        const online = !hass || hass.connected !== false;
+        const back = online && this._online === false;
+        const unchanged = snapshotUnchanged(this._seen, hass) && (!hass || hass.entities === this._relatedFrom) && online === this._online;
+        this._online = online;
         this._hass = hass;
+        if (back) this._reconnected();
         // The card first: the map's state (e.g. a finished ignore) is current when the dialog draws.
         if (!unchanged) this._update();
+        else this._feedWaits();
         if (this._dialog) this._dialog.hass = hass;
     }
 
     get hass() {
         return this._hass;
+    }
+
+    /** M20: a waiting backup/restore also sees cameras the card does not watch (its list of stored states). */
+    _feedWaits() {
+        const sessions = new Set([this._editSession, ...(this._mapSessions || [])].filter((s) => s && s._wait));
+        if (!sessions.size) return;
+        const model = this._model();
+        for (const session of sessions) session.onHass(model);
+    }
+
+    /** M18: back online – writes the device reports meanwhile count as confirmed, a failed map request runs at once. */
+    _reconnected() {
+        if (this._errorKey || !this._settingWrites) return;
+        const model = this._model();
+        for (const [key, pending] of [...this._settingWrites]) {
+            if (!pending.check(model)) continue;
+            settleWrite(this, key);
+            this._settingNotes.delete(key);
+        }
+        if (this._map) this._map.retryNow();
+        rerender(this);
     }
 
     getCardSize() {
@@ -11005,6 +11216,7 @@ class BuschVacuumCard extends HTMLElement {
         BuschUI.action({ node: this._menuButton, label: menuLabel, icon: 'mdi:dots-vertical', variant: 'icon-only', onClick: () => this._openDialog(this._menuView()) });
         this._menuButton.hidden = this._hidden('menu') || this._menuEntries(model).length === 0;
         this._renderLock();
+        this.toggleAttribute('data-offline', hass.connected === false);
         this._stateLine.textContent = real ? formatState(hass, real, shown) : shown;
         // #1002: the status dot's level (R17: the state text stays the message).
         this._stateLine.setAttribute('data-level', shown === 'error' ? 'error' : ['cleaning', 'returning', 'paused'].includes(shown) ? 'active' : UNUSABLE.includes(shown) ? 'off' : 'ok');
@@ -11055,7 +11267,8 @@ class BuschVacuumCard extends HTMLElement {
         const buttons = names.map((name) => {
             // #1002: the primary start says what it cleans (CORE-07).
             const label = name === 'start' ? this._startLabel(hass, task) : translate(hass, outside && name === 'return' ? 'zurueckZumDock' : name);
-            const blocked = name === 'start' && !ready.ok;
+            const offline = hass.connected === false;
+            const blocked = offline || (name === 'start' && !ready.ok);
             const variant = outside ? (name === 'return' ? 'primary' : 'secondary') : CONTROLS[name].variant || 'secondary';
             const old = kept.get(name);
             const button = BuschUI.action({ node: old, label, icon: CONTROLS[name].icon, variant, disabled: blocked, onClick: () => (name === 'start' ? this._startTask(real) : this._call(name, real)) });
@@ -11064,7 +11277,7 @@ class BuschVacuumCard extends HTMLElement {
             words.className = 'ctl-text';
             words.textContent = label;
             if (!old) button.appendChild(words);
-            if (blocked) button.setAttribute('aria-describedby', 'task-hint');
+            if (blocked) button.setAttribute('aria-describedby', offline ? 'offline-hint' : 'task-hint');
             else button.removeAttribute('aria-describedby');
             button.classList.add('ctl');
             button.setAttribute('data-action', name);
@@ -11268,7 +11481,7 @@ class BuschVacuumCard extends HTMLElement {
             settingsRow.append(symbol, words, chevron);
             // Option names in the integration's words (R26), loaded once; the row redraws when they arrive.
             loadSettingTexts(this);
-            if (this._settingTexts && !this._summaryTexts) this._summaryTexts = this._settingTexts.then(() => this._update());
+            if (this._settingTexts && !this._summaryTexts) this._summaryTexts = this._settingTexts.then((ok) => { if (ok === false) this._summaryTexts = null; else this._update(); });
         }
         if (head.childNodes.length) nodes.push(head);
         if (active) {
@@ -12146,7 +12359,7 @@ class BuschVacuumCard extends HTMLElement {
 
     /** Start of the chosen task: exactly one service (spec table), optimistic, one call per tap (R11). */
     _startTask(real) {
-        if (this._pending) return;
+        if (this._pending || (this._hass && this._hass.connected === false)) return;
         const model = this._model();
         const task = this._chosenTask(model);
         if (!taskReady(model, task, this._selection, this._taskMap()).ok) return;
@@ -12222,6 +12435,7 @@ class BuschVacuumCard extends HTMLElement {
             node.className = 'message';
             node.setAttribute('data-kind', m.kind);
             node.setAttribute('role', m.kind === 'error' ? 'alert' : 'status');
+            if (m.kind === 'offline') node.id = 'offline-hint'; // M18: the reason of the locked buttons
             const symbol = BuschUI.ha.icon(look.icon);
             symbol.setAttribute('aria-hidden', 'true');
             const body = document.createElement('div');
@@ -12331,6 +12545,7 @@ class BuschVacuumCard extends HTMLElement {
 
     /** One control or task start; `call` ({ task, domain, service, data }) replaces the vacuum service. */
     _call(name, real, call) {
+        if (this._hass && this._hass.connected === false) return; // M18: no optimistic state, no service offline
         const control = CONTROLS[name];
         this._haptic();
         this._endPending();
@@ -12507,6 +12722,7 @@ const EDIT_TEXTS = {
         kartenSicherungFehler: 'Sicherung fehlgeschlagen ({grund}). Die Karte ist unverändert; deine Änderungen bleiben erhalten. Erneut versuchen oder abbrechen.',
         kartenSicherungZeit: 'Zeitlimit 60 s überschritten',
         kartenSchreibFehler: 'Speichern fehlgeschlagen ({grund}). Deine Änderungen bleiben erhalten. Erneut versuchen oder abbrechen.',
+        kartenTeilFehler: '{n} von {m} Gruppen gespeichert, die übrigen nicht ({grund}). Erneut speichern schreibt die vollständigen Listen und ist unschädlich; Rückgängig nimmt die gespeicherten Gruppen zurück.',
         kartenErneut: 'Erneut versuchen',
         kartenGespeichert: 'Gespeichert',
         rueckgaengig: 'Rückgängig',
@@ -12791,6 +13007,7 @@ const EDIT_TEXTS = {
         kartenSicherungFehler: 'Backup failed ({grund}). The map is unchanged; your changes are kept. Try again or cancel.',
         kartenSicherungZeit: 'time limit of 60 s exceeded',
         kartenSchreibFehler: 'Saving failed ({grund}). Your changes are kept. Try again or cancel.',
+        kartenTeilFehler: '{n} of {m} groups saved, the others not ({grund}). Saving again writes the complete lists and does no harm; Undo takes the saved groups back.',
         kartenErneut: 'Try again',
         kartenGespeichert: 'Saved',
         rueckgaengig: 'Undo',
@@ -13142,7 +13359,9 @@ class MapEditSession {
     _awaitStatus(grant, attr, service, data, timeoutMs, timeoutKey) {
         return new Promise((resolve, reject) => {
             // A stale "Success"/"Failed" of an earlier run counts only once the status moved.
-            const wait = { attr, running: false, start: String(this.model().attr(attr) || ''), resolve, reject, timer: null };
+            // M20: a changed list of stored states is a second signal once the service answered (Running may fall between two polls).
+            const mapId = data && data.map_id !== undefined ? data.map_id : this.mapId;
+            const wait = { attr, running: false, start: String(this.model().attr(attr) || ''), mapId, list: this._statesSig(mapId), answered: false, resolve, reject, timer: null };
             const end = (error) => {
                 if (this._wait !== wait) return;
                 clearTimeout(wait.timer);
@@ -13153,8 +13372,16 @@ class MapEditSession {
             wait.end = end;
             this._wait = wait;
             wait.timer = setTimeout(() => end(Object.assign(new Error(translate(this.card._hass, timeoutKey)), { timeout: true })), timeoutMs);
-            mapWrite(this.card, grant, service, data).then(() => this.onHass(this.model()), (error) => end(error));
+            mapWrite(this.card, grant, service, data).then(() => {
+                wait.answered = true;
+                this.onHass(this.model());
+            }, (error) => end(error));
         });
+    }
+
+    /** M20: the stored states of a map as one comparable text (number, type, date, picture with its v=). */
+    _statesSig(mapId, model = this.model()) {
+        return JSON.stringify(recoveryEntries(this.card._hass, model, mapId).map((e) => [e.k, e.typeText, e.date, e.picture]));
     }
 
     /** Fed by the card on every own update: the awaited status decides. */
@@ -13163,7 +13390,10 @@ class MapEditSession {
         if (!wait) return;
         const status = String(model.attr(wait.attr) || '');
         if (/running/i.test(status)) wait.running = true;
-        else if (!wait.running && status === wait.start) return;
+        else if (!wait.running && status === wait.start) {
+            if (wait.answered && /success/i.test(status) && this._statesSig(wait.mapId, model) !== wait.list) wait.end();
+            return;
+        }
         else if (/success|idle/i.test(status)) wait.end();
         else if (/fail|error/i.test(status)) wait.end(new Error(status));
     }
@@ -13182,6 +13412,7 @@ class MapEditSession {
             return false;
         }
         this.error = null;
+        let written = 0; // M20: calls on the device before a failure
         try {
             if (backup && this.backedUpAt === null && this.canBackup(model)) {
                 this.busy = 'backup';
@@ -13198,6 +13429,7 @@ class MapEditSession {
                     rerender(this.card);
                     await this._awaitStatus(grant, call.wait, call.service, call.data, call.timeout || BACKUP_TIMEOUT_MS, call.timeoutKey || 'kartenSicherungZeit');
                 } else await mapWrite(this.card, grant, call.service, call.data);
+                written++;
             }
             if (undo) this.undo.push(undo);
             this.saved = text;
@@ -13207,6 +13439,7 @@ class MapEditSession {
                 : this.busy === 'restore' ? (error && error.timeout ? 'wiederherstellenUnbekannt' : cloudRequired(error) ? 'wiederherstellenCloud' : 'wiederherstellenFehler')
                     : 'kartenSchreibFehler';
             this.error = { kind: this.busy, text: translate(this.card._hass, key, { grund: errorText(error) }) };
+            if (this.busy === 'save' && written > 0) this._partial(written, calls, undo, error);
             return false;
         } finally {
             this.busy = null;
@@ -13214,6 +13447,29 @@ class MapEditSession {
         }
     }
 }
+
+/**
+ * M20: some calls reached the device before one failed. With `undo.groups`
+ * ([{ count, calls }], one per group in call order) the text counts groups and
+ * the undo takes back the fully written ones; without, it counts calls.
+ */
+MapEditSession.prototype._partial = function (written, calls, undo, error) {
+    const groups = undo && Array.isArray(undo.groups) ? undo.groups : null;
+    let n = written, m = calls.length;
+    if (groups) {
+        let left = written;
+        const done = [];
+        for (const g of groups) {
+            if (left < g.count) break;
+            left -= g.count;
+            done.push(g);
+        }
+        n = done.length;
+        m = groups.length;
+        if (done.length) this.undo.push(Object.assign({}, undo, { calls: done.flatMap((g) => g.calls), groups: done }));
+    }
+    this.error = { kind: 'save', text: translate(this.card._hass, 'kartenTeilFehler', { n, m, grund: errorText(error) }) };
+};
 
 /** "No-Go-Zonen: 1 neu, 1 geändert, 0 gelöscht" (R13: the objects, not only a question). */
 function editCountLine(hass, art, c) {
@@ -13675,7 +13931,8 @@ function editCaps(model, data, attrs) {
  * cached as immutable; a stored map reads `&saved=1&index=` (walls only come
  * with the stored map, map.py#L8629). When map-view already holds the data of
  * the same frame with walls, it is reused — 0 extra requests (R20).
- * Resolves to editData(raw) or null (request failed: three tools stay locked).
+ * Resolves to editData(raw) or null (request failed: three tools stay locked
+ * until the next call fetches again, M6).
  */
 function loadEditData(card) {
     const m = card._map;
@@ -13691,6 +13948,8 @@ function loadEditData(card) {
     const settle = (raw) => {
         entry.data = editData(raw);
         entry.failed = !entry.data;
+        // M6: a failure is not kept; the next call of the same frame fetches again.
+        if (entry.failed && card._editData === entry) card._editData = null;
         return entry.data;
     };
     if (own && (!saved || (own.walls !== undefined && own.walls !== null) || !model.can('walls'))) {
@@ -13699,7 +13958,9 @@ function loadEditData(card) {
     }
     const url = '/api/camera_map_data_proxy/' + cur.camera + '?token=' + encodeURIComponent(cur.objects.access_token || '')
         + (saved ? '&saved=1&index=' + encodeURIComponent(cur.index) : '') + '&v=' + encodeURIComponent(cur.frameId);
-    entry.promise = typeof fetch !== 'function' ? Promise.resolve(settle(null))
+    // M19: the active map's data (not the stored one) comes from map-view's frame cache when it is fetching it.
+    const shared = saved ? null : cachedFrame(cur.camera, cur.index + ':' + cur.frameId);
+    entry.promise = shared ? shared.then(settle, () => settle(null)) : typeof fetch !== 'function' ? Promise.resolve(settle(null))
         : Promise.resolve().then(() => fetch(m._url(url))).then((res) => (res && res.ok ? res.json() : null)).then(settle, () => settle(null));
     return entry.promise;
 }
@@ -14126,6 +14387,7 @@ class MapEditor {
         this.draft = {};
         this.tool = null;
         this.ownSave = false; // the next new frame_id is our own save: no "changed" note
+        this.expect = null; // M20: after a save, the lists that must leave their old state in our own frame
         this.foreign = false;
         this.toolCaps = editCaps(card._model(), null, cur.objects);
         this.left = false;
@@ -14209,7 +14471,7 @@ class MapEditor {
     }
 
     /** Edit data again (enter, new frame_id): untouched draft lists follow the device, edited ones stay (Abgleich). */
-    reload() {
+    reload(judge = null) {
         const card = this.card;
         this.loading = true;
         const frame = this.frame;
@@ -14217,6 +14479,11 @@ class MapEditor {
             if (this.left || frame !== this.frame) return;
             const cur = card._map.current();
             const fresh = editLists(cur.objects, data);
+            if (judge && this.expect === judge) {
+                const own = Object.keys(judge.before).some((list) => JSON.stringify(fresh[list]) !== JSON.stringify(judge.before[list]));
+                if (own) this.expect = null;
+                else this.foreign = true;
+            }
             for (const lists of Object.values(this.draft)) {
                 for (const list of Object.keys(lists)) if (JSON.stringify(lists[list]) === JSON.stringify(this.base[list])) lists[list] = cloneList(fresh[list]);
             }
@@ -14236,9 +14503,12 @@ class MapEditor {
         const cur = this.card._map.current();
         if (cur.frameId === this.frame) return;
         this.frame = cur.frameId;
-        if (!this.ownSave) this.foreign = true;
-        this.ownSave = false;
-        this.reload();
+        const judge = this.expect; // M20: with an expectation the edit lists decide (in reload)
+        if (!judge) {
+            if (!this.ownSave) this.foreign = true;
+            this.ownSave = false;
+        }
+        this.reload(judge);
         rerender(this.card); // "loading": saving waits for the reconciliation
     }
 
@@ -14253,16 +14523,21 @@ class MapEditor {
         const undoText = lines.join('; ');
         if (this.foreign) lines.push(translate(hass, 'kartenAbgeglichen'));
         const before = cloneList(this.base);
+        // M20: per group its calls and their undo, so a partial failure can name and take back the written ones.
+        const parts = groups.map((g) => ({ calls: groupCalls(g, merged, mapId, before), undo: groupCalls(g, before, mapId, merged) }));
+        const changedLists = Object.keys(merged).filter((list) => JSON.stringify(merged[list]) !== JSON.stringify(before[list]));
         return mapConfirm(card, this.session, {
             title: translate(hass, 'kartenSicherungTitel'),
             lines,
             action: translate(hass, 'speichern'),
-            calls: groups.flatMap((g) => groupCalls(g, merged, mapId, before)),
-            undo: { text: undoText, calls: groups.flatMap((g) => groupCalls(g, before, mapId, merged)), base: before },
+            calls: parts.flatMap((p) => p.calls),
+            undo: { text: undoText, calls: parts.flatMap((p) => p.undo), base: before, groups: parts.map((p) => ({ count: p.calls.length, calls: p.undo })) },
             done: (dialog) => {
                 this.base = cloneList(merged);
                 this.draft = {};
-                this.ownSave = true;
+                // M20: our frame is the first one whose saved lists left the old state; one before it is foreign.
+                this.expect = changedLists.length ? { before: Object.fromEntries(changedLists.map((list) => [list, before[list]])) } : null;
+                this.ownSave = !this.expect;
                 this.foreign = false;
                 this.changed();
                 backTo(dialog, this.view);
@@ -14486,6 +14761,7 @@ function editRender(card, editor, body, hass, dialog) {
             editor.base = cloneList(last.base);
             editor.draft = {};
             editor.ownSave = true;
+            editor.expect = null;
             editor.changed();
             backTo(d, editor.view);
         })) });
@@ -16117,7 +16393,7 @@ class RemoteSender {
         this._busy = { seq, timer: setTimeout(() => done('timeout'), REMOTE.timeoutMs) };
         let call;
         try {
-            call = Promise.resolve(callDevice(this._hass(), 'dreame_vacuum', 'vacuum_remote_control_move_step', { entity_id: this._entity, velocity: v, rotation: r }));
+            call = Promise.resolve(callDevice(this._hass(), 'dreame_vacuum', 'vacuum_remote_control_move_step', { entity_id: this._entity, velocity: v, rotation: r }, { stopAttempt: stop && v === 0 && r === 0 }));
         } catch (e) {
             call = Promise.reject(e);
         }
@@ -17610,6 +17886,7 @@ BuschVacuumCard.__internals = {
     scheduleValue,
     writeSetting,
     callAction,
+    callDevice,
     DIALOG_STYLES,
     CARD_STYLES,
     MAP_STYLES,
@@ -17646,6 +17923,7 @@ BuschVacuumCard.__internals = {
     EDIT_GROUPS,
     editCaps,
     loadEditData,
+    FRAME_CACHE,
     mapsView,
     EDIT_TOOLS,
     MapEditor,
