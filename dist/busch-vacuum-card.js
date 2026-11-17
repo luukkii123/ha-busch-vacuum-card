@@ -3181,6 +3181,17 @@ function messagesFor(hass, model) {
     return list;
 }
 
+/**
+ * M36: a message as [problem, next step]: the first sentence (without its full stop) and the rest.
+ * Only splits before a capital letter, so "5 min. lang" stays whole; one sentence has no step.
+ */
+function messageParts(text) {
+    const value = String(text || '').trim();
+    const split = /^([\s\S]{3,}?)[.!?]\s+(?=\p{Lu})([\s\S]+)$/u.exec(value);
+    if (split) return [split[1], split[2]];
+    return [value.replace(/\.$/, ''), ''];
+}
+
 /** M15: the robot reports no usable state (unavailable, unknown or missing): commands stay locked. */
 const robotOffline = (model) => !model.state || UNUSABLE.includes(model.state.state);
 
@@ -9078,6 +9089,19 @@ ha-card {
 .message-text strong {
     display: block;
 }
+/* M36: "Fehler: <problem>" as the title, the next step below it, one size smaller and secondary. */
+.message-title {
+    display: block;
+    font-size: var(--ha-font-size-l, 16px);
+    font-weight: var(--ha-font-weight-bold, 700);
+    line-height: 1.3;
+}
+.message-step {
+    display: block;
+    font-size: var(--ha-font-size-m, 14px);
+    color: var(--secondary-text-color, #727272);
+    line-height: 1.35;
+}
 .task-area {
     display: flex;
     flex-direction: column;
@@ -12648,11 +12672,18 @@ class BuschVacuumCard extends HTMLElement {
             symbol.setAttribute('aria-hidden', 'true');
             const body = document.createElement('div');
             body.className = 'message-text';
+            // M36: title "Fehler: <problem>" over the next step, not one block as large as the card's name.
+            const [problem, step] = messageParts(m.text);
             const word = document.createElement('strong');
-            word.textContent = translate(hass, look.word);
-            const text = document.createElement('span');
-            text.textContent = m.text;
-            body.append(word, text);
+            word.className = 'message-title';
+            word.textContent = translate(hass, look.word) + (problem ? ': ' + problem : '');
+            body.appendChild(word);
+            if (step) {
+                const text = document.createElement('span');
+                text.className = 'message-step';
+                text.textContent = step;
+                body.appendChild(text);
+            }
             node.append(symbol, body);
             if (m.kind === 'warning' && model.can('clear_warning')) {
                 const clear = BuschUI.action({ label: translate(hass, 'warnungLoeschen'), icon: 'mdi:broom', variant: 'quiet', onClick: () => this._clearWarning(model) });

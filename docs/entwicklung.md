@@ -96,6 +96,11 @@
   `.map-hint` (`setHint`, ohne Zeiger-Ereignisse) unten links.
 - Kontrast: Reihenfolge als Ring (Zahl in Textfarbe auf Kartenfarbe), Links in
   Textfarbe unterstrichen; Hex nur als Fallback hinter HA-Variablen.
+- Meldungen (M36): `messageParts` teilt den Text am ersten Satzende vor einem
+  Großbuchstaben; Titel `.message-title` „<Stufe>: <Problem>“ (16 px fett),
+  darunter `.message-step` mit dem Handlungsschritt (14 px, sekundär). Im
+  Fehlerzustand bleibt Start bedienbar: die Gerätemeldung verlangt „neu
+  starten“; gesperrt wird nur offline/Roboter weg/Auswahl unvollständig, mit Grund.
 - Größe (M37): `getCardSize` nach Layout (Panel 1, mit Kartenkamera 9, ohne 4);
   `getGridOptions` 12/6 Spalten, `rows: 'auto'` (Höhe wächst mit dem Panel),
   `min_rows` 8 mit Karte, 4 ohne, 1 im Panel. Test `tests/geruest.test.js`.

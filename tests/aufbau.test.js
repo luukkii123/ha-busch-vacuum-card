@@ -279,3 +279,36 @@ test('CORE-13 Panel Mode: Karte genau so hoch wie der Platz unter HAs Kopf (Höh
   assert.match(blatt, /min-height: 0;/);
   assert.match(blatt, /overflow-y: auto;/);
 });
+
+// ── M36: Fehlerbanner gegliedert ───────────────────────────────────────────
+const fehlerMeldung = (k) => $$(k, '.message').find((m) => m.getAttribute('data-kind') === 'error');
+
+test('M36 Fehlerbanner: Titel „Fehler: …“ und Handlungsschritt getrennt', () => {
+  const k = aufbau({ zustand: 'error', attribute: { error: 'Antriebsrad blockiert. Bitte Fremdkörper entfernen und neu starten.', has_error: true } });
+  const m = fehlerMeldung(k);
+  assert.ok(m, 'Fehlermeldung');
+  assert.equal(m.querySelector('.message-title').textContent, 'Fehler: Antriebsrad blockiert');
+  assert.equal(m.querySelector('.message-title').tagName, 'STRONG');
+  assert.equal(m.querySelector('.message-step').textContent, 'Bitte Fremdkörper entfernen und neu starten.');
+  const kurz = fehlerMeldung(aufbau({ zustand: 'error', attribute: { error: 'Wheel stuck', has_error: true } }));
+  assert.equal(kurz.querySelector('.message-title').textContent, 'Fehler: Wheel stuck');
+  assert.equal(kurz.querySelector('.message-step'), null, 'ohne zweiten Satz kein leerer Schritt');
+  const wasser = $$(aufbau({ attribute: { low_water: true, low_water_warning: '' } }), '.message').find((n) => n.getAttribute('data-kind') === 'low_water');
+  assert.ok(!/:\s*$/.test(wasser.querySelector('.message-title').textContent), 'ohne Text kein Doppelpunkt');
+});
+
+test('M36 Fehlerbanner CSS: Titel 16 px fett, Schritt 14 px sekundär', () => {
+  const { CARD_STYLES } = neueUmgebung().registry.get('busch-vacuum-card').__internals;
+  assert.match(CARD_STYLES, /\.message-title \{[^}]*display: block;[^}]*font-size: var\(--ha-font-size-l, 16px\);[^}]*font-weight: var\(--ha-font-weight-bold, 700\);/);
+  assert.match(CARD_STYLES, /\.message-step \{[^}]*display: block;[^}]*font-size: var\(--ha-font-size-m, 14px\);[^}]*color: var\(--secondary-text-color, #727272\);/);
+});
+
+test('M36 Knopfzustand im Fehler: Start bleibt bedienbar (die Meldung sagt „neu starten“), Zurück auch', () => {
+  const k = aufbau({ zustand: 'error', attribute: { error: 'Antriebsrad blockiert. Bitte Fremdkörper entfernen und neu starten.', has_error: true } });
+  const start = ctl(k, 'start');
+  assert.ok(start, 'Start da');
+  assert.equal(start.disabled, false, 'nicht gesperrt: sonst blockiert die Karte den Handlungsschritt der Meldung');
+  assert.equal(start.getAttribute('data-variant'), 'primary');
+  assert.equal(start.getAttribute('aria-describedby'), null, 'kein Sperrgrund, weil nicht gesperrt');
+  assert.equal(ctl(k, 'return').disabled, false);
+});
