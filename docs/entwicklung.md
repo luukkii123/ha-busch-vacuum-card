@@ -882,6 +882,8 @@ python3 "$HACS/scripts/vacuum-inventar-pruefen.py" --lauf "$HACS/artifacts/e2e/<
 
 ## Geprüft
 
+**19.11.2026 · 0.5.3, Buschcheck Etappe H (#1315, Tag `v0.5.3`)** — nur Sync Shared UI 0.5.0 (E7), Inhaltsverzeichnis M49 nachgezogen, CORE-17-Test schneidet den Shared-Block exakt heraus, MDI-Pfad mdi:inbox-outline ergänzt. Außerhalb des Shared-Blocks und des Inhaltsverzeichnisses nur die Versionszeile geändert (diff gegen v0.5.2). 862 Node-Tests (852 grün, 10 skip). Abschlusslauf `karten-20261119-195834-aaec84` grün (55/55), `--beleg-pruefen` gleich; Bilder ohne sichtbare Änderung (Rauschen: Port, Datum).
+
 **12.11.2026 · 0.2.2, Befunde der Live-Prüfung von 0.2.1 (#1002, Tag `v0.2.2`)** — Panel Mode nimmt genau die Höhe unter HAs Kopf (100dvh − `--header-height` − Safe Areas − Versatz), das Blatt scrollt am Handy selbst, die Aktionsleiste bleibt sichtbar; Stationswarnung nur in der Hinweisleiste, Aktionsleiste „Dock“ (breit) bzw. Symbol (schmal), Primärknopf kürzt nie; Auswahlwerkzeuge 13 px unter der 14-px-Zählzeile.
 
 1. Je Befund zuerst rote Node-Tests (`tests/aufbau.test.js`), danach grün; `node --check` grün; `node --test` 622/622.
