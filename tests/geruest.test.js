@@ -96,7 +96,7 @@ test('Karte, Editor und Picker-Eintrag sind registriert', () => {
   assert.equal(eintrag.preview, false);
   assert.match(eintrag.name, /Saugroboter/, 'Name deutsch bei deutschem Browser');
   assert.ok(eintrag.description.endsWith('.'));
-  assert.equal(u.registry.get('busch-vacuum-card').__internals.version, '0.5.2');
+  assert.equal(u.registry.get('busch-vacuum-card').__internals.version, '0.5.3');
 });
 
 test('Picker-Eintrag englisch bei englischem Browser', () => {
