@@ -343,32 +343,32 @@ const BuschUI = (() => {
  * Contents (M49): every section marker of this file, by start line.
  * A marker is the line // SECTION: <name>; tests/gliederung.test.js checks both lists.
  *
- *   Localisation ........................... 391
- *   Configuration .......................... 1893
- *   Device model ........................... 2192
- *   Settings table ......................... 2361
- *   Map data and geometry .................. 2950
- *   Status and control ..................... 3117
- *   Task type, messages, progress .......... 3258
- *   Tasks .................................. 3289
- *   Map view ............................... 3577
- *   class MapView .......................... 3959
- *   Settings views ......................... 5797
- *   Cleaning settings ...................... 6799
- *   Station ................................ 7554
- *   Shortcuts .............................. 7807
- *   History ................................ 8066
- *   Styles ................................. 8928
- *   class BuschVacuumDialog ................ 11766
- *   class BuschVacuumCard .................. 12126
- *   Card editor ............................ 14176
- *   Map editor ............................. 14312
- *   class MapEditSession ................... 14918
- *   class MapEditor ........................ 15966
- *   Remote control ......................... 17914
- *   Map backup ............................. 18471
- *   class ImageZoom ........................ 18757
- *   Registration ........................... 19560
+ *   Localisation ........................... 398
+ *   Configuration .......................... 1900
+ *   Device model ........................... 2199
+ *   Settings table ......................... 2368
+ *   Map data and geometry .................. 2957
+ *   Status and control ..................... 3124
+ *   Task type, messages, progress .......... 3265
+ *   Tasks .................................. 3296
+ *   Map view ............................... 3584
+ *   class MapView .......................... 3966
+ *   Settings views ......................... 5804
+ *   Cleaning settings ...................... 6806
+ *   Station ................................ 7561
+ *   Shortcuts .............................. 7814
+ *   History ................................ 8073
+ *   Styles ................................. 8935
+ *   class BuschVacuumDialog ................ 11773
+ *   class BuschVacuumCard .................. 12133
+ *   Card editor ............................ 14183
+ *   Map editor ............................. 14319
+ *   class MapEditSession ................... 14925
+ *   class MapEditor ........................ 15973
+ *   Remote control ......................... 17921
+ *   Map backup ............................. 18478
+ *   class ImageZoom ........................ 18764
+ *   Registration ........................... 19567
  */
 
 /*
