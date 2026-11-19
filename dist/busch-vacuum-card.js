@@ -393,7 +393,7 @@ const BuschUI = (() => {
  * repositories ship a single file, no sub folders).
  */
 
-const CARD_VERSION = '0.5.3';
+const CARD_VERSION = '0.5.4';
 /** #1011: default entity of getStubConfig per entity registry, see there. */
 const STUB_PICKS = new WeakMap();
 
