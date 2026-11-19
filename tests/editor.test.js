@@ -2,6 +2,7 @@
 // Plan Task 7 (CORE-16/17/18/20): visueller Editor, Sprache, Theme, Kartenwechsel-Bestätigung.
 const test = require('node:test');
 const assert = require('node:assert');
+const vm = require('node:vm');
 const { neueUmgebung, hausAus, neueKarte, neuesHaus } = require('./attrappe.js');
 const { roh, dialogVon } = require('./hilfen.js');
 
@@ -258,9 +259,13 @@ test('CORE-16 Uhrzeit nach HAs 12/24-h-Einstellung, erster Wochentag nach HA', (
 
 // ── Theme (CORE-17) ───────────────────────────────────────────────────────
 test('CORE-17 --bvc-*-Haken mit HA-Rückfall, nie auf :host gesetzt', () => {
-  const { CARD_STYLES, DIALOG_STYLES } = intern(neueUmgebung());
-  // Ohne den gemeinsamen BuschUI-Block (wörtlich synchronisiert, nicht kartenspezifisch).
-  const css = (CARD_STYLES + DIALOG_STYLES).split('\n').filter((z) => !z.includes('busch-ui')).join('\n');
+  const u = neueUmgebung();
+  const { CARD_STYLES, DIALOG_STYLES } = intern(u);
+  // Without the shared BuschUI prefix (synchronized verbatim for all cards, never card-specific):
+  // cut exactly BuschUI.cardStyles, so every card-own line stays checked.
+  const gemeinsam = vm.runInContext('BuschUI.cardStyles', u.kontext);
+  assert.ok(CARD_STYLES.startsWith(gemeinsam) && DIALOG_STYLES.startsWith(gemeinsam), 'beide Stile beginnen mit dem BuschUI-Block');
+  const css = CARD_STYLES.slice(gemeinsam.length) + DIALOG_STYLES.slice(gemeinsam.length);
   for (const [haken, ha] of [['accent', 'primary'], ['warning', 'warning'], ['error', 'error'], ['success', 'success']]) {
     assert.match(css, new RegExp(`var\\(--bvc-${haken}-color, var\\(--${ha}-color`), haken);
     assert.doesNotMatch(css, new RegExp(`--bvc-${haken}-color\\s*:`), `${haken} nicht definiert (Theme setzt es)`);
