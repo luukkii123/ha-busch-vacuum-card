@@ -322,7 +322,7 @@ test('current(): Kamera, Karte, Kalibrierung, Räume, Frame', async () => {
   const c = karte._map.current();
   const a = haus.states[CAM].attributes;
   assert.equal(c.camera, CAM);
-  assert.equal(c.mapId, a.map_id);
+  assert.equal(c.mapId, a.saved_map_id, '#1366: gespeicherte Karte, nicht das Fahrbild');
   assert.equal(c.index, 1);
   assert.equal(c.name, 'Karte 1');
   assert.equal(c.frameId, a.frame_id);

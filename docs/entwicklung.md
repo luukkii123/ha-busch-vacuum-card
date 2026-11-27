@@ -564,7 +564,9 @@ Schalter), am Ende ein Chevron. Handlungsbedarf (Zubehör unter
   `EDIT_TASK_LOCKED`), temporärer Karte, laufender Sicherung/
   Wiederherstellung. Nur die aktive Karte (`map_id` =
   `card._map.current().mapId`), sonst „Zu <Karte> wechseln“ über
-  `selectMap` (CORE-20).
+  `selectMap` (CORE-20). `mapId` ist `saved_map_id` der Kartenkamera
+  (= `maps[].id`), Rückfall `map_id`: nach einer Fahrt trägt `map_id` die
+  Fahrbild-ID (live 16 statt 3), die Dienste antworten dann „Karte nicht gefunden“ (#1366).
 - **Dirty-Schutz.** Der Bearbeitungsdialog (`kind: 'editor'`) hat `guard`:
   mit offenen Änderungen halten Escape, Schließen, Zurück-Geste, Fertig,
   Werkzeug-, Aufgaben- und Kartenwechsel an, das Blatt wackelt (`.shake`) und

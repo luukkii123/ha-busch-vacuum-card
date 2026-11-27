@@ -54,7 +54,7 @@ test('EDI-02 erste Speicherung: zuerst genau vacuum_backup_map { entity_id, map_
   k.karte._editSession = s;
   const fertig = s.commit({ card: k.karte, confirmed: true }, [ZONE]);
   await mikro();
-  assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_backup_map', data: { entity_id: 'vacuum.robo', map_id: 2 } }]);
+  assert.deepEqual(roh(k.haus.rufe), [{ domain: 'dreame_vacuum', service: 'vacuum_backup_map', data: { entity_id: 'vacuum.robo', map_id: 3 } }]);
   k.sauger({ map_backup_status: 'Running' });
   await mikro();
   assert.deepEqual(dienste(k.haus), ['vacuum_backup_map'], 'noch keine Kartenänderung während der Sicherung');
@@ -876,15 +876,15 @@ test('EDI-03 Räume: Wahl per Fläche (pick-room) und Chip, Formular Name/Typ/Si
   await k.sicherungFertig();
   assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_rename_segment', 'vacuum_set_hidden_segments', 'vacuum_set_floor_material']);
   assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', segment_id: 1, segment_name: 'Atelier Neu' });
-  assert.deepEqual(roh(k.haus.rufe[2].data), { entity_id: 'vacuum.robo', segments: [5], map_id: 2 });
-  assert.deepEqual(roh(k.haus.rufe[3].data), { entity_id: 'vacuum.robo', material: { 1: [1, 0], 3: [1, 90], 4: [1, 90], 5: [2, 0], 6: [1, 90], 7: [2, 0], 9: [2, 0] }, map_id: 2 });
+  assert.deepEqual(roh(k.haus.rufe[2].data), { entity_id: 'vacuum.robo', segments: [5], map_id: 3 });
+  assert.deepEqual(roh(k.haus.rufe[3].data), { entity_id: 'vacuum.robo', material: { 1: [1, 0], 3: [1, 90], 4: [1, 90], 5: [2, 0], 6: [1, 90], 7: [2, 0], 9: [2, 0] }, map_id: 3 });
   k.u.zurueck();
   $d(k.u, '[data-action="undo"]').click();
   $d(k.u, '[data-action="confirm"]').click();
   await mikro(); await mikro();
   assert.deepEqual(dienste(k.haus).slice(4), ['vacuum_set_segment_type', 'vacuum_set_hidden_segments', 'vacuum_set_floor_material'], 'Rückgängig: Typ zurück statt leerem Namen');
-  assert.deepEqual(roh(k.haus.rufe[4].data), { entity_id: 'vacuum.robo', type: { 1: [4, 0, null] }, map_id: 2 });
-  assert.deepEqual(roh(k.haus.rufe[5].data), { entity_id: 'vacuum.robo', segments: [], map_id: 2 });
+  assert.deepEqual(roh(k.haus.rufe[4].data), { entity_id: 'vacuum.robo', type: { 1: [4, 0, null] }, map_id: 3 });
+  assert.deepEqual(roh(k.haus.rufe[5].data), { entity_id: 'vacuum.robo', segments: [], map_id: 3 });
 });
 
 test('EDI-03 Prüfungen: leerer Name abgelehnt (R10), Typ mit laufender Nummer, Dock-Raum aus roomAt(charger_position) bzw. station_segment nicht versteckbar', async () => {
@@ -1012,8 +1012,8 @@ test('EDI-03 Teilen: Linie per zwei Kartenpunkten oder Koordinatenfeldern (R15),
   $d(k.u, '[data-action="confirm"]').click();
   await k.sicherungFertig();
   assert.deepEqual(roh(k.haus.rufe.map((r) => [r.service, r.data])), [
-    ['vacuum_backup_map', { entity_id: 'vacuum.robo', map_id: 2 }],
-    ['vacuum_split_segments', { entity_id: 'vacuum.robo', segment: 5, line: [-9000, -8496, -600, -8496], map_id: 2 }],
+    ['vacuum_backup_map', { entity_id: 'vacuum.robo', map_id: 3 }],
+    ['vacuum_split_segments', { entity_id: 'vacuum.robo', segment: 5, line: [-9000, -8496, -600, -8496], map_id: 3 }],
   ]);
   assert.equal(k.karte._mapEdit.split, null);
   assert.equal(k.karte._mapEdit.session.undo.length, 0, 'kein Rückgängig für Teilen');
@@ -1089,8 +1089,8 @@ test('EDI-03 Zusammenführen: genau zwei Räume (Fläche/Chip), Nachbarschaft au
   $d(k.u, '[data-action="confirm"]').click();
   await k.sicherungFertig();
   assert.deepEqual(roh(k.haus.rufe.map((r) => [r.service, r.data])), [
-    ['vacuum_backup_map', { entity_id: 'vacuum.robo', map_id: 2 }],
-    ['vacuum_merge_segments', { entity_id: 'vacuum.robo', segments: [9, 1], map_id: 2 }],
+    ['vacuum_backup_map', { entity_id: 'vacuum.robo', map_id: 3 }],
+    ['vacuum_merge_segments', { entity_id: 'vacuum.robo', segments: [9, 1], map_id: 3 }],
   ]);
   // Ohne Bearbeitungsdaten: keine Nachbarprüfung, das Gerät entscheidet.
   const k2 = aufbau();
@@ -1715,7 +1715,7 @@ test('EDI-04 Wände: nur mit walls + Bearbeitungsdaten; je Raum verschieben, Zur
   $d(k.u, '[data-action="confirm"]').click();
   await k.sicherungFertig();
   assert.deepEqual(dienste(k.haus), ['vacuum_backup_map', 'vacuum_set_walls']);
-  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', map_id: 2,
+  assert.deepEqual(roh(k.haus.rufe[1].data), { entity_id: 'vacuum.robo', map_id: 3,
     walls: { 1: [[0, 0, 1000, 50, 0, 0, 1000, 0, 1, 500, 0], [1000, 0, 1000, 800, 1000, 0, 1000, 800, 1, 1000, 400]], 3: [[0, 950, 600, 950, 0, 950, 600, 950, 2, 300, 900]] },
     doors: [[-6000, 3040, 6500, 3040, -6000, 3000, 6000, 3000, 0, 7, 1]] }, 'alle Wände je Raum und alle Türen, Anzahl gleich');
   // Alle zurücksetzen: Wände und Türen auf die Ausgangslage.
@@ -2091,4 +2091,38 @@ test('M34 Speichern/Verwerfen mit Änderungsstand als feste Leiste unten; nach d
   assert.equal(dialogVon(k.u), null);
   const slot = k.karte.shadowRoot.querySelector('.chip-slot');
   assert.ok(slot.querySelector('.room-chips'), 'Chips wieder im Panel der Karte');
+});
+
+// ── #1366: Fahrbild-ID ≠ gespeicherte Karte (live X40, dreame_vacuum 2.0.3) ──
+
+test('#1366 map_id (Fahrbild 16) ≠ saved_map_id (3): Sichern, Zonen und Raumdienste senden die gespeicherte Karte; ohne saved_map_id gilt map_id', async () => {
+  const k = aufbau({ cam: { map_id: 16, saved_map_id: 3 }, abruf: (url) => (/saved=1/.test(url) ? { json: raumdaten() } : { status: 404 }) });
+  assert.equal(k.karte._map.current().mapId, 3, 'die Integration kennt nur maps[].id');
+  const s = new k.I.MapEditSession(k.karte);
+  k.karte._editSession = s;
+  const fertig = s.commit({ card: k.karte, confirmed: true }, [ZONE]);
+  await mikro();
+  k.sauger({ map_backup_status: 'Running' });
+  k.sauger({ map_backup_status: 'Success' });
+  assert.equal(await fertig, true);
+  assert.deepEqual(roh(k.haus.rufe.map((r) => [r.service, r.data])), [
+    ['vacuum_backup_map', { entity_id: 'vacuum.robo', map_id: 3 }],
+    ['vacuum_set_restricted_zone', Object.assign({ entity_id: 'vacuum.robo' }, ZONE.data)],
+  ], 'Sichern aus dem Editor und Zonen speichern');
+  const z = aufbau({ cam: { map_id: 16, saved_map_id: 3 }, abruf: (url) => (/saved=1/.test(url) ? { json: raumdaten() } : { status: 404 }) });
+  await mikro();
+  raeumeOffen(z);
+  await mikro(); await mikro(); await mikro();
+  z.karte._map._roomTap(1, 'map');
+  $d(z.u, '[data-action="room-merge"]').click();
+  z.karte._map._roomTap(9, 'map');
+  $d(z.u, '[data-action="merge-go"]').click();
+  $d(z.u, '[data-action="confirm"]').click();
+  await z.sicherungFertig();
+  assert.deepEqual(roh(z.haus.rufe.map((r) => [r.service, r.data])), [
+    ['vacuum_backup_map', { entity_id: 'vacuum.robo', map_id: 3 }],
+    ['vacuum_merge_segments', { entity_id: 'vacuum.robo', segments: [1, 9], map_id: 3 }],
+  ], 'Raumdienst');
+  const ohne = aufbau({ cam: { map_id: 16, saved_map_id: undefined } });
+  assert.equal(ohne.karte._map.current().mapId, 16, 'Rückfall auf map_id ohne saved_map_id');
 });

@@ -363,22 +363,22 @@ const BuschUI = (() => {
  *   Tasks .................................. 3306
  *   Map view ............................... 3594
  *   class MapView .......................... 3976
- *   Settings views ......................... 5814
- *   Cleaning settings ...................... 6816
- *   Station ................................ 7571
- *   Shortcuts .............................. 7824
- *   History ................................ 8083
- *   Styles ................................. 8945
- *   class BuschVacuumDialog ................ 11783
- *   class BuschVacuumCard .................. 12143
- *   Card editor ............................ 14193
- *   Map editor ............................. 14329
- *   class MapEditSession ................... 14935
- *   class MapEditor ........................ 15983
- *   Remote control ......................... 17931
- *   Map backup ............................. 18488
- *   class ImageZoom ........................ 18774
- *   Registration ........................... 19577
+ *   Settings views ......................... 5815
+ *   Cleaning settings ...................... 6817
+ *   Station ................................ 7572
+ *   Shortcuts .............................. 7825
+ *   History ................................ 8084
+ *   Styles ................................. 8946
+ *   class BuschVacuumDialog ................ 11784
+ *   class BuschVacuumCard .................. 12144
+ *   Card editor ............................ 14194
+ *   Map editor ............................. 14330
+ *   class MapEditSession ................... 14936
+ *   class MapEditor ........................ 15984
+ *   Remote control ......................... 17933
+ *   Map backup ............................. 18490
+ *   class ImageZoom ........................ 18776
+ *   Registration ........................... 19579
  */
 
 /*
@@ -5786,7 +5786,8 @@ class MapView {
         const a = this._attrs();
         return {
             camera: this._cameraId || null,
-            mapId: a.map_id !== undefined ? a.map_id : null,
+            // Services want the stored map (maps[].id = saved_map_id); map_id is the id of the live frame (#1366).
+            mapId: a.saved_map_id !== undefined && a.saved_map_id !== null ? a.saved_map_id : a.map_id !== undefined ? a.map_id : null,
             index: a.map_index !== undefined ? a.map_index : null,
             name: this._mapName(),
             calibration: this._matrix,
@@ -8771,7 +8772,7 @@ function recleanConfirm(card, names, all, rooms) {
 /** The "Nochmal reinigen" block of the newest run: room chips (≥ 1, none chosen at first), reason when locked. */
 function recleanSection(card, hass, run, runs, load, detail, dialog) {
     const model = card.model();
-    const mapId = card.map ? card.map.current().mapId : cameraAttrs(model).map_id;
+    const mapId = card.map ? card.map.current().objects.map_id : cameraAttrs(model).map_id; // frame id, like the run's data
     const state = recleanState(model, run, { newest: runs[0], load, mapId });
     if (!state.show) return null;
     if (!detail.reclean || detail.reclean.ts !== run.timestamp) detail.reclean = { ts: run.timestamp, chosen: new Set() };
@@ -17815,7 +17816,8 @@ function wifiSource(card) {
     if (!m || !hass) return null;
     const cur = m.current();
     const cams = card.model().related.maps.wifi_map.map((id) => hass.states[id]).filter(Boolean);
-    const cam = cams.find((c) => String(c.attributes.map_id) === String(cur.mapId)) || null;
+    const frame = cur.objects.map_id === undefined ? null : cur.objects.map_id; // WiFi cameras carry the frame id (live X40)
+    const cam = cams.find((c) => String(c.attributes.map_id) === String(frame)) || null;
     const url = ownPath((cam && cam.attributes.entity_picture) || cur.objects.wifi_map_picture, hass);
     if (!url) return null;
     return { url, matrix: affineFrom((cam && cam.attributes.calibration_points) || cur.objects.calibration_points) };
