@@ -431,7 +431,8 @@ map, history and every setting read and compared with the device; written
 back were the child lock, one schedule, one map backup, one room rename (and
 back) and one restore. On 27 November 2026 the card itself drove the remote
 control, saved a no-go zone and undid it, backed up and restored the map with
-its room settings and reset a consumable. Other models show what their attributes and entities
+its room settings, reset a consumable and ran the station cleaning (the X40
+then stays outside the station until you send it back). Other models show what their attributes and entities
 report.
 
 **Not confirmed on a real robot yet** (tested with synthetic data against the
@@ -441,7 +442,7 @@ integration's services):
   from the history (needs a run with blocked rooms), changing the map (the
   checked robot has one map), ignoring an obstacle (the checked map had none
   at the time).
-- Station actions (wash, dry, empty, drain, self-repair, station cleaning) and
+- Station actions (wash, dry, empty, drain, self-repair) and
   the remaining device and cleaning settings that were not written live.
 - Shortcuts, furniture, target points and several floors: the checked robot
   reports none, so these are tested with synthetic data only.
