@@ -882,6 +882,12 @@ python3 "$HACS/scripts/vacuum-inventar-pruefen.py" --lauf "$HACS/artifacts/e2e/<
 
 ## Geprüft
 
+**27.11.2026 · 0.5.4, Live-Probe M37 im Sections-Editor (#1191, lesend)** — Testansicht `vacuum-m37` im Dashboard „HACS Test“ (Nutzer-OK) mit der Karte auf dem echten X40, Playwright gegen die Instanz, Schreibsperre der Gerätprobe aktiv (0 blockierte Aufrufe), Ansicht und `?edit=1`, 1280×900 und 390×844.
+
+1. Live-Werte wie im Test: `getCardSize` 9, `getGridOptions` `{columns: 12, min_columns: 6, rows: 'auto', min_rows: 8}`, `data-map` gesetzt, `data-layout` card. Panel-Fall: Ansicht „Robi Busch“ der Übersicht lud in der Dashboard-Messung vom 27.11. ohne Fehler; „ohne Karte“ gibt es live nicht (X40 hat eine Kartenkamera), nur im Test.
+2. Bild: Kopf, Karte und Blatt vollständig, im Editor mit Rahmen und Griffen gleich; das Blatt scrollt innerhalb der Karte (Absicht). Desktop 844 px, Handy 788 px hoch.
+3. Befund ohne Änderung: in einer Sektion mit `column_span` > 1 belegt die Karte mit `columns: 12` nur die halbe Breite (24er-Raster); in einer normalen Sektion ist sie voll breit. `columns: 'full'` wäre die Alternative, wenn die Karte auch dort volle Breite nehmen soll.
+
 **20.11.2026 · 0.5.4, Buschcheck Etappe I (#1315-Folge, Tag `v0.5.4`)** — nur Sync Shared UI 0.5.3 (Symbol-, Fokus- und Validierungskontrast ≥ 3:1/4,5:1; der Fokusring gemeinsamer Bausteine ist dadurch gedämpfter blau), Inhaltsverzeichnis M49 nachgezogen, sonst unverändert (E7). Abschlusslauf `karten-20261119-234243-239269` grün (57/57, Volllauf, 2700 Node-Tests, Block `statisch` grün inkl. CI-Vorlage und Zeilenlänge), `--beleg-pruefen` gleich; Bilder am Bild geprüft (Sonnet).
 
 **19.11.2026 · 0.5.3, Buschcheck Etappe H (#1315, Tag `v0.5.3`)** — nur Sync Shared UI 0.5.0 (E7), Inhaltsverzeichnis M49 nachgezogen, CORE-17-Test schneidet den Shared-Block exakt heraus, MDI-Pfad mdi:inbox-outline ergänzt. Außerhalb des Shared-Blocks und des Inhaltsverzeichnisses nur die Versionszeile geändert (diff gegen v0.5.2). 862 Node-Tests (852 grün, 10 skip). Abschlusslauf `karten-20261119-195834-aaec84` grün (55/55), `--beleg-pruefen` gleich; Bilder ohne sichtbare Änderung (Rauschen: Port, Datum).
