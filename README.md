@@ -336,9 +336,12 @@ example out from under a bed.
 - At most one call is under way; the next follows its answer, at least
   200 ms later (≤ 5 per second), always with the newest value. Limits: forward
   100, backward −100, turning ±128.
-- **Not calibrated yet:** these limits are conservative values from the
-  integration's service description. Top speed, turning direction and the
-  stop after letting go have not been measured on a robot yet.
+- **Checked on a Dreame X40:** `A` turns left and `D` right, the robot stops
+  as soon as you let go, switching tabs or leaving the window stops it, and the
+  card sends at most 5 calls per second. Right after leaving the dock the robot
+  can take more than 2 s to answer; the card then stops and asks you to press
+  *Start control* again. Backward at the precision speed moves only a few
+  millimetres.
 
 ## Map editing
 
@@ -417,34 +420,34 @@ when the map has states or your device can back up or restore.
   offers no upload from the browser. Same confirmation as above.
 - Restoring needs the integration's cloud login; without it the card says so
   and the list stays viewable.
-- Backup and restore were run on a real robot through the integration's
-  services; the card's own buttons for them, the write-back of the room
-  settings and how many backups a device keeps per map are not confirmed on
-  a real robot yet.
+- *Back up now*, *Restore* and *Restore room settings* were run from the card
+  on a Dreame X40. Right after *Back up now* the list may still show the
+  previous backup's date until the integration reports the new one.
 
 ## Known limits
 
 Checked live on one robot, a Dreame X40 Ultra with integration 2.0.3: status,
 map, history and every setting read and compared with the device; written
 back were the child lock, one schedule, one map backup, one room rename (and
-back) and one restore. Other models show what their attributes and entities
+back) and one restore. On 27 November 2026 the card itself drove the remote
+control, saved a no-go zone and undid it, backed up and restored the map with
+its room settings and reset a consumable. Other models show what their attributes and entities
 report.
 
 **Not confirmed on a real robot yet** (tested with synthetic data against the
 integration's services):
 
-- Remote control: top speed, turning direction and the stop after letting go
-  (shipped with conservative limits, not calibrated).
 - Starting each task type from the card (room, zone, spot, go to), *Re-clean*
-  from the history, changing the map, ignoring an obstacle.
+  from the history (needs a run with blocked rooms), changing the map (the
+  checked robot has one map), ignoring an obstacle (the checked map had none
+  at the time).
 - Station actions (wash, dry, empty, drain, self-repair, station cleaning) and
   the remaining device and cleaning settings that were not written live.
 - Shortcuts, furniture, target points and several floors: the checked robot
   reports none, so these are tested with synthetic data only.
-- Map editing: saving a change (for example a no-go zone) and *Undo*.
-- Map backups: *Back up now* and *Restore* from the card, *Restore room
-  settings*, and how many backups a device keeps.
-- Installing a voice pack and resetting a consumable.
+- How many backups a device keeps per map (the X40 replaced its one backup).
+- Installing a voice pack (the integration has no catalogue to install a known
+  pack from).
 
 **Limits of the integration** (no public way to do more):
 

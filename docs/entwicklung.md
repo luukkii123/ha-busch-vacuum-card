@@ -884,6 +884,15 @@ python3 "$HACS/scripts/vacuum-inventar-pruefen.py" --lauf "$HACS/artifacts/e2e/<
 
 ## Geprüft
 
+**27.11.2026 · 0.5.5, Live-Probe #1001 und Korrektur #1366 (Tag `v0.5.5`)** — Playwright steuert die echte Karte in der Testansicht `vacuum-m37` (Nutzer-OK, auch ohne Zuschauer); Browser-Sperre lässt nur `dreame_vacuum`/`vacuum` für `vacuum.x40_ultra` durch, protokolliert jeden Aufruf mit Zeitstempel; Fahrweg aus `camera.*_map` → `vacuum_position`.
+
+1. Fernsteuerung (REM-01): Grenzen unverändert. Präzision vor: 4 Schritte `velocity 50`, Abstand ≥ 200 ms, Stopp 0/0 1–3 ms nach dem Loslassen + Wiederholung nach 300 ms, Antwortzeit 135 ms, 0,6 s ≈ 16 cm. `A` (+128, 4 Schritte): Winkel 269° → 346° (gegen den Uhrzeigersinn = links), `D` (−128, 8 Schritte): 268° → 215° (rechts). Rückwärts −50 für 0,5 s: wenige mm. Tabwechsel mit gehaltenem `W`: Stopp sofort; Fenster-Blur: Stopp nach der Antwort des laufenden Aufrufs (~1 s). „Zurück zum Dock“ aus der Ansicht: nach 30 s angedockt. **Befund (3/3):** der erste Schritt beim Abdocken antwortet nach > 2 s → `timeoutMs` stoppt und nimmt die Freigabe; der Roboter hält, man muss neu starten. Bewusst nicht geändert (Nutzerentscheid offen).
+2. Zubehör-Reset: Bestätigung „Aktuell noch 50 %“, ein `vacuum_reset_consumable {consumable: sensor}`, Gerät meldet 100 %.
+3. Kartensicherung: „Jetzt sichern“ `vacuum_backup_map {map_id: 3}` → Success; „Wiederherstellen“ `vacuum_restore_map {recovery_map_index: 3, map_id: 3}` → Success; „Raumeinstellungen wiederherstellen“ 7 × `vacuum_set_custom_cleaning`. Karte danach unverändert (7 Räume, 1 Wand, 3 Teppiche, 2 Schwellen). Befund: Liste und Bestätigung zeigten direkt nach dem Sichern noch das alte Datum (Integration meldet verzögert).
+4. Karteneditor (#1366): mit 0.5.4 sendete die Sicherung `map_id 16` (Fahrbild) → „Aktuelle Karte nicht gefunden: 16“, Karte brach sauber ab. Mit 0.5.5 (`saved_map_id`): `vacuum_backup_map {map_id: 3}`, `vacuum_set_restricted_zone` mit neuer No-Go-Zone (Kamera 0 → 1), „Rückgängig“ → 0, Wand erhalten.
+5. Begründet offen: „Nochmal reinigen“ (letzter Lauf ohne gesperrte Räume), Kartenwechsel (eine Karte), Hindernis ignorieren (aktuelle Karte ohne Hindernisse), Sprachpaket (kein Katalog, DE-Paketdaten unbekannt), Stationsreinigung (Frischwassertank leer).
+6. Abschlusslauf `karten-20261127-115103-71de70` grün (14/14, 635 Bilder, Node 863, rot 0), `--beleg-pruefen` gleich; Release-Workflow grün, über den Marketplace `v0.5.5` installiert.
+
 **27.11.2026 · 0.5.4, Live-Probe M37 im Sections-Editor (#1191, lesend)** — Testansicht `vacuum-m37` im Dashboard „HACS Test“ (Nutzer-OK) mit der Karte auf dem echten X40, Playwright gegen die Instanz, Schreibsperre der Gerätprobe aktiv (0 blockierte Aufrufe), Ansicht und `?edit=1`, 1280×900 und 390×844.
 
 1. Live-Werte wie im Test: `getCardSize` 9, `getGridOptions` `{columns: 12, min_columns: 6, rows: 'auto', min_rows: 8}`, `data-map` gesetzt, `data-layout` card. Panel-Fall: Ansicht „Robi Busch“ der Übersicht lud in der Dashboard-Messung vom 27.11. ohne Fehler; „ohne Karte“ gibt es live nicht (X40 hat eine Kartenkamera), nur im Test.

@@ -20,9 +20,9 @@
     "beleg": "Nutzerentscheidung in der Capability Map (10.11.2026); Tests mit Präfix EDI-05 in tests/karteneditor.test.js"
   },
   "REM-01": {
-    "entscheidung": "Fernsteuerung mit vorsichtigen Grenzwerten (vorwärts 100, rückwärts -100, drehen ±128) ausgeliefert, nicht live kalibriert.",
-    "datum": "2026-11-11",
-    "beleg": "Nutzerentscheidung in der Capability Map (11.11.2026); Tests mit Präfix REM-01 in tests/fernsteuerung.test.js"
+    "entscheidung": "Fernsteuerung mit vorsichtigen Grenzwerten (vorwärts 100, rückwärts -100, drehen ±128); am 27.11.2026 live am X40 bestätigt und unverändert gelassen: A dreht links, D rechts, Stopp sofort nach Loslassen, Tab-/Fensterwechsel hält, ≤ 5 Aufrufe/s.",
+    "datum": "2026-11-27",
+    "beleg": "Live-Probe #1001 (docs/entwicklung.md, Geprüft 27.11.2026); Tests mit Präfix REM-01 in tests/fernsteuerung.test.js"
   },
   "BAK-02": {
     "entscheidung": "Wiederherstellen aus Datei-URL statt Hochladen (kein Dienst dafür); „Jetzt sichern“ fragt immer kurz nach (einziger Grant-Weg); Wiederherstellen gesperrt, solange der Roboter läuft oder pausiert ist; Raumeinstellungen werden vorher gemerkt und danach angeboten.",

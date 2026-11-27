@@ -50,5 +50,5 @@ test('README: kein Baustellen-Hinweis, Bilder vorhanden, Version = CARD_VERSION,
   assert.match(README, new RegExp('Version ' + version.replace(/\./g, '\\.') + ' '));
   assert.match(README, /## Known limits/);
   assert.match(README, /Not confirmed on a real robot yet/);
-  assert.match(README, /Not calibrated yet/);
+  assert.match(README, /Checked on a Dreame X40/, 'Fernsteuerung live bestätigt (#1001)');
 });
